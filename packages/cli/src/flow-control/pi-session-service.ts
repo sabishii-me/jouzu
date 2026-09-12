@@ -471,15 +471,18 @@ export class PiFlowSessionService {
 				if (this.branch() !== branch) throw new FlowLedgerError("stale", "Flow reset branch changed.");
 				const state = await branch.attachment.ledger.snapshot();
 				const attemptId = state.activeAttemptId;
-				if (!attemptId) return { kind: "inactive" as const };
-				const kind = await branch.attachment.ledger.emergencyReset(
-					attemptId,
-					"Emergency flow reset from /flow; provider outcome may be unknown.",
-				);
-				return { kind, attemptId };
+				if (attemptId)
+					await branch.attachment.ledger.emergencyReset(
+						attemptId,
+						"Emergency flow reset from /flow; provider outcome may be unknown.",
+					);
+				branch.native.reset();
+				await branch.attachment.nativeRequests.reset();
+				return { kind: attemptId ? ("cancelled" as const) : ("inactive" as const), attemptId };
 			});
 			if (result.kind === "busy") throw new FlowLedgerError("busy", "Flow reset requires an idle session.");
-			if (result.value.kind !== "inactive") await branch.host.reconcile(result.value.attemptId);
+			if (result.value.kind !== "inactive" && result.value.attemptId)
+				await branch.host.reconcile(result.value.attemptId);
 			return result.value;
 		});
 	}

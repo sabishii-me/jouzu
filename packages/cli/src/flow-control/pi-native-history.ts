@@ -251,4 +251,9 @@ export class PiNativeHistory {
 		this.claimed.length = 0;
 		this.prompts.length = 0;
 	}
+	reset(): void {
+		this.claimed.length = 0;
+		this.prompts.length = 0;
+		this.sources = new WeakMap();
+	}
 }

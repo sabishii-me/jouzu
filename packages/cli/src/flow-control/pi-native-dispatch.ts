@@ -420,6 +420,14 @@ export class PiNativeDispatch {
 		for (const id of this.held.keys()) if (!queued.some((item) => item.id === id)) this.held.delete(id);
 		return structuredClone([...this.held.values()]);
 	}
+	reset(): void {
+		this.session.clearQueue();
+		this.queued.clear();
+		this.deferred.clear();
+		this.held.clear();
+		this.contextFailure = false;
+		this.history.reset();
+	}
 	private frame(): Frame | undefined {
 		this.assertActive();
 		const frame = this.frames.getStore();

@@ -651,6 +651,14 @@ export class FlowSubmissionStore {
 			includeArchived,
 		);
 	}
+	reset(): Promise<void> {
+		return this.transact((state) => {
+			state.records = [];
+			delete state.archived;
+			delete state.orderIds;
+			return { changed: true, result: undefined };
+		});
+	}
 	/** Freeze handled submissions outside the active admission quota without discarding source receipts. */
 	archiveHandled(selected: readonly { id: string; revision: number }[], assertCurrent?: () => void): Promise<number> {
 		const captured = structuredClone(selected);

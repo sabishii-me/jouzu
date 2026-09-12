@@ -352,6 +352,14 @@ export class FlowReceiptLedger {
 		FlowReceiptLedger.validate(state, this.scope, this.limits);
 		return structuredClone(state);
 	}
+	reset(): Promise<void> {
+		return this.mutate((state) => {
+			state.attempts = [];
+			delete state.activeAttemptId;
+			delete state.retiredAttempts;
+			state.admission = initialFlowAdmission();
+		});
+	}
 
 	private mutate<T>(update: (state: FlowLedgerState) => T): Promise<T> {
 		return this.store.transact((state) => {

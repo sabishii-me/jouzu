@@ -384,7 +384,7 @@ test("/flow clear is an emergency alias that releases the session pause", async 
 	await settle();
 	assert.equal(f.ingress.automatedPause(), undefined);
 	assert.deepEqual(notices, [
-		{ text: "Flow has no active reservation. Jobs, waits, and receipt history were left unchanged.", level: "info" },
+		{ text: "Flow reset completed. No active reservation was found; continue with a new message.", level: "info" },
 	]);
 	assert.deepEqual(f.errors, []);
 });

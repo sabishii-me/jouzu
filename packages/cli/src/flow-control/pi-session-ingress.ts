@@ -603,6 +603,11 @@ export class PiSessionFlowIngress implements Ingress {
 	submit(submission: Submission, dispatch: () => Promise<void>): Promise<void> {
 		const captured = structuredClone(submission);
 		const user = isNativeUserInput(captured);
+		// Emergency flow commands must remain reachable when ordinary native admission is
+		// inconsistent. They execute locally and never enter the provider transport.
+		const emergencyFlowCommand =
+			typeof captured.args[0] === "string" &&
+			["/flow reset", "/flow clear"].includes(captured.args[0].trim());
 		if (user) this.activeUserInput++;
 		// Every send passes through here, so this is where the user speaking again releases an
 		// interrupt's hold. Automated work still waits for an idle boundary, which is what keeps it
@@ -631,7 +636,13 @@ export class PiSessionFlowIngress implements Ingress {
 			if (user) this.retainedUserInput.add(saved.id);
 			this.pending.set(saved.id, { branch, submission: captured, revision: saved.revision, dispatch });
 			try {
-				await this.release(saved.id, saved.revision);
+				if (emergencyFlowCommand) {
+					this.pending.delete(saved.id);
+					await dispatch();
+					await this.refreshUserInput();
+				} else {
+					await this.release(saved.id, saved.revision);
+				}
 			} catch (error) {
 				// Pi revokes a callback when its submission handler throws.
 				this.pending.delete(saved.id);

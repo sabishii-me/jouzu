@@ -542,6 +542,14 @@ export class FlowWaitStore {
 			),
 		);
 	}
+	reset(): Promise<void> {
+		return this.update((state) => {
+			state.waits = [];
+			delete state.authority;
+			delete state.toolReceipts;
+			delete state.retired;
+		});
+	}
 
 	private requireUnretiredExecution(state: State, execution: { producer: string; execution: string }): void {
 		if (state.retired?.executions.includes(retiredIdentityHash(execution.producer, execution.execution)))

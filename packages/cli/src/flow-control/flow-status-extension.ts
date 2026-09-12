@@ -120,11 +120,7 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 								throw error;
 							}
 							if (result.kind === "inactive") {
-								notify("Flow has no active reservation. Jobs, waits, and receipt history were left unchanged.");
-							} else if (result.kind === "uncertain") {
-								notify(
-									`Cleared flow reservation ${result.attemptId}. The provider outcome is unknown; run /flow resolve ${result.attemptId} retry or discard.`,
-								);
+								notify("Flow reset completed. No active reservation was found; continue with a new message.");
 							} else {
 								notify(
 									`Cleared flow reservation ${result.attemptId}. Jobs, waits, and receipt history were left unchanged.`,

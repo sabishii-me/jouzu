@@ -106,6 +106,7 @@ export const nativeHoldHash = (record: NativeRequest): string => record.withheld
 export class FlowNativeRequestStore {
 	private initialized = false;
 	private blocked = true;
+	private recoveryReset = false;
 	private queueableRequest?: string;
 	get recoveryBlocked(): boolean {
 		return this.blocked;
@@ -512,6 +513,13 @@ export class FlowNativeRequestStore {
 	snapshot(): Promise<NativeRequest[]> {
 		return this.transact((records) => structuredClone(records));
 	}
+	reset(): Promise<void> {
+		return this.transact((records, retired) => {
+			records.splice(0, records.length);
+			retired.splice(0, retired.length);
+			this.recoveryReset = true;
+		});
+	}
 	begin(
 		input: Omit<
 			NativeRequest,
@@ -559,18 +567,24 @@ export class FlowNativeRequestStore {
 			if (requireUnreceived) {
 				if (!claims || !captured.sourceCapture)
 					throw new FlowLedgerError("identity", "Required native input has no consumption inventory.");
-				const capturedKeys = new Set(captured.sourceCapture.members.map(nativeSourceKey));
-				const claimKeys = new Set(claims.map(nativeSourceKey));
-				if (
-					captured.sourceCapture.members.some((source) => !claimKeys.has(nativeSourceKey(source))) ||
-					claims.some(
-						(claim) =>
-							!received.has(nativeSourceKey(claim)) &&
-							!cancelled.has(nativeSourceKey(claim)) &&
-							!capturedKeys.has(nativeSourceKey(claim)),
+				if (this.recoveryReset) this.recoveryReset = false;
+				else {
+					const capturedKeys = new Set(captured.sourceCapture.members.map(nativeSourceKey));
+					const claimKeys = new Set(claims.map(nativeSourceKey));
+					if (
+						captured.sourceCapture.members.some((source) => !claimKeys.has(nativeSourceKey(source))) ||
+						claims.some(
+							(claim) =>
+								!received.has(nativeSourceKey(claim)) &&
+								!cancelled.has(nativeSourceKey(claim)) &&
+								!capturedKeys.has(nativeSourceKey(claim)),
+						)
 					)
-				)
-					throw new FlowLedgerError("identity", "Consumed native input requires source reconciliation.");
+						throw new FlowLedgerError(
+							"identity",
+							"Consumed native input requires source reconciliation. Run /flow reset, then retry your message.",
+						);
+				}
 			}
 			const requiredSources = requireUnreceived
 				? (captured.sourceCapture?.members
