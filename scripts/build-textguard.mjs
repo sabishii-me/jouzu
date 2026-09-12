@@ -45,11 +45,16 @@ function go(args, extra = {}) {
 		timeout: 300000,
 		maxBuffer: 16 << 20,
 	});
+	if (result.error?.code === "ENOENT")
+		throw new Error(
+			"TextGuard build requires Go >=1.21 on PATH; the installed Go command selects the reviewed artifact compiler automatically",
+		);
 	if (result.error) throw result.error;
 	if (result.status !== 0) throw new Error(`TextGuard Go build failed: ${result.stderr}`);
 	return result.stdout.trim();
 }
-if (go(["env", "GOVERSION"]) !== lock.toolchain) throw new Error("TextGuard requires its pinned Go toolchain");
+if (go(["env", "GOVERSION"]) !== lock.toolchain)
+	throw new Error(`TextGuard artifact compiler mismatch: expected ${lock.toolchain}`);
 mkdirSync(output, { recursive: true });
 const artifacts = {};
 for (const target of lock.targets) {

@@ -33,8 +33,9 @@ Usage: ./dev-build.sh [build|link|install-hooks|uninstall-hooks]
   install-hooks    Opt in to rebuild after commit, merge, checkout, and rebase.
   uninstall-hooks  Remove only hooks managed by this script.
 
-Requires Bash, Git, npm, and Node.js >=22.19.0. Uses this checkout by default;
-set JOUZU_REPO to select another local checkout. Never clones or publishes.
+Requires Bash, Git, npm, Node.js >=22.19.0, and Go >=1.21. Go is a bootstrap:
+the TextGuard artifact build selects its reviewed compiler version automatically. Uses this
+checkout by default; set JOUZU_REPO to select another local checkout. Never clones or publishes.
 Dependency installs disable lifecycle scripts and repeat when manifests or locks change.
 Builds record development identity and run a bounded offline RPC smoke test.
 Only link changes global commands. Hooks build without linking and report failures
@@ -56,6 +57,25 @@ require_commands() {
 	done
 	if ! node -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit(major > 22 || (major === 22 && minor >= 19) ? 0 : 1)'; then
 		echo "dev-build: Node.js >=22.19.0 is required" >&2
+		return 1
+	fi
+}
+
+require_build_commands() {
+	local go_version
+	if ! command -v go >/dev/null 2>&1; then
+		echo "dev-build: Go is not available on PATH" >&2
+		echo "dev-build: install Go >=1.21; the TextGuard build selects its reviewed compiler version automatically" >&2
+		return 1
+	fi
+	go_version="$(GOTOOLCHAIN=local go env GOVERSION 2>/dev/null)" || {
+		echo "dev-build: could not determine the installed Go version" >&2
+		return 1
+	}
+	if [[ ! "$go_version" =~ ^go([0-9]+)\.([0-9]+) ]] ||
+		(( BASH_REMATCH[1] < 1 || (BASH_REMATCH[1] == 1 && BASH_REMATCH[2] < 21) )); then
+		echo "dev-build: Go >=1.21 is required; found ${go_version:-an unknown version}" >&2
+		echo "dev-build: the installed Go command bootstraps the reviewed TextGuard compiler version" >&2
 		return 1
 	fi
 }
@@ -567,6 +587,10 @@ run_hook() {
 		echo "dev-build: $hook_name hook could not locate the Jouzu checkout" >&2
 		return 0
 	fi
+	if ! require_build_commands; then
+		echo "dev-build: $hook_name hook could not prepare the Jouzu build" >&2
+		return 0
+	fi
 	if should_defer_hook_build "$hook_name" "${@:3}"; then
 		echo "dev-build: deferring $hook_name rebuild until rebase completes"
 		return 0
@@ -591,7 +615,7 @@ main() {
 	case "$command" in
 		build|link)
 			[[ "$command" == link ]] && LINK_DEVELOPMENT=true
-			resolve_jouzu_repo && run_locked_build
+			resolve_jouzu_repo && require_build_commands && run_locked_build
 			;;
 		install-hooks)
 			resolve_jouzu_repo && install_hooks

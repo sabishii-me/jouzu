@@ -7,9 +7,11 @@ bounded native scanning changes. Modified Go files carry a change notice.
 Optional model-classification code is excluded. Vendored dependencies permit
 compilation without fetching scanner modules.
 
-`source.lock.json` pins every source and license file, Go `go1.26.1`, the helper
-protocol, and the six OS/architecture targets. Builds reject missing, added,
-or changed source files until the reviewed lock is updated.
+`source.lock.json` pins every source and license file, the reviewed artifact
+compiler, the helper protocol, and the six OS/architecture targets. The pin
+makes the packaged executable hashes reproducible; it is not the minimum Go
+version supported by the TextGuard source. Builds reject missing, added, or
+changed source files until the reviewed lock is updated.
 
 From the repository root:
 
@@ -17,10 +19,12 @@ From the repository root:
 node scripts/build-textguard.mjs
 ```
 
-The build requires Go; it may download the pinned toolchain through Go's
-verified toolchain mechanism. The output goes to `packages/cli/dist/textguard/`.
-Users of packaged binaries do not need Go or Python. An optional positional
-argument selects another output directory for reproducibility checks.
+The build requires Go 1.21 or newer on `PATH`. The installed Go command may
+download the reviewed artifact compiler through Go's verified toolchain
+mechanism. You do not need to install that exact compiler version yourself.
+The output goes to `packages/cli/dist/textguard/`. Users of packaged binaries
+do not need Go or Python. An optional positional argument selects another
+output directory for reproducibility checks.
 
 The build disables CGo, trims source paths, omits build IDs and version-control
 metadata, and emits executable hashes and sizes in `manifest.json`. Linux,

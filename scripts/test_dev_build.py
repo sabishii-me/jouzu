@@ -123,6 +123,23 @@ class DevBuildTests(unittest.TestCase):
         )
         node.chmod(0o755)
 
+        go = self.bin / "go"
+        go.write_text(
+            textwrap.dedent(
+                """\
+                #!/usr/bin/env bash
+                set -eu
+                if [[ "${1:-}" == env && "${2:-}" == GOVERSION ]]; then
+                \tprintf '%s\\n' "${DEV_BUILD_TEST_GO_VERSION:-go1.27.0}"
+                \texit 0
+                fi
+                exit 1
+                """
+            ),
+            encoding="utf-8",
+        )
+        go.chmod(0o755)
+
         npm = self.bin / "npm"
         npm.write_text(
             textwrap.dedent(
@@ -273,6 +290,32 @@ class DevBuildTests(unittest.TestCase):
         finally:
             os.close(master)
         return process.wait(timeout=5), output.decode(errors="replace")
+
+    def test_missing_go_fails_before_build_work(self) -> None:
+        self._create_jouzu_repo(self.root / "jouzu")
+        missing_go_bin = self.root / "missing-go-bin"
+        missing_go_bin.mkdir()
+        for name in ("bash", "basename", "dirname"):
+            target = shutil.which(name)
+            self.assertIsNotNone(target)
+            (missing_go_bin / name).symlink_to(target)
+        for name in ("git", "node", "npm"):
+            (missing_go_bin / name).symlink_to(self.bin / name)
+
+        result = self._run(env={**self.env, "PATH": str(missing_go_bin)})
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Go is not available on PATH", result.stderr)
+        self.assertIn("install Go >=1.21", result.stderr)
+        self.assertFalse(self.log.exists())
+
+    def test_old_go_fails_before_build_work(self) -> None:
+        self._create_jouzu_repo(self.root / "jouzu")
+        result = self._run(env={**self.env, "DEV_BUILD_TEST_GO_VERSION": "go1.20.14"})
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Go >=1.21 is required; found go1.20.14", result.stderr)
+        self.assertFalse(self.log.exists())
 
     def test_incomplete_install_does_not_record_receipt(self) -> None:
         sibling = self.root / "jouzu"
