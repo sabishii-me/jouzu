@@ -19,6 +19,7 @@ import {
 	removeCatalogSourceToken,
 	resolveCatalogBearer,
 	resolveCatalogSources,
+	SHISA_API_CATALOG_SOURCE,
 	setCatalogSourceToken,
 } from "../dist/catalog-sources.js";
 import { MODEL_CATALOG_MAX_BYTES } from "../dist/model-catalog.js";
@@ -541,6 +542,49 @@ test("removing a source or dropping bearer auth removes its saved token", () => 
 		setCatalogSourceToken(paths, source.id, "sk-saved-again");
 		store.remove(source.id);
 		assert.equal(Object.keys(loadCatalogSourceTokens(paths)).length, 0);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("Shisa catalog uses saved login after explicit credentials, without sharing it with other endpoints", () => {
+	const { root, paths } = setup();
+	try {
+		mkdirSync(paths.agentDir, { recursive: true });
+		const authPath = join(paths.agentDir, "auth.json");
+		const save = (credential) => writeFileSync(authPath, JSON.stringify({ shisa: credential }), { mode: 0o600 });
+		const source = SHISA_API_CATALOG_SOURCE;
+		const login = { type: "oauth", access: "sk-login-fixture", refresh: "", expires: Number.MAX_SAFE_INTEGER };
+		save(login);
+		assert.equal(resolveCatalogBearer(source, {}, paths), login.access);
+		assert.equal(catalogSourceCredentialAvailable(source, {}, paths), true);
+		assert.equal(catalogSourceCredentialState(source, {}, paths).login, true);
+		setCatalogSourceToken(paths, source.id, "sk-catalog-fixture");
+		assert.equal(resolveCatalogBearer(source, {}, paths), "sk-catalog-fixture");
+		assert.equal(resolveCatalogBearer(source, { SHISA_API_KEY: "sk-env-fixture" }, paths), "sk-env-fixture");
+		removeCatalogSourceToken(paths, source.id);
+		for (const other of [
+			{ ...source, url: "https://unrelated.example/catalog" },
+			{ ...source, url: `${source.url}?copy=1` },
+			{ ...source, auth: { type: "bearer", credentialRef: "env:OTHER_KEY" } },
+		])
+			assert.throws(() => resolveCatalogBearer(other, {}, paths), /not set/);
+		for (const invalid of [
+			{ ...login, expires: 0 },
+			{ ...login, access: "" },
+			{ ...login, access: "bad\ntoken" },
+			{ type: "oauth" },
+		]) {
+			save(invalid);
+			assert.equal(catalogSourceCredentialAvailable(source, {}, paths), false);
+			assert.throws(() => resolveCatalogBearer(source, {}, paths), /not set/);
+		}
+		save(login);
+		assert.equal(resolveCatalogBearer(source, {}, paths), login.access);
+		writeFileSync(authPath, "{}");
+		assert.equal(catalogSourceCredentialAvailable(source, {}, paths), false, "logout is visible without restarting");
+		writeFileSync(authPath, "invalid auth json");
+		assert.equal(catalogSourceCredentialAvailable(source, {}, paths), false);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}

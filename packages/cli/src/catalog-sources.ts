@@ -75,6 +75,8 @@ export interface CatalogSourceCredentialState {
 	envSet: boolean;
 	/** True when a token is saved in Jouzu's private credential store. */
 	stored: boolean;
+	/** True when this Shisa endpoint can use the saved /login shisa credential. */
+	login?: boolean;
 }
 
 export interface CatalogEndpointDiscoveryOptions {
@@ -375,6 +377,30 @@ function envCredentialValue(source: CatalogSource, env: NodeJS.ProcessEnv): stri
 	return trimmed || undefined;
 }
 
+/** Read the login credential only for the exact Shisa endpoint and auth reference. */
+function shisaLoginToken(source: CatalogSource, paths: JouzuPaths): string | undefined {
+	if (!isShisaApiCatalogEndpoint(source)) return undefined;
+	const authPath = join(paths.agentDir, "auth.json");
+	try {
+		const metadata = lstatSync(authPath);
+		if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size > 1024 * 1024) return undefined;
+		// Read the shared file without importing Pi: catalog status also powers doctor
+		// when the interactive runtime cannot load.
+		const auth = parseStrictJson(readFileSync(authPath, "utf8").replace(/^\uFEFF/u, ""));
+		const credential = isRecord(auth) && isRecord(auth.shisa) ? auth.shisa : undefined;
+		if (
+			credential?.type !== "oauth" ||
+			typeof credential.access !== "string" ||
+			typeof credential.expires !== "number" ||
+			credential.expires <= Date.now()
+		)
+			return undefined;
+		return validateCatalogSourceToken(credential.access);
+	} catch {
+		return undefined;
+	}
+}
+
 /**
  * Where a bearer source's token can come from right now. The environment
  * variable wins when set, so it stays the override for a saved token. A
@@ -395,7 +421,12 @@ export function catalogSourceCredentialState(
 			stored = false;
 		}
 	}
-	return { name: source.auth.credentialRef.slice(4), envSet: envCredentialValue(source, env) !== undefined, stored };
+	return {
+		name: source.auth.credentialRef.slice(4),
+		envSet: envCredentialValue(source, env) !== undefined,
+		stored,
+		...(paths && shisaLoginToken(source, paths) ? { login: true } : {}),
+	};
 }
 
 export function catalogSourceCredentialAvailable(
@@ -404,7 +435,7 @@ export function catalogSourceCredentialAvailable(
 	paths?: JouzuPaths,
 ): boolean {
 	const state = catalogSourceCredentialState(source, env, paths);
-	return !state || state.envSet || state.stored;
+	return !state || state.envSet || state.stored || state.login === true;
 }
 
 export function catalogSourceCredentialsPath(paths: JouzuPaths): string {
@@ -647,6 +678,8 @@ export function resolveCatalogBearer(
 	if (paths) {
 		const stored = getCatalogSourceToken(paths, source.id);
 		if (stored) return stored;
+		const login = shisaLoginToken(source, paths);
+		if (login) return login;
 	}
 	throw new CatalogSourceError(
 		`Catalog token variable ${name} is not set in this Jouzu process${paths ? " and no token is saved for this source" : ""}. Export it before starting Jouzu or save a token in Settings / Catalogs, then retry.`,

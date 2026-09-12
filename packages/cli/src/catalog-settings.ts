@@ -863,9 +863,11 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 		const status = view.status;
 		const credential =
 			status.configured && status.credentialName
-				? ` · ${status.credentialName} ${
-						status.credentialEnv ? "set" : status.credentialStored ? "not set, saved token in use" : "not set"
-					}`
+				? status.credentialLogin && !status.credentialEnv && !status.credentialStored
+					? " · Shisa login in use"
+					: ` · ${status.credentialName} ${
+							status.credentialEnv ? "set" : status.credentialStored ? "not set, saved token in use" : "not set"
+						}`
 				: "";
 		const detail = [
 			line(

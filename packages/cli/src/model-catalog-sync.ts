@@ -96,6 +96,7 @@ export type CatalogSyncStatus =
 			credentialAvailable?: boolean;
 			credentialEnv?: boolean;
 			credentialStored?: boolean;
+			credentialLogin?: boolean;
 			conflict?: string;
 			quarantined: number;
 	  };
@@ -303,7 +304,9 @@ export function getCatalogSourceStatus(
 ): CatalogSyncStatus {
 	const credentialName = catalogSourceCredentialName(source);
 	const credential = credentialName ? catalogSourceCredentialState(source, env, paths) : undefined;
-	const credentialAvailable = credential ? credential.envSet || credential.stored : undefined;
+	const credentialAvailable = credential
+		? credential.envSet || credential.stored || credential.login === true
+		: undefined;
 	const conflict = catalogSourceConflict(source);
 	try {
 		const origin = readOriginState(paths, source.url);
@@ -330,6 +333,7 @@ export function getCatalogSourceStatus(
 			...(account?.lastError ? { lastError: account.lastError } : {}),
 			...(credentialName ? { credentialName, credentialAvailable } : {}),
 			...(credential ? { credentialEnv: credential.envSet, credentialStored: credential.stored } : {}),
+			...(credential?.login ? { credentialLogin: true } : {}),
 			...(conflict ? { conflict } : {}),
 			quarantined: account?.quarantined.length ?? 0,
 		};
@@ -344,6 +348,7 @@ export function getCatalogSourceStatus(
 			endpoint: publicEndpoint(source.url),
 			...(credentialName ? { credentialName, credentialAvailable } : {}),
 			...(credential ? { credentialEnv: credential.envSet, credentialStored: credential.stored } : {}),
+			...(credential?.login ? { credentialLogin: true } : {}),
 			...(conflict ? { conflict } : {}),
 			lastError: {
 				code: "invalid_cache",

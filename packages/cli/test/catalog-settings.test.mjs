@@ -12,6 +12,7 @@ import {
 	discoverCatalogEndpoint,
 	getCatalogSourceToken,
 	loadCatalogSourceRegistry,
+	SHISA_API_CATALOG_SOURCE,
 	setCatalogSourceToken,
 } from "../dist/catalog-sources.js";
 import { parseAndValidateModelCatalog } from "../dist/model-catalog.js";
@@ -1097,6 +1098,53 @@ test("A rejected context policy warns once and keeps the ceiling off", () => {
 		assert.match(rendered.join("\n"), /Maximum context\s+‹ Off ›/u);
 		assert.match(rendered.join("\n"), /Context limit was not applied/u);
 		assert.match(rendered.join("\n"), /use their declared windows/u);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("Catalogs refreshes with the Shisa login and displays its credential source without exposing secrets", async () => {
+	const { root, paths, context } = setup({ columns: 140 });
+	try {
+		mkdirSync(paths.agentDir, { recursive: true });
+		const secret = "sk-login-catalog-fixture";
+		const authPath = join(paths.agentDir, "auth.json");
+		writeFileSync(
+			authPath,
+			JSON.stringify({ shisa: { type: "oauth", access: secret, refresh: "", expires: Number.MAX_SAFE_INTEGER } }),
+		);
+		const source = SHISA_API_CATALOG_SOURCE;
+		let requests = 0;
+		const result = await refreshCatalogSource(paths, source, {
+			env: {},
+			fetch: async (url, options) => {
+				requests++;
+				assert.equal(String(url), source.url);
+				assert.equal(new Headers(options.headers).get("Authorization"), `Bearer ${secret}`);
+				return response(fixture);
+			},
+		});
+		assert.equal(requests, 1);
+		assert.equal(result.status, "activated");
+		assert.equal(result.catalogStatus.credentialAvailable, true);
+		assert.equal(result.catalogStatus.credentialLogin, true);
+		assert.equal(result.catalogStatus.credentialEnv, false);
+		const component = new CatalogSettingsComponent({ context, paths, env: {} });
+		const text = component.render(140).join("\n");
+		assert.match(text, /Shisa login in use/);
+		assert.match(component.render(80).join("\n"), /Shisa login in use/);
+		assert.doesNotMatch(text, /Warning: token variable/);
+		assert.equal(text.includes(secret), false);
+		assert.equal(JSON.stringify(result).includes(secret), false);
+		assert.equal(getCatalogSourceToken(paths, source.id), undefined, "login key is not copied to the catalog store");
+		writeFileSync(authPath, "{}");
+		const loggedOut = await refreshCatalogSource(paths, source, {
+			env: {},
+			fetch: async () => {
+				throw new Error("must not send without credentials");
+			},
+		});
+		assert.equal(loggedOut.catalogStatus.credentialAvailable, false);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
