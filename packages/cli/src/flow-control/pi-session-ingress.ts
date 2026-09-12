@@ -606,8 +606,7 @@ export class PiSessionFlowIngress implements Ingress {
 		// Emergency flow commands must remain reachable when ordinary native admission is
 		// inconsistent. They execute locally and never enter the provider transport.
 		const emergencyFlowCommand =
-			typeof captured.args[0] === "string" &&
-			["/flow reset", "/flow clear"].includes(captured.args[0].trim());
+			typeof captured.args[0] === "string" && ["/flow reset", "/flow clear"].includes(captured.args[0].trim());
 		if (user) this.activeUserInput++;
 		// Every send passes through here, so this is where the user speaking again releases an
 		// interrupt's hold. Automated work still waits for an idle boundary, which is what keeps it
