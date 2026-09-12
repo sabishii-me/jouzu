@@ -23,6 +23,7 @@ export function createSessionUiExtension(options: SessionUiExtensionOptions = {}
 		name: SESSION_UI_RUNTIME_IDS.extension,
 		factory: (pi) => {
 			let controller: SessionStatusController | undefined;
+			let editorInstalled = false;
 			const styleOptions: SessionUiStyleOptions = {
 				...(options.styleScheme ? { scheme: options.styleScheme } : {}),
 				...(options.colorEnabled !== undefined ? { colorEnabled: options.colorEnabled } : {}),
@@ -73,14 +74,17 @@ export function createSessionUiExtension(options: SessionUiExtensionOptions = {}
 						},
 					};
 				});
-				ctx.ui.setEditorComponent(
-					(tui, theme, keybindings) =>
-						new SessionPromptEditor(tui, theme, keybindings, stylesFor(ctx.ui.theme), {
-							...(options.onModelPicker ? { onModelPicker: options.onModelPicker } : {}),
-							...(options.onModelCycle ? { onModelCycle: options.onModelCycle } : {}),
-							...(options.onScopedModelsCommand ? { onScopedModelsCommand: options.onScopedModelsCommand } : {}),
-						}),
-				);
+				if (!editorInstalled) {
+					ctx.ui.setEditorComponent(
+						(tui, theme, keybindings) =>
+							new SessionPromptEditor(tui, theme, keybindings, stylesFor(ctx.ui.theme), {
+								...(options.onModelPicker ? { onModelPicker: options.onModelPicker } : {}),
+								...(options.onModelCycle ? { onModelCycle: options.onModelCycle } : {}),
+								...(options.onScopedModelsCommand ? { onScopedModelsCommand: options.onScopedModelsCommand } : {}),
+							}),
+					);
+					editorInstalled = true;
+				}
 				void activeController.refreshProject(ctx);
 			});
 
@@ -103,6 +107,7 @@ export function createSessionUiExtension(options: SessionUiExtensionOptions = {}
 				ctx.ui.setWidget(SESSION_UI_RUNTIME_IDS.sessionLineWidget, undefined);
 				ctx.ui.setFooter(undefined);
 				ctx.ui.setEditorComponent(undefined);
+				editorInstalled = false;
 			});
 		},
 	};

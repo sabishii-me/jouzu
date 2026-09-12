@@ -77,7 +77,9 @@ test("installs one editor, Session Line, and Status Bar owner and cleans up", as
 		assert.deepEqual(calls.widgets[0][2], { placement: "aboveEditor" });
 		assert.equal(typeof calls.footers[0], "function");
 		assert.equal(typeof calls.editors[0], "function");
-		assert.deepEqual(execCalls.map(({ command }) => command).sort(), ["git", "node"]);
+		await handlers.get("session_start")({}, ctx);
+		assert.equal(calls.editors.length, 1);
+		assert.deepEqual(execCalls.map(({ command }) => command).sort(), ["git", "git", "node"]);
 
 		const tui = { requestRender() {} };
 		const keybindings = {
@@ -106,7 +108,7 @@ test("installs one editor, Session Line, and Status Bar owner and cleans up", as
 		assert.equal(scopedCommandCalls, 1);
 		assert.equal(builtInModelPickerCalls, 0);
 
-		const lineComponent = calls.widgets[0][1](tui, theme);
+		const lineComponent = calls.widgets.at(-1)[1](tui, theme);
 		const line = lineComponent.render(60)[0];
 		assert.equal(terminalTextWidth(line), 60);
 		assert.match(line, /\/model choose/);
