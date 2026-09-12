@@ -4,7 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { SubagentManager, workerEnvironment } from "../dist/subagents/manager.js";
-import { AgentRoleStore, defaultAgentConfig, parseAgentConfig, resolveAgentModel } from "../dist/subagents/roles.js";
+import {
+	AgentRoleStore,
+	defaultAgentConfig,
+	isSameModelSelector,
+	parseAgentConfig,
+	resolveAgentModel,
+	SAME_MODEL,
+} from "../dist/subagents/roles.js";
 import { childResourceLoader } from "../dist/subagents/worker.js";
 import { resolveWorkspace } from "../dist/subagents/workspace.js";
 
@@ -97,7 +104,7 @@ test("role definitions are arbitrary, revision checked, and judging tools cannot
 		/role IDs/,
 	);
 	assert.equal(resolveAgentModel("test", [model]).provider, "test");
-	assert.throws(() => resolveAgentModel("test", [model, { ...model, provider: "other" }]), /multiple/);
+	assert.throws(() => resolveAgentModel("test", [model, { ...model, provider: "other" }]), /matches 2 providers/u);
 });
 test("writer children serialize; result is terminal only after process exit; secrets stay out of records", async () => {
 	const f = fixture();
@@ -165,6 +172,53 @@ test("failure and timeout never become empty successful results", async () => {
 	assert.equal(f.manager.get(run.id).status, "failed");
 	assert.match(f.manager.get(run.id).result, /before a complete result/);
 	await f.manager.dispose();
+});
+
+test("a real child reports the provider error instead of an opaque failure", { timeout: 20000 }, async () => {
+	const { createServer } = await import("node:http");
+	const { once } = await import("node:events");
+	const server = createServer((_req, res) => {
+		res.writeHead(503, { "Content-Type": "application/json" });
+		res.end(JSON.stringify({ detail: "Not Found" }));
+	});
+	server.listen(0, "127.0.0.1");
+	await once(server, "listening");
+	const p = paths();
+	let completed;
+	const done = new Promise((resolve) => {
+		completed = resolve;
+	});
+	const manager = new SubagentManager(p, "error-parent", 2, undefined, (run) => completed(run));
+	try {
+		const role = { ...defaultAgentConfig().roles[2], model: "fixture/test", thinking: "off" };
+		const selectedModel = {
+			...model,
+			provider: "fixture",
+			name: "Fixture",
+			baseUrl: `http://127.0.0.1:${server.address().port}/v1`,
+			reasoning: false,
+			input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 32000,
+			maxTokens: 512,
+		};
+		manager.launch({
+			role,
+			model: selectedModel,
+			auth: { apiKey: "fixture-key" },
+			cwd: p.cwd,
+			task: "Report fixture result.",
+		});
+		const result = await done;
+		assert.equal(result.status, "failed");
+		assert.match(result.result, /Provider error: /u);
+		assert.match(result.result, /503|Not Found/u);
+		assert.equal(JSON.stringify(result).includes("fixture-key"), false);
+	} finally {
+		await manager.dispose();
+		server.closeAllConnections();
+		server.close();
+	}
 });
 
 test("real child process completes through the pinned Pi SDK and persists a recoverable session", {
@@ -452,11 +506,34 @@ test("agent model resolution prefers gateway offerings over local provider colli
 	assert.equal(resolveAgentModel("upstream/test", [local, gateway]), gateway);
 	assert.equal(resolveAgentModel("test", [local, gateway]), gateway);
 	const other = { ...gateway, provider: catalogRuntimeProvider("other.example", "upstream") };
-	assert.throws(() => resolveAgentModel("upstream/test", [local, gateway, other]), /multiple/);
+	assert.throws(
+		() => resolveAgentModel("upstream/test", [local, gateway, other]),
+		(error) => {
+			assert.match(error.message, /matches 2 providers/u);
+			assert.match(error.message, new RegExp(`${gateway.provider}/test`, "u"));
+			assert.match(error.message, new RegExp(`${other.provider}/test`, "u"));
+			assert.match(error.message, /Retry with the full provider\/model\./u);
+			return true;
+		},
+	);
+	const crowd = Array.from({ length: 10 }, (_value, index) => ({
+		...local,
+		provider: catalogRuntimeProvider(`gateway-${index}.example`, "upstream"),
+	}));
+	assert.throws(() => resolveAgentModel("test", crowd), /matches 10 providers: .+and 2 more\./u);
 	assert.equal(resolveAgentModel(`${gateway.provider}/test`, [local, gateway, other]), gateway);
 	assert.deepEqual(
 		preferCatalogModels([local], [local, gateway]),
 		[],
 		"an unauthenticated gateway must not fall back to local credentials",
 	);
+});
+
+test("the same-model selector follows the session model and stays reachable by provider", () => {
+	assert.equal(SAME_MODEL, "same");
+	assert.ok(isSameModelSelector("same"));
+	assert.ok(isSameModelSelector("  same  "));
+	assert.equal(isSameModelSelector("provider/same"), false);
+	assert.equal(isSameModelSelector("samex"), false);
+	assert.equal(resolveAgentModel("test/same", [{ ...model, id: "same" }]).id, "same");
 });

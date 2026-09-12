@@ -23,6 +23,7 @@ import {
 	defaultAgentConfig,
 	READ_TOOLS,
 	type RoleSnapshot,
+	SAME_MODEL,
 	THINKING_LEVELS,
 } from "./subagents/roles.js";
 import {
@@ -439,20 +440,35 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 		}
 		if (this.mode === "models") {
 			const query = this.modelSearch.getValue().toLowerCase();
-			return this.service
-				.models()
-				.filter((model) => `${model.provider}/${model.id} ${model.name}`.toLowerCase().includes(query))
-				.map((model, index) => ({
-					label: `${model.provider}/${model.id}`,
-					labelRole: "palette.identity" as const,
-					value: model.name,
-					...(index === 0 ? { heading: "Models" } : {}),
-					run: () => {
-						required(this.draft).model = `${model.provider}/${model.id}`;
-						this.setMode("role");
-						this.selected = 2;
-					},
-				}));
+			const choose = (model: string) => {
+				required(this.draft).model = model;
+				this.setMode("role");
+				this.selected = 2;
+			};
+			const rows: Row[] = [];
+			// The literal value stays visible in the value column so the saved selector is unambiguous.
+			if (`${SAME_MODEL} same as this session`.includes(query))
+				rows.push({
+					label: "Same as this session",
+					labelRole: "palette.identity",
+					value: SAME_MODEL,
+					heading: "Models",
+					headingMeta: "follows the session model",
+					run: () => choose(SAME_MODEL),
+				});
+			rows.push(
+				...this.service
+					.models()
+					.filter((model) => `${model.provider}/${model.id} ${model.name}`.toLowerCase().includes(query))
+					.map((model, index) => ({
+						label: `${model.provider}/${model.id}`,
+						labelRole: "palette.identity" as const,
+						value: model.name,
+						...(index === 0 && rows.length === 0 ? { heading: "Models" } : {}),
+						run: () => choose(`${model.provider}/${model.id}`),
+					})),
+			);
+			return rows;
 		}
 		if (this.mode === "task")
 			return [

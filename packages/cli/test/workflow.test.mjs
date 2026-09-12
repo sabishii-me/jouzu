@@ -97,6 +97,21 @@ test("model choice searches Japanese text and Escape preserves the definition dr
 	assert.equal(f.writes, 1);
 	assert.equal(f.config.roles[0].model, "test/日本語-model");
 });
+test("the model picker offers the same-as-session selector and saves its literal value", () => {
+	const f = fixture();
+	down(f.view);
+	enter(f.view);
+	down(f.view, 2);
+	enter(f.view);
+	assert.match(f.text(), /Same as this session/u);
+	assert.match(f.text(), /same/u);
+	enter(f.view);
+	assert.match(f.text(), /Edit agent/u);
+	down(f.view, 8);
+	enter(f.view);
+	assert.equal(f.writes, 1);
+	assert.equal(f.config.roles[0].model, "same");
+});
 test("all rendered rows fit narrow and wide terminals including model search and forms", () => {
 	const f = fixture();
 	for (const stage of [0, 1, 2]) {

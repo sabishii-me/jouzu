@@ -8,6 +8,15 @@ import { writeFilePrivateAtomic } from "../private-fs.js";
 import { acquireStateLock } from "../state-lock.js";
 
 export type AgentModel = NonNullable<ExtensionContext["model"]>;
+/**
+ * Role and launch model selector meaning "keep the model this session already uses".
+ * The caller resolves it, because only the caller knows the parent session's model.
+ * A bare model ID literally named `same` stays reachable through `provider/same`.
+ */
+export const SAME_MODEL = "same";
+export function isSameModelSelector(selector: string): boolean {
+	return selector.trim() === SAME_MODEL;
+}
 export const AGENT_TOOLS = ["read", "grep", "find", "ls", "write", "edit", "bash", "powershell"] as const;
 export type AgentToolName = (typeof AGENT_TOOLS)[number];
 export const READ_TOOLS: AgentToolName[] = ["read", "grep", "find", "ls"];
@@ -181,7 +190,12 @@ export function resolveAgentModel(selector: string, models: readonly AgentModel[
 	if (unique.length !== 1)
 		throw new Error(
 			unique.length
-				? `Model: ${selector} matches multiple providers. Choose provider/model in Workflow.`
+				? `Model: ${selector} matches ${unique.length} providers: ${unique
+						.slice(0, 8)
+						.map((model) => `${model.provider}/${model.id}`)
+						.join(
+							", ",
+						)}${unique.length > 8 ? `, and ${unique.length - 8} more` : ""}. Retry with the full provider/model.`
 				: `Model: ${selector} is unavailable. Choose an available model in Workflow.`,
 		);
 	return unique[0];

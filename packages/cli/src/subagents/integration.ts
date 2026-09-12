@@ -16,9 +16,11 @@ import {
 	type AgentRole,
 	AgentRoleStore,
 	digest,
+	isSameModelSelector,
 	parseAgentConfig,
 	type RoleSnapshot,
 	resolveAgentModel,
+	SAME_MODEL,
 } from "./roles.js";
 import { resolveWorkspace } from "./workspace.js";
 
@@ -28,7 +30,7 @@ export interface WorkflowService {
 	models(): AgentModel[];
 	runs(): AgentRun[];
 	read(id: string, offset?: number): { text: string; nextOffset: number | null; totalBytes: number };
-	launch(roleId: string, task: string, options?: { workspace?: string }): Promise<AgentRun>;
+	launch(roleId: string, task: string, options?: { workspace?: string; model?: string }): Promise<AgentRun>;
 	resume(id: string, task: string): Promise<AgentRun>;
 	steer(id: string, text: string): string;
 	stop(id: string): Promise<void>;
@@ -79,6 +81,20 @@ export function createWorkflowIntegration(
 		return preferCatalogModels(available, typeof registry.getAll === "function" ? registry.getAll() : available);
 	};
 	const roles = () => store.load();
+	/**
+	 * Resolve a role or launch model selector for this session. `same` means the model the
+	 * session is already using, and goes through the same validation as an explicit selector
+	 * so catalog preference and the unavailable-model error still apply.
+	 */
+	const resolveModel = (selector: string) => {
+		if (!isSameModelSelector(selector)) return resolveAgentModel(selector, availableModels());
+		const current = context().model;
+		if (!current)
+			throw new Error(
+				`Model: the role model is "${SAME_MODEL}", but this session has no model selected. Select a model, or give the role an explicit provider/model.`,
+			);
+		return resolveAgentModel(`${current.provider}/${current.id}`, availableModels());
+	};
 	const roleById = (id: string) => {
 		const role = roles().config.roles.find((item) => item.id === id);
 		if (!role) throw new Error("Agent definition was not found.");
@@ -95,7 +111,7 @@ export function createWorkflowIntegration(
 		const generation = sessionGeneration;
 		const targetManager = controller();
 		const cwd = resolveWorkspace(active.cwd, previousRunId ? targetManager.get(previousRunId).cwd : workspace);
-		const model = resolveAgentModel(modelSelector ?? role.model, availableModels());
+		const model = resolveModel(modelSelector ?? role.model);
 		const registered = active.modelRegistry.getRegisteredProviderConfig(model.provider);
 		if (registered?.streamSimple)
 			throw new Error(
@@ -134,7 +150,7 @@ export function createWorkflowIntegration(
 		models: availableModels,
 		runs: () => manager?.list() ?? [],
 		read: (id, offset) => controller().read(id, offset),
-		launch: (id, task, options) => dispatch(roleById(id), task, undefined, undefined, options?.workspace),
+		launch: (id, task, options) => dispatch(roleById(id), task, undefined, options?.model, options?.workspace),
 		resume(id, task) {
 			const previous = controller().get(id);
 			// The saved role revision and provider are immutable across a resumed run.
@@ -147,8 +163,12 @@ export function createWorkflowIntegration(
 			const role = roleById(id);
 			if (role.placement === "child") throw new Error("Choose a definition that allows use in the main session.");
 			if (!active.isIdle()) throw new Error("Wait for the main agent to finish before changing its role.");
-			const model = resolveAgentModel(role.model, availableModels());
-			if (!api || !(await api.setModel(model))) throw new Error("Model: authentication is unavailable for this role.");
+			if (!api) throw new Error("Model: authentication is unavailable for this role.");
+			// A "same" main role keeps the session's current model, so there is nothing to switch to.
+			if (!isSameModelSelector(role.model)) {
+				const model = resolveAgentModel(role.model, availableModels());
+				if (!(await api.setModel(model))) throw new Error("Model: authentication is unavailable for this role.");
+			}
 			api.setThinkingLevel(role.thinking);
 			mainRole = structuredClone(role);
 			api.appendEntry("jouzu-main-role", { role: mainRole, revision: digest(mainRole) });
@@ -256,6 +276,11 @@ export function createWorkflowIntegration(
 				properties: {
 					op: { type: "string", enum: ["roles", "launch", "list", "read", "steer", "stop", "resume", "acknowledge"] },
 					role: { type: "string", description: "Role ID from op:roles." },
+					model: {
+						type: "string",
+						description:
+							'Launch only: provider/model to override the role model, or "same" for the model this session is using. Omit to use the role default.',
+					},
 					batchId: {
 						type: "string",
 						description: "Current-run completion batch ID for op:acknowledge. Call alone when no reply is needed.",
@@ -309,6 +334,7 @@ export function createWorkflowIntegration(
 					params: {
 						op: string;
 						role?: string;
+						model?: string;
 						task?: string;
 						id?: string;
 						offset?: number;
@@ -318,6 +344,8 @@ export function createWorkflowIntegration(
 				) {
 					if (params.workspace !== undefined && params.op !== "launch")
 						throw new Error("Workspace is launch-only. Resume keeps the original workspace.");
+					if (params.model !== undefined && params.op !== "launch")
+						throw new Error("Model is launch-only. Resume keeps the original model.");
 					if (params.offset !== undefined && (!Number.isInteger(params.offset) || params.offset < 0))
 						throw new Error("Offset must be a nonnegative integer.");
 					if (params.op === "acknowledge") return inbox.acknowledge(params.batchId);
@@ -348,7 +376,10 @@ export function createWorkflowIntegration(
 							};
 							break;
 						case "launch": {
-							const run = await service.launch(params.role ?? "", params.task ?? "", { workspace: params.workspace });
+							const run = await service.launch(params.role ?? "", params.task ?? "", {
+								workspace: params.workspace,
+								model: params.model,
+							});
 							result = summary(run);
 							presentation = runPresentation(run);
 							break;

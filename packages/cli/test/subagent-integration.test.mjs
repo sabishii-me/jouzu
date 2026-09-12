@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { createWorkflowIntegration } from "../dist/subagents/integration.js";
-import { digest } from "../dist/subagents/roles.js";
+import { defaultAgentConfig, digest } from "../dist/subagents/roles.js";
 
 function fixture(realWorker = false, options = {}) {
 	const root = realpathSync(mkdtempSync(join(tmpdir(), "jouzu-agent-integration-")));
@@ -111,6 +111,35 @@ function fixture(realWorker = false, options = {}) {
 		shutdown: () => handlers.get("session_shutdown")(),
 	};
 }
+test("launch accepts a model override and resolves same against the session model", async () => {
+	const f = fixture();
+	try {
+		await f.handlers.get("session_start")({}, f.ctx);
+		assert.ok(f.tool.parameters.properties.model, "the subagent tool exposes a launch model override");
+		assert.match(f.tool.parameters.properties.model.description, /same/u);
+		await assert.rejects(f.invoke({ op: "list", model: "fixture/gpt-6-astra" }), /launch-only/u);
+		await f.invoke({ op: "launch", role: "reviewer", task: "Review", model: "glm-5.3-flash" });
+		assert.equal(f.workers[0].launch.model.id, "glm-5.3-flash");
+		await assert.rejects(
+			f.invoke({ op: "launch", role: "reviewer", task: "Review", model: "same" }),
+			/no model selected/u,
+		);
+		f.ctx.model = { id: "gpt-6-astra", provider: "fixture", name: "gpt-6-astra", api: "openai-completions" };
+		await f.invoke({ op: "launch", role: "reviewer", task: "Review", model: "same" });
+		assert.equal(f.workers[1].launch.model.id, "gpt-6-astra");
+		// A role may store "same" as its model, so the launch has to resolve it the same way.
+		const config = defaultAgentConfig();
+		config.roles[2].model = "same";
+		mkdirSync(f.paths.configDir, { recursive: true });
+		writeFileSync(join(f.paths.configDir, "agents.json"), `${JSON.stringify(config, null, 2)}\n`);
+		await f.handlers.get("session_start")({}, f.ctx);
+		await f.invoke({ op: "launch", role: "reviewer", task: "Review" });
+		assert.equal(f.workers[2].launch.model.id, "gpt-6-astra");
+	} finally {
+		await f.shutdown();
+	}
+});
+
 test("explicit workspace and file scanning carry into child launch and resume", async () => {
 	const f = fixture(false, { textguardFiles: true });
 	try {

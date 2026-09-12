@@ -110,6 +110,7 @@ async function runGuardedWorker(
 	let exhausted = false;
 	let lastText = "";
 	let lastStop = "";
+	let lastError = "";
 	let toolCount = 0;
 	// Roles control tools; the working directory is not a filesystem sandbox.
 	session.agent.beforeToolCall = async ({ toolCall }) => {
@@ -135,6 +136,9 @@ async function runGuardedWorker(
 					.map((part) => part.text)
 					.join("\n");
 				lastStop = message.stopReason;
+				// A provider failure records its cause here and nowhere else the parent can reach.
+				// Without it a dead endpoint is reported as a bare "(error)" with no cause at all.
+				lastError = message.stopReason === "error" ? (message.errorMessage ?? "").trim() : "";
 				send({
 					type: "message",
 					role: "assistant",
@@ -190,14 +194,18 @@ async function runGuardedWorker(
 			if (!exhausted) throw error;
 		}
 		const failed = exhausted || lastStop !== "stop" || !lastText.trim();
+		// The parent only ever sees this text, so every cause the run recorded has to appear here.
+		const failure = [
+			`Agent stopped without a complete answer (${lastStop || "no response"}).`,
+			lastError ? `Provider error: ${lastError.slice(0, 2000)}` : "",
+			lastText.trim() ? `Partial response: ${lastText.slice(0, 2000)}` : "",
+		]
+			.filter(Boolean)
+			.join(" ");
 		send({
 			type: "result",
 			status: failed ? "failed" : "completed",
-			text: exhausted
-				? "Agent limit reached. Work is incomplete."
-				: failed
-					? `Agent stopped without a complete answer (${lastStop || "no response"}). ${lastText.slice(0, 2000)}`
-					: lastText.slice(0, 32_000),
+			text: exhausted ? "Agent limit reached. Work is incomplete." : failed ? failure : lastText.slice(0, 32_000),
 		});
 	} finally {
 		unsubscribe();
