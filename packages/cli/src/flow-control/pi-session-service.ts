@@ -272,7 +272,7 @@ export class PiFlowSessionService {
 				// instead. Operations owning a retained submission are excluded, which keeps every
 				// live submission's request view complete.
 				const live = new Set(
-					(await branch.attachment.submissions.snapshot(false))
+					(await branch.attachment.submissions.snapshot())
 						.map((record) => record.dispatch?.operationId)
 						.filter((id): id is string => !!id),
 				);

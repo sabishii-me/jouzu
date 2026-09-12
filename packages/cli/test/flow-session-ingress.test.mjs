@@ -4126,6 +4126,7 @@ test("archived user submissions retain native source evidence through later prom
 	assert.equal(await f.ingress.archiveSubmissionHistory(), 1);
 	assert.deepEqual(await store.snapshot(), before);
 	assert.deepEqual(await store.snapshot(false), []);
+	await f.ingress.retireRequestHistory();
 	await f.session.prompt("second distinct input");
 	assert.equal(f.sent.length, 2);
 	await f.ingress.dispose();
