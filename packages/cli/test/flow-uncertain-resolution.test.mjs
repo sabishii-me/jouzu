@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -92,7 +92,9 @@ test("a resolved attempt survives reattachment with its decision", async (t) => 
 });
 
 test("state written under an earlier version is isolated rather than read", async (t) => {
-	const root = await mkdtemp(join(tmpdir(), "jouzu-state-version-"));
+	// Flow ownership resolves its directory through realpath, so a symlinked tmpdir such as
+	// macOS /var would not match the isolation path this test compares against.
+	const root = await realpath(await mkdtemp(join(tmpdir(), "jouzu-state-version-")));
 	t.after(() => rm(root, { recursive: true, force: true }));
 	const first = await PiFlowAttachment.open(root, scope);
 	await first.ledger.select("attempt", [member]);
