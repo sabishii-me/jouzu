@@ -771,7 +771,7 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 				text: field("credential", "Token variable", form.credential.render(inputWidth)[0] ?? ""),
 			});
 			for (const hintLine of wrapTextWithAnsi(
-				`${" ".repeat(FORM_LABEL_COLUMN + 2)}Enter the variable name, not the token. The environment value is never saved.`,
+				`${" ".repeat(FORM_LABEL_COLUMN + 2)}Enter the variable name, not the token. Set it before launching Jouzu, for example with export NAME=… in ~/.bashrc or ~/.zshrc. The environment value is never saved.`,
 				innerWidth,
 			)) {
 				items.push({ rank: 4, text: this.styles.apply("palette.hint", hintLine) });
