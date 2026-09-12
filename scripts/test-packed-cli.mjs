@@ -120,7 +120,13 @@ async function probeFlowSurfaces(installedCli, probe, cwd, env, label) {
 
 async function assertPackedFlowControl(temp, installedCli, probe, cwd, env, profile) {
 	const flowTools = ["agent_wait", "agent_wait_cancel", "agent_results"];
-	const off = await probeFlowSurfaces(installedCli, probe, cwd, env, `${profile} flow=off`);
+	const off = await probeFlowSurfaces(
+		installedCli,
+		probe,
+		cwd,
+		{ ...env, JOUZU_FLOW_CONTROL: "0" },
+		`${profile} flow=off`,
+	);
 	for (const tool of flowTools)
 		assert.equal(off.tools.includes(tool), false, `${profile} flow: ${tool} present while opt-out`);
 	assert.equal(off.commands.includes("flow"), false, `${profile} flow: /flow present while opt-out`);
