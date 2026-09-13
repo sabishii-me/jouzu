@@ -47,6 +47,7 @@ import {
 import { configurePiProcess, type ProfileSelection, resolveProfileSelection } from "./runtime.js";
 import { withJouzuOutput } from "./runtime-output.js";
 import { createShisaExtension } from "./shisa-link/extension.js";
+import { offerShisaOnboarding } from "./shisa-link/onboarding.js";
 import { ensureQuietStartupDefault, suppressPiReleaseNotes } from "./startup-settings.js";
 import { JouzuUpdater } from "./updater.js";
 
@@ -276,6 +277,7 @@ export async function runMainCli(args: string[]): Promise<void> {
 	if (piRuntimeVersion !== metadata.piVersion) {
 		throw new Error(`loaded Pi ${piRuntimeVersion} does not match Jouzu's exact pin ${metadata.piVersion}`);
 	}
+	await offerShisaOnboarding({ paths, jouzuVersion: metadata.jouzuVersion, interactive: interactiveStartup });
 	const [presentation, { createJouzuModelPicker }, { createJouzuHelpExtension }, { createSessionUiExtension }] =
 		await Promise.all([
 			import("./presentation.js"),

@@ -62,6 +62,8 @@ jz profile plan --profile ja
 
 A normal launch reconciles the selected profile. It stops before launching if a managed target conflicts with a user-owned or modified file.
 
+Jouzu also offers to connect a Shisa AI account once when no Shisa credential is configured. Choose `y` to sign up or sign in through your browser; signup credits are available for eligible accounts. Press Enter or answer `n` to skip. You can connect later with `/login shisa`.
+
 Inside Jouzu:
 
 - `/login shisa` connects your Shisa account. Use `/login` to select another provider.

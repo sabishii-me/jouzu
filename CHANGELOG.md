@@ -4,6 +4,7 @@
 
 ### Added
 
+- Offer Shisa account signup or sign-in during interactive first-launch setup, with signup-credit eligibility explained. The choice is saved; skipping leaves `/login shisa` available later. Configured Shisa credentials suppress the offer.
 - Sign in to Shisa with `/login shisa`. Jouzu saves a dedicated API key for inference, the Shisa model catalog, and voice. `/logout shisa` and Shisa in `/logout` attempt server revocation, then remove the local credentials and device link. Unconfirmed revocation includes dashboard disconnect instructions.
 - Coordinate automatic turns with session flow control, enabled by default. Completions wait for active work and queued messages, then arrive in batches. Waits have deadlines and can check background-process health. Use `/flow` to inspect held work, pause or resume automation, retry withheld requests, and resolve interrupted turns. Set `JOUZU_FLOW_CONTROL=0` to disable it for a session.
 - Save catalog bearer tokens in Settings / Catalogs with private file permissions. Environment variables take precedence. Sources with missing credentials can be saved and configured later; removing a source or disabling its authentication removes its saved token.

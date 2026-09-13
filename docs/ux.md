@@ -12,7 +12,7 @@ The guide states intended behavior. Tests encode it. A view that disagrees with 
 | Help | `packages/cli/src/help.ts` | Floating overlay | This guide; see [Known deviations](#known-deviations) |
 | Session Frame (prompt frame, session line, status bar) | `packages/session-ui/src` | Persistent, around Pi's editor | This guide |
 | Startup header | `packages/cli/src/presentation.ts` | One-time output | This guide |
-| First-run prompts (Japanese support, Pi import) | `profile-choice.ts`, `pi-import.ts` | Line-oriented `readline` | This guide, [Non-interactive and degraded modes](#non-interactive-and-degraded-modes) |
+| First-run prompts (Japanese support, Pi import, Shisa account) | `profile-choice.ts`, `pi-import.ts`, `shisa-link/onboarding.ts` | Line-oriented `readline` | This guide, [Non-interactive and degraded modes](#non-interactive-and-degraded-modes) |
 | Command output (`doctor`, `catalog`, `keybindings`, `profile`, `self-update`) | `doctor.ts`, `catalog-command.ts`, `keybindings.ts`, `profile-manager.ts`, `updater.ts` | Text and `--json` | This guide, [Command output](#command-output), [Messages](#messages) |
 
 ## What Jouzu inherits from Pi

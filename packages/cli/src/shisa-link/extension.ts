@@ -1,11 +1,12 @@
 import type { OAuthCredentials, OAuthLoginCallbacks } from "@earendil-works/pi-ai";
 import type { ExtensionContext, InlineExtension } from "@earendil-works/pi-coding-agent";
 import type { JouzuPaths } from "../paths.js";
-import { isShisaSignedOut, setShisaSignedOut, writeShisaLoginCredential } from "./credentials.js";
-import { loginShisaDeviceFlow, resolveShisaGatewayUrl, type ShisaLoginDeps } from "./device-flow.js";
-import { logoutShisa, shisaLogoutMessage, withShisaAuthOperation } from "./logout.js";
+import { isShisaSignedOut, setShisaSignedOut } from "./credentials.js";
+import { resolveShisaGatewayUrl } from "./device-flow.js";
+import { loginShisa } from "./login.js";
+import { logoutShisa, shisaLogoutMessage } from "./logout.js";
 import { installShisaLogoutHook } from "./logout-hook.js";
-import { newShisaInstallId, readShisaLinkState, shisaLinkStatePath, writeShisaLinkState } from "./state.js";
+import { readShisaLinkState, shisaLinkStatePath } from "./state.js";
 
 export const SHISA_PROVIDER_ID = "shisa";
 
@@ -34,23 +35,12 @@ export function createShisaExtension(options: ShisaExtensionOptions): InlineExte
 			let activeCtx: ExtensionContext | undefined;
 			const oauth = {
 				name: "Shisa",
-				login: (callbacks: OAuthLoginCallbacks): Promise<OAuthCredentials> =>
-					withShisaAuthOperation(options.paths, async () => {
-						const existing = readShisaLinkState(statePath);
-						const credential = await loginShisaDeviceFlow(callbacks, {
-							gatewayUrl,
-							clientVersion: options.jouzuVersion,
-							installId: existing?.install_id ?? newShisaInstallId(),
-							writeLinkState: (state) => writeShisaLinkState(statePath, state, options.paths.stateDir),
-							writeCredential: (credential) => writeShisaLoginCredential(options.paths, credential, callbacks.signal),
-							...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
-							...(options.sleep ? { sleep: options.sleep } : {}),
-							...(options.openBrowser ? { openBrowser: options.openBrowser } : {}),
-						} satisfies ShisaLoginDeps);
-						pi.registerProvider(SHISA_PROVIDER_ID, providerConfig());
-						setShisaSignedOut(options.paths, false);
-						return credential;
-					}),
+				async login(callbacks: OAuthLoginCallbacks): Promise<OAuthCredentials> {
+					const credential = await loginShisa(callbacks, { ...options, gatewayUrl });
+					pi.registerProvider(SHISA_PROVIDER_ID, providerConfig());
+					setShisaSignedOut(options.paths, false);
+					return credential;
+				},
 				async refreshToken(credentials: OAuthCredentials): Promise<OAuthCredentials> {
 					return credentials;
 				},
