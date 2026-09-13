@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync 
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { AgentToolResult, ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { ensurePrivateDirectory, validatePrivateDirectory } from "./private-fs.js";
 import { acquireStateLock, type StateLockInspection } from "./state-lock.js";
@@ -477,6 +477,60 @@ async function loadCamoufoxRuntime(stateDir: string, signal?: AbortSignal): Prom
 	};
 }
 
+// Pi sends only a tool result's `content` to the model; `details` is for logs
+// and UI rendering. The Camoufox runtime reports the fetched body and the
+// search result list in `details` alone, so a result reaching the model
+// unchanged carries a byte count and nothing to read. Promote the payload into
+// `content` and leave `details` intact for the terminal renderer.
+export const CAMOUFOX_CONTENT_CHAR_LIMIT = 50_000;
+
+function boundedContent(text: string): string {
+	if (text.length <= CAMOUFOX_CONTENT_CHAR_LIMIT) return text;
+	return `${text.slice(0, CAMOUFOX_CONTENT_CHAR_LIMIT)}\n\n[truncated at ${CAMOUFOX_CONTENT_CHAR_LIMIT} of ${text.length} characters; re-fetch with a narrower selector to read the rest]`;
+}
+
+function searchResultText(details: Record<string, unknown>): string {
+	const results = Array.isArray(details.results) ? details.results : [];
+	if (results.length === 0) {
+		return "No results. An empty list can also mean the provider served a results page the extractor did not recognize, so treat it as inconclusive rather than as proof the query matched nothing. Retry, or pin `engine` to compare providers.";
+	}
+	return results
+		.map((entry) => {
+			const result = entry as Record<string, unknown>;
+			const line = `${String(result.rank ?? "")}. ${String(result.title ?? "")} — ${String(result.url ?? "")}`;
+			const snippet = typeof result.snippet === "string" ? result.snippet.trim() : "";
+			return snippet ? `${line}\n   ${snippet}` : line;
+		})
+		.join("\n");
+}
+
+function fetchedBodyText(details: Record<string, unknown>): string {
+	const body = details.format === "markdown" ? details.markdown : details.html;
+	return typeof body === "string" ? boundedContent(body) : "";
+}
+
+/** Move a Camoufox tool's payload from `details` into the model-visible `content`. */
+export function projectCamoufoxToolResult(
+	toolName: string,
+	result: AgentToolResult<unknown>,
+): AgentToolResult<unknown> {
+	const details = (result.details ?? {}) as Record<string, unknown>;
+	const header = result.content
+		.filter((block) => block.type === "text")
+		.map((block) => block.text)
+		.join("\n");
+	const payload =
+		toolName === "tff-search_web"
+			? searchResultText(details)
+			: toolName === "tff-fetch_url"
+				? fetchedBodyText(details)
+				: "";
+	const text = payload ? `${header}\n\n${payload}` : header;
+	// Preserve any non-text block, such as an image, that the tool returned.
+	const nonText = result.content.filter((block) => block.type !== "text");
+	return { ...result, content: [{ type: "text" as const, text }, ...nonText] };
+}
+
 function lazyTool(
 	definition: Omit<ToolDefinition, "execute">,
 	getDelegate: (signal?: AbortSignal) => Promise<ToolDefinition>,
@@ -485,7 +539,8 @@ function lazyTool(
 		...definition,
 		async execute(toolCallId, params, signal, onUpdate, context) {
 			const delegate = await getDelegate(signal);
-			return delegate.execute(toolCallId, params, signal, onUpdate, context);
+			const result = await delegate.execute(toolCallId, params, signal, onUpdate, context);
+			return projectCamoufoxToolResult(definition.name, result);
 		},
 	};
 }
@@ -544,7 +599,8 @@ export function createJouzuCamoufoxExtension(pi: ExtensionAPI, stateDir: string)
 					"render_mode: 'static' = DOM parsed only (fastest); 'render' = post-load (default); 'render-and-wait' = networkidle (pair with wait_for_selector for determinism — networkidle is fragile on modern pages).",
 					"wait_for_selector: only valid with render_mode='render-and-wait'. Waits for the element to be visible, reusing timeout_ms as the combined budget.",
 					"selector: returns the outerHTML of the first match only. No-match raises config_invalid.",
-					"format='markdown': returns markdown in details.markdown (HTML is dropped from details to save tokens). Use when the page content is the target, not the markup.",
+					"format='markdown': returns the page as markdown in the tool result (the raw HTML is omitted). Use when the page content is the target, not the markup.",
+					"A fetched body is capped at 50000 characters in the tool result and marked when truncated. Narrow selector to read the remainder.",
 					"screenshot: returns base64 image in details.screenshot. full_page=true captures the whole page; default is viewport. Images > 10 MiB are rejected.",
 					"timeout_ms is clamped between 1000 and 120000; shared across nav + wait_for_selector.",
 					"max_bytes caps the *returned body* (markdown if requested, else HTML); default 2 MiB, max 50 MiB. Oversized responses are truncated and flagged.",
@@ -570,6 +626,7 @@ export function createJouzuCamoufoxExtension(pi: ExtensionAPI, stateDir: string)
 					"tff-search_web installs its exact browser client runtime on first use, then downloads the Camoufox browser if needed.",
 					"max_results is clamped to [1, 50]; default 10.",
 					"Default engine is 'auto' (Google first, DuckDuckGo fallback). Set engine to 'google' or 'duckduckgo' to pin a specific provider.",
+					"An empty result list is inconclusive: a provider can serve a results page the extractor does not recognize. Retry, or pin `engine`, before concluding the query matched nothing.",
 				],
 				parameters: searchWebParameters,
 				executionMode: camoufoxExecutionMode,
