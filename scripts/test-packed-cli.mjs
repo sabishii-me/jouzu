@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -79,8 +79,8 @@ function writeInstalledPiPackage(agentDir, name, version, extensionSource) {
 }
 
 /**
- * Session flow control is opt-in. Prove the packed launcher installs the assembly when it is
- * enabled, leaves the surface untouched when it is not, and resolves one Pi tree so the provider
+ * Prove the packed launcher installs the flow assembly when enabled, removes its surface
+ * when explicitly disabled, and resolves one Pi tree so the provider
  * route guard's ModelRuntime.prototype comparison is unambiguous in a real install.
  *
  * Stdin stays open while the probe runs. Closing it starts RPC shutdown, and a prompt still in
@@ -140,9 +140,9 @@ async function assertPackedFlowControl(temp, installedCli, probe, cwd, env, prof
 	for (const tool of flowTools) assert.ok(on.tools.includes(tool), `${profile} flow: missing ${tool} when enabled`);
 	assert.ok(on.commands.includes("flow"), `${profile} flow: missing /flow when enabled`);
 	// A single resolved Pi tree is what makes the route guard's prototype identity check meaningful.
-	const trees = run("find", [resolve(temp, "node_modules"), "-type", "d", "-name", "pi-coding-agent"], { cwd, env })
-		.stdout.split("\n")
-		.filter(Boolean);
+	const trees = readdirSync(resolve(temp, "node_modules"), { recursive: true, withFileTypes: true })
+		.filter((entry) => entry.isDirectory() && entry.name === "pi-coding-agent")
+		.map((entry) => join(entry.parentPath, entry.name));
 	assert.equal(trees.length, 1, `${profile} flow: expected one packed Pi tree, found ${trees.join(", ")}`);
 }
 
