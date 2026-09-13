@@ -1,10 +1,8 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { test } from "node:test";
 import { assistantToolCalls } from "../../../scripts/fixtures/pi-flow-session.mjs";
-import { afterFlowCleanup, assembledSession, installedProducerExtensions } from "./fixtures/flow-assembly.mjs";
+import { assembledSession, installedProducerExtensions } from "./fixtures/flow-assembly.mjs";
+import { controlledBackground } from "./fixtures/flow-background-gate.mjs";
 import { waitDependencyFrom } from "./fixtures/flow-wait-dependency.mjs";
 
 const idle = (ms = 1500) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -21,19 +19,6 @@ test("the installed producer pair completes its handshakes inside the assembly",
 	for (const name of ["multiloop_start", "bg_task", "agent_wait", "agent_wait_cancel", "agent_results"])
 		assert.ok(tools.includes(name), `${name} is active`);
 });
-
-async function controlledBackground(t) {
-	const root = await mkdtemp(join(tmpdir(), "jouzu-pair-gate-"));
-	afterFlowCleanup(t, () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
-	const releaseFile = join(root, "release");
-	const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
-	const script =
-		"const fs=require('node:fs');const timer=setInterval(()=>{if(fs.existsSync(process.argv[1])){clearInterval(timer);console.log('finished')}},20)";
-	return {
-		command: `node -e ${quote(script)} ${quote(releaseFile)}`,
-		release: () => writeFile(releaseFile, "ready"),
-	};
-}
 
 async function waitForSettledWake(f, blocked) {
 	const deadline = Date.now() + 10000;

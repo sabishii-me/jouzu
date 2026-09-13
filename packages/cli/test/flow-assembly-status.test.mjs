@@ -7,6 +7,7 @@ import {
 	installedProducerExtensions,
 	replacedSession,
 } from "./fixtures/flow-assembly.mjs";
+import { controlledBackground } from "./fixtures/flow-background-gate.mjs";
 import { campaignScript, liveWait } from "./fixtures/flow-campaign.mjs";
 
 const settle = () => new Promise((resolve) => setImmediate(resolve));
@@ -132,9 +133,10 @@ test("a lifecycle control aimed at unknown work says where the identities are", 
 });
 
 test("pausing a campaign holds its turns and resuming releases them", async (t) => {
+	const background = await controlledBackground(t);
 	const f = await assembledSession(t, {
 		producerExtensions: await installedProducerExtensions(),
-		script: campaignScript({ command: "sleep 0.3 && echo swept", goal: "Pause and resume" }),
+		script: campaignScript({ command: background.command, goal: "Pause and resume" }),
 	});
 	await f.session.prompt("start the sweep and wait");
 	const wait = await liveWait(f.ingress, "the campaign is live");
@@ -153,7 +155,10 @@ test("pausing a campaign holds its turns and resuming releases them", async (t) 
 			(attempt) => attempt.admission?.choice.intent.producer === "multiloop",
 		).length;
 	const held = await continuations();
-	await new Promise((resolve) => setTimeout(resolve, 900));
+	await background.release();
+	const deadline = Date.now() + 10000;
+	while (!f.bodies.some((body) => JSON.stringify(body.messages).includes("wait-")) && Date.now() < deadline)
+		await new Promise((resolve) => setTimeout(resolve, 20));
 	// Terminal wait decisions may be delivered while the campaign's continuation stays paused.
 	assert.equal(await continuations(), held, "a paused campaign cannot start another continuation");
 	assert.ok(
