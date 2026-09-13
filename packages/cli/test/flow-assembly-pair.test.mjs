@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 import { assistantToolCalls } from "../../../scripts/fixtures/pi-flow-session.mjs";
-import { assembledSession, installedProducerExtensions } from "./fixtures/flow-assembly.mjs";
+import { afterFlowCleanup, assembledSession, installedProducerExtensions } from "./fixtures/flow-assembly.mjs";
 import { waitDependencyFrom } from "./fixtures/flow-wait-dependency.mjs";
 
 const idle = (ms = 1500) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -19,7 +22,31 @@ test("the installed producer pair completes its handshakes inside the assembly",
 		assert.ok(tools.includes(name), `${name} is active`);
 });
 
-function blockedLaneScript(seen) {
+async function controlledBackground(t) {
+	const root = await mkdtemp(join(tmpdir(), "jouzu-pair-gate-"));
+	afterFlowCleanup(t, () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
+	const releaseFile = join(root, "release");
+	const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
+	const script =
+		"const fs=require('node:fs');const timer=setInterval(()=>{if(fs.existsSync(process.argv[1])){clearInterval(timer);console.log('finished')}},20)";
+	return {
+		command: `node -e ${quote(script)} ${quote(releaseFile)}`,
+		release: () => writeFile(releaseFile, "ready"),
+	};
+}
+
+async function waitForSettledWake(f, blocked) {
+	const deadline = Date.now() + 10000;
+	while (Date.now() < deadline) {
+		const { attempts } = await f.ingress.branch().attachment.ledger.snapshot();
+		if (f.bodies.length > blocked && attempts.some((attempt) => attempt.admission && attempt.phase === "settled"))
+			return;
+		await idle(25);
+	}
+	assert.fail("the released dependency did not produce a settled wake");
+}
+
+function blockedLaneScript(seen, command) {
 	return (body, index) => {
 		seen.push(index);
 		if (index === 0)
@@ -30,7 +57,7 @@ function blockedLaneScript(seen) {
 		if (index === 1)
 			return assistantToolCalls({
 				name: "bg_task",
-				arguments: { action: "spawn", command: "sleep 0.4 && echo finished" },
+				arguments: { action: "spawn", command },
 			});
 		if (index === 2) {
 			const dependency = waitDependencyFrom(body);
@@ -57,9 +84,10 @@ function blockedLaneScript(seen) {
 }
 
 test("a live wait blocks lane continuations and delivers its decision once", async (t) => {
+	const background = await controlledBackground(t);
 	const f = await assembledSession(t, {
 		producerExtensions: await installedProducerExtensions(t),
-		script: blockedLaneScript([]),
+		script: blockedLaneScript([], background.command),
 	});
 	await f.session.prompt("start the sweep and wait for it");
 	const blocked = f.bodies.length;
@@ -70,7 +98,8 @@ test("a live wait blocks lane continuations and delivers its decision once", asy
 	await idle(250);
 	assert.equal(f.bodies.length, blocked, "a blocked lane sends no continuation while its wait is live");
 
-	await idle(1500);
+	await background.release();
+	await waitForSettledWake(f, blocked);
 	const wake = f.bodies.slice(blocked);
 	assert.ok(wake.length >= 1, "the resolved dependency wakes the session");
 	// Later requests replay the whole conversation, so only a newly appended message counts.
@@ -84,13 +113,15 @@ test("a live wait blocks lane continuations and delivers its decision once", asy
 });
 
 test("wait resolution, the lane continuation, and the result compose one logical wake", async (t) => {
+	const background = await controlledBackground(t);
 	const f = await assembledSession(t, {
 		producerExtensions: await installedProducerExtensions(),
-		script: blockedLaneScript([]),
+		script: blockedLaneScript([], background.command),
 	});
 	await f.session.prompt("start the sweep and wait for it");
 	const blocked = f.bodies.length;
-	await idle(1800);
+	await background.release();
+	await waitForSettledWake(f, blocked);
 	assert.equal(f.bodies.length - blocked, 1, "one composed wake, not a decision turn plus a continuation");
 	const { attempts } = await f.ingress.branch().attachment.ledger.snapshot();
 	const composed = attempts.filter((attempt) => attempt.admission);
