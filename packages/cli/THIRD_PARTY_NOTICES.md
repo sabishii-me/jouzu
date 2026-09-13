@@ -37,7 +37,7 @@ data retain Unicode 17.0.0 provenance; generated character classes use Unicode
 | Package | Version | License evidence |
 | --- | --- | --- |
 | `@picovoice/pvrecorder-node` | 1.2.9 | Apache-2.0 in `package.json`; source headers credit Copyright 2021–2023 Picovoice Inc. The npm package omits a separate license file; Jouzu's bundled `LICENSE` contains the Apache-2.0 terms. |
-| `ws` | 8.21.0 | MIT; `LICENSE` |
+| `ws` | 8.21.3 | MIT; `LICENSE` |
 
 PvRecorder's native binaries and JavaScript binding are distributed unchanged. They load only in the microphone helper process when voice capture or device enumeration is requested.
 
