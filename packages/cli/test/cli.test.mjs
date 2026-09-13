@@ -776,7 +776,7 @@ test("corrupt profile state fails with exit 1 and a recovery action, not the con
 test("doctor text and experimental JSON preserve diagnostics, exit status, and roots", () => {
 	const temp = mkdtempSync(join(tmpdir(), "jouzu-doctor-"));
 	try {
-		const jouzuHome = join(temp, "上手 home");
+		const jouzuHome = join(temp, "long-doctor-path-".repeat(3), "上手 home");
 		const stockPi = join(temp, "stock-pi");
 		mkdirSync(stockPi);
 		const sentinel = join(stockPi, "sentinel.txt");
@@ -788,10 +788,9 @@ test("doctor text and experimental JSON preserve diagnostics, exit status, and r
 		const result = run(["--jouzu-home", jouzuHome, "doctor"], { env: inheritedRoots });
 		const qualified = piLock.compatibilityStatus === "qualified";
 		assert.equal(result.status, qualified ? 0 : 1, result.stderr || result.stdout);
-		assert.match(
-			result.stdout,
-			new RegExp(`Agent/config root +${jouzuHome.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "u"),
-		);
+		const unwrapped = result.stdout.replace(/\n +/gu, " ");
+		const agentRoot = join(jouzuHome, "agent").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+		assert.match(unwrapped, new RegExp(`Agent/config root +${agentRoot}`, "u"));
 		assert.match(result.stdout, /Pi agent root replaced +yes/u);
 		assert.match(result.stdout, qualified ? /✓ 0 problems/u : /✗ \d+ problem/u);
 
