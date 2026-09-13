@@ -79,24 +79,20 @@ export function createShisaExtension(options: ShisaExtensionOptions): InlineExte
 			};
 			let removeHook: (() => void) | undefined = installShisaLogoutHook(ModelRuntime, oauth, signOut);
 			pi.registerProvider(SHISA_PROVIDER_ID, providerConfig());
-			pi.registerCommand("logout", {
-				description: "Use /logout shisa to disconnect Shisa; /logout opens the provider list",
-				getArgumentCompletions: (prefix) => ("shisa".startsWith(prefix) ? [{ value: "shisa", label: "shisa" }] : []),
-				handler: async (args, ctx) => {
-					if (args.trim() !== "shisa") {
-						ctx.ui.notify("Use /logout shisa to disconnect Shisa, or /logout to select another provider.", "info");
-						return;
-					}
-					activeCtx = ctx;
-					try {
-						await signOut();
-					} catch {
-						ctx.ui.notify(
-							"Shisa sign-out could not complete. Wait for any sign-in or sign-out to finish, then retry /logout shisa.",
-							"error",
-						);
-					}
-				},
+			// Pi owns /logout and its autocomplete. Handle the explicit Shisa form
+			// through input so registering the extension does not shadow that command.
+			pi.on("input", async (event, ctx) => {
+				if (event.text.trim() !== "/logout shisa") return { action: "continue" };
+				activeCtx = ctx;
+				try {
+					await signOut();
+				} catch {
+					ctx.ui.notify(
+						"Shisa sign-out could not complete. Wait for any sign-in or sign-out to finish, then retry /logout shisa.",
+						"error",
+					);
+				}
+				return { action: "handled" };
 			});
 			pi.on("session_start", (_event, ctx) => {
 				activeCtx = ctx;

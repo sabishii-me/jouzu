@@ -362,10 +362,11 @@ export async function runMainCli(args: string[]): Promise<void> {
 				{ name: "jouzu-textguard-review", factory: createTextGuardReviewExtension(nativeTextguard) },
 				presentation.createJouzuPresentationExtension(metadata, profile),
 				sessionUi,
+				// Account commands must run before model-availability input checks.
+				createShisaExtension({ paths, jouzuVersion: metadata.jouzuVersion }),
 				modelPicker.extension,
 				modelPicker.workflowExtension,
 				createAstraCompatibilityExtension(),
-				createShisaExtension({ paths, jouzuVersion: metadata.jouzuVersion }),
 				voice,
 				help,
 				releaseDiagnostics,

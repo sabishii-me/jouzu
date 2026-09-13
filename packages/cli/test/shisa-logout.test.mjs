@@ -225,7 +225,10 @@ for (const entry of ["Pi menu", "explicit command"]) {
 			{ SHISA_API_KEY: "environment-secret" },
 		);
 		if (entry === "Pi menu") await e.runtime.logout("shisa");
-		else await e.commands.get("logout").handler("shisa", e.ctx);
+		else {
+			assert.equal(e.commands.has("logout"), false, "Pi retains its built-in command and autocomplete");
+			assert.deepEqual(await e.handlers.get("input")({ text: "/logout shisa" }, e.ctx), { action: "handled" });
+		}
 		assert.equal(calls, 1);
 		assertCleared(h);
 		assert.ok(e.messages.some(([m]) => m.includes("SHISA_API_KEY remains set")));
@@ -281,7 +284,6 @@ test("real Pi command dispatch removes authenticated catalog models from the pic
 		noContextFiles: true,
 		noPromptTemplates: true,
 		extensionFactories: [
-			picker.extension,
 			createShisaExtension({
 				paths: h.paths,
 				jouzuVersion: "0.1.8",
@@ -291,6 +293,7 @@ test("real Pi command dispatch removes authenticated catalog models from the pic
 					return new Response(null, { status: 204 });
 				},
 			}),
+			picker.extension,
 		],
 	});
 	await loader.reload();
@@ -342,4 +345,13 @@ test("the Pi logout path surfaces local deletion failure instead of success", as
 	assert.equal(readFileSync(h.authPath, "utf8"), "{broken");
 	assert.equal(existsSync(shisaLinkStatePath(h.paths)), false);
 	assert.ok(e.messages.some(([message, level]) => level === "error" && message.includes("Could not remove")));
+});
+
+test("input routing leaves the native menu, other providers, and ordinary text untouched", async (t) => {
+	const h = await setup(t);
+	const e = await extensionHarness(t, h, () => assert.fail("must not revoke"));
+	for (const text of ["/logout", "/logout other", "explain /logout shisa", "/logout shisa extra"]) {
+		assert.deepEqual(await e.handlers.get("input")({ text }, e.ctx), { action: "continue" });
+	}
+	assert.ok(readShisaLinkState(shisaLinkStatePath(h.paths)));
 });
