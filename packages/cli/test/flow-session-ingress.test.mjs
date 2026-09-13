@@ -19,6 +19,7 @@ import { consumedUserWork, retainUserWork } from "../dist/flow-control/user-work
 import { finishedUserWork } from "../dist/flow-control/user-work-retention.js";
 import { createFlowWaitDecisionProducer } from "../dist/flow-control/wait-decisions.js";
 import { createFlowWaitExtension } from "../dist/flow-control/wait-tools.js";
+import { afterCleanup, cleanupContext } from "./fixtures/cleanup.mjs";
 import { capturedNotices } from "./fixtures/flow-assembly.mjs";
 
 async function fixture(
@@ -44,6 +45,7 @@ async function fixture(
 	} = {},
 ) {
 	const root = supplied ?? (await mkdtemp(join(tmpdir(), "jouzu-ingress-owner-")));
+	if (!supplied) afterCleanup(t, () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
 	const ingress = new PiSessionFlowIngress({
 		root,
 		autoRelease,
@@ -61,7 +63,7 @@ async function fixture(
 	});
 	const sent = [];
 	let wrapped;
-	const { session } = await createFlowSession(t, {
+	const { session } = await createFlowSession(cleanupContext(t), {
 		persist: true,
 		shutdownExtensions,
 		tools,
@@ -107,9 +109,8 @@ async function fixture(
 	});
 	// The generic fixture replaces its stream after SDK construction.
 	session.agent.streamFunction = wrapped;
-	t.after(async () => {
+	afterCleanup(t, async () => {
 		await ingress.dispose();
-		if (!supplied) await rm(root, { recursive: true, force: true });
 	});
 	return { root, session, ingress, sent };
 }
@@ -1450,7 +1451,7 @@ test("next-turn cancellation holds the host boundary through its intent write", 
 	const [record] = await store.snapshot();
 	const entered = deferred(),
 		release = deferred();
-	t.after(() => release.resolve());
+	afterCleanup(t, () => release.resolve());
 	const cancel = store.cancelContext.bind(store);
 	t.mock.method(store, "cancelContext", async (...args) => {
 		entered.resolve();
@@ -3561,6 +3562,7 @@ for (const mode of ["normal", "reversed", "reopen", "model-tools", "shared-resul
 	}, async (t) => {
 		const reverse = mode === "reversed";
 		const root = await mkdtemp(join(tmpdir(), "jouzu-loaded-background-"));
+		afterCleanup(t, () => rm(root, { recursive: true, force: true }));
 		const releaseFile = join(root, "release-task");
 		const command = `while test ! -e '${releaseFile.replaceAll("'", "'\\''")}'; do sleep 0.02; done; printf 'flow-result-marker\\n'`;
 		const manager = SessionManager.create(root, join(root, "history"));
@@ -3693,7 +3695,6 @@ for (const mode of ["normal", "reversed", "reopen", "model-tools", "shared-resul
 				},
 			],
 		});
-		t.after(() => rm(root, { recursive: true, force: true }));
 		await f.session.bindExtensions({ onError: (error) => errors.push(error) });
 		const branch = f.ingress.branch();
 		if (["model-tools", "shared-results"].includes(mode)) {
@@ -3861,6 +3862,7 @@ for (const bindExecution of [true, false])
 				timeout: 20000,
 			}, async (t) => {
 				const root = await mkdtemp(join(tmpdir(), "jouzu-bg-observation-"));
+				afterCleanup(t, () => rm(root, { recursive: true, force: true }));
 				const manager = SessionManager.create(root, join(root, "history"));
 				const { createJiti } = await import(
 					createRequire(import.meta.resolve("@earendil-works/pi-coding-agent")).resolve("jiti")
@@ -3949,7 +3951,6 @@ for (const bindExecution of [true, false])
 						);
 					},
 				});
-				t.after(() => rm(root, { recursive: true, force: true }));
 				await f.session.bindExtensions({ onError: (error) => errors.push(error) });
 				await f.session.prompt("Start the task and inspect its terminal output");
 				assert.equal(f.sent.length, 3);

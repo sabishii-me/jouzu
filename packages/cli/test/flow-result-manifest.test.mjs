@@ -8,6 +8,7 @@ import { FlowOwnership } from "../dist/flow-control/ownership.js";
 import { PiFlowAttachment } from "../dist/flow-control/pi-attachment.js";
 import { FlowResultManifestStore } from "../dist/flow-control/result-manifest.js";
 import { createFlowResultExtension } from "../dist/flow-control/result-tools.js";
+import { afterCleanup } from "./fixtures/cleanup.mjs";
 
 const scope = { sessionId: "parent", branchId: "main" };
 const member = (id = "result", status = "success") => ({
@@ -22,14 +23,14 @@ const member = (id = "result", status = "success") => ({
 });
 async function rootFor(t) {
 	const root = await mkdtemp(join(tmpdir(), "jouzu-flow-results-"));
-	t.after(() => rm(root, { recursive: true, force: true }));
+	afterCleanup(t, () => rm(root, { recursive: true, force: true }));
 	return root;
 }
 async function memory(t, limits) {
 	const ownership = FlowOwnership.acquire(await rootFor(t), scope);
 	const repo = new MemorySessionRepo();
 	const session = await repo.create({}, context);
-	t.after(async () => {
+	afterCleanup(t, async () => {
 		await ownership.close(() => session.close(context));
 		await repo.close(context);
 	});
@@ -40,7 +41,7 @@ const pageOptions = { limit: 20, maxBytes: 20000 };
 test("manifest retention freezes membership, is order-independent, and pages exactly after Pi reopen", async (t) => {
 	const root = await rootFor(t);
 	let attachment = await PiFlowAttachment.open(root, scope);
-	t.after(() => attachment.close());
+	afterCleanup(t, () => attachment.close());
 	const members = [member("a", "failure"), member("b"), member("c", "cancelled")];
 	const saving = attachment.results.retain(members);
 	members[0].title = "mutated";
@@ -92,7 +93,7 @@ test("pages bound all serialized UTF-8 metadata and reject impossible sizing wit
 test("cursors cannot cross manifests or branches and stale attachments cannot read", async (t) => {
 	const root = await rootFor(t);
 	const first = await PiFlowAttachment.open(root, scope);
-	t.after(() => first.close());
+	afterCleanup(t, () => first.close());
 	const reference = await first.results.retain([member("a"), member("b")]);
 	const cursor = (await first.results.page(reference, { ...pageOptions, limit: 1 })).next;
 	const another = await first.results.retain([member("c")]);
@@ -100,7 +101,7 @@ test("cursors cannot cross manifests or branches and stale attachments cannot re
 	await first.close();
 	await assert.rejects(first.results.page(reference, pageOptions), { code: "closed" });
 	const branch = await PiFlowAttachment.open(root, { ...scope, branchId: "another" });
-	t.after(() => branch.close());
+	afterCleanup(t, () => branch.close());
 	await assert.rejects(branch.results.page(reference, pageOptions), { code: "identity" });
 });
 
@@ -181,7 +182,7 @@ test("byte overflow preserves prior manifests and missing indexed content is an 
 test("result tool pages retained membership without acknowledgement and fences branch changes", async (t) => {
 	const root = await rootFor(t);
 	const attachment = await PiFlowAttachment.open(root, scope);
-	t.after(() => attachment.close());
+	afterCleanup(t, () => attachment.close());
 	const reference = await attachment.results.retain(Array.from({ length: 25 }, (_, index) => member(`item-${index}`)));
 	let active = attachment,
 		tool;
@@ -257,7 +258,7 @@ test("manifest retirement frees the limit and keeps the newest references readab
 test("retirement rejects an invalid keep size and survives reopen", async (t) => {
 	const root = await rootFor(t);
 	let attachment = await PiFlowAttachment.open(root, scope);
-	t.after(() => attachment.close());
+	afterCleanup(t, () => attachment.close());
 	for (const size of [0, -1, 2.5]) await assert.rejects(attachment.results.retire(size), { code: "capacity" });
 
 	const first = await attachment.results.retain([member("first")]);

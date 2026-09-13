@@ -7,6 +7,7 @@ import { BACKGROUND_CONTEXT, setValue, value } from "@earendil-works/pi-agent-co
 import { openLocalFlowSession } from "../dist/flow-control/local-storage.js";
 import { multiloopWorkBinding } from "../dist/flow-control/multiloop-producer.js";
 import { PiFlowAttachment } from "../dist/flow-control/pi-attachment.js";
+import { afterCleanup } from "./fixtures/cleanup.mjs";
 
 const scope = { sessionId: "session", branchId: "branch" };
 const address = value("jouzu.flow.waits", "v1");
@@ -26,13 +27,12 @@ async function openSeeded(root, seed) {
 
 async function fixture(t, seed) {
 	const root = await mkdtemp(join(tmpdir(), "jouzu-work-bindings-"));
-	t.after(async () => {
+	afterCleanup(t, async () => {
 		await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 	});
 	let attachment = await openSeeded(root, seed);
-	t.after(async () => {
+	afterCleanup(t, async () => {
 		await attachment?.close().catch(() => undefined);
-		await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 	});
 	return {
 		root,

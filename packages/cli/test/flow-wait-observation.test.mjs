@@ -19,6 +19,7 @@ import { PiSessionFlowIngress } from "../dist/flow-control/pi-session-ingress.js
 import { createFlowWaitDecisionProducer } from "../dist/flow-control/wait-decisions.js";
 import { createFlowWaitExtension } from "../dist/flow-control/wait-tools.js";
 import { bedrockTransport } from "./fixtures/bedrock-transport.mjs";
+import { afterCleanup, cleanupContext } from "./fixtures/cleanup.mjs";
 import { codexTransport } from "./fixtures/codex-transport.mjs";
 
 const args = {
@@ -47,6 +48,7 @@ async function fixture(
 	const root = supplied ?? (await mkdtemp(join(tmpdir(), "jouzu-wait-observation-"))),
 		errors = [],
 		sent = [];
+	if (!supplied) afterCleanup(t, () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
 	const codex =
 		api === "openai-codex-responses"
 			? codexTransport(t, {
@@ -129,7 +131,7 @@ async function fixture(
 		},
 	});
 	let wrapped;
-	const { session } = await createFlowSession(t, {
+	const { session } = await createFlowSession(cleanupContext(t), {
 		persist: true,
 		model: {
 			...model,
@@ -342,9 +344,8 @@ async function fixture(
 	});
 	session.agent.streamFunction = wrapped;
 	await session.bindExtensions({ onError: (error) => errors.push(error) });
-	t.after(async () => {
+	afterCleanup(t, async () => {
 		await ingress.dispose();
-		if (!supplied) await rm(root, { recursive: true, force: true });
 	});
 	const decisions = () => {
 		const attachment = ingress.branch().attachment;

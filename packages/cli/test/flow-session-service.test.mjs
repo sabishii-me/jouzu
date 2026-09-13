@@ -7,6 +7,7 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { createFlowSession, deferred } from "../../../scripts/fixtures/pi-flow-session.mjs";
 import { FlowModelInput } from "../dist/flow-control/model-input.js";
 import { PiFlowSessionService } from "../dist/flow-control/pi-session-service.js";
+import { afterCleanup, cleanupContext } from "./fixtures/cleanup.mjs";
 
 function options(root) {
 	return {
@@ -19,9 +20,10 @@ function options(root) {
 }
 async function fixture(t, config = {}) {
 	const root = config.root ?? (await mkdtemp(join(tmpdir(), "jouzu-flow-service-")));
+	if (!config.root) afterCleanup(t, () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
 	let service;
 	const treeScopes = [];
-	const { session, requests } = await createFlowSession(t, {
+	const { session, requests } = await createFlowSession(cleanupContext(t), {
 		persist: true,
 		sessionManager: config.manager,
 		ingress: {
@@ -61,9 +63,8 @@ async function fixture(t, config = {}) {
 		...(config.host ? { host: config.host } : {}),
 		attachWaitSources: config.attachWaitSources,
 	});
-	t.after(async () => {
+	afterCleanup(t, async () => {
 		await service.close();
-		if (!config.root) await rm(root, { recursive: true, force: true });
 	});
 	return { root, session, service, requests, treeScopes };
 }

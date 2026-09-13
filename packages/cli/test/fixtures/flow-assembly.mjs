@@ -7,30 +7,9 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { createQualifiedFlowSession } from "../../../../scripts/fixtures/pi-flow-session.mjs";
 import { createFlowControlRuntime } from "../../dist/flow-control/flow-runtime.js";
 
-const cleanups = new WeakMap();
+import { afterCleanup as afterFlowCleanup, cleanupContext } from "./cleanup.mjs";
 
-/** Close sessions before their stores and directories, including replacement sessions. */
-export function afterFlowCleanup(t, cleanup) {
-	let callbacks = cleanups.get(t);
-	if (!callbacks) {
-		callbacks = [];
-		cleanups.set(t, callbacks);
-		t.after(async () => {
-			const errors = [];
-			for (const callback of callbacks.toReversed()) {
-				try {
-					await callback();
-				} catch (error) {
-					errors.push(error);
-				}
-			}
-			if (errors.length) throw new AggregateError(errors, "Flow fixture cleanup failed");
-		});
-	}
-	callbacks.push(cleanup);
-}
-
-const cleanupContext = (t) => ({ after: (callback) => afterFlowCleanup(t, callback) });
+export { afterCleanup as afterFlowCleanup } from "./cleanup.mjs";
 
 /** Build the production assembly the launcher uses, without a host session yet. */
 export async function assembledRuntime(t, { root: sharedRoot, ...overrides } = {}) {

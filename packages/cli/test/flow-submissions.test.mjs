@@ -10,6 +10,7 @@ import { createFlowSession, deferred } from "../../../scripts/fixtures/pi-flow-s
 import { FlowOwnership } from "../dist/flow-control/ownership.js";
 import { PiFlowAttachment } from "../dist/flow-control/pi-attachment.js";
 import { FlowSubmissionStore } from "../dist/flow-control/submission-store.js";
+import { afterCleanup, cleanupContext } from "./fixtures/cleanup.mjs";
 
 const scope = { sessionId: "parent", branchId: "main" };
 const submission = (id = "item") => ({
@@ -30,7 +31,7 @@ const submission = (id = "item") => ({
 test("native dispatch is recorded before execution and cannot repeat after reopen", async (t) => {
 	const root = await rootFor(t);
 	let attachment = await PiFlowAttachment.open(root, scope);
-	t.after(() => attachment.close());
+	afterCleanup(t, () => attachment.close());
 	await attachment.submissions.retain(submission());
 	let calls = 0;
 	const results = await Promise.allSettled([
@@ -63,7 +64,7 @@ test("process death after a native effect preserves the dispatch hold without re
 		stdio: ["ignore", "ignore", "pipe", "ipc"],
 	});
 	const exited = once(child, "exit");
-	t.after(async () => {
+	afterCleanup(t, async () => {
 		if (child.exitCode === null && child.signalCode === null) {
 			child.kill("SIGKILL");
 			await exited;
@@ -93,7 +94,7 @@ test("process death after a native effect preserves the dispatch hold without re
 test("native failure and cancellation preserve dispatch uncertainty without allowing replay", async (t) => {
 	const root = await rootFor(t);
 	const attachment = await PiFlowAttachment.open(root, scope);
-	t.after(() => attachment.close());
+	afterCleanup(t, () => attachment.close());
 	await attachment.submissions.retain(submission());
 	await assert.rejects(
 		attachment.submissions.dispatch("item", 1, "operation", async () => {
@@ -130,7 +131,7 @@ test("closing storage drains native dispatch and keeps its writer reservation", 
 	release.resolve();
 	await Promise.all([dispatch, closing]);
 	const next = await PiFlowAttachment.open(root, scope);
-	t.after(() => next.close());
+	afterCleanup(t, () => next.close());
 	assert.equal((await next.submissions.snapshot())[0].dispatch.phase, "started");
 });
 
@@ -138,7 +139,7 @@ test("one native dispatch retains original input and runs Pi input transformatio
 	const root = await rootFor(t);
 	let attachment,
 		transformations = 0;
-	const { session, requests } = await createFlowSession(t, {
+	const { session, requests } = await createFlowSession(cleanupContext(t), {
 		ingress: {
 			version: 1,
 			async submit(input, dispatch) {
@@ -155,7 +156,7 @@ test("one native dispatch retains original input and runs Pi input transformatio
 		],
 	});
 	attachment = await PiFlowAttachment.open(root, { sessionId: session.sessionId, branchId: "main" });
-	t.after(() => attachment.close());
+	afterCleanup(t, () => attachment.close());
 	await session.prompt("original input");
 	const [record] = await attachment.submissions.snapshot();
 	assert.equal(record.submission.args[0], "original input");
@@ -166,14 +167,14 @@ test("one native dispatch retains original input and runs Pi input transformatio
 });
 async function rootFor(t) {
 	const root = await mkdtemp(join(tmpdir(), "jouzu-flow-submissions-"));
-	t.after(() => rm(root, { recursive: true, force: true }));
+	afterCleanup(t, () => rm(root, { recursive: true, force: true }));
 	return root;
 }
 
 test("local Pi attachment reopens retained input exactly and cancellation survives replay", async (t) => {
 	const root = await rootFor(t);
 	let attachment = await PiFlowAttachment.open(root, scope);
-	t.after(() => attachment.close());
+	afterCleanup(t, () => attachment.close());
 	const original = submission();
 	const saved = attachment.submissions.retain(original);
 	original.id = "mutated";
@@ -201,7 +202,7 @@ test("local Pi attachment reopens retained input exactly and cancellation surviv
 test("actual AgentSession capture commits before acceptance and leaves the native queues empty", async (t) => {
 	const root = await rootFor(t);
 	let attachment;
-	const { session, requests } = await createFlowSession(t, {
+	const { session, requests } = await createFlowSession(cleanupContext(t), {
 		ingress: {
 			version: 1,
 			submit: async (input) => {
@@ -210,7 +211,7 @@ test("actual AgentSession capture commits before acceptance and leaves the nativ
 		},
 	});
 	attachment = await PiFlowAttachment.open(root, { sessionId: session.sessionId, branchId: "main" });
-	t.after(() => attachment.close());
+	afterCleanup(t, () => attachment.close());
 	await session.prompt("manual", { images: [{ type: "image", data: "YQ==", mimeType: "image/png" }] });
 	await session.sendCustomMessage(
 		{ customType: "context", content: "aside", display: false },
@@ -228,7 +229,7 @@ test("actual AgentSession capture commits before acceptance and leaves the nativ
 test("capture state survives reopen while earlier records remain distinguishable", async (t) => {
 	const root = await rootFor(t);
 	let attachment = await PiFlowAttachment.open(root, scope);
-	t.after(() => attachment.close());
+	afterCleanup(t, () => attachment.close());
 	await attachment.submissions.retain(submission("earlier"));
 	await attachment.submissions.retain({ ...submission("streaming"), hostState: { streaming: true } });
 	assert.throws(() => attachment.submissions.retain({ ...submission("invalid"), hostState: { streaming: "false" } }), {
@@ -244,7 +245,7 @@ test("capture state survives reopen while earlier records remain distinguishable
 test("concurrent duplicate retention is idempotent and changed identities are rejected", async (t) => {
 	const root = await rootFor(t);
 	const attachment = await PiFlowAttachment.open(root, scope);
-	t.after(() => attachment.close());
+	afterCleanup(t, () => attachment.close());
 	const results = await Promise.all(Array.from({ length: 20 }, () => attachment.submissions.retain(submission())));
 	assert.equal(results.filter((result) => !result.duplicate).length, 1);
 	await assert.rejects(attachment.submissions.retain({ ...submission(), args: ["changed"] }), { code: "identity" });
@@ -256,7 +257,7 @@ test("bounded retention rejects overflow without dropping cancelled tombstones o
 	const owner = FlowOwnership.acquire(root, scope);
 	const repo = new MemorySessionRepo();
 	const session = await repo.create({}, context);
-	t.after(async () => {
+	afterCleanup(t, async () => {
 		await owner.close(() => session.close(context));
 		await repo.close(context);
 	});
@@ -277,7 +278,7 @@ test("malformed persistent state and unsupported values cannot become an empty s
 	const owner = FlowOwnership.acquire(root, scope);
 	const repo = new MemorySessionRepo();
 	const session = await repo.create({}, context);
-	t.after(async () => {
+	afterCleanup(t, async () => {
 		await owner.close(() => session.close(context));
 		await repo.close(context);
 	});
@@ -316,7 +317,7 @@ test("process death after retention acknowledgement restores exact input with th
 	const child = fork(new URL("./fixtures/flow-submission-crash.mjs", import.meta.url), [root], {
 		stdio: ["ignore", "pipe", "pipe", "ipc"],
 	});
-	t.after(() => {
+	afterCleanup(t, () => {
 		if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
 	});
 	const [ready] = await once(child, "message");
@@ -325,7 +326,7 @@ test("process death after retention acknowledgement restores exact input with th
 	child.kill("SIGKILL");
 	await ended;
 	const attachment = await PiFlowAttachment.open(root, scope);
-	t.after(() => attachment.close());
+	afterCleanup(t, () => attachment.close());
 	const [record] = await attachment.submissions.snapshot();
 	assert.equal(record.status, "retained");
 	assert.equal(record.submission.args[0], "survives process death");
@@ -336,7 +337,7 @@ test("separate branches retain separate input and a missing record is a storage 
 	const root = await rootFor(t);
 	const first = await PiFlowAttachment.open(root, scope);
 	const second = await PiFlowAttachment.open(root, { ...scope, branchId: "other" });
-	t.after(async () => {
+	afterCleanup(t, async () => {
 		await first.close();
 		await second.close();
 	});
@@ -353,7 +354,7 @@ test("manifest/content mismatch refuses reattachment without replacing authorita
 	const owner = FlowOwnership.acquire(root, scope);
 	const repo = new MemorySessionRepo();
 	const session = await repo.create({}, context);
-	t.after(async () => {
+	afterCleanup(t, async () => {
 		await owner.close(() => session.close(context));
 		await repo.close(context);
 	});
@@ -369,7 +370,7 @@ test("manifest/content mismatch refuses reattachment without replacing authorita
 test("admission diagnostics persist without changing source revisions or authorizing replay", async (t) => {
 	const root = await rootFor(t);
 	let attachment = await PiFlowAttachment.open(root, scope);
-	t.after(() => attachment.close());
+	afterCleanup(t, () => attachment.close());
 	await attachment.submissions.retain(submission());
 	const target = { phase: "submission" };
 	assert.equal(await attachment.submissions.recordAdmission("item", 1, target, "Waiting for work."), true);
@@ -392,7 +393,7 @@ test("admission diagnostics persist without changing source revisions or authori
 test("admission diagnostics reject oversized reasons and invented queue identities", async (t) => {
 	const root = await rootFor(t);
 	const attachment = await PiFlowAttachment.open(root, scope);
-	t.after(() => attachment.close());
+	afterCleanup(t, () => attachment.close());
 	await attachment.submissions.retain(submission());
 	assert.throws(() => attachment.submissions.recordAdmission("item", 1, { phase: "submission" }, "あ".repeat(342)), {
 		code: "schema",
@@ -412,7 +413,7 @@ test("admission diagnostics reject oversized reasons and invented queue identiti
 test("pending cancellation cannot retire an active native dispatch intent", async (t) => {
 	const root = await rootFor(t);
 	const attachment = await PiFlowAttachment.open(root, scope);
-	t.after(() => attachment.close());
+	afterCleanup(t, () => attachment.close());
 	await attachment.submissions.retain(submission());
 	const entered = deferred(),
 		finish = deferred();
@@ -443,7 +444,7 @@ test("submission archive frees admission slots and preserves source order across
 	const owner = FlowOwnership.acquire(root, scope);
 	const repo = new MemorySessionRepo();
 	const session = await repo.create({}, context);
-	t.after(async () => {
+	afterCleanup(t, async () => {
 		await owner.close(() => session.close(context));
 		await repo.close(context);
 	});
@@ -484,7 +485,7 @@ test("archive rejects unconsumed submissions atomically and detects changed hist
 	const owner = FlowOwnership.acquire(root, scope);
 	const repo = new MemorySessionRepo();
 	const session = await repo.create({}, context);
-	t.after(async () => {
+	afterCleanup(t, async () => {
 		await owner.close(() => session.close(context));
 		await repo.close(context);
 	});

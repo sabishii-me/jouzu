@@ -7,7 +7,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { pathToFileURL } from "node:url";
-
 import {
 	createAgentSession,
 	DefaultResourceLoader,
@@ -18,6 +17,7 @@ import {
 import { PiFlowAttachment } from "../dist/flow-control/pi-attachment.js";
 import { PiNativeRequests } from "../dist/flow-control/pi-native-requests.js";
 import { preparePiProviderRoute } from "../dist/flow-control/pi-provider-route.js";
+import { afterCleanup } from "./fixtures/cleanup.mjs";
 
 // Resolve the registry from the runtime owner; installed package trees may contain another CLI copy.
 const runtimeRequire = createRequire(import.meta.resolve("@earendil-works/pi-coding-agent"));
@@ -30,7 +30,7 @@ const { getApiProvider, isBuiltinApiProvider, registerApiProvider, registerBuilt
 
 async function fixture(t) {
 	const root = await mkdtemp(join(tmpdir(), "jouzu-route-"));
-	t.after(() => rm(root, { recursive: true, force: true }));
+	afterCleanup(t, () => rm(root, { recursive: true, force: true }));
 	let requests = 0;
 	const server = createServer((_request, response) => {
 		requests++;
@@ -40,7 +40,7 @@ async function fixture(t) {
 		);
 	});
 	await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-	t.after(() => new Promise((resolve) => server.close(resolve)));
+	afterCleanup(t, () => new Promise((resolve) => server.close(resolve)));
 	const runtime = await ModelRuntime.create({
 		modelsPath: null,
 		modelsStorePath: join(root, "models.json"),
@@ -211,7 +211,7 @@ for (const scenario of ["qualified", "handler-replaced", "session-replaced", "re
 			undefined,
 			trustedStream,
 		);
-		t.after(async () => {
+		afterCleanup(t, async () => {
 			await bridge.close();
 			await attachment.close();
 			await session.dispose();
@@ -225,7 +225,7 @@ for (const scenario of ["qualified", "handler-replaced", "session-replaced", "re
 			f.runtime.registerProvider("fixture", { ...f.config, streamSimple: replacement });
 		if (scenario === "session-replaced") session.agent.streamFunction = replacement;
 		if (scenario === "registry-replaced") {
-			t.after(() => resetApiProviders());
+			afterCleanup(t, () => resetApiProviders());
 			registerApiProvider({ api: f.model.api, stream: replacement, streamSimple: replacement }, "sdk-route-test");
 		}
 		let failed;
@@ -270,7 +270,7 @@ for (const scenario of ["qualified", "handler-replaced", "session-replaced", "re
 for (const replacement of ["registered", "mutated-stream", "mutated-simple", "mutated-api"]) {
 	test(`legacy API guard rejects ${replacement} and accepts builtin reset`, async (t) => {
 		const f = await fixture(t);
-		t.after(() => resetApiProviders());
+		afterCleanup(t, () => resetApiProviders());
 		let invoked = 0;
 		const stream = () => {
 			invoked++;
@@ -304,7 +304,7 @@ for (const replacement of ["registered", "mutated-stream", "mutated-simple", "mu
 for (const phase of ["auth", "headers"]) {
 	test(`legacy API replacement during ${phase} never reaches its handler`, async (t) => {
 		const f = await fixture(t);
-		t.after(() => resetApiProviders());
+		afterCleanup(t, () => resetApiProviders());
 		let invoked = 0;
 		const stream = () => {
 			invoked++;

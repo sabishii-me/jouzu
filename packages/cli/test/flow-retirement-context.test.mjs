@@ -4,11 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { afterCleanup } from "./fixtures/cleanup.mjs";
 import { assembledSession, syntheticProducer } from "./fixtures/flow-assembly.mjs";
 
 test("failed automated instructions stay excluded after retirement and a later user request", async (t) => {
 	const root = await mkdtemp(join(tmpdir(), "jouzu-retirement-context-"));
-	t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
+	afterCleanup(t, () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
 	const f = await assembledSession(t, {
 		root,
 		persist: true,
@@ -16,7 +17,7 @@ test("failed automated instructions stay excluded after retirement and a later u
 	});
 	const source = syntheticProducer();
 	const registration = f.ingress.registerProducer(source.producer);
-	t.after(() => registration.dispose());
+	afterCleanup(t, () => registration.dispose());
 	source.offer([{ id: "failed-instruction", revision: "1" }]);
 	await registration.changed();
 	assert.equal(f.bodies.length, 1);

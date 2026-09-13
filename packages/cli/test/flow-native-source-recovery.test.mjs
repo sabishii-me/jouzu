@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { deferred } from "../../../scripts/fixtures/pi-flow-session.mjs";
+import { afterCleanup } from "./fixtures/cleanup.mjs";
 import { nativeRequests } from "./fixtures/native-requests.mjs";
 
 async function reopen(t, first, change) {
@@ -139,7 +140,7 @@ test("process death restores native source identity for a later request without 
 		stdio: ["ignore", "ignore", "pipe", "ipc"],
 	});
 	const exited = once(child, "exit");
-	t.after(async () => {
+	afterCleanup(t, async () => {
 		if (child.exitCode === null && child.signalCode === null) {
 			child.kill("SIGKILL");
 			await exited;

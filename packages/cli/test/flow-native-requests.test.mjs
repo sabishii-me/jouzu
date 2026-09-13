@@ -9,6 +9,7 @@ import { test } from "node:test";
 import { assistant, deferred } from "../../../scripts/fixtures/pi-flow-session.mjs";
 import { PiFlowAttachment } from "../dist/flow-control/pi-attachment.js";
 import { PiNativeRequests } from "../dist/flow-control/pi-native-requests.js";
+import { afterCleanup } from "./fixtures/cleanup.mjs";
 import { nativeRequests } from "./fixtures/native-requests.mjs";
 
 test("native receipts hash the final real-provider payload after transforms", async (t) => {
@@ -306,7 +307,7 @@ for (const phase of ["prepared", "handoff", "outcome"])
 		});
 		const exited = once(child, "exit");
 		let attachment;
-		t.after(async () => {
+		afterCleanup(t, async () => {
 			if (child.exitCode === null && child.signalCode === null) {
 				child.kill("SIGKILL");
 				await exited;
@@ -1212,7 +1213,7 @@ test("reattachment cannot claim an unresolved request as live queue authority", 
 	await f.bridge.close();
 	await f.attachment.close();
 	const reopened = await PiFlowAttachment.open(join(f.root, "receipts"), f.scope);
-	t.after(() => reopened.close());
+	afterCleanup(t, () => reopened.close());
 	assert.equal(reopened.nativeRequests.blocksQueueing("orphan"), true);
 	assert.equal(reopened.nativeRequests.recoveryBlocked, true);
 });

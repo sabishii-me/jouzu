@@ -6,6 +6,7 @@ import { createFlowSession } from "../../../../scripts/fixtures/pi-flow-session.
 import { PiFlowAttachment } from "../../dist/flow-control/pi-attachment.js";
 import { PiNativeDispatch } from "../../dist/flow-control/pi-native-dispatch.js";
 import { PiNativeRequests } from "../../dist/flow-control/pi-native-requests.js";
+import { afterCleanup, cleanupContext } from "./cleanup.mjs";
 
 export async function nativeRequests(
 	t,
@@ -28,8 +29,9 @@ export async function nativeRequests(
 	} = {},
 ) {
 	const root = supplied ?? (await mkdtemp(join(tmpdir(), "jouzu-native-requests-")));
+	if (!supplied) afterCleanup(t, () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
 	let attachment, dispatch;
-	const { session } = await createFlowSession(t, {
+	const { session } = await createFlowSession(cleanupContext(t), {
 		root: join(root, "host"),
 		persist: true,
 		sessionManager: manager,
@@ -84,11 +86,10 @@ export async function nativeRequests(
 		enforceRequiredSources,
 		dispatch ? () => dispatch.consumedSources() : undefined,
 	);
-	t.after(async () => {
+	afterCleanup(t, async () => {
 		await bridge.close();
 		await dispatch?.close();
 		await attachment.close();
-		await rm(root, { recursive: true, force: true });
 	});
 	return { root, scope, session, attachment, store: attachment.nativeRequests, bridge, dispatch, sent };
 }

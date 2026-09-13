@@ -5,11 +5,13 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { pathToFileURL } from "node:url";
 import { stream } from "@earendil-works/pi-ai/api/openai-completions";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { afterCleanup, cleanupContext } from "./fixtures/cleanup.mjs";
 
 const { createJiti } = await import(
-	createRequire(import.meta.resolve("@earendil-works/pi-coding-agent")).resolve("jiti")
+	pathToFileURL(createRequire(import.meta.resolve("@earendil-works/pi-coding-agent")).resolve("jiti")).href
 );
 
 import { createFlowSession, deferred } from "../../../scripts/fixtures/pi-flow-session.mjs";
@@ -64,7 +66,7 @@ async function fixture(t, native, options = {}) {
 	const manifests = new Map();
 	let host, ledger, session, attachment, storageRoot, observer;
 	if (native) {
-		({ session } = await createFlowSession(t, {
+		({ session } = await createFlowSession(cleanupContext(t), {
 			persist: true,
 			ingress: options.ingress,
 			checkpoints: options.checkpoints,
@@ -117,7 +119,7 @@ async function fixture(t, native, options = {}) {
 		);
 		observer.attachComposition(host.requests);
 		observer.sealTransport();
-		t.after(async () => {
+		afterCleanup(t, async () => {
 			await observer.close();
 			await attachment.close();
 			await rm(root, { recursive: true, force: true });
@@ -189,7 +191,7 @@ async function fixture(t, native, options = {}) {
 			return reference;
 		};
 	const controller = new SessionFlowController(host, options.maxInputBytes ?? 4096, options.maxResultBytes);
-	t.after(() => controller.close());
+	afterCleanup(t, () => controller.close());
 	return { controller, host, observer, ledger, calls, payloads, policy, session, attachment, storageRoot, manifests };
 }
 
@@ -206,7 +208,7 @@ test("Pi multiloop adapter holds three continuations and accounts once at native
 		() => work.id,
 		() => {},
 	);
-	t.after(() => adapter.close());
+	afterCleanup(t, () => adapter.close());
 	f.controller.register(adapter);
 	const input = {
 		lane,
@@ -349,7 +351,7 @@ test("Pi multiloop adapter preserves exhausted failure across reopen", async (t)
 		sessionManager: SessionManager.open(history),
 	});
 	const resumed = make(second);
-	t.after(() => resumed.close());
+	afterCleanup(t, () => resumed.close());
 	second.controller.register(resumed);
 	resumed.submit(input);
 	await second.controller.wake();
@@ -1145,7 +1147,7 @@ for (const navigate of [false, true]) {
 		first.observer.detachComposition();
 		first.observer.attachComposition(host.requests);
 		const second = new SessionFlowController(host, 4096);
-		t.after(async () => {
+		afterCleanup(t, async () => {
 			await second.close();
 			await attachment.close();
 			await rm(root, { recursive: true, force: true });
@@ -1222,7 +1224,7 @@ for (const summarize of [false, "extension", "native"]) {
 					}),
 			],
 		});
-		t.after(async () => {
+		afterCleanup(t, async () => {
 			await second?.close();
 			await nextAttachment?.close();
 		});

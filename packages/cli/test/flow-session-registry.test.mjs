@@ -117,6 +117,10 @@ for (const phase of ["begin", "finish"])
 		const child = fork(new URL("./fixtures/flow-session-registry.mjs", import.meta.url), [root, phase], {
 			stdio: ["ignore", "ignore", "pipe", "ipc"],
 		});
+		let stderr = "";
+		child.stderr.setEncoding("utf8").on("data", (chunk) => {
+			stderr += chunk;
+		});
 		const exited = once(child, "exit");
 		cleanup(async () => {
 			if (child.exitCode === null && child.signalCode === null) {
@@ -127,7 +131,7 @@ for (const phase of ["begin", "finish"])
 		const [record] = await Promise.race([
 			once(child, "message"),
 			exited.then(() => {
-				throw new Error("Registry worker exited before saving state.");
+				throw new Error(`Registry worker exited before saving state: ${stderr}`);
 			}),
 		]);
 		assert.equal(record.kind, "saved");
