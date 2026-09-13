@@ -314,7 +314,7 @@ export function createDoctorReport(context: DoctorContext): DoctorResult {
 	} else if (catalogGaps > 0) {
 		warning(
 			"catalog.thinkingLevels",
-			`Catalog: ${catalogGaps} of ${context.catalogLevels?.offerings ?? 0} offerings declare reasoning but no selectable levels, so the client falls back to permissive defaults. Run "jz catalog status" for the list.`,
+			`Catalog: ${catalogGaps} of ${context.catalogLevels?.offerings ?? 0} offerings declare no thinking levels, so the client cannot control their reasoning effort. Run "jz catalog status" for the list.`,
 		);
 	}
 	if (camoufoxRuntime.status === "invalid") {

@@ -133,7 +133,7 @@ test("doctor summarizes catalog thinking-level gaps and points to the catalog de
 		},
 	});
 	assert.match(gaps.text, /Catalog thinking levels: 2 of 36 offerings without declared levels/);
-	assert.match(gaps.text, /- Catalog: 2 of 36 offerings declare reasoning but no selectable levels/);
+	assert.match(gaps.text, /- Catalog: 2 of 36 offerings declare no thinking levels/);
 	assert.match(gaps.text, /Run "jz catalog status" for the list/);
 	assert.equal(gaps.healthy, true, "a catalog gap is a warning, not a problem");
 

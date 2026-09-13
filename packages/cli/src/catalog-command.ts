@@ -36,7 +36,7 @@ function formatOneCatalogStatus(status: CatalogSyncStatus): string[] {
 	if (status.offeringCount !== undefined) lines.push(`  Models: ${status.offeringCount}`);
 	if (status.thinkingLevelGaps?.length) {
 		lines.push(
-			`  Thinking levels: ${status.thinkingLevelGaps.length} of ${status.offeringCount ?? "?"} offerings declare reasoning but no selectable levels`,
+			`  Thinking levels: ${status.thinkingLevelGaps.length} of ${status.offeringCount ?? "?"} offerings have no declared levels`,
 		);
 		for (const gap of status.thinkingLevelGaps) lines.push(`    ${gap.providerId}/${gap.modelId}`);
 	}

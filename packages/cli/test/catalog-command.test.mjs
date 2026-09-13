@@ -56,7 +56,7 @@ test("built-in source without a key is visible and idle with no network work", (
 	}
 });
 
-test("catalog status lists offerings that declare reasoning without selectable levels", () => {
+test("catalog status lists offerings that declare no thinking levels", () => {
 	const status = {
 		schemaVersion: 1,
 		status: "active",
@@ -73,7 +73,7 @@ test("catalog status lists offerings that declare reasoning without selectable l
 		quarantined: 0,
 	};
 	const text = formatCatalogStatus(status);
-	assert.match(text, /Thinking levels: 1 of 36 offerings declare reasoning but no selectable levels/u);
+	assert.match(text, /Thinking levels: 1 of 36 offerings have no declared levels/u);
 	assert.match(text, /aiand\/deepseek-ai\/deepseek-v4-flash/u);
 	assert.doesNotMatch(formatCatalogStatus({ ...status, thinkingLevelGaps: [] }), /Thinking levels:/u);
 });

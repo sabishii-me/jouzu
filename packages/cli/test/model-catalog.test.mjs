@@ -41,10 +41,21 @@ test("canonical account snapshot and local compatibility pack conform", () => {
 	assert.match(catalogDocumentSha256(snapshotText), /^[0-9a-f]{64}$/);
 });
 
-test("gap analysis flags reasoning offerings that declare no selectable levels", () => {
+test("gap analysis flags offerings that leave thinking levels undeclared", () => {
 	const parsed = (document) => parseAndValidateModelCatalog(JSON.stringify(document), { remote: true });
 	const document = accountSnapshot();
-	assert.deepEqual(catalogThinkingLevelGaps(parsed(document)), [], "a non-reasoning offering needs no levels");
+	assert.deepEqual(
+		catalogThinkingLevelGaps(parsed(document)),
+		[],
+		"an explicit capability list without reasoning rules thinking out",
+	);
+
+	delete document.modelOfferings[0].capabilities;
+	assert.deepEqual(
+		catalogThinkingLevelGaps(parsed(document)),
+		[{ providerId: "ai.example.gateway", modelId: "example-model" }],
+		"silence is the risky case, so an absent capability list is reported",
+	);
 
 	document.modelOfferings[0].capabilities = ["text", "streaming", "tool_calling", "reasoning"];
 	assert.deepEqual(catalogThinkingLevelGaps(parsed(document)), [

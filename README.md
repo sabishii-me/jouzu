@@ -203,7 +203,7 @@ jouzu catalog refresh
 jouzu catalog refresh office
 ```
 
-`catalog status` lists offerings that declare the `reasoning` capability without `supportedThinkingLevels`. Without a declared set, Jouzu keeps Pi's adapter defaults, where every level below `xhigh` stays selectable and the literal level name is sent to the provider, so a catalog should declare levels for every reasoning offering. `jz doctor` reports the count and points here for the list.
+`catalog status` lists offerings that declare no `supportedThinkingLevels`. An offering that overrides a model Pi already knows keeps that model's levels, and a model the catalog adds is registered with thinking disabled, so a catalog that supports reasoning should declare levels explicitly. Offerings whose `capabilities` list omits `reasoning` are excluded, because the client marks those models as non-reasoning. `jz doctor` reports the count and points here for the list.
 
 `JOUZU_MODEL_CATALOG_URL` and optional `JOUZU_MODEL_CATALOG_TOKEN` remain a single-source shorthand when `catalogs.json` does not exist. Refresh requests never follow redirects, so a bearer token cannot be forwarded to another origin.
 

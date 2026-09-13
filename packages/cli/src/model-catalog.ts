@@ -24,14 +24,17 @@ export interface CatalogThinkingLevelGap {
 }
 
 /**
- * Offerings that claim the reasoning capability but declare no `supportedThinkingLevels`.
- * The client then keeps Pi's adapter defaults, where every level below `xhigh` stays selectable
- * and the literal level name is transmitted, so an undeclared model can receive a reasoning
- * effort its provider rejects.
+ * Offerings that declare no `supportedThinkingLevels` and do not rule thinking out. The client then
+ * keeps the underlying provider model's levels when the offering overrides a model Pi already
+ * knows, and registers a model the catalog adds with thinking disabled, so an undeclared model
+ * either sends a reasoning effort the provider may reject or cannot be given one at all.
+ *
+ * An explicit capability list without `reasoning` marks the model as non-reasoning, so those
+ * offerings are left out.
  */
 export function catalogThinkingLevelGaps(document: ModelCatalogDocument): CatalogThinkingLevelGap[] {
 	return document.modelOfferings
-		.filter((offering) => !offering.supportedThinkingLevels && (offering.capabilities ?? []).includes("reasoning"))
+		.filter((offering) => !offering.supportedThinkingLevels && offering.capabilities?.includes("reasoning") !== false)
 		.map((offering) => ({ providerId: offering.providerId, modelId: offering.modelId }));
 }
 const UINT64_MAX = 18_446_744_073_709_551_615n;
