@@ -4,36 +4,41 @@
 
 ### Added
 
-- Session flow control is on by default. It gives one place to see and control the automatic turns a session produces. Background-task completions and goals and measured loops register with it, so a completion that arrives while the agent is working waits until the current turn and any queued messages finish instead of interrupting, and completions that are ready together are delivered in one turn. Waits have a deadline, and a running background task reports whether its process is still alive. Other automatic sources — child agents, scheduled prompts, and task-list advances — are held while a wait is live. Set `JOUZU_FLOW_CONTROL=0` to run a session without it.
-- Inspect and repair held work with `/flow`. The command lists what is held, what is waiting, and which work can still take automatic turns, with the reason and any deadline for each. It writes to the terminal only and adds nothing to the model's context.
-  - `/flow retry <request>` re-sends one request whose input was withheld.
-  - `/flow cancel <token>` cancels a wait without stopping the job it was watching.
-  - `/flow pause <work>` and `/flow resume <work>` hold and release the automatic turns of the named work, such as a running goal or measured loop.
-  - `/flow stop <work>` retires the named work and ends its waits. A job it already started keeps running.
-  - `/flow resolve <attempt> retry|discard` decides a turn that was interrupted before its outcome was recorded, when Jouzu cannot tell whether the provider answered it.
-- Save a catalog bearer token in Settings / Catalogs without exporting an environment variable. The token is stored in `catalog-credentials.json` next to `catalogs.json` with private file permissions, keyed to its source, and never shown on screen; the environment variable still takes precedence. A bearer source whose variable is unset can be saved with a warning in the source list and detail, stored without contacting it, and refreshed once the variable is set or a token is saved. Removing a source, or switching it to no authentication, removes its saved token.
-- Cap the context window Jouzu reports for every model with a global ceiling. Settings / Catalogs lists a **Maximum context** row above the source list: `↑` from the first source focuses it, and `←` and `→` step through 128K, 192K, 256K, 384K, 512K, 768K, 1M, or off. The ceiling is stored in `context-policy.json` next to `catalogs.json`. Pi's compaction threshold, the footer percentage, and the model picker's fit check use the smaller of the model's declared window and the ceiling, so a 1M-token model under a 384K ceiling compacts as if its window were 384K. Catalog `limits.contextWindow` values compose through the same minimum, an explicit `models.json` `modelOverrides.contextWindow` still outranks the ceiling, and turning the ceiling off restores the declared windows in the same session.
+- Sign in to Shisa with `/login shisa`. Jouzu saves a dedicated API key for inference, the Shisa model catalog, and voice. `/logout shisa` and Shisa in `/logout` attempt server revocation, then remove the local credentials and device link. Unconfirmed revocation includes dashboard disconnect instructions.
+- Coordinate automatic turns with session flow control, enabled by default. Completions wait for active work and queued messages, then arrive in batches. Waits have deadlines and can check background-process health. Use `/flow` to inspect held work, pause or resume automation, retry withheld requests, and resolve interrupted turns. Set `JOUZU_FLOW_CONTROL=0` to disable it for a session.
+- Save catalog bearer tokens in Settings / Catalogs with private file permissions. Environment variables take precedence. Sources with missing credentials can be saved and configured later; removing a source or disabling its authentication removes its saved token.
+- Set **Maximum context** in Settings / Catalogs to lower model context windows. Compaction, context usage, and model-switch checks use the ceiling. An explicit local `modelOverrides.contextWindow` takes precedence; turning the ceiling off restores declared windows.
+- Diagnose incomplete catalogs with `jz doctor` and `jz catalog status`: report missing fields needed to add models and undeclared thinking levels that limit reasoning controls.
 
 ### Changed
 
-- TextGuard no longer removes a capability to reduce a risk. A flagged web result now reaches the model with its findings attached and a line telling the model to read it as untrusted data rather than as instructions, so a search still returns something usable. Skill files and skill-shaped reads are instructions the agent would follow, so those stay withheld until you approve them. `/textguard strict` and `--jouzu-textguard-strict` withhold every flagged input; `/textguard off` and `--jouzu-textguard-off` stop scanning for the session; `/textguard on` returns to the default. A child agent inherits the mode its parent session is in.
-- TextGuard says what it is doing when it does it. Withholding or delivering flagged content raises a notification naming the source and the findings, once per piece of content, instead of leaving a tool result that only says content was withheld. The withheld result now tells the model what happened and which commands the user has.
-- `/textguard` lists only what needs a decision. Findings that blocked nothing — warnings and informational findings, including the ones a local skill file produces on every session — moved to `/textguard reports`, with a count in the review footer.
-- An interrupted TextGuard check can be approved. A scan cut short by its time budget used to leave a report whose only action was to dismiss it, while its own text said the content stayed withheld pending approval; it now reaches the approval queue like any other incomplete check, and an existing approval for those exact bytes survives a later interrupted check.
-- TextGuard review is one screen: a scrollable list of withheld items and reports, and a detail view with findings, locations, and the flagged content shown with control and invisible characters escaped. Only content-blocking findings interrupt the session; warnings and informational reports stay inspectable through `/textguard` and can be dismissed for the session. **Always allow this exact content** records an approval for those exact bytes that survives restarts and is rechecked when the content, scanner, or policy changes.
-- Long-running automated sessions stay within bounded storage: finished results, settled attempts, and superseded history are retired under fixed limits, while the evidence needed to explain a hold is kept.
-- Child agents receive the same model-specific behavior guidance as the parent session.
+- Advance task lists through their remaining work by default unless interrupted. Reorder tasks with `TaskReorder`; `TaskList` shows the run order and next task.
+- Deliver flagged web results with TextGuard findings and instructions to treat the content as untrusted data. Flagged skills still require approval. `/textguard strict` withholds all flagged input; `/textguard off` disables scanning for the session. Child agents inherit the parent's mode.
+- Review TextGuard decisions in a scrollable list with finding locations and escaped content. `/textguard reports` shows informational and warning reports. **Always allow this exact content** saves approval across restarts; changed content, scanner, or policy requires another decision. Interrupted checks can also be approved when the full content was captured.
+- Pause automatic turns after an interrupt; your next message or `/flow resume` releases the pause. `/flow reset` repairs a stuck session when idle without stopping background jobs or deleting its execution records.
+- Limit retained flow-control history while preserving the records needed to explain held work.
+- Use declared catalog thinking levels and defaults while preserving explicit per-model preferences. Ignore unknown level names so newer catalogs still load.
+- Accept the saved Shisa login for voice, including its speech endpoint. `SHISA_API_KEY` takes precedence. Logout cancels recording and suppresses Shisa access in that process until sign-in, leaving environment variables unchanged.
+- Show diagnostics and configuration plans with consistent headings, aligned values, and problems listed first. Status remains readable without color.
+- Give child agents the parent's model-specific guidance and allow a per-run `model` override, including `same` for the parent's model.
 
 ### Fixed
 
-- Keep a background task's unread result summary after the task is cleared.
-- Stop `/flow` from reporting input that was already delivered as held.
-- Let an RPC session finish an accepted prompt when its input stream ends.
-- Run `tff-fetch_url` and `tff-search_web` one at a time. Both tools share one Camoufox browser and one page context, so calls that started together could close a page another call was still navigating and fail. A batch that includes either tool now runs its calls in order.
+- Save Shisa credentials and link state before acknowledging delivery. Failed storage leaves delivery unconfirmed; failed acknowledgement retries ask you to sign in again.
+- Preserve the prompt editor and flow control when replacing a session, and keep queued user messages pending after an interrupted turn.
+- Retain unread background-task summaries after clearing a task, and stop reporting delivered input as held.
+- Keep flow recovery available after interrupted or partially recorded requests, and release goal work after local commands finish.
+- Serialize Camoufox fetch and search calls so concurrent calls cannot close each other's pages.
+- Show a failed child run's provider error. Require a full `provider/model` when a model name matches multiple providers.
+- Let an RPC session finish an accepted prompt after end-of-input, and preserve machine-readable Pi output byte for byte.
+
+### Development
+
+- Serialize source builds, reuse an unchanged extension bundle, check Go before building, and use Windows' built-in `tar.exe` for archive extraction.
 
 ### Testing limits
 
-- Session flow control is newly on by default. Its behavior under real workloads still needs dogfooding; the deterministic suite substitutes the provider, and the live smoke is opt-in.
+- Flow-control tests substitute providers; live-workload qualification remains separate. Shisa login/revocation and voice still need live-service, microphone, and platform-permission checks. See [Testing](https://github.com/shisa-ai/jouzu/blob/main/docs/testing.md).
 
 ## 0.1.8 - 2026-09-07
 

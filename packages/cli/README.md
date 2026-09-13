@@ -1,20 +1,18 @@
 # Jouzu
 
-Jouzu is Shisa AI's agentic coding harness, built on [Pi coding agent](https://pi.dev/).
-
-It comes batteries included with the tools and workflows we use every day:
+Jouzu is Shisa AI's terminal coding agent, built on [Pi coding agent](https://pi.dev/). It combines coding tools, background jobs, and child agents in one session:
 
 - **Goals, loops, and scheduled work.** Track multi-step tasks, work toward a goal, run measured improvement loops, and schedule prompts.
 - **Background work without repeated interruptions.** Run shell jobs while you keep working, inspect logs, and receive batched unread completion summaries.
 - **Child agents with defined roles.** Assign a model, tools, instructions, and workspace; inspect results, send follow-ups, stop runs, and resume their conversations.
-- **Web search and readable pages.** Fetch pages directly or use browser-backed search and rendering. A Camoufox browser runtime installs on first use for a full headless browsing agent.
+- **Web search and readable pages.** Fetch pages directly or use browser-backed search and rendering. The Camoufox browser runtime installs on first use.
 - **Local content scanning.** TextGuard checks skills and web results before they reach the model. Flagged web results arrive labelled as untrusted data; flagged skills wait for your approval. Scanning is not a guarantee of safety.
 - **Searchable session history.** Recall earlier decisions and code after context compaction without keeping the whole conversation in the model's active context.
 - **Japanese and mixed-width text support.** Terminal layouts account for Japanese, Chinese, Korean, and emoji display widths. The optional Japanese profile adds language-focused instructions and skills.
 - **Voice dictation.** Speak into an editable prompt with live previews and finalized transcription through Shisa. Requires realtime speech access; never auto-sends.
 - **Models that remember your choices.** Search providers and models in the Palette, keep favorites, and save project defaults and per-model reasoning preferences. [Shisa AI's API service](https://platform.shisa.ai/) supplies an account-aware model catalog when configured.
 
-Jouzu v0.1.x is **alpha** software. We use it as our daily driver, so it's fully usable, but expect frequent updates and changes.
+Jouzu v0.1.x is **alpha** software. Expect frequent updates and changes.
 
 ## Requirements
 
@@ -22,7 +20,7 @@ Jouzu v0.1.x is **alpha** software. We use it as our daily driver, so it's fully
 - Git
 - Bash (`bash` on Linux/macOS; Git Bash on Windows)
 
-Windows users should read [Windows prerequisites](https://github.com/shisa-ai/jouzu/blob/main/docs/windows.md). Signed installers, portable archives, and bundled prerequisites are not part of v0.1.
+For Windows setup, see [Windows prerequisites](https://github.com/shisa-ai/jouzu/blob/main/docs/windows.md).
 
 `web_fetch` and `batch_web_fetch` work from the default installation. The rendered-browser tools install their exact Camoufox runtime from npm on the first `tff-fetch_url` or `tff-search_web` call, then download the Camoufox browser if needed. These downloads require network access and writable Jouzu state. `jz doctor` reports whether the optional runtime is absent, ready, or invalid.
 
@@ -53,7 +51,7 @@ Start Jouzu:
 jz
 ```
 
-On the first interactive launch, Jouzu asks whether to enable the optional Japanese-support profile. Only an affirmative answer selects `ja`; declining or pressing Enter selects the provider-neutral `core` profile. Jouzu saves that choice for later launches. Non-interactive first runs use `core` and do not manufacture consent.
+On the first interactive launch, Jouzu asks whether to enable the optional Japanese-support profile. Only an affirmative answer selects `ja`; declining or pressing Enter selects the provider-neutral `core` profile. Jouzu saves that choice for later launches. Non-interactive first runs use `core`.
 
 Before choosing, you can inspect either profile without writing:
 
@@ -66,21 +64,38 @@ A normal launch reconciles the selected profile. It stops before launching if a 
 
 Inside Jouzu:
 
-- `/login` configures provider authentication in Jouzu's isolated agent root.
-- `/logout shisa` revokes the key issued by Shisa sign-in and removes its saved credentials. Selecting Shisa in `/logout` does the same.
+- `/login shisa` connects your Shisa account. Use `/login` to select another provider.
+- `/logout shisa` attempts to revoke the key issued by Shisa sign-in and removes its saved credentials. Selecting Shisa in `/logout` does the same.
 - `/workflow` opens agent definitions and child runs. Configure separate planner, coder, and reviewer models, or add your own roles. See [Agents and runs](https://github.com/shisa-ai/jouzu/blob/main/docs/subagents.md).
 - `/model` or `Ctrl+L` opens the Jouzu Palette Models view without clearing the prompt draft.
 - `Ctrl+P` and its reverse binding cycle through available favorites in the current model scope.
-- `/status` reports provider-neutral session, workspace, model, thinking, context, scoped-model, profile, and runtime facts.
+- `/status` shows the session, workspace, model, thinking level, context usage, profile, and runtime.
+- `/flow` shows held automatic work and commands to resume or repair it.
 - `Ctrl+/` or `Ctrl+?` opens Jouzu help; `/hotkeys` lists all Jouzu shortcuts.
 
 The Palette shows Models, Workflow, and Settings as top-level sections; `Tab` and `Shift+Tab` move between them. The Models view searches exact provider/model identity and display names. `←` and `→` change the Recent, Favorite, or All view; the header reports active results and total selectable inventory. The first launch opens Recent; later launches restore the last view used. Typing or `/` focuses search; the title shows `· Search` while search holds focus, and `Esc` returns to browsing with the query intact before another `Esc` closes the Palette.
 
 `Enter` selects the model and stores it as the user-local project default. A new session resolves an explicit `--model` first, then a resumed session's recorded model, then the project default, then the last dispatched model, then Jouzu's user-wide default and fallback. Restoring a project default or last dispatched model also restores that model's saved thinking (reasoning) level unless you pass `--thinking`. Explicit resume, continue, session, model, and scoped-model arguments bypass project-default and last-model injection.
 
-`Ctrl+F` toggles a favorite while browsing and while searching; rebind it through the `jouzu.model.toggleFavorite` action in `keybindings.json`. `Ctrl+Shift+R` refreshes model catalogs and providers without leaving Models, then updates the list; rebind it through the `jouzu.model.refresh` action. `Ctrl+P` cycles the favorite list without leaving the current effective model scope. Catalog offerings may declare `supportedThinkingLevels`: Jouzu shows only those levels and clamps unsupported selections to the next supported level, or the highest supported level when none is higher. `off` is selectable only when listed. Levels Jouzu does not recognize are ignored, so a catalog that declares a newer level still loads; an unrecognized `defaultThinkingLevel` is ignored. Omission keeps the provider adapter's available levels. Each model remembers your explicit thinking-level override when you switch back to it. Without an override, Jouzu uses the catalog offering's `defaultThinkingLevel`, then Pi's configured default. Dispatch history does not override these defaults. Explicit startup thinking arguments, resumed-session levels, and scoped-model thinking pins retain precedence. Changing the thinking level saves the preference immediately, even before another request. Recency changes only after the selected model dispatches its first request, which records its thinking level in global and project recents. Clearing recents keeps explicit thinking preferences. Project defaults, favorites, recents, thinking preferences, the last dispatched model, and the last model view remain in local Jouzu state and contain no prompts, tool results, credentials, or raw project paths.
+`Ctrl+F` toggles a favorite while browsing and while searching; rebind it through the `jouzu.model.toggleFavorite` action in `keybindings.json`. `Ctrl+Shift+R` refreshes model catalogs and providers without leaving Models, then updates the list; rebind it through the `jouzu.model.refresh` action. `Ctrl+P` cycles the favorite list without leaving the current effective model scope.
+
+Catalog offerings may declare `supportedThinkingLevels`: Jouzu shows only those levels and clamps unsupported selections to the next supported level, or the highest supported level when none is higher. `off` is selectable only when listed. Levels Jouzu does not recognize are ignored, so a catalog that declares a newer level still loads; an unrecognized `defaultThinkingLevel` is ignored. Omission keeps the provider adapter's available levels.
+
+Each model remembers your explicit thinking-level override when you switch back to it. Without an override, Jouzu uses the catalog offering's `defaultThinkingLevel`, then Pi's configured default. Dispatch history does not override these defaults. Explicit startup thinking arguments, resumed-session levels, and scoped-model thinking pins retain precedence. Changing the thinking level saves the preference immediately, even before another request.
+
+Recency changes only after the selected model dispatches its first request, which records its thinking level in global and project recents. Clearing recents keeps explicit thinking preferences. Project defaults, favorites, recents, thinking preferences, the last dispatched model, and the last model view remain in local Jouzu state and contain no prompts, tool results, credentials, or raw project paths.
 
 A direct switch is blocked only when the estimated active context plus a 4,096-token safety margin exceeds the target model's context window. Selecting a `context-small` model opens a confirmation: press `Enter` again to compact the full active transcript into a brief and switch after Jouzu rechecks the context, or press `Esc` to cancel. Bundled pi-vcc handles this compaction under the default profile settings. Jouzu does not infer cache compatibility, model equivalence, cost, routing, privacy, retention, region, or certification guarantees. Those properties belong to the provider and configuration you select unless Jouzu reports verified facts explicitly.
+
+## Automatic work and flow control
+
+Session flow control is on by default. Background completions wait for active work and queued messages, then arrive in batches. Goals, measured loops, and other automatic work share this scheduling. Task lists advance through remaining work by default unless interrupted; `TaskReorder` changes their order, and `TaskList` shows what runs next. Waits have deadlines and can check whether a background process is still alive.
+
+Run `/flow` to see held work and its recovery commands. `/flow pause` holds automatic turns, and `/flow resume` releases them. Interrupting a turn also pauses automatic work until your next message or `/flow resume`. Pausing does not stop running shell jobs.
+
+If the session stays stuck after an interrupt, run `/flow reset` while idle. It releases the blocked turn without stopping background jobs or deleting execution records. When Jouzu cannot tell whether a provider answered a request, `/flow resolve <attempt> retry|discard` records your decision; retrying may repeat a turn the provider already answered.
+
+Set `JOUZU_FLOW_CONTROL=0` before starting Jouzu to disable flow control for that process. See [v0.1.9 release notes](https://github.com/shisa-ai/jouzu/blob/main/docs/releases/v0.1.9.md) for the command list and [Testing](https://github.com/shisa-ai/jouzu/blob/main/docs/testing.md) for validation limits.
 
 ## Included extension tools
 
@@ -105,9 +120,13 @@ Jouzu provides its prompt and status surfaces directly:
 
 These surfaces use terminal display columns rather than JavaScript string length and are tested with CJK, full-width spaces, combining marks, emoji, ANSI color, and no-color output. The compact bar does not report provider quota or session cost until Jouzu has an authoritative source for those facts.
 
-## Shisa sign-out
+## Shisa sign-in and sign-out
 
-`/logout shisa` attempts server revocation before removing the local Shisa credential and device link. If the server cannot confirm revocation, Jouzu signs out locally and asks you to disconnect the device in the Shisa dashboard. A local storage failure is reported separately. Other providers retain their credentials.
+Run `/login shisa`, open the displayed verification URL, and complete approval in your browser. Jouzu saves a dedicated API key and device link with private file permissions. The saved key supplies inference, the Shisa model catalog, and voice; each service still requires access on your Shisa account.
+
+An explicit `SHISA_API_KEY` takes precedence over the saved login. The Shisa catalog also accepts a separately saved catalog token before falling back to the login. If Jouzu saves the key but cannot confirm delivery to Shisa, it asks you to sign in again.
+
+`/logout shisa` attempts server revocation before removing the local Shisa credential and device link. If the server cannot confirm revocation, Jouzu signs out locally and asks you to disconnect the device in the Shisa dashboard. A local storage failure is reported separately. A saved link without its issuing gateway also requires dashboard disconnect. Other providers retain their credentials.
 
 Sign-out stops voice recording and removes Shisa catalog models from the picker. `SHISA_API_KEY` is left unchanged but is not used by Jouzu's Shisa login, catalog, or voice integration for the rest of this process. Run `/login shisa` to reconnect, or unset the variable before restarting to stay signed out.
 
@@ -115,11 +134,11 @@ Sign-out stops voice recording and removes Shisa catalog models from the picker.
 
 `/voice` starts microphone dictation through Shisa realtime speech recognition. `/voice stop` inserts final text into the editable prompt without sending it; `/voice cancel` discards it. `Ctrl+\` starts or stops recording from the prompt. Use `/voice devices` to choose a microphone and `/voice language ja` for Japanese (default: automatic language detection).
 
-Run `/login shisa` or set `SHISA_API_KEY` with `shisa/asr-realtime` access first. An environment key takes precedence over the saved login. Audio is sent to Shisa; Jouzu writes no recording files. Capture uses the machine running Jouzu, including when connected over SSH. Real-microphone and platform permission checks are still required. See [Voice input](https://github.com/shisa-ai/jouzu/blob/main/docs/voice.md) for limits, platform details, and shortcut configuration.
+Run `/login shisa` or set `SHISA_API_KEY` with `shisa/asr-realtime` access first. An environment key takes precedence over the saved login. Audio is sent to Shisa; Jouzu writes no recording files. Capture uses the machine running Jouzu, including when connected over SSH. Microphone permissions, device behavior, and transcription quality still need live testing. See [Voice input](https://github.com/shisa-ai/jouzu/blob/main/docs/voice.md) for limits, platform details, and shortcut configuration.
 
 ## Profiles
 
-`core` is the safe fallback and provider- and language-neutral base. Product branding, locale, terminal settings, repository text, and path contents never opt a user into a response language.
+`core` is the default profile and does not select a provider or response language. Product branding, locale, terminal settings, repository text, and path contents never opt a user into a response language.
 
 Core installs two optional skills:
 
@@ -130,7 +149,7 @@ Jouzu's default system prompt tells agents to follow repository instructions, pr
 
 Core also installs the `jouzu-review` prompt. Skill names and descriptions appear in context; full instructions load when a task matches or you run `/skill:<name>`.
 
-Sessions started with `jz` use local [TextGuard scanning](https://github.com/shisa-ai/jouzu/blob/main/docs/textguard.md) for skills and web results by default. A flagged web result reaches the model with its findings attached and a note to treat it as untrusted data, so a search still returns something you can use; a flagged skill file stays withheld until you approve it through `/textguard` in an interactive session. `/textguard strict` withholds everything flagged, and `/textguard off` stops scanning for the session. Add `--jouzu-textguard-files` to include ordinary file reads. No Python installation is required.
+Sessions started with `jz` use local [TextGuard scanning](https://github.com/shisa-ai/jouzu/blob/main/docs/textguard.md) for skills and web results by default. A flagged web result reaches the model with its findings attached and a note to treat it as untrusted data. A flagged skill file stays withheld until you approve it through `/textguard` in an interactive session. `/textguard strict` withholds everything flagged, and `/textguard off` stops scanning for the session. Add `--jouzu-textguard-files` to include ordinary file reads. No Python installation is required.
 
 The optional `ja` preview extends Core with a concise Japanese response policy while preserving exact code, commands, identifiers, paths, URLs, logs, and source error messages. Enable it through first-run consent or explicit selection at any time:
 
@@ -197,7 +216,7 @@ Catalog configuration is stored at:
 | macOS | `~/Library/Application Support/Jouzu/catalogs.json` |
 | Windows | `%APPDATA%\Jouzu\catalogs.json` |
 
-Settings reports each source's status and model count. `Enter` edits the selected source; `→` expands its cached offerings and `←` collapses them. `A` adds, `Space` enables or disables, `R` refreshes, and `D` removes the source registration; removal asks for confirmation. Model changes from these actions apply to the current session immediately. `/reload` refreshes local provider models and enabled catalogs whose credentials are available before reapplying the active catalog data. The built-in `shisa-api` row supports only `Space`; its endpoint and credential reference are managed by Jouzu. Removing a custom source does not remove provider configuration, credentials, favorites, or recents.
+Settings reports each source's status and model count. `Enter` edits the selected source; `→` expands its cached offerings and `←` collapses them. `A` adds, `Space` enables or disables, `R` refreshes, and `D` removes the source registration; removal asks for confirmation. Model changes from these actions apply to the current session immediately. `/reload` refreshes local provider models and enabled catalogs whose credentials are available before reapplying the active catalog data. The built-in `shisa-api` row supports only `Space`; its endpoint and credential reference are managed by Jouzu. Removing a custom source deletes its saved catalog token and keeps provider configuration, provider credentials, favorites, and recents.
 
 A global context ceiling sits above the source list. `↑` from the first source row focuses it, and `←` and `→` step through 128K, 192K, 256K, 384K, 512K, 768K, 1M, or off. The ceiling is stored in `context-policy.json` next to `catalogs.json`. Compaction, the footer percentage, and the model picker's fit check use the smaller of the model's declared window and the ceiling, so a 1M-token model under a 384K ceiling compacts as if its window were 384K. Catalog `limits.contextWindow` values compose through the same minimum, and an explicit `models.json` `modelOverrides.contextWindow` still outranks the ceiling. Turning the ceiling off restores the declared windows in the same session.
 
@@ -210,7 +229,9 @@ jouzu catalog refresh
 jouzu catalog refresh office
 ```
 
-`catalog status` lists offerings that declare no `supportedThinkingLevels`. An offering that overrides a model Pi already knows keeps that model's levels, and a model the catalog adds is registered with thinking disabled, so a catalog that supports reasoning should declare levels explicitly. Offerings whose `capabilities` list omits `reasoning` are excluded, because the client marks those models as non-reasoning. `jz doctor` reports the count and points here for the list.
+`catalog status` reports offerings missing input types or token limits needed to register a new model. Such offerings can update a matching existing model but cannot add one. `jz doctor` reports these gaps without contacting the catalog server; run `jz catalog refresh` before checking a server update.
+
+`catalog status` also lists offerings that declare no `supportedThinkingLevels`. An offering that overrides a model Pi already knows keeps that model's levels, and a model the catalog adds is registered with thinking disabled, so a catalog that supports reasoning should declare levels explicitly. Offerings whose `capabilities` list omits `reasoning` are excluded, because the client marks those models as non-reasoning. `jz doctor` reports the count and points here for the list.
 
 `JOUZU_MODEL_CATALOG_URL` and optional `JOUZU_MODEL_CATALOG_TOKEN` remain a single-source shorthand when `catalogs.json` does not exist. Refresh requests never follow redirects, so a bearer token cannot be forwarded to another origin.
 
@@ -235,9 +256,9 @@ jz pi --help
 jz -- --version
 ```
 
-`doctor` is non-mutating and reports the install/update channel and policy, keybinding-default state, exact Pi tag/commit, platform/runtime prerequisites, resolved roots, profile hashes, package count, authentication presence, proxy/CA status, shared skill surface, catalog thinking-level completeness, warnings, and actionable problems. It reports presence only and does not print credential values.
+`doctor` is non-mutating and reports the install/update channel and policy, keybinding-default state, exact Pi tag/commit, platform/runtime prerequisites, resolved roots, profile hashes, package count, authentication presence, proxy/CA status, shared skill directories, catalog registration and thinking-level gaps, warnings, and actionable problems. It reports presence only and does not print credential values.
 
-`--json` prints the same diagnostics as experimental schema 1, so scripts can read individual fields and issues without parsing the human layout. The report includes `"experimental": true`; its structure and identifiers may change before the stable machine-diagnostics contract planned for v0.3/v0.4. Exit status is unchanged: `1` when a problem is reported.
+`--json` prints the same diagnostics as experimental schema 1, so scripts can read individual fields and issues without parsing the human layout. The report includes `"experimental": true`; its structure and identifiers may change. Exit status is unchanged: `1` when a problem is reported.
 
 Most arguments are forwarded unchanged to Pi. Use `pi` or `--` when a Pi argument collides with a Jouzu command. Pi runtime self-update is blocked because Jouzu owns the exact Pi dependency. Pi package/model operations such as `jz update --extensions` and `jz update --models` remain available inside Jouzu state.
 
@@ -310,7 +331,7 @@ jz self-update policy off
 
 `JOUZU_NO_UPDATE=1` disables startup checks for one invocation. `JOUZU_UPDATE_POLICY=auto-restart|notify|off` overrides the persisted policy for one process (an invalid value fails safe as `off`), and `JOUZU_UPDATE_INTERVAL_HOURS` changes the successful-check cadence. `self-update check --json` and `self-update status --json` provide machine-readable results.
 
-Startup checks contact the configured npm registry but send no Jouzu telemetry. A later release may check in the background and offer restart behavior in a TUI modal; v0.1 performs the update before entering Pi so old launcher code never loads newly replaced runtime modules.
+Startup checks contact the configured npm registry but send no Jouzu telemetry. Updates finish before the interactive session starts.
 
 Interactive launches clear the current viewport and show a compact adaptive Jouzu header. Set `JOUZU_NO_CLEAR=1` to preserve existing terminal output. `NO_COLOR` disables banner color.
 
@@ -325,8 +346,7 @@ Managed profile assets are UTF-8. Existing CP932/Shift-JIS profile targets produ
 - npm is the only v0.1 application channel.
 - Node, npm, Git, Bash, and provider credentials are not bundled.
 - Existing Pi `models.json` and `auth.json` require separate first-run consent; other stock Pi state is not imported.
-- No native installer, standalone archive, background service, or hosted model gateway.
-- Catalog-only models require an already configured Pi provider whose API matches the offering; one-turn trials, adaptive target-budget compaction, and cost/quota/route preflight are deferred.
+- Catalogs need input types and context/output limits to add models. Authenticated gateway catalogs supply the provider connection; other catalogs require a configured provider with a matching API.
 - Third-party Pi packages execute trusted code with the user's permissions and have their own platform support.
 - `Ctrl+Enter` and `Ctrl+Up` delivery depends on terminal/OS key reporting; both semantic bindings remain user-customizable.
 - Release checks cover Linux, macOS, and Windows, including native dependencies, npm installs, browser first use, and updater rollback.
