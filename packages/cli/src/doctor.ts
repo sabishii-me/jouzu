@@ -6,6 +6,7 @@ import {
 	inspectJouzuCamoufoxRuntime,
 	resolveCamoufoxRuntimePaths,
 } from "./camoufox-adapter.js";
+import { CommandReport, type CommandReportOptions, commandReportKey, pluralize } from "./command-report.js";
 import type { KeybindingPlan } from "./keybindings.js";
 import type { JouzuMetadata } from "./metadata.js";
 import type { CatalogThinkingLevelGap } from "./model-catalog.js";
@@ -65,6 +66,8 @@ export interface DoctorContext {
 	releaseExtensionDiagnostic?: string;
 	catalogLevels?: DoctorCatalogLevels;
 	catalogDiagnostic?: string;
+	/** Terminal capabilities for the rendered text report; the JSON report is unaffected. */
+	render?: CommandReportOptions;
 }
 
 export type DoctorSeverity = "warning" | "problem";
@@ -103,35 +106,49 @@ export interface DoctorResult {
 
 const DOCTOR_SECTION_ORDER: readonly DoctorSectionId[] = ["runtime", "platform", "roots", "profile"];
 
+const DOCTOR_SECTION_HEADINGS: Readonly<Record<DoctorSectionId, string>> = Object.freeze({
+	runtime: "Runtime",
+	platform: "Platform",
+	roots: "Roots",
+	profile: "Profile",
+});
+
 /**
- * Render the human report. Sections are emitted in a fixed order and separated
- * by one blank line, so adding a field never changes unrelated output.
+ * Render the human report. Diagnoses are hoisted above the observed values so a user
+ * sees what needs attention first; sections then follow in a fixed order, so adding a
+ * field never changes unrelated output.
  */
-export function formatDoctorReport(report: DoctorReport): string {
-	const lines: string[] = ["Jouzu doctor"];
+export function formatDoctorReport(report: DoctorReport, options: CommandReportOptions = {}): string {
+	const out = new CommandReport(options);
+	const fieldValue = (id: string): string | undefined => report.fields.find((field) => field.id === id)?.value;
+	const piRuntime = fieldValue("pi.runtime");
+	out.title("Jouzu doctor", fieldValue("jouzu.version"), piRuntime && `pi ${piRuntime}`, fieldValue("platform"));
+	out.entries(
+		"Notes",
+		report.issues.map((issue) => ({
+			status: issue.severity === "problem" ? ("problem" as const) : ("warning" as const),
+			key: commandReportKey(issue.id),
+			message: issue.message,
+		})),
+	);
+	if (report.issues.length > 0) out.rule();
 	for (const section of DOCTOR_SECTION_ORDER) {
-		const fields = report.fields.filter((field) => field.section === section);
-		if (fields.length === 0) continue;
-		lines.push("");
-		for (const field of fields) lines.push(`${field.label}: ${field.value}`);
+		out.section(
+			DOCTOR_SECTION_HEADINGS[section],
+			report.fields.filter((field) => field.section === section).map(({ label, value }) => ({ label, value })),
+		);
 	}
-	for (const note of report.notes) {
-		lines.push("");
-		lines.push(note);
-	}
-	for (const [heading, severity] of [
-		["Warnings", "warning"],
-		["Problems", "problem"],
-	] as const) {
-		const matching = report.issues.filter((issue) => issue.severity === severity);
-		if (matching.length === 0) continue;
-		lines.push("");
-		lines.push(`${heading}:`);
-		for (const issue of matching) lines.push(`- ${issue.message}`);
-	}
-	lines.push("");
-	lines.push(report.healthy ? "Result: ready for Jouzu v0.1 preview" : "Result: action required");
-	return lines.join("\n");
+	for (const note of report.notes) out.paragraph(note);
+	const problems = report.issues.filter((issue) => issue.severity === "problem").length;
+	const warnings = report.issues.length - problems;
+	out.blank().rule();
+	out.summary(
+		report.healthy ? "ok" : "problem",
+		report.healthy ? "Result: ready for Jouzu v0.1 preview" : "Result: action required",
+		problems > 0 ? pluralize(problems, "problem") : undefined,
+		warnings > 0 ? pluralize(warnings, "warning") : undefined,
+	);
+	return out.toString();
 }
 
 function parseNodeVersion(version: string): [number, number, number] {
@@ -314,7 +331,7 @@ export function createDoctorReport(context: DoctorContext): DoctorResult {
 	} else if (catalogGaps > 0) {
 		warning(
 			"catalog.thinkingLevels",
-			`Catalog: ${catalogGaps} of ${context.catalogLevels?.offerings ?? 0} offerings declare no thinking levels, so the client cannot control their reasoning effort. Run "jz catalog status" for the list.`,
+			`${catalogGaps} of ${context.catalogLevels?.offerings ?? 0} offerings declare no thinking levels, so Jouzu cannot control their reasoning effort. Run "jz catalog status" for the list.`,
 		);
 	}
 	if (camoufoxRuntime.status === "invalid") {
@@ -369,7 +386,7 @@ export function createDoctorReport(context: DoctorContext): DoctorResult {
 	field(
 		"runtime",
 		"extensions.compatibilityDependencies",
-		"Extension compatibility dependencies",
+		"Compatibility dependencies",
 		context.releaseExtensionStatus
 			? `${context.releaseExtensionStatus.manifest.compatibilityDependencies.length} selected`
 			: "unavailable",
@@ -436,16 +453,11 @@ export function createDoctorReport(context: DoctorContext): DoctorResult {
 	field("roots", "paths.sessionDir", "Session root", context.paths.sessionDir);
 	field("roots", "paths.cacheDir", "Cache root", context.paths.cacheDir);
 	field("roots", "modelPicker.state", "Model picker state", modelPickerState);
-	field(
-		"roots",
-		"isolation.piAgentDir",
-		"Inherited Pi agent root replaced",
-		context.inheritedPiAgentDir ? "yes" : "not set",
-	);
+	field("roots", "isolation.piAgentDir", "Pi agent root replaced", context.inheritedPiAgentDir ? "yes" : "not set");
 	field(
 		"roots",
 		"isolation.piSessionDir",
-		"Inherited Pi session root replaced",
+		"Pi session root replaced",
 		context.inheritedPiSessionDir ? "yes" : "not set",
 	);
 	const now = new Date();
@@ -507,5 +519,5 @@ export function createDoctorReport(context: DoctorContext): DoctorResult {
 		issues,
 		notes,
 	};
-	return { text: formatDoctorReport(report), healthy: report.healthy, report };
+	return { text: formatDoctorReport(report, context.render ?? {}), healthy: report.healthy, report };
 }

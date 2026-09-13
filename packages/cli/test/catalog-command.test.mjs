@@ -6,6 +6,16 @@ import { test } from "node:test";
 
 import { catalogStatus, formatCatalogStatus, validateCatalogFile } from "../dist/catalog-command.js";
 
+const ESCAPE = String.fromCharCode(27);
+
+/** Render every assertion at a fixed width without color, so layout is deterministic. */
+const RENDER = { colorEnabled: false, columns: 100 };
+
+/** Collapse the renderer's alignment and wrapping so message assertions stay readable. */
+function flat(text) {
+	return text.replace(/\s+/gu, " ");
+}
+
 const paths = {
 	agentDir: "/unused/agent",
 	stateDir: "/unused/state",
@@ -47,10 +57,11 @@ test("built-in source without a key is visible and idle with no network work", (
 			],
 		});
 		assert.equal(fetchCount, 0);
-		const text = formatCatalogStatus(status);
-		assert.match(text, /Shisa API \[shisa-api\]: empty/u);
-		assert.match(text, /Credential: environment variable SHISA_API_KEY \(not set\)/u);
-		assert.match(text, /Warning: token variable SHISA_API_KEY is not set/u);
+		const text = formatCatalogStatus(status, RENDER);
+		assert.match(text, /^○ Shisa API \[shisa-api\] · empty$/mu);
+		assert.match(text, /^ +Credential {2,}environment variable SHISA_API_KEY \(not set\)$/mu);
+		assert.match(flat(text), /⚠ shisa-api token variable SHISA_API_KEY is not set/u);
+		assert.ok(!text.includes(ESCAPE), "piped output carries no escape sequences");
 	} finally {
 		globalThis.fetch = originalFetch;
 	}
@@ -72,10 +83,12 @@ test("catalog status lists offerings that declare no thinking levels", () => {
 		thinkingLevelGaps: [{ providerId: "aiand", modelId: "deepseek-ai/deepseek-v4-flash" }],
 		quarantined: 0,
 	};
-	const text = formatCatalogStatus(status);
-	assert.match(text, /Thinking levels: 1 of 36 offerings have no declared levels/u);
-	assert.match(text, /aiand\/deepseek-ai\/deepseek-v4-flash/u);
-	assert.doesNotMatch(formatCatalogStatus({ ...status, thinkingLevelGaps: [] }), /Thinking levels:/u);
+	const text = formatCatalogStatus(status, RENDER);
+	assert.match(text, /^✓ codex-pool active$/mu);
+	assert.match(text, /^ +Thinking levels {2,}1 of 36 offerings have no declared levels$/mu);
+	assert.match(text, /^ +aiand\/deepseek-ai\/deepseek-v4-flash$/mu);
+	assert.match(flat(text), /⚠ codex-pool 1 of 36 offerings have no declared levels/u);
+	assert.doesNotMatch(formatCatalogStatus({ ...status, thinkingLevelGaps: [] }, RENDER), /Thinking levels/u);
 });
 
 test("catalog file validation fails gracefully", () => {

@@ -553,7 +553,7 @@ test("profile plan is non-mutating and profile apply converges", () => {
 		assert.deepEqual(JSON.parse(secondPlan.stdout).actions, []);
 		const doctor = run(["--jouzu-home", jouzuHome, "doctor"]);
 		assert.equal(doctor.status, piLock.compatibilityStatus === "qualified" ? 0 : 1, doctor.stderr || doctor.stdout);
-		const manifests = [...doctor.stdout.matchAll(/(?:Bundled|Applied) profile manifest: ([0-9a-f]{64})/g)];
+		const manifests = [...doctor.stdout.matchAll(/(?:Bundled|Applied) profile manifest +([0-9a-f]{64})/gu)];
 		assert.equal(manifests.length, 2);
 		assert.equal(manifests[0][1], manifests[1][1]);
 	} finally {
@@ -575,7 +575,7 @@ test("profile conflicts stop with the reserved status before Pi launch", () => {
 		);
 		const result = run(["--jouzu-home", jouzuHome, "--jouzu-profile", "ja", "pi", "--version"]);
 		assert.equal(result.status, 3);
-		assert.match(result.stderr, /CONFLICT APPEND_SYSTEM\.md/);
+		assert.match(result.stderr, /✗ conflict +APPEND_SYSTEM\.md/u);
 		assert.doesNotMatch(result.stdout, /0\.84\.2/);
 		assert.equal(readFileSync(join(jouzuHome, "agent", "APPEND_SYSTEM.md"), "utf8"), "user-owned\n");
 	} finally {
@@ -767,7 +767,7 @@ test("corrupt profile state fails with exit 1 and a recovery action, not the con
 		assert.equal(result.status, 1, result.stderr);
 		assert.match(result.stderr, /Jouzu profile state is unreadable/);
 		assert.match(result.stderr, /Recovery:/);
-		assert.doesNotMatch(result.stderr, /CONFLICT/);
+		assert.doesNotMatch(result.stderr, /conflict/u);
 	} finally {
 		rmSync(temp, { recursive: true, force: true });
 	}
@@ -788,8 +788,11 @@ test("doctor text and experimental JSON preserve diagnostics, exit status, and r
 		const result = run(["--jouzu-home", jouzuHome, "doctor"], { env: inheritedRoots });
 		const qualified = piLock.compatibilityStatus === "qualified";
 		assert.equal(result.status, qualified ? 0 : 1, result.stderr || result.stdout);
-		assert.match(result.stdout, new RegExp(`Agent/config root: ${jouzuHome.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
-		assert.match(result.stdout, /Inherited Pi agent root replaced: yes/);
+		assert.match(
+			result.stdout,
+			new RegExp(`Agent/config root +${jouzuHome.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "u"),
+		);
+		assert.match(result.stdout, /Pi agent root replaced +yes/u);
 		assert.match(result.stdout, qualified ? /Result: ready for Jouzu v0\.1 preview/ : /Result: action required/);
 
 		const jsonResult = run(["--jouzu-home", jouzuHome, "doctor", "--json"], { env: inheritedRoots });

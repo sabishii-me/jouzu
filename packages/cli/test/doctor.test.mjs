@@ -6,6 +6,38 @@ import { test } from "node:test";
 import { createDoctorReport, formatDoctorReport } from "../dist/doctor.js";
 import { ModelPickerStore } from "../dist/model-picker-state.js";
 
+const ESCAPE = String.fromCharCode(27);
+const ANSI_SEQUENCE = new RegExp(`${ESCAPE}\\[[0-9;]*m`, "gu");
+
+function stripAnsi(value) {
+	return value.replace(ANSI_SEQUENCE, "");
+}
+
+/** Render every assertion at a fixed width without color, so layout is deterministic. */
+const RENDER = { colorEnabled: false, columns: 100 };
+
+function render(result) {
+	return formatDoctorReport(result.report, RENDER);
+}
+
+function escapeRegExp(value) {
+	return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+/** Collapse the renderer's alignment and wrapping so message assertions stay readable. */
+function flat(text) {
+	return text.replace(/\s+/gu, " ");
+}
+
+/** Assert one aligned label and value row of the rendered report. */
+function assertField(text, label, value) {
+	assert.match(
+		text,
+		new RegExp(`^ +${escapeRegExp(label)} {2,}${escapeRegExp(value)}$`, "mu"),
+		`expected the row "${label}  ${value}"`,
+	);
+}
+
 function metadata(overrides = {}) {
 	return {
 		jouzuVersion: "0.1.0",
@@ -86,19 +118,20 @@ test("doctor reports an injected healthy Linux runtime without mutating roots", 
 		},
 	});
 	assert.equal(report.healthy, true);
-	assert.match(report.text, /Platform: linux x64/);
-	assert.match(report.text, /Locale: ja-JP/);
-	assert.match(report.text, /Provider environment: present/);
-	assert.match(report.text, /Proxy configured: yes/);
-	assert.match(report.text, /Self-update policy: auto-restart/);
-	assert.match(report.text, /Automatic startup update: eligible/);
-	assert.match(report.text, /Keybinding defaults: converged/);
-	assert.match(report.text, /Model picker state: absent/);
-	assert.match(report.text, /Optional Camoufox runtime: not installed; installs on first browser tool use/);
-	assert.match(report.text, /Camoufox runtime install lock: free/);
-	assert.match(report.text, /Jouzu default follow-up key: ctrl\+enter/);
-	assert.match(report.text, /Jouzu default dequeue key: ctrl\+up/);
-	assert.doesNotMatch(report.text, /must-not-appear/);
+	const healthy = render(report);
+	assertField(healthy, "Platform", "linux x64");
+	assertField(healthy, "Locale", "ja-JP");
+	assertField(healthy, "Provider environment", "present");
+	assertField(healthy, "Proxy configured", "yes");
+	assertField(healthy, "Self-update policy", "auto-restart");
+	assertField(healthy, "Automatic startup update", "eligible");
+	assertField(healthy, "Keybinding defaults", "converged");
+	assertField(healthy, "Model picker state", "absent");
+	assertField(healthy, "Optional Camoufox runtime", "not installed; installs on first browser tool use");
+	assertField(healthy, "Camoufox runtime install lock", "free");
+	assertField(healthy, "Jouzu default follow-up key", "ctrl+enter");
+	assertField(healthy, "Jouzu default dequeue key", "ctrl+up");
+	assert.doesNotMatch(healthy, /must-not-appear/);
 	assert.equal(rmSync(root, { recursive: true, force: true }), undefined);
 });
 
@@ -118,8 +151,8 @@ test("doctor summarizes catalog thinking-level gaps and points to the catalog de
 			...extra,
 		});
 	const complete = reportFor({ catalogLevels: { activeCatalogs: 1, offerings: 36, gaps: [] } });
-	assert.match(complete.text, /Catalog thinking levels: complete/);
-	assert.doesNotMatch(complete.text, /jz catalog status/);
+	assertField(render(complete), "Catalog thinking levels", "complete");
+	assert.doesNotMatch(render(complete), /jz catalog status/);
 	assert.equal(complete.healthy, true);
 
 	const gaps = reportFor({
@@ -132,17 +165,19 @@ test("doctor summarizes catalog thinking-level gaps and points to the catalog de
 			],
 		},
 	});
-	assert.match(gaps.text, /Catalog thinking levels: 2 of 36 offerings without declared levels/);
-	assert.match(gaps.text, /- Catalog: 2 of 36 offerings declare no thinking levels/);
-	assert.match(gaps.text, /Run "jz catalog status" for the list/);
+	const gapsText = render(gaps);
+	assertField(gapsText, "Catalog thinking levels", "2 of 36 offerings without declared levels");
+	assert.match(flat(gapsText), /⚠ catalog 2 of 36 offerings declare no thinking levels/u);
+	assert.match(flat(gapsText), /Run "jz catalog status" for the list/u);
 	assert.equal(gaps.healthy, true, "a catalog gap is a warning, not a problem");
 
 	const unconfigured = reportFor({ catalogLevels: { activeCatalogs: 0, offerings: 0, gaps: [] } });
-	assert.match(unconfigured.text, /Catalog thinking levels: no active catalog/);
+	assertField(render(unconfigured), "Catalog thinking levels", "no active catalog");
 
 	const unavailable = reportFor({ catalogDiagnostic: "cached catalog digest mismatch" });
-	assert.match(unavailable.text, /Catalog thinking levels: unavailable/);
-	assert.match(unavailable.text, /Catalog status is unavailable: cached catalog digest mismatch/);
+	const unavailableText = render(unavailable);
+	assertField(unavailableText, "Catalog thinking levels", "unavailable");
+	assert.match(flat(unavailableText), /Catalog status is unavailable: cached catalog digest mismatch/u);
 
 	assert.equal(rmSync(root, { recursive: true, force: true }), undefined);
 });
@@ -168,15 +203,16 @@ test("doctor reports model picker counts and unreadable state without rewriting 
 				commandPaths: { git: "/usr/bin/git", bash: "/usr/bin/bash", npm: "/usr/bin/npm" },
 			});
 		assert.match(
-			reportFor().text,
-			/Model picker state: 0 project defaults; 1 favorites; 1 global recents; 1 project scopes/,
+			flat(render(reportFor())),
+			/Model picker state 0 project defaults; 1 favorites; 1 global recents; 1 project scopes/u,
 		);
 
 		const statePath = join(root, "state", "model-picker.json");
 		writeFileSync(statePath, "{ broken");
 		const unreadable = reportFor();
-		assert.match(unreadable.text, /Model picker state: unreadable/);
-		assert.match(unreadable.text, /- Model picker state is unreadable:/);
+		const unreadableText = render(unreadable);
+		assertField(unreadableText, "Model picker state", "unreadable");
+		assert.match(flat(unreadableText), /⚠ modelPicker Model picker state is unreadable:/u);
 		assert.equal(readFileSync(statePath, "utf8"), "{ broken");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
@@ -206,13 +242,14 @@ test("doctor fails closed for unsupported Windows prerequisites and Pi drift", (
 		commandPaths: { git: null, bash: null, npm: null },
 	});
 	assert.equal(report.healthy, false);
-	assert.match(report.text, /Node v20\.18\.0 is unsupported/);
-	assert.match(report.text, /Git was not found/);
-	assert.match(report.text, /Bash was not found; install Bash or Git Bash/);
-	assert.match(report.text, /npm was not found on PATH/);
-	assert.match(report.text, /Pinned Pi 0\.84\.2 does not match loaded runtime 0\.85\.0/);
-	assert.match(report.text, /Pi lock status is pending/);
-	assert.match(report.text, /Result: action required/);
+	const unsupported = flat(render(report));
+	assert.match(unsupported, /Node v20\.18\.0 is unsupported/u);
+	assert.match(unsupported, /Git was not found/u);
+	assert.match(unsupported, /Bash was not found; install Bash or Git Bash/u);
+	assert.match(unsupported, /npm was not found on PATH/u);
+	assert.match(unsupported, /Pinned Pi 0\.84\.2 does not match loaded runtime 0\.85\.0/u);
+	assert.match(unsupported, /Pi lock status is pending/u);
+	assert.match(unsupported, /Result: action required/u);
 });
 
 test("doctor reports a Pi runtime load failure as action required", () => {
@@ -230,8 +267,8 @@ test("doctor reports a Pi runtime load failure as action required", () => {
 		commandPaths: { git: "/usr/bin/git", bash: "/usr/bin/bash", npm: "/usr/bin/npm" },
 	});
 	assert.equal(report.healthy, false);
-	assert.match(report.text, /Pi runtime could not be loaded: Cannot find module/);
-	assert.match(report.text, /Result: action required/);
+	assert.match(flat(render(report)), /Pi runtime could not be loaded: Cannot find module/u);
+	assert.match(flat(render(report)), /Result: action required/u);
 	assert.equal(rmSync(root, { recursive: true, force: true }), undefined);
 });
 
@@ -249,8 +286,8 @@ test("doctor reports a Pi version mismatch as action required", () => {
 		commandPaths: { git: "/usr/bin/git", bash: "/usr/bin/bash", npm: "/usr/bin/npm" },
 	});
 	assert.equal(report.healthy, false);
-	assert.match(report.text, /Pinned Pi 0\.84\.2 does not match loaded runtime 0\.85\.0/);
-	assert.match(report.text, /Result: action required/);
+	assert.match(flat(render(report)), /Pinned Pi 0\.84\.2 does not match loaded runtime 0\.85\.0/u);
+	assert.match(flat(render(report)), /Result: action required/u);
 	assert.equal(rmSync(root, { recursive: true, force: true }), undefined);
 });
 
@@ -279,13 +316,14 @@ test("doctor reports degraded optional extensions and disabled tools as action r
 			},
 		});
 		assert.equal(report.healthy, false);
-		assert.match(report.text, /Release-owned extensions: 10 selected; 9 ready; 1 optional unavailable/u);
-		assert.match(report.text, /Optional release extensions are unavailable: fixture-fetch-extension@1\.2\.3/u);
-		assert.match(report.text, /disabled tools: web_fetch, batch_web_fetch/u);
-		assert.match(report.text, /GLIBC_2\.34/u);
-		assert.match(report.text, /rerun `jz doctor`/u);
+		const degraded = render(report);
+		assertField(degraded, "Release-owned extensions", "10 selected; 9 ready; 1 optional unavailable");
+		assert.match(flat(degraded), /Optional release extensions are unavailable: fixture-fetch-extension@1\.2\.3/u);
+		assert.match(flat(degraded), /disabled tools: web_fetch, batch_web_fetch/u);
+		assert.match(flat(degraded), /GLIBC_2\.34/u);
+		assert.match(flat(degraded), /rerun `jz doctor`/u);
 		assert.ok(report.report.issues.some((issue) => issue.id === "extensions.optionalUnavailable"));
-		assert.match(report.text, /Result: action required/u);
+		assert.match(flat(degraded), /Result: action required/u);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
@@ -298,9 +336,10 @@ test("doctor reports invalid optional Camoufox runtime state as action required"
 		mkdirSync(installRoot, { recursive: true });
 		const report = createDoctorReport(healthyContext(root));
 		assert.equal(report.healthy, false);
-		assert.match(report.text, /Optional Camoufox runtime: invalid/u);
-		assert.match(report.text, /The optional Camoufox runtime is invalid/u);
-		assert.match(report.text, /remove that directory and retry a browser tool/u);
+		const camoufox = render(report);
+		assertField(camoufox, "Optional Camoufox runtime", "invalid");
+		assert.match(flat(camoufox), /The optional Camoufox runtime is invalid/u);
+		assert.match(flat(camoufox), /remove that directory and retry a browser tool/u);
 		assert.ok(report.report.issues.some((issue) => issue.id === "camoufox.runtimeInvalid"));
 	} finally {
 		rmSync(root, { recursive: true, force: true });
@@ -327,9 +366,10 @@ test("doctor reports a leftover profile lock as action required", () => {
 			commandPaths: { git: "/usr/bin/git", bash: "/usr/bin/bash", npm: "/usr/bin/npm" },
 		});
 		assert.equal(report.healthy, false);
-		assert.match(report.text, /Profile lock: owner unknown/);
-		assert.match(report.text, /leftover state lock blocks Jouzu operations/);
-		assert.match(report.text, /Result: action required/);
+		const locked = render(report);
+		assert.match(flat(locked), /Profile lock owner unknown \(/u);
+		assert.match(flat(locked), /leftover state lock blocks Jouzu operations/u);
+		assert.match(flat(locked), /Result: action required/u);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
@@ -337,15 +377,15 @@ test("doctor reports a leftover profile lock as action required", () => {
 
 test("doctor maps every updater install channel to user-facing text", () => {
 	const cases = [
-		["global-npm", /Install channel: global npm install/],
-		["local-npm", /Install channel: local npm install/],
-		["ephemeral-npx", /Install channel: npx install/],
-		["source", /Install channel: source checkout/],
-		["other", /Install channel: other/],
+		["global-npm", "global npm install"],
+		["local-npm", "local npm install"],
+		["ephemeral-npx", "npx install"],
+		["source", "source checkout"],
+		["other", "other"],
 	];
 	const root = mkdtempSync(join(tmpdir(), "jouzu-doctor-channel-"));
 	rmSync(root, { recursive: true, force: true });
-	for (const [channel, pattern] of cases) {
+	for (const [channel, expected] of cases) {
 		const report = createDoctorReport({
 			metadata: metadata(),
 			paths: paths(root),
@@ -375,7 +415,7 @@ test("doctor maps every updater install channel to user-facing text", () => {
 				},
 			},
 		});
-		assert.match(report.text, pattern, `channel ${channel}`);
+		assertField(render(report), "Install channel", expected);
 	}
 	assert.equal(rmSync(root, { recursive: true, force: true }), undefined);
 });
@@ -427,17 +467,22 @@ test("doctor exposes a structured report whose text rendering matches it", () =>
 		// The text output is a pure rendering of the report, not a second source of truth.
 		assert.equal(formatDoctorReport(report), result.text);
 
-		// Every field appears in the text exactly as label and value.
+		// Every field appears in the text as its label followed by its value.
+		const text = formatDoctorReport(report, RENDER);
+		const flattened = flat(text);
 		for (const field of report.fields) {
-			assert.ok(result.text.includes(`${field.label}: ${field.value}`), `${field.id} must appear in the text report`);
+			assert.ok(
+				flattened.includes(flat(`${field.label} ${field.value}`)),
+				`${field.id} must appear in the text report`,
+			);
 		}
-		assert.match(result.text, /^Jouzu doctor\n/);
+		assert.match(text, /^Jouzu doctor /u);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
 });
 
-test("doctor issues drive health and the rendered warning and problem blocks", () => {
+test("doctor issues drive health and the rendered notes block", () => {
 	const root = mkdtempSync(join(tmpdir(), "jouzu-doctor-issues-"));
 	try {
 		const result = createDoctorReport({
@@ -456,10 +501,13 @@ test("doctor issues drive health and the rendered warning and problem blocks", (
 			"a Pi pin mismatch is reported as a problem",
 		);
 		assert.equal(result.healthy, false, "any problem makes the report unhealthy");
-		assert.match(result.text, /\nProblems:\n/);
-		assert.match(result.text, /Result: action required$/);
+		const text = formatDoctorReport(result.report, RENDER);
+		const flattened = flat(text);
+		assert.match(text, /^Notes$/mu);
+		assert.match(text, /Result: action required/u);
+		assert.match(text, /^ {3}✗ /mu, "a problem carries the problem marker");
 		for (const issue of problems) {
-			assert.ok(result.text.includes(`- ${issue.message}`), `${issue.id} must be listed`);
+			assert.ok(flattened.includes(flat(issue.message)), `${issue.id} must be listed`);
 		}
 
 		const warnings = result.report.issues.filter((issue) => issue.severity === "warning");
@@ -467,23 +515,48 @@ test("doctor issues drive health and the rendered warning and problem blocks", (
 			warnings.some((issue) => issue.id === "profile.notApplied"),
 			"an unapplied profile is a warning, not a problem",
 		);
-		assert.match(result.text, /\nWarnings:\n/);
+		assert.match(text, /^ {3}⚠ /mu, "a warning carries the warning marker");
+		for (const issue of warnings) {
+			assert.ok(flattened.includes(flat(issue.message)), `${issue.id} must be listed`);
+		}
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
 });
 
-test("a report without issues omits the warning and problem blocks", () => {
-	const report = {
-		schemaVersion: 1,
-		experimental: true,
-		healthy: true,
-		fields: [{ id: "a", section: "runtime", label: "A", value: "1" }],
-		issues: [],
-		notes: ["Note text."],
-	};
+const MINIMAL_REPORT = {
+	schemaVersion: 1,
+	experimental: true,
+	healthy: true,
+	fields: [{ id: "a", section: "runtime", label: "A", value: "1" }],
+	issues: [],
+	notes: ["Note text."],
+};
+
+test("a report without issues omits the notes block", () => {
 	assert.equal(
-		formatDoctorReport(report),
-		"Jouzu doctor\n\nA: 1\n\nNote text.\n\nResult: ready for Jouzu v0.1 preview",
+		formatDoctorReport(MINIMAL_REPORT, { colorEnabled: false, columns: 40 }),
+		[
+			"Jouzu doctor",
+			"",
+			"Runtime",
+			"   A  1",
+			"",
+			"   Note text.",
+			"",
+			"─".repeat(40),
+			"✓ Result: ready for Jouzu v0.1 preview",
+		].join("\n"),
 	);
+});
+
+test("doctor styling is opt-in and every marker survives without color", () => {
+	const plain = formatDoctorReport(MINIMAL_REPORT, { colorEnabled: false, columns: 40 });
+	assert.ok(!plain.includes(ESCAPE), "a report without color emits no escape sequences");
+
+	const colored = formatDoctorReport(MINIMAL_REPORT, { colorEnabled: true, colorMode: "16", columns: 40 });
+	assert.ok(colored.includes(`${ESCAPE}[1mJouzu doctor${ESCAPE}[22m`), "the command name is bold");
+	assert.ok(colored.includes(`${ESCAPE}[32m✓${ESCAPE}[39m Result: ready`), "a healthy result is green");
+	// Stripping the styling returns the same report, so color adds no meaning of its own.
+	assert.equal(stripAnsi(colored), plain);
 });

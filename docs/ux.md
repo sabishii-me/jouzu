@@ -13,7 +13,7 @@ The guide states intended behavior. Tests encode it. A view that disagrees with 
 | Session Frame (prompt frame, session line, status bar) | `packages/session-ui/src` | Persistent, around Pi's editor | This guide |
 | Startup header | `packages/cli/src/presentation.ts` | One-time output | This guide |
 | First-run prompts (Japanese support, Pi import) | `profile-choice.ts`, `pi-import.ts` | Line-oriented `readline` | This guide, [Non-interactive and degraded modes](#non-interactive-and-degraded-modes) |
-| Command output (`doctor`, `catalog`, `keybindings`, `self-update`) | `doctor.ts`, `catalog-command.ts`, `keybindings.ts`, `updater.ts` | Text and `--json` | This guide, [Messages](#messages) |
+| Command output (`doctor`, `catalog`, `keybindings`, `profile`, `self-update`) | `doctor.ts`, `catalog-command.ts`, `keybindings.ts`, `profile-manager.ts`, `updater.ts` | Text and `--json` | This guide, [Command output](#command-output), [Messages](#messages) |
 
 ## What Jouzu inherits from Pi
 
@@ -83,7 +83,7 @@ Apply these rules before assigning a key:
 ## Text, language, and input
 
 - IME composition input goes to the focused text field and is never interpreted as a shortcut. This is why rule 4 exists: a bare-letter shortcut competing with a live text field breaks Japanese, Chinese, and Korean input.
-- Measure terminal display columns, not JavaScript string length. Every rendered line must fit its width after ANSI removal and grapheme, emoji, and CJK measurement. `packages/cli/src/terminal-layout.ts` and `packages/session-ui/src/layout.ts` supply the primitives.
+- Measure terminal display columns, not JavaScript string length. Every rendered line must fit its width after ANSI removal and grapheme, emoji, and CJK measurement. `packages/cli/src/terminal-layout.ts` and `packages/session-ui/src/layout.ts` supply the primitives. `terminal-layout.ts` re-exports the two Session UI modules that need no Pi agent runtime, so `doctor` and `--help` keep working when that runtime cannot load.
 - Sanitize external text before styling it. Catalog labels, model names, provider IDs, and error text from a remote source pass through `sanitizeTerminalText` first.
 - Never render a credential value. Report whether a named environment variable is set; do not print its contents, and keep it out of configuration, cache, logs, errors, tests, and rendered output.
 - User-visible strings are English in v0.1. Do not add a translation catalog or a language switch before the release that owns localization.
@@ -101,6 +101,34 @@ Apply these rules before assigning a key:
 | Windows | Windows Terminal or another UTF-8-capable terminal is required. See [`windows.md`](windows.md). |
 
 Color, cursor shape, and cursor position are never the only indication of selection, state, or failure.
+
+## Command output
+
+`doctor`, `catalog`, `keybindings`, and `profile` render their text through
+`packages/cli/src/command-report.ts`. Styling never changes the `--json` form of a command.
+
+| Element | Form |
+| --- | --- |
+| Title | The command name, then the versions and platform a user should quote in a report |
+| Notes | Every diagnosis, keyed by the first segment of its identifier, above the observed values |
+| Section | A heading, then label and value rows on one gutter shared by the whole report |
+| Summary | A marker, the verdict, and the problem and warning counts |
+
+| Status | Marker | Color |
+| --- | --- | --- |
+| ok | `✓` | green |
+| warning | `⚠` | yellow |
+| problem | `✗` | red |
+| idle | `○` | dim |
+| update | `↑` | cyan |
+
+The renderer holds to five rules:
+
+1. Color needs a terminal. A redirected stream gets plain text unless `FORCE_COLOR` is set, and `NO_COLOR` or `TERM=dumb` turns color off everywhere.
+2. A marker states the status, so removing color removes no meaning.
+3. A label is never clipped. Where fewer than 12 columns remain for values, a section puts each value on its own line under its label.
+4. A line breaks only at an ASCII space between words. A path, digest, or model ID wider than its column overflows instead of splitting, so it survives a copy and paste.
+5. External text passes through `sanitizeTerminalText` before styling, and the tabs and line breaks inside it become spaces.
 
 ## Messages
 

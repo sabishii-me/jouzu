@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, unlinkSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
+import { CommandReport, type CommandReportEntry, type CommandReportOptions } from "./command-report.js";
 import type { JouzuPaths } from "./paths.js";
 import {
 	copyPrivateFile,
@@ -68,19 +69,24 @@ export class ProfileStateError extends Error {
 	}
 }
 
-export function formatProfilePlan(plan: ProfilePlan): string {
-	const lines = [
-		"Jouzu profile plan",
-		`Profile: ${plan.profile} v${plan.profileVersion}`,
-		`Manifest: ${plan.manifestSha256}`,
-		`Agent root: ${plan.agentDir}`,
-		`Actions (${plan.actions.length}):`,
-	];
-	if (plan.actions.length === 0) lines.push("- none");
-	for (const action of plan.actions) {
-		lines.push(`- ${action.type.toUpperCase()} ${action.target} (${action.reason})`);
-	}
-	return lines.join("\n");
+function profileActionEntries(plan: ProfilePlan): CommandReportEntry[] {
+	if (plan.actions.length === 0) return [{ status: "ok", key: "none", message: "No profile changes are needed." }];
+	return plan.actions.map((action) => ({
+		status: action.type === "conflict" ? ("problem" as const) : ("update" as const),
+		key: action.type,
+		message: `${action.target} (${action.reason})`,
+	}));
+}
+
+export function formatProfilePlan(plan: ProfilePlan, options: CommandReportOptions = {}): string {
+	const out = new CommandReport(options);
+	out.title("Jouzu profile plan", `${plan.profile} v${plan.profileVersion}`);
+	out.section("Profile", [
+		{ label: "Manifest", value: plan.manifestSha256 },
+		{ label: "Agent root", value: plan.agentDir },
+	]);
+	out.entries("Actions", profileActionEntries(plan));
+	return out.toString();
 }
 
 export class ProfileConflictError extends Error {

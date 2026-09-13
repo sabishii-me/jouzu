@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, rmSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
+import { CommandReport, type CommandReportEntry, type CommandReportOptions } from "./command-report.js";
 import type { JouzuPaths } from "./paths.js";
 import { copyPrivateFile, validatePrivateDirectory, writeFilePrivateAtomic } from "./private-fs.js";
 import { acquireStateLock, STATE_LOCK_STALE_MS } from "./state-lock.js";
@@ -598,31 +599,41 @@ function formatBinding(binding: KeyBindingValue | undefined): string {
 	return typeof binding === "string" ? binding : binding.length > 0 ? binding.join(", ") : "unbound";
 }
 
-export function formatKeybindingPlan(plan: KeybindingPlan): string {
-	const lines = [
-		"Jouzu keybinding plan",
-		`Defaults: v${plan.defaultsVersion}`,
-		`Status: ${plan.status}`,
-		`Policy: ${plan.policy}`,
-		`Config: ${plan.configPath}`,
-		"Desired bindings:",
-	];
-	for (const [action, binding] of Object.entries(JOUZU_KEYBINDING_DEFAULTS)) {
-		lines.push(`- ${action}: ${formatBinding(binding)}`);
-	}
-	if (plan.portabilityWarnings.length > 0) {
-		lines.push("Portability:");
-		for (const warning of plan.portabilityWarnings) lines.push(`- ${warning}`);
-	}
-	lines.push(`Actions (${plan.actions.length}):`);
-	if (plan.actions.length === 0) lines.push("- none");
-	for (const action of plan.actions) {
+function planActionEntries(plan: KeybindingPlan): CommandReportEntry[] {
+	if (plan.actions.length === 0) return [{ status: "ok", key: "none", message: "No keybinding changes are needed." }];
+	return plan.actions.map((action) => {
 		const detail = action.conflictingAction
 			? `; conflicts with ${action.conflictingAction}`
 			: action.observed !== undefined
 				? `; current ${formatBinding(action.observed)}`
 				: "";
-		lines.push(`- ${action.type.toUpperCase()} ${action.action} (${action.reason}${detail})`);
-	}
-	return lines.join("\n");
+		return {
+			status: action.type === "conflict" ? ("problem" as const) : ("update" as const),
+			key: action.type,
+			message: `${action.action} (${action.reason}${detail})`,
+		};
+	});
+}
+
+export function formatKeybindingPlan(plan: KeybindingPlan, options: CommandReportOptions = {}): string {
+	const out = new CommandReport(options);
+	out.title("Jouzu keybinding plan", `defaults v${plan.defaultsVersion}`, plan.status);
+	out.entries(
+		"Notes",
+		plan.portabilityWarnings.map((warning) => ({ status: "warning" as const, key: "portability", message: warning })),
+	);
+	if (plan.portabilityWarnings.length > 0) out.rule();
+	out.section("Plan", [
+		{ label: "Policy", value: plan.policy },
+		{ label: "Config", value: plan.configPath },
+	]);
+	out.section(
+		"Desired bindings",
+		Object.entries(JOUZU_KEYBINDING_DEFAULTS).map(([action, binding]) => ({
+			label: action,
+			value: formatBinding(binding),
+		})),
+	);
+	out.entries("Actions", planActionEntries(plan));
+	return out.toString();
 }

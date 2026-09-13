@@ -30,8 +30,9 @@ cli.ts  (entry: argument routing, profile resolution, launch)
   ├─ presentation.ts     startup presentation extension
   ├─ palette.ts          floating/replacement Palette surface host
   ├─ model-picker*.ts    Models view, ranking, and private picker state
-  ├─ terminal-layout.ts  stable CLI re-export of shared display-width helpers
-  ├─ session-ui/         build-time adapter to the standalone workspace
+  ├─ command-report.ts   shared styling for doctor/catalog/keybindings/profile text output
+  ├─ terminal-layout.ts  stable CLI re-export of shared display-width and color helpers
+  ├─ session-ui/         build-time adapters to the standalone workspace
   ├─ runtime-output.ts   session-resume guidance and terminal-title branding
   ├─ state-lock.ts       shared state-lock primitive
   └─ private-fs.ts       private directory/file boundary and atomic writes
