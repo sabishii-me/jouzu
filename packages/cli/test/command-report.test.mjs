@@ -62,7 +62,10 @@ test("color adds styling without changing the text a user reads", () => {
 			.entries("Notes", [{ status: "warning", key: "catalog", message: "Two offerings declare no levels." }])
 			.rule()
 			.section("Runtime", [{ label: "Node", value: "v22.19.0" }], { status: "ok", detail: "supported" })
-			.summary("ok", "Result: ready", "1 warning")
+			.tally([
+				{ status: "ok", text: "0 problems" },
+				{ status: "warning", text: "1 warning" },
+			])
 			.toString();
 	const plain = build({ colorEnabled: false });
 	const colored = build({ colorEnabled: true, colorMode: "16" });

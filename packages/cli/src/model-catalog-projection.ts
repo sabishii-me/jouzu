@@ -7,7 +7,11 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { getCatalogSourceToken } from "./catalog-sources.js";
 import { activeContextClamp, clampModelContextWindow, modelsExceedContextClamp } from "./context-clamp.js";
-import { CATALOG_THINKING_LEVELS, type CatalogModelOffering } from "./model-catalog.js";
+import {
+	CATALOG_THINKING_LEVELS,
+	type CatalogModelOffering,
+	missingCatalogRegistrationFields,
+} from "./model-catalog.js";
 import type { ActiveModelCatalog } from "./model-catalog-sync.js";
 import type { ModelReference } from "./model-picker-state.js";
 import type { JouzuPaths } from "./paths.js";
@@ -186,6 +190,8 @@ function createCatalogModel(
 	providerModels: readonly PiModel[],
 ): PiModel | undefined {
 	const { offering, patch } = projection;
+	// The same three fields `missingCatalogRegistrationFields` names, read here so the optional
+	// patch types narrow to the definition Pi requires.
 	if (!patch.input || patch.contextWindow === undefined || patch.maxTokens === undefined) return undefined;
 	const template = providerTemplate(providerModels, offering.api);
 	if (!template) return undefined;
@@ -287,9 +293,7 @@ export function projectCatalogProviders(
 					providerId,
 					modelId: projection.offering.modelId,
 					reason:
-						projection.patch.input &&
-						projection.patch.contextWindow !== undefined &&
-						projection.patch.maxTokens !== undefined
+						missingCatalogRegistrationFields(projection.offering).length === 0
 							? "no-provider-route"
 							: "incomplete-offering",
 				});

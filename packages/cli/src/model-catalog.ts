@@ -37,6 +37,68 @@ export function catalogThinkingLevelGaps(document: ModelCatalogDocument): Catalo
 		.filter((offering) => !offering.supportedThinkingLevels && offering.capabilities?.includes("reasoning") !== false)
 		.map((offering) => ({ providerId: offering.providerId, modelId: offering.modelId }));
 }
+
+/** Every offering field Jouzu needs before it can register a model Pi does not already provide. */
+export const CATALOG_REGISTRATION_FIELDS = ["textModality", "contextWindow", "maxOutputTokens"] as const;
+export type CatalogRegistrationField = (typeof CATALOG_REGISTRATION_FIELDS)[number];
+
+const CATALOG_REGISTRATION_FIELD_LABELS: Readonly<Record<CatalogRegistrationField, string>> = Object.freeze({
+	textModality: "text input",
+	contextWindow: "context window",
+	maxOutputTokens: "maximum output tokens",
+});
+
+/** One offering that cannot become a new model, and the fields it leaves out. */
+export interface CatalogRegistrationGap {
+	providerId: string;
+	modelId: string;
+	missing: CatalogRegistrationField[];
+}
+
+/**
+ * Fields the offering does not declare. A catalog cannot create a provider route, so an offering
+ * that names a model Pi already provides only overrides fields and needs none of these. An
+ * offering that names a model Pi does not provide has to stand alone, and Pi rejects a model
+ * definition without an input modality, a context window, and a maximum output size: the offering
+ * is then dropped and the model never appears.
+ */
+export function missingCatalogRegistrationFields(offering: CatalogModelOffering): CatalogRegistrationField[] {
+	const missing: CatalogRegistrationField[] = [];
+	if (!Array.isArray(offering.modalities) || !offering.modalities.includes("text")) missing.push("textModality");
+	if (typeof offering.limits?.contextWindow !== "number") missing.push("contextWindow");
+	if (typeof offering.limits?.maxOutputTokens !== "number") missing.push("maxOutputTokens");
+	return missing;
+}
+
+export function catalogRegistrationGaps(document: ModelCatalogDocument): CatalogRegistrationGap[] {
+	return document.modelOfferings
+		.map((offering) => ({
+			providerId: offering.providerId,
+			modelId: offering.modelId,
+			missing: missingCatalogRegistrationFields(offering),
+		}))
+		.filter((gap) => gap.missing.length > 0);
+}
+
+/** What an incomplete offering costs the user, stated the same way wherever it is reported. */
+export const CATALOG_REGISTRATION_EFFECT =
+	"An offering for a model Pi does not already provide is dropped, so that model never reaches the model list.";
+
+/** "no text input, no maximum output tokens" for one offering. */
+export function describeCatalogRegistrationGap(gap: CatalogRegistrationGap): string {
+	return gap.missing.map((field) => `no ${CATALOG_REGISTRATION_FIELD_LABELS[field]}`).join(", ");
+}
+
+/** "10 no text input, 4 no context window" across a set of offerings. */
+export function describeCatalogRegistrationGaps(gaps: readonly CatalogRegistrationGap[]): string {
+	return CATALOG_REGISTRATION_FIELDS.map((field) => ({
+		field,
+		count: gaps.filter((gap) => gap.missing.includes(field)).length,
+	}))
+		.filter((entry) => entry.count > 0)
+		.map((entry) => `${entry.count} no ${CATALOG_REGISTRATION_FIELD_LABELS[entry.field]}`)
+		.join(", ");
+}
 const UINT64_MAX = 18_446_744_073_709_551_615n;
 
 const RECORD_CLASSES = [

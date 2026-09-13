@@ -117,6 +117,14 @@ Jouzu bundles two profiles, `core` (the language-neutral fallback) and `ja` (the
 
 The optional model catalog is a model-metadata input, not an extension installer. With no configured endpoint, it performs no network work. A configured refresh streams at most 16 MiB, validates strict JSON and semantic references before activation, partitions cache by endpoint and account, quarantines bounded mass changes, and preserves the active last-known-good document on failure.
 
+A catalog cannot create a provider route. An offering that names a model Pi already provides only
+overrides fields, so it needs no particular field. An offering that names a model Pi does not
+provide has to stand alone, and Pi rejects a model definition without a text input modality, a
+context window, and a maximum output size; the offering is dropped and that model never reaches
+the model list. `catalogRegistrationGaps` in `model-catalog.ts` names the offerings in that state
+and the fields each one leaves out. `jz doctor` reports the count per source and `jz catalog
+status` lists the offerings.
+
 ## Workspace boundary
 
 `packages/session-ui` is a rename-friendly internal workspace, not a separately published product or stable extension API. Runtime IDs are centralized and it writes no feature-named state or configuration. Pure snapshots, sources, renderers, styles, and layout helpers remain independently testable; `extension.ts` is the only Pi lifecycle adapter. `styles.ts` owns the replaceable semantic color mapping, so renderers do not depend on raw colors or legacy names. `scripts/copy-session-ui.mjs` is the only packaging bridge.

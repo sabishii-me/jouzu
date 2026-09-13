@@ -70,6 +70,12 @@ export interface CommandReportField {
 	details?: readonly string[];
 }
 
+/** One closing count, such as "2 problems". */
+export interface CommandReportCount {
+	status: CommandReportStatus;
+	text: string;
+}
+
 export interface CommandReportSectionOptions {
 	status?: CommandReportStatus;
 	detail?: string;
@@ -229,15 +235,15 @@ export class CommandReport {
 		return this;
 	}
 
-	/** The closing verdict. It carries no blank line of its own, so it can sit under a rule. */
-	summary(status: CommandReportStatus, text: string, ...details: readonly (string | undefined)[]): this {
-		const detail = this.joinDetails(details);
-		const marker = this.tone(status, STATUS_MARKERS[status]);
-		const body = clean(text);
-		this.blocks.push({
-			kind: "line",
-			text: detail ? `${marker} ${body} ${this.dim(`${SEPARATOR} ${detail}`)}` : `${marker} ${body}`,
-		});
+	/**
+	 * The closing counts, one marker per count. It carries no blank line of its own, so it sits
+	 * directly under a rule, and it names no release, so it stays true across versions.
+	 */
+	tally(counts: readonly CommandReportCount[]): this {
+		const text = counts
+			.map((count) => `${this.tone(count.status, STATUS_MARKERS[count.status])} ${clean(count.text)}`)
+			.join(this.dim(` ${SEPARATOR} `));
+		this.blocks.push({ kind: "line", text });
 		return this;
 	}
 
@@ -263,8 +269,14 @@ export class CommandReport {
 				lines.push(`${INDENT}${this.dim(label)}${padColumns(label, labelColumns)}${GAP}${value[0]}`);
 				for (const line of value.slice(1)) lines.push(`${" ".repeat(valueStart)}${line}`);
 			}
+			const detailStart = valueStart + DETAIL_INDENT.length;
+			const detailColumns = Math.max(MINIMUM_VALUE_COLUMNS, this.columns - detailStart - DETAIL_INDENT.length);
 			for (const detailLine of field.details ?? []) {
-				lines.push(`${" ".repeat(valueStart)}${DETAIL_INDENT}${this.dim(clean(detailLine))}`);
+				const wrapped = wrapTerminalWords(clean(detailLine), detailColumns);
+				lines.push(`${" ".repeat(detailStart)}${this.dim(wrapped[0])}`);
+				for (const line of wrapped.slice(1)) {
+					lines.push(`${" ".repeat(detailStart)}${DETAIL_INDENT}${this.dim(line)}`);
+				}
 			}
 		}
 	}

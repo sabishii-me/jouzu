@@ -2,12 +2,20 @@ import { existsSync, lstatSync, readFileSync } from "node:fs";
 import { catalogInsecureTransportWarning, resolveCatalogSources } from "./catalog-sources.js";
 import {
 	CommandReport,
+	type CommandReportCount,
 	type CommandReportEntry,
 	type CommandReportField,
 	type CommandReportOptions,
 	type CommandReportStatus,
+	pluralize,
 } from "./command-report.js";
-import { type CatalogConformanceResult, checkCatalogConformance } from "./model-catalog.js";
+import {
+	CATALOG_REGISTRATION_EFFECT,
+	type CatalogConformanceResult,
+	checkCatalogConformance,
+	describeCatalogRegistrationGap,
+	describeCatalogRegistrationGaps,
+} from "./model-catalog.js";
 import {
 	type CatalogStatuses,
 	type CatalogSyncStatus,
@@ -22,6 +30,18 @@ type ConfiguredCatalogStatus = Extract<CatalogSyncStatus, { configured: true }>;
 
 const UNCONFIGURED_MESSAGE =
 	"No model catalog endpoint is configured. Jouzu continues using Pi and local model configuration.";
+
+const CATALOG_DETAIL_HINT = 'Run "jz catalog status <source-id>" for one source, or add --json for the stored record.';
+
+/** The closing counts, matching the notes above them. */
+function noteCounts(notes: readonly CommandReportEntry[]): CommandReportCount[] {
+	const problems = notes.filter((note) => note.status === "problem").length;
+	const warnings = notes.filter((note) => note.status === "warning").length;
+	return [
+		{ status: problems > 0 ? "problem" : "ok", text: pluralize(problems, "problem") },
+		{ status: warnings > 0 ? "warning" : "ok", text: pluralize(warnings, "warning") },
+	];
+}
 
 export function catalogStatus(
 	paths: JouzuPaths,
@@ -69,6 +89,14 @@ function sourceNotes(status: CatalogSyncStatus): CommandReportEntry[] {
 			message: `token variable ${status.credentialName} is not set and no token is saved for this source; refreshes are skipped until one is available.`,
 		});
 	}
+	if (status.registrationGaps?.length) {
+		const complete = (status.offeringCount ?? status.registrationGaps.length) - status.registrationGaps.length;
+		notes.push({
+			status: "warning",
+			key,
+			message: `${complete} of ${status.offeringCount ?? "?"} offerings carry the fields a new model needs (${describeCatalogRegistrationGaps(status.registrationGaps)}). ${CATALOG_REGISTRATION_EFFECT}`,
+		});
+	}
 	if (status.thinkingLevelGaps?.length) {
 		notes.push({
 			status: "warning",
@@ -90,6 +118,16 @@ function sourceFields(status: ConfiguredCatalogStatus): CommandReportField[] {
 	const fields: CommandReportField[] = [{ label: "Endpoint", value: status.endpoint }];
 	if (status.catalogId) fields.push({ label: "Catalog", value: status.catalogId });
 	if (status.offeringCount !== undefined) fields.push({ label: "Models", value: String(status.offeringCount) });
+	if (status.registrationGaps?.length) {
+		const complete = (status.offeringCount ?? status.registrationGaps.length) - status.registrationGaps.length;
+		fields.push({
+			label: "Registration",
+			value: `${complete} of ${status.offeringCount ?? "?"} offerings carry the fields a new model needs`,
+			details: status.registrationGaps.map(
+				(gap) => `${gap.providerId}/${gap.modelId} — ${describeCatalogRegistrationGap(gap)}`,
+			),
+		});
+	}
 	if (status.thinkingLevelGaps?.length) {
 		fields.push({
 			label: "Thinking levels",
@@ -122,23 +160,25 @@ export function formatCatalogStatus(
 	options: CommandReportOptions = {},
 ): string {
 	const out = new CommandReport(options);
-	if (!("sources" in status)) {
-		if (!status.configured) return out.title("Jouzu model catalog", status.status).paragraph(status.message).toString();
-		out.title("Jouzu model catalog");
-		const notes = sourceNotes(status);
-		out.entries("Notes", notes);
-		if (notes.length > 0) out.rule();
-		renderSource(out, status);
-		return out.toString();
+	const single = !("sources" in status);
+	if (single && !status.configured) {
+		return out.title("Jouzu model catalog", status.status).paragraph(status.message).toString();
 	}
-	out.title("Jouzu model catalogs", status.status, `${status.active} of ${status.configured} sources active`);
-	if (status.status === "unconfigured") return out.paragraph(UNCONFIGURED_MESSAGE).toString();
-	const notes = status.sources.flatMap(sourceNotes);
+	const sources = single ? [status] : status.sources;
+	if (single) out.title("Jouzu model catalog");
+	else {
+		out.title("Jouzu model catalogs", status.status, `${status.active} of ${status.configured} sources active`);
+		if (status.status === "unconfigured") return out.paragraph(UNCONFIGURED_MESSAGE).toString();
+	}
+	const notes = sources.flatMap(sourceNotes);
 	out.entries("Notes", notes);
 	if (notes.length > 0) out.rule();
-	for (const source of status.sources) {
+	for (const source of sources) {
 		if (source.configured) renderSource(out, source);
 	}
+	out.blank().rule();
+	out.tally(noteCounts(notes));
+	out.paragraph(CATALOG_DETAIL_HINT);
 	return out.toString();
 }
 

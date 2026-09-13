@@ -5,8 +5,11 @@ import { test } from "node:test";
 
 import {
 	catalogDocumentSha256,
+	catalogRegistrationGaps,
 	catalogThinkingLevelGaps,
 	checkCatalogConformance,
+	describeCatalogRegistrationGap,
+	describeCatalogRegistrationGaps,
 	MODEL_CATALOG_MEDIA_TYPE,
 	ModelCatalogError,
 	parseAndValidateModelCatalog,
@@ -64,6 +67,36 @@ test("gap analysis flags offerings that leave thinking levels undeclared", () =>
 
 	document.modelOfferings[0].supportedThinkingLevels = ["low", "medium", "high"];
 	assert.deepEqual(catalogThinkingLevelGaps(parsed(document)), [], "a declared set closes the gap");
+});
+
+test("gap analysis flags offerings that cannot become a new model", () => {
+	const parsed = (document) => parseAndValidateModelCatalog(JSON.stringify(document), { remote: true });
+	const document = accountSnapshot();
+	assert.deepEqual(
+		catalogRegistrationGaps(parsed(document)),
+		[],
+		"a complete offering carries a text modality, a context window, and an output limit",
+	);
+
+	delete document.modelOfferings[0].modalities;
+	delete document.modelOfferings[0].limits.maxOutputTokens;
+	const gaps = catalogRegistrationGaps(parsed(document));
+	assert.deepEqual(gaps, [
+		{ providerId: "ai.example.gateway", modelId: "example-model", missing: ["textModality", "maxOutputTokens"] },
+	]);
+	assert.equal(describeCatalogRegistrationGap(gaps[0]), "no text input, no maximum output tokens");
+	assert.equal(describeCatalogRegistrationGaps(gaps), "1 no text input, 1 no maximum output tokens");
+
+	document.modelOfferings[0].modalities = ["image"];
+	assert.deepEqual(
+		catalogRegistrationGaps(parsed(document))[0].missing,
+		["textModality", "maxOutputTokens"],
+		"a modality list without text cannot define a text model",
+	);
+
+	document.modelOfferings[0].modalities = ["text", "image"];
+	document.modelOfferings[0].limits.maxOutputTokens = 32768;
+	assert.deepEqual(catalogRegistrationGaps(parsed(document)), [], "declaring the missing fields closes the gap");
 });
 
 test("per-model reasoning defaults match the schema and remain optional", () => {

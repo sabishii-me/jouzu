@@ -378,7 +378,7 @@ try {
 		}).stdout;
 		assert.match(doctor, /Install channel +local npm install/u);
 		assert.match(doctor, /Selected profile +core/u);
-		assert.match(doctor, qualified ? /Result: ready for Jouzu v0\.1 preview/ : /Result: action required/);
+		assert.match(doctor, qualified ? /✓ 0 problems/u : /✗ \d+ problem/u);
 		const pi = run(process.execPath, [installedCli, "pi", "--version"], { cwd: temp, env }).stdout.trim();
 		assert.equal(pi, piVersion);
 

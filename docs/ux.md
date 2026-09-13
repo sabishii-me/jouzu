@@ -110,9 +110,13 @@ Color, cursor shape, and cursor position are never the only indication of select
 | Element | Form |
 | --- | --- |
 | Title | The command name, then the versions and platform a user should quote in a report |
-| Notes | Every diagnosis, keyed by the first segment of its identifier, above the observed values |
+| Notes | Every diagnosis above the observed values, keyed by what it is about: a catalog source, or the first segment of the identifier |
 | Section | A heading, then label and value rows on one gutter shared by the whole report |
-| Summary | A marker, the verdict, and the problem and warning counts |
+| Tally | The closing counts, one marker each, under a rule |
+| Hint | One dim line naming the command that shows more, such as `--json` |
+
+A tally names no release. `doctor` reporting "ready for v0.1" went stale the moment the release
+changed and told a user nothing, so the closing line states counts a reader can act on.
 
 | Status | Marker | Color |
 | --- | --- | --- |

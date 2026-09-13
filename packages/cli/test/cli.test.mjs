@@ -793,7 +793,7 @@ test("doctor text and experimental JSON preserve diagnostics, exit status, and r
 			new RegExp(`Agent/config root +${jouzuHome.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "u"),
 		);
 		assert.match(result.stdout, /Pi agent root replaced +yes/u);
-		assert.match(result.stdout, qualified ? /Result: ready for Jouzu v0\.1 preview/ : /Result: action required/);
+		assert.match(result.stdout, qualified ? /✓ 0 problems/u : /✗ \d+ problem/u);
 
 		const jsonResult = run(["--jouzu-home", jouzuHome, "doctor", "--json"], { env: inheritedRoots });
 		assert.equal(jsonResult.status, qualified ? 0 : 1, jsonResult.stderr || jsonResult.stdout);

@@ -9,7 +9,12 @@ import {
 import { CommandReport, type CommandReportOptions, commandReportKey, pluralize } from "./command-report.js";
 import type { KeybindingPlan } from "./keybindings.js";
 import type { JouzuMetadata } from "./metadata.js";
-import type { CatalogThinkingLevelGap } from "./model-catalog.js";
+import {
+	CATALOG_REGISTRATION_EFFECT,
+	type CatalogRegistrationGap,
+	type CatalogThinkingLevelGap,
+	describeCatalogRegistrationGaps,
+} from "./model-catalog.js";
 import { loadModelPickerState } from "./model-picker-state.js";
 import type { JouzuPaths } from "./paths.js";
 import type { ReleaseExtensionStatus } from "./release-extensions.js";
@@ -36,10 +41,13 @@ const PROVIDER_ENVIRONMENT_KEYS = [
 	"MINIMAX_API_KEY",
 ] as const;
 
-export interface DoctorCatalogLevels {
-	activeCatalogs: number;
+/** What one active catalog describes. Doctor names the source so a gap points somewhere. */
+export interface DoctorCatalogSource {
+	sourceId: string;
+	label: string;
 	offerings: number;
-	gaps: readonly CatalogThinkingLevelGap[];
+	thinkingLevelGaps: readonly CatalogThinkingLevelGap[];
+	registrationGaps: readonly CatalogRegistrationGap[];
 }
 
 export interface DoctorContext {
@@ -64,7 +72,7 @@ export interface DoctorContext {
 	keybindingDiagnostic?: string;
 	releaseExtensionStatus?: ReleaseExtensionStatus;
 	releaseExtensionDiagnostic?: string;
-	catalogLevels?: DoctorCatalogLevels;
+	catalogSources?: readonly DoctorCatalogSource[];
 	catalogDiagnostic?: string;
 	/** Terminal capabilities for the rendered text report; the JSON report is unaffected. */
 	render?: CommandReportOptions;
@@ -72,7 +80,7 @@ export interface DoctorContext {
 
 export type DoctorSeverity = "warning" | "problem";
 
-export type DoctorSectionId = "runtime" | "platform" | "roots" | "profile";
+export type DoctorSectionId = "runtime" | "catalog" | "platform" | "roots" | "profile";
 
 /** One observed fact. Schema 1 IDs are machine keys, but remain experimental through v0.1.x. */
 export interface DoctorField {
@@ -87,6 +95,8 @@ export interface DoctorIssue {
 	id: string;
 	severity: DoctorSeverity;
 	message: string;
+	/** What the diagnosis is about, such as a catalog source. Defaults to the identifier's first segment. */
+	subject?: string;
 }
 
 export interface DoctorReport {
@@ -104,10 +114,14 @@ export interface DoctorResult {
 	report: DoctorReport;
 }
 
-const DOCTOR_SECTION_ORDER: readonly DoctorSectionId[] = ["runtime", "platform", "roots", "profile"];
+const DOCTOR_SECTION_ORDER: readonly DoctorSectionId[] = ["runtime", "catalog", "platform", "roots", "profile"];
+
+const DOCTOR_DETAIL_HINT =
+	'Run "jz doctor --json" for the same report as JSON, or "jz catalog status" for catalog detail.';
 
 const DOCTOR_SECTION_HEADINGS: Readonly<Record<DoctorSectionId, string>> = Object.freeze({
 	runtime: "Runtime",
+	catalog: "Model catalog",
 	platform: "Platform",
 	roots: "Roots",
 	profile: "Profile",
@@ -127,7 +141,7 @@ export function formatDoctorReport(report: DoctorReport, options: CommandReportO
 		"Notes",
 		report.issues.map((issue) => ({
 			status: issue.severity === "problem" ? ("problem" as const) : ("warning" as const),
-			key: commandReportKey(issue.id),
+			key: issue.subject ?? commandReportKey(issue.id),
 			message: issue.message,
 		})),
 	);
@@ -142,12 +156,11 @@ export function formatDoctorReport(report: DoctorReport, options: CommandReportO
 	const problems = report.issues.filter((issue) => issue.severity === "problem").length;
 	const warnings = report.issues.length - problems;
 	out.blank().rule();
-	out.summary(
-		report.healthy ? "ok" : "problem",
-		report.healthy ? "Result: ready for Jouzu v0.1 preview" : "Result: action required",
-		problems > 0 ? pluralize(problems, "problem") : undefined,
-		warnings > 0 ? pluralize(warnings, "warning") : undefined,
-	);
+	out.tally([
+		{ status: problems > 0 ? "problem" : "ok", text: pluralize(problems, "problem") },
+		{ status: warnings > 0 ? "warning" : "ok", text: pluralize(warnings, "warning") },
+	]);
+	out.paragraph(DOCTOR_DETAIL_HINT);
 	return out.toString();
 }
 
@@ -231,11 +244,11 @@ export function createDoctorReport(context: DoctorContext): DoctorResult {
 	const field = (section: DoctorSectionId, id: string, label: string, value: string): void => {
 		fields.push({ id, section, label, value });
 	};
-	const problem = (id: string, message: string): void => {
-		issues.push({ id, severity: "problem", message });
+	const problem = (id: string, message: string, subject?: string): void => {
+		issues.push({ id, severity: "problem", message, ...(subject ? { subject } : {}) });
 	};
-	const warning = (id: string, message: string): void => {
-		issues.push({ id, severity: "warning", message });
+	const warning = (id: string, message: string, subject?: string): void => {
+		issues.push({ id, severity: "warning", message, ...(subject ? { subject } : {}) });
 	};
 
 	const settingsPath = pathApi.join(context.paths.agentDir, "settings.json");
@@ -325,14 +338,30 @@ export function createDoctorReport(context: DoctorContext): DoctorResult {
 			`Release extension inventory is unavailable: ${context.releaseExtensionDiagnostic}`,
 		);
 	}
-	const catalogGaps = context.catalogLevels?.gaps.length ?? 0;
+	const catalogSources = context.catalogSources ?? [];
+	const catalogOfferings = catalogSources.reduce((total, source) => total + source.offerings, 0);
+	const registrationGapCount = catalogSources.reduce((total, source) => total + source.registrationGaps.length, 0);
+	const thinkingLevelGapCount = catalogSources.reduce((total, source) => total + source.thinkingLevelGaps.length, 0);
 	if (context.catalogDiagnostic) {
 		warning("catalog.statusUnavailable", `Catalog status is unavailable: ${context.catalogDiagnostic}`);
-	} else if (catalogGaps > 0) {
-		warning(
-			"catalog.thinkingLevels",
-			`${catalogGaps} of ${context.catalogLevels?.offerings ?? 0} offerings declare no thinking levels, so Jouzu cannot control their reasoning effort. Run "jz catalog status" for the list.`,
-		);
+	} else {
+		// One diagnosis per source, so a count of zero usable offerings names the catalog to fix.
+		for (const source of catalogSources) {
+			if (source.registrationGaps.length === 0) continue;
+			warning(
+				`catalog.registration.${source.sourceId}`,
+				`${source.offerings - source.registrationGaps.length} of ${source.offerings} offerings carry the fields a new model needs (${describeCatalogRegistrationGaps(source.registrationGaps)}). ${CATALOG_REGISTRATION_EFFECT} Run "jz catalog status ${source.sourceId}" for the list.`,
+				source.sourceId,
+			);
+		}
+		for (const source of catalogSources) {
+			if (source.thinkingLevelGaps.length === 0) continue;
+			warning(
+				`catalog.thinkingLevels.${source.sourceId}`,
+				`${source.thinkingLevelGaps.length} of ${source.offerings} offerings declare no thinking levels, so Jouzu cannot control their reasoning effort. Run "jz catalog status ${source.sourceId}" for the list.`,
+				source.sourceId,
+			);
+		}
 	}
 	if (camoufoxRuntime.status === "invalid") {
 		problem(
@@ -406,18 +435,46 @@ export function createDoctorReport(context: DoctorContext): DoctorResult {
 		describeInstallChannel(context.updateStatus?.installChannel),
 	);
 	field("runtime", "executable", "Executable", context.executable);
+	const catalogField = (gaps: number, describe: (gaps: number) => string): string => {
+		if (context.catalogDiagnostic) return "unavailable";
+		if (catalogSources.length === 0) return "no active catalog";
+		return gaps > 0 ? describe(gaps) : "complete";
+	};
 	field(
-		"runtime",
-		"catalog.thinkingLevels",
-		"Catalog thinking levels",
-		context.catalogDiagnostic
-			? "unavailable"
-			: !context.catalogLevels || context.catalogLevels.activeCatalogs === 0
-				? "no active catalog"
-				: catalogGaps > 0
-					? `${catalogGaps} of ${context.catalogLevels.offerings} offerings without declared levels`
-					: "complete",
+		"catalog",
+		"catalog.sources",
+		"Active catalogs",
+		context.catalogDiagnostic ? "unavailable" : String(catalogSources.length),
 	);
+	field(
+		"catalog",
+		"catalog.offerings",
+		"Offerings",
+		context.catalogDiagnostic ? "unavailable" : String(catalogOfferings),
+	);
+	field(
+		"catalog",
+		"catalog.registration",
+		"Model registration",
+		catalogField(
+			registrationGapCount,
+			(gaps) => `${catalogOfferings - gaps} of ${catalogOfferings} offerings can add a model`,
+		),
+	);
+	field(
+		"catalog",
+		"catalog.thinkingLevels",
+		"Thinking levels",
+		catalogField(thinkingLevelGapCount, (gaps) => `${gaps} of ${catalogOfferings} offerings without declared levels`),
+	);
+	for (const source of catalogSources) {
+		field(
+			"catalog",
+			`catalog.source.${source.sourceId}`,
+			source.label,
+			`${source.offerings} offerings · ${source.offerings - source.registrationGaps.length} can add a model · ${source.thinkingLevelGaps.length} without thinking levels`,
+		);
+	}
 	field("runtime", "update.policy", "Self-update policy", context.updateStatus?.policy ?? "unavailable");
 	field("runtime", "update.channel", "Self-update channel", context.updateStatus?.installChannel ?? "unavailable");
 	field(

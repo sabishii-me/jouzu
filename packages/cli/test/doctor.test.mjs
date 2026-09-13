@@ -135,7 +135,7 @@ test("doctor reports an injected healthy Linux runtime without mutating roots", 
 	assert.equal(rmSync(root, { recursive: true, force: true }), undefined);
 });
 
-test("doctor summarizes catalog thinking-level gaps and points to the catalog detail", () => {
+test("doctor summarizes catalog gaps per source and points to the catalog detail", () => {
 	const root = mkdtempSync(join(tmpdir(), "jouzu-doctor-catalog-"));
 	rmSync(root, { recursive: true, force: true });
 	const reportFor = (extra) =>
@@ -150,33 +150,66 @@ test("doctor summarizes catalog thinking-level gaps and points to the catalog de
 			commandPaths: { git: "/usr/bin/git", bash: "/usr/bin/bash", npm: "/usr/bin/npm" },
 			...extra,
 		});
-	const complete = reportFor({ catalogLevels: { activeCatalogs: 1, offerings: 36, gaps: [] } });
-	assertField(render(complete), "Catalog thinking levels", "complete");
-	assert.doesNotMatch(render(complete), /jz catalog status/);
+	const source = (overrides) => ({
+		sourceId: "codex-pool",
+		label: "codex-pool",
+		offerings: 36,
+		thinkingLevelGaps: [],
+		registrationGaps: [],
+		...overrides,
+	});
+
+	const complete = reportFor({ catalogSources: [source({})] });
+	const completeText = render(complete);
+	assertField(completeText, "Model registration", "complete");
+	assertField(completeText, "Thinking levels", "complete");
+	assertField(completeText, "codex-pool", "36 offerings · 36 can add a model · 0 without thinking levels");
+	assert.doesNotMatch(completeText, /jz catalog status codex-pool/u);
 	assert.equal(complete.healthy, true);
 
 	const gaps = reportFor({
-		catalogLevels: {
-			activeCatalogs: 2,
-			offerings: 36,
-			gaps: [
-				{ providerId: "aiand", modelId: "deepseek-ai/deepseek-v4-flash" },
-				{ providerId: "aiand", modelId: "qwen/qwen3.6-27b" },
-			],
-		},
+		catalogSources: [
+			source({
+				thinkingLevelGaps: [
+					{ providerId: "aiand", modelId: "deepseek-ai/deepseek-v4-flash" },
+					{ providerId: "aiand", modelId: "qwen/qwen3.6-27b" },
+				],
+			}),
+			source({
+				sourceId: "shisa-api",
+				label: "Shisa API",
+				offerings: 10,
+				registrationGaps: Array.from({ length: 10 }, (_, index) => ({
+					providerId: "shisa",
+					modelId: `model-${index}`,
+					missing:
+						index < 4 ? ["textModality", "contextWindow", "maxOutputTokens"] : ["textModality", "maxOutputTokens"],
+				})),
+			}),
+		],
 	});
 	const gapsText = render(gaps);
-	assertField(gapsText, "Catalog thinking levels", "2 of 36 offerings without declared levels");
-	assert.match(flat(gapsText), /⚠ catalog 2 of 36 offerings declare no thinking levels/u);
-	assert.match(flat(gapsText), /Run "jz catalog status" for the list/u);
+	assertField(gapsText, "Offerings", "46");
+	assertField(gapsText, "Model registration", "36 of 46 offerings can add a model");
+	assertField(gapsText, "Thinking levels", "2 of 46 offerings without declared levels");
+	assertField(gapsText, "Shisa API", "10 offerings · 0 can add a model · 0 without thinking levels");
+	// The source is the key column, so a reader sees which catalog to fix before reading the text.
+	assert.match(
+		flat(gapsText),
+		/⚠ shisa-api 0 of 10 offerings carry the fields a new model needs \(10 no text input, 4 no context window, 10 no maximum output tokens\)/u,
+	);
+	assert.match(flat(gapsText), /never reaches the model list. Run "jz catalog status shisa-api" for the list/u);
+	assert.match(flat(gapsText), /⚠ codex-pool 2 of 36 offerings declare no thinking levels/u);
 	assert.equal(gaps.healthy, true, "a catalog gap is a warning, not a problem");
 
-	const unconfigured = reportFor({ catalogLevels: { activeCatalogs: 0, offerings: 0, gaps: [] } });
-	assertField(render(unconfigured), "Catalog thinking levels", "no active catalog");
+	const unconfigured = reportFor({ catalogSources: [] });
+	assertField(render(unconfigured), "Model registration", "no active catalog");
+	assertField(render(unconfigured), "Thinking levels", "no active catalog");
 
 	const unavailable = reportFor({ catalogDiagnostic: "cached catalog digest mismatch" });
 	const unavailableText = render(unavailable);
-	assertField(unavailableText, "Catalog thinking levels", "unavailable");
+	assertField(unavailableText, "Model registration", "unavailable");
+	assertField(unavailableText, "Thinking levels", "unavailable");
 	assert.match(flat(unavailableText), /Catalog status is unavailable: cached catalog digest mismatch/u);
 
 	assert.equal(rmSync(root, { recursive: true, force: true }), undefined);
@@ -249,7 +282,7 @@ test("doctor fails closed for unsupported Windows prerequisites and Pi drift", (
 	assert.match(unsupported, /npm was not found on PATH/u);
 	assert.match(unsupported, /Pinned Pi 0\.84\.2 does not match loaded runtime 0\.85\.0/u);
 	assert.match(unsupported, /Pi lock status is pending/u);
-	assert.match(unsupported, /Result: action required/u);
+	assert.match(unsupported, /✗ \d+ problems/u);
 });
 
 test("doctor reports a Pi runtime load failure as action required", () => {
@@ -268,7 +301,7 @@ test("doctor reports a Pi runtime load failure as action required", () => {
 	});
 	assert.equal(report.healthy, false);
 	assert.match(flat(render(report)), /Pi runtime could not be loaded: Cannot find module/u);
-	assert.match(flat(render(report)), /Result: action required/u);
+	assert.match(flat(render(report)), /✗ \d+ problem/u);
 	assert.equal(rmSync(root, { recursive: true, force: true }), undefined);
 });
 
@@ -287,7 +320,7 @@ test("doctor reports a Pi version mismatch as action required", () => {
 	});
 	assert.equal(report.healthy, false);
 	assert.match(flat(render(report)), /Pinned Pi 0\.84\.2 does not match loaded runtime 0\.85\.0/u);
-	assert.match(flat(render(report)), /Result: action required/u);
+	assert.match(flat(render(report)), /✗ \d+ problem/u);
 	assert.equal(rmSync(root, { recursive: true, force: true }), undefined);
 });
 
@@ -323,7 +356,7 @@ test("doctor reports degraded optional extensions and disabled tools as action r
 		assert.match(flat(degraded), /GLIBC_2\.34/u);
 		assert.match(flat(degraded), /rerun `jz doctor`/u);
 		assert.ok(report.report.issues.some((issue) => issue.id === "extensions.optionalUnavailable"));
-		assert.match(flat(degraded), /Result: action required/u);
+		assert.match(flat(degraded), /✗ \d+ problem/u);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
@@ -369,7 +402,7 @@ test("doctor reports a leftover profile lock as action required", () => {
 		const locked = render(report);
 		assert.match(flat(locked), /Profile lock owner unknown \(/u);
 		assert.match(flat(locked), /leftover state lock blocks Jouzu operations/u);
-		assert.match(flat(locked), /Result: action required/u);
+		assert.match(flat(locked), /✗ \d+ problem/u);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
@@ -504,7 +537,7 @@ test("doctor issues drive health and the rendered notes block", () => {
 		const text = formatDoctorReport(result.report, RENDER);
 		const flattened = flat(text);
 		assert.match(text, /^Notes$/mu);
-		assert.match(text, /Result: action required/u);
+		assert.match(text, /✗ \d+ problem/u);
 		assert.match(text, /^ {3}✗ /mu, "a problem carries the problem marker");
 		for (const issue of problems) {
 			assert.ok(flattened.includes(flat(issue.message)), `${issue.id} must be listed`);
@@ -545,7 +578,11 @@ test("a report without issues omits the notes block", () => {
 			"   Note text.",
 			"",
 			"─".repeat(40),
-			"✓ Result: ready for Jouzu v0.1 preview",
+			"✓ 0 problems · ✓ 0 warnings",
+			"",
+			'   Run "jz doctor --json" for the same',
+			'   report as JSON, or "jz catalog',
+			'   status" for catalog detail.',
 		].join("\n"),
 	);
 });
@@ -556,7 +593,7 @@ test("doctor styling is opt-in and every marker survives without color", () => {
 
 	const colored = formatDoctorReport(MINIMAL_REPORT, { colorEnabled: true, colorMode: "16", columns: 40 });
 	assert.ok(colored.includes(`${ESCAPE}[1mJouzu doctor${ESCAPE}[22m`), "the command name is bold");
-	assert.ok(colored.includes(`${ESCAPE}[32m✓${ESCAPE}[39m Result: ready`), "a healthy result is green");
+	assert.ok(colored.includes(`${ESCAPE}[32m✓${ESCAPE}[39m 0 problems`), "a clean count is green");
 	// Stripping the styling returns the same report, so color adds no meaning of its own.
 	assert.equal(stripAnsi(colored), plain);
 });
