@@ -4,14 +4,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { assembledSession, installedProducerExtensions, replacedSession } from "./fixtures/flow-assembly.mjs";
+import {
+	afterFlowCleanup,
+	assembledSession,
+	installedProducerExtensions,
+	replacedSession,
+} from "./fixtures/flow-assembly.mjs";
 import { campaignScript, liveWait } from "./fixtures/flow-campaign.mjs";
 
 const idle = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function persistentRoot(t) {
 	const root = await mkdtemp(join(tmpdir(), "jouzu-flow-reopen-"));
-	t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
+	afterFlowCleanup(t, () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
 	return root;
 }
 

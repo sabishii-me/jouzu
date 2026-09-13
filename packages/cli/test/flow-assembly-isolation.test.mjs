@@ -3,12 +3,11 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { assembledSession, installedProducerExtensions } from "./fixtures/flow-assembly.mjs";
+import { afterFlowCleanup, assembledSession, installedProducerExtensions } from "./fixtures/flow-assembly.mjs";
 
 async function sharedRoot(t) {
 	const root = await mkdtemp(join(tmpdir(), "jouzu-flow-shared-"));
-	// Storage flushes after dispose returns, so a single rmdir can race it.
-	t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
+	afterFlowCleanup(t, () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
 	return root;
 }
 

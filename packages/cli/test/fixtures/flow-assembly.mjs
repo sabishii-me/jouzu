@@ -7,14 +7,39 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { createQualifiedFlowSession } from "../../../../scripts/fixtures/pi-flow-session.mjs";
 import { createFlowControlRuntime } from "../../dist/flow-control/flow-runtime.js";
 
+const cleanups = new WeakMap();
+
+/** Close sessions before their stores and directories, including replacement sessions. */
+export function afterFlowCleanup(t, cleanup) {
+	let callbacks = cleanups.get(t);
+	if (!callbacks) {
+		callbacks = [];
+		cleanups.set(t, callbacks);
+		t.after(async () => {
+			const errors = [];
+			for (const callback of callbacks.toReversed()) {
+				try {
+					await callback();
+				} catch (error) {
+					errors.push(error);
+				}
+			}
+			if (errors.length) throw new AggregateError(errors, "Flow fixture cleanup failed");
+		});
+	}
+	callbacks.push(cleanup);
+}
+
+const cleanupContext = (t) => ({ after: (callback) => afterFlowCleanup(t, callback) });
+
 /** Build the production assembly the launcher uses, without a host session yet. */
 export async function assembledRuntime(t, { root: sharedRoot, ...overrides } = {}) {
 	const root = sharedRoot ?? (await mkdtemp(join(tmpdir(), "jouzu-flow-assembly-")));
 	const errors = [];
 	const flow = createFlowControlRuntime({ root, onError: (error) => errors.push(error), ...overrides });
-	t.after(async () => {
+	afterFlowCleanup(t, async () => {
 		await flow.dispose();
-		if (!sharedRoot) await rm(root, { recursive: true, force: true });
+		if (!sharedRoot) await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 	});
 	return { flow, root, errors };
 }
@@ -44,7 +69,7 @@ export async function assembledSession(
 	// the bridges run their handshakes.
 	const bridges = reverseExtensions ? [...assembly.flow.extensions].reverse() : assembly.flow.extensions;
 	const extensions = [...producerExtensions, ...bridges];
-	const { session, bodies, runtime, shutdown } = await createQualifiedFlowSession(t, {
+	const { session, bodies, runtime, shutdown } = await createQualifiedFlowSession(cleanupContext(t), {
 		root: assembly.root,
 		sessionManager,
 		persist,
@@ -84,7 +109,7 @@ export async function replacedSession(
 			: SessionManager.inMemory(prior.root));
 	const ingress = await prior.flow.flowIngressFactory({ cwd: prior.root, sessionManager });
 	const extensions = [...producerExtensions, ...prior.flow.extensions];
-	const { session, bodies, shutdown } = await createQualifiedFlowSession(t, {
+	const { session, bodies, shutdown } = await createQualifiedFlowSession(cleanupContext(t), {
 		root: prior.root,
 		sessionManager,
 		persist,

@@ -138,7 +138,8 @@ const until = async (predicate, label, timeoutMs = 5000) => {
 	}
 	assert.fail(`timed out waiting for ${label}`);
 };
-const carrying = (bodies, text) => bodies.filter((body) => JSON.stringify(body.messages).includes(text)).length;
+// Later requests include earlier conversation history; count only newly appended input.
+const carrying = (bodies, text) => bodies.filter((body) => JSON.stringify(body.messages.at(-1)).includes(text)).length;
 
 test("a provider retry holds automated work and the held work runs once afterwards", async (t) => {
 	let failures = 0;
