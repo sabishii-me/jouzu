@@ -163,8 +163,8 @@ process.env.PI_BG_TASK_DIR ??= mkdtempSync(join(tmpdir(), "jouzu-flow-tasks-"));
 const bundles = new Map();
 
 /** Bundle an installed extension's TypeScript entry so a real session can load it. */
-async function bundleExtension(entry) {
-	if (bundles.has(entry)) return bundles.get(entry);
+async function bundleExtension(entry, fresh = false) {
+	if (!fresh && bundles.has(entry)) return bundles.get(entry);
 	const { build } = await import("esbuild");
 	const outputDir = await mkdtemp(join(cliRoot, "packages/cli/node_modules/.jouzu-assembly-"));
 	const outfile = join(outputDir, "extension.mjs");
@@ -195,9 +195,9 @@ async function bundleExtension(entry) {
  * Without these the background handshake reports an unavailable source and the multiloop bridge
  * never receives a producer, so ordering and isolation cases would prove nothing about the pair.
  */
-export async function installedProducerExtensions() {
+export async function installedProducerExtensions({ freshMultiloop = false } = {}) {
 	const [loop, background] = await Promise.all([
-		bundleExtension("pi-multiloop/extensions/pi-multiloop/index.ts"),
+		bundleExtension("pi-multiloop/extensions/pi-multiloop/index.ts", freshMultiloop),
 		bundleExtension("@vanillagreen/pi-background-tasks/extensions/background-tasks.ts"),
 	]);
 	return [
