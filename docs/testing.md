@@ -43,7 +43,7 @@ npm run build
 node --test packages/cli/test/flow-*.test.mjs
 ```
 
-The 63 files under `packages/cli/test/flow-*.test.mjs` substitute the provider, drive a real Pi session with a substituted stream, or exercise hand-built stores and pure functions. No test calls a provider. The suite imports `packages/cli/dist/flow-control/*.js`, so `npm run build` must run first; the full CLI test script rejects stale output.
+The files under `packages/cli/test/flow-*.test.mjs` substitute the provider, drive a real Pi session with a substituted stream, or exercise hand-built stores and pure functions. No test calls a provider. The suite imports `packages/cli/dist/flow-control/*.js`, so `npm run build` must run first; the full CLI test script rejects stale output.
 
 | Area | Example files |
 | --- | --- |
@@ -55,6 +55,20 @@ The 63 files under `packages/cli/test/flow-*.test.mjs` substitute the provider, 
 | Provider routes | `flow-provider-route`, `flow-google-cancellation`, `flow-vertex-auth`, `flow-bedrock-copy` |
 | Recovery and retention | `flow-history-recovery`, `flow-uncertain-resolution`, `flow-attempt-retention`, `flow-retirement-context` |
 | Assembly and lifecycle | `flow-assembly-*`, `flow-session-registry`, `flow-session-service`, `flow-ownership` |
+
+### Task continuation integration
+
+To qualify changes to task cancellation or Jouzu's task-message handling, provide a pi-tasks source checkout and run:
+
+```bash
+JOUZU_PI_TASKS_CHECKOUT=/path/to/pi-tasks npm run test:tasks:integration
+```
+
+This command requires the checkout; missing or invalid sources fail the run. The default suite skips these two tests when the variable is absent. The tests bundle `src/task-continuation.ts` from that checkout against Jouzu's installed runtime packages and use the full flow assembly with the installed background and multiloop producers.
+
+A local HTTP server gates a response to test a follow-up enqueued while a request is active; a second case enqueues at `agent_end`. Both require zero extra HTTP requests for the stale task, no automation pause, intact stored source text, and successful admission of the next user message. Lifecycle events determine settlement; the tests do not use a timed sleep to infer success.
+
+These tests verify cancellation and transport behavior. When valid input accompanies a stale task, the source instruction remains in context with a cancellation note; the tests do not prove that a model will obey that note.
 
 ### Patched-Pi conformance
 

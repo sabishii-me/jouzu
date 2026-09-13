@@ -14,6 +14,7 @@
 		"build:dev": "npm run build && node scripts/write-dev-build-info.mjs",
 		"check": "npm run check --workspace packages/session-ui && npm run check --workspace packages/cli && biome check . && npm run pi:check && node scripts/apply-background-flow.mjs --check && node scripts/apply-multiloop-wait-skill.mjs --check",
 		"test": "npm run test --workspace packages/session-ui && npm run test --workspace packages/cli && npm run test:python && npm run test:pack-check && npm run test:release-metadata",
+		"test:tasks:integration": "node scripts/test-task-continuation-integration.mjs",
 		"test:python": "uv run --project python/jouzu python -m unittest discover -s python/jouzu/tests -v",
 		"test:pack-check": "node --test scripts/pack-check.test.mjs scripts/dev-smoke.test.mjs scripts/textguard-artifact.test.mjs scripts/release-bundle-receipt.test.mjs",
 		"test:dev-build": "python3 scripts/test_dev_build.py",

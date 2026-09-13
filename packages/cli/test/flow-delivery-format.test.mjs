@@ -203,9 +203,15 @@ test("wait summary carries cancellation identity and supports all retained clock
 	);
 });
 
-for (const format of [1, 2, 3])
+for (const { format, beyondDate } of [
+	{ format: 1, beyondDate: false },
+	{ format: 2, beyondDate: false },
+	{ format: 3, beyondDate: false },
+	{ format: 1, beyondDate: true },
+	{ format: 3, beyondDate: true },
+])
 	for (const tamper of [false, true])
-		test(`wait store reopens format ${format} receipts and rejects corruption: ${tamper}`, async (t) => {
+		test(`wait store reopens format ${format}, beyond Date range=${beyondDate}, corrupted=${tamper}`, async (t) => {
 			const root = await mkdtemp(join(tmpdir(), "jouzu-format-reopen-"));
 			let storage;
 			let attachment = await PiFlowAttachment.open(
@@ -217,7 +223,11 @@ for (const format of [1, 2, 3])
 				await attachment.close();
 				await rm(root, { recursive: true, force: true });
 			});
-			await attachment.waits.registerWork("work", "bg", 1);
+			const now = beyondDate ? Number.MAX_SAFE_INTEGER - 1000 : 3;
+			const request = beyondDate
+				? { ...declaration, expiresAt: Number.MAX_SAFE_INTEGER, checkAt: Number.MAX_SAFE_INTEGER - 1 }
+				: declaration;
+			await attachment.waits.registerWork("work", "bg", now - 2);
 			await attachment.waits.registerExecution(
 				{
 					...handle,
@@ -226,9 +236,9 @@ for (const format of [1, 2, 3])
 					predicates: [{ until: "exit", state: "satisfied" }],
 				},
 				1,
-				2,
+				now - 1,
 			);
-			const wait = await attachment.waits.declareOwned("bg", 1, declaration, 3, 100, undefined, undefined, {
+			const wait = await attachment.waits.declareOwned("bg", 1, request, now, 1000, undefined, undefined, {
 				toolCallId: "call",
 				toolName: "agent_wait",
 			});
@@ -238,7 +248,8 @@ for (const format of [1, 2, 3])
 				work: "work",
 				state: "resolved",
 				reason: "exit",
-				expiresAt: 100,
+				expiresAt: request.expiresAt,
+				...(request.checkAt === undefined ? {} : { checkAt: request.checkAt }),
 				health: "deadline-only",
 				unmet: [],
 			};
@@ -257,6 +268,26 @@ for (const format of [1, 2, 3])
 			}
 			attachment = await PiFlowAttachment.open(root, scope);
 			const receipts = await attachment.waits.toolReceipts();
+			const [restored] = await attachment.waits.snapshot();
+			assert.deepEqual(restored, wait);
+			for (const deliveredFormat of [1, 2, 3]) {
+				if (deliveredFormat === format) continue;
+				const otherContent = waitToolResponse(wait, deliveredFormat).content;
+				assert.notEqual(sha(otherContent), receipts[0].contentHash);
+				assert.equal(
+					observedWaitToolReceipt(
+						{
+							role: "toolResult",
+							toolCallId: "call",
+							toolName: "agent_wait",
+							content: otherContent,
+						},
+						receipts,
+					),
+					undefined,
+					`format ${format} must not acknowledge delivered format ${deliveredFormat}`,
+				);
+			}
 			assert.equal(
 				observedWaitToolReceipt(
 					{
