@@ -133,26 +133,36 @@ function deliveredComposedDecision(wait: FlowWaitState, ledger: FlowLedgerState)
 	if (!intent) return false;
 	return ledger.attempts.some((attempt) => {
 		if (attempt.phase !== "settled" || attempt.outcome !== "success") return false;
-		const expected = FlowModelInput.compose(
-			attempt.id,
-			[{ id: intent.id, revision: intent.revision, kind: "wait", text: decisionText(wait) }],
-			Number.MAX_SAFE_INTEGER,
-		).members[0];
-		return (
-			attempt.members.some((member) => isDeepStrictEqual(member, expected)) &&
-			attempt.requests.some(
-				(request) =>
-					request.handedOff &&
-					request.outcome === "success" &&
-					request.inclusion.some(
-						(item) =>
-							item.id === expected.id &&
-							item.revision === expected.revision &&
-							item.disposition === "included" &&
-							item.contentHash === expected.contentHash,
-					),
-			)
-		);
+		return ([1, 2] as const).some((format) => {
+			const expected = FlowModelInput.compose(
+				attempt.id,
+				[
+					{
+						id: intent.id,
+						revision: intent.revision,
+						kind: "wait",
+						text: decisionText(wait),
+					},
+				],
+				Number.MAX_SAFE_INTEGER,
+				format,
+			).members[0];
+			return (
+				attempt.members.some((member) => isDeepStrictEqual(member, expected)) &&
+				attempt.requests.some(
+					(request) =>
+						request.handedOff &&
+						request.outcome === "success" &&
+						request.inclusion.some(
+							(item) =>
+								item.id === expected.id &&
+								item.revision === expected.revision &&
+								item.disposition === "included" &&
+								item.contentHash === expected.contentHash,
+						),
+				)
+			);
+		});
 	});
 }
 

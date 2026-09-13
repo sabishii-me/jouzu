@@ -228,7 +228,9 @@ export class FlowWaitStore {
 					receipt.toolCallId.length > 512 ||
 					!["agent_wait", "agent_wait_cancel"].includes(receipt.toolName) ||
 					keys.has(key) ||
-					receipt.contentHash !== waitToolContentHash(waitToolResponse(wait).content)
+					!([1, 2, 3] as const).some(
+						(format) => receipt.contentHash === waitToolContentHash(waitToolResponse(wait, format).content),
+					)
 				)
 					throw new FlowLedgerError("identity", "Invalid wait tool response receipt.");
 				keys.add(key);

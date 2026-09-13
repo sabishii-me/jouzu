@@ -275,9 +275,9 @@ test("context transformation cannot send an aggregate with altered mandatory cou
 			if (message.role !== "custom") return message;
 			const content = structuredClone(message.content);
 			const frame = JSON.parse(content[1].text);
-			const body = JSON.parse(frame.content);
+			const body = frame.content;
 			body.counts.failure = 0;
-			frame.content = JSON.stringify(body);
+			frame.content = body;
 			content[1].text = JSON.stringify(frame);
 			return { ...message, content };
 		}),

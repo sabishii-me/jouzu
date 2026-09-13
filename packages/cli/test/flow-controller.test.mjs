@@ -684,7 +684,7 @@ test("Pi: navigating a branch fences admission through the old controller", asyn
 	await controller.wake();
 	const user = session.sessionManager
 		.getBranch()
-		.find((entry) => entry.type === "message" && entry.message.role === "user");
+		.find((entry) => entry.type === "custom_message" && entry.customType === "jouzu-flow");
 	await session.navigateTree(user.id);
 	await assert.rejects(controller.wake(), { code: "scope" });
 	await session.prompt("input after navigation");
@@ -733,7 +733,9 @@ test("Pi: changed inactive frames reintroduced by a transform withhold the next 
 			(pi) => {
 				pi.on("context", ({ messages }) => {
 					if (!saved) {
-						saved = structuredClone(messages.find((item) => item.role === "user"));
+						saved = structuredClone(
+							messages.find((item) => item.role === "custom" && item.customType === "jouzu-flow"),
+						);
 						return;
 					}
 					const changed = structuredClone(saved);
@@ -1013,7 +1015,7 @@ for (const native of [false, true]) {
 		const { controller, ledger, attachment, manifests, policy, payloads } = await fixture(t, native, {
 			aggregate: true,
 			maxInputBytes: 4096,
-			maxResultBytes: 1600,
+			maxResultBytes: 1200,
 		});
 		policy.waitingWorkIds = ["blocked"];
 		controller.register(producer("work", [{ ...descriptor("work"), independent: true }]));
@@ -1029,7 +1031,7 @@ for (const native of [false, true]) {
 		assert.ok(attempt.members.filter((member) => member.kind === "result").every((member) => member.inputFrame.intact));
 		if (native) {
 			const content = payloads[0].messages.findLast((message) => message.role === "user").content;
-			const envelope = JSON.parse(JSON.parse(content.at(-1).text).content);
+			const envelope = JSON.parse(content.at(-1).text).content;
 			const page = await attachment.results.page(envelope.manifest, { limit: 10, maxBytes: 10000 });
 			assert.equal(page.total, 4);
 			assert.deepEqual(page.counts, { success: 0, failure: 4, cancelled: 0 });
@@ -1122,7 +1124,7 @@ for (const navigate of [false, true]) {
 		if (navigate) {
 			const user = first.session.sessionManager
 				.getBranch()
-				.find((entry) => entry.type === "message" && entry.message.role === "user");
+				.find((entry) => entry.type === "custom_message" && entry.customType === "jouzu-flow");
 			await first.session.navigateTree(user.id);
 		}
 		await first.controller.close();
@@ -1234,7 +1236,7 @@ for (const summarize of [false, "extension", "native"]) {
 		const oldPrompt = first.session.prompt.bind(first.session);
 		const target = first.session.sessionManager
 			.getBranch()
-			.find((entry) => entry.type === "message" && entry.message.role === "user");
+			.find((entry) => entry.type === "custom_message" && entry.customType === "jouzu-flow");
 		const navigation = await first.session.navigateTree(target.id, { summarize: !!summarize });
 		assert.equal(navigationSignal.aborted, false);
 		if (summarize === "native") assert.match(navigation.summaryEntry.summary, /\n\nDone$/);

@@ -258,7 +258,16 @@ test("active wait tools add session guidance and a simulated model invokes the r
 		(message) => message.role === "toolResult" && message.toolCallId === "wait-call",
 	);
 	assert.equal(result.isError, false);
-	assert.ok(result.content[0].text.includes('"health":"deadline-only"'));
+	const [wait] = await f.attachment.waits.snapshot();
+	assert.ok(result.content[0].text.includes(`agent_wait waiting [${wait.token}]`));
+	assert.ok(result.content[0].text.includes(`${handle.handle} (${handle.producer}/${handle.until})`));
+	const saved = f.session.sessionManager
+		.getBranch()
+		.find(
+			(entry) =>
+				entry.type === "message" && entry.message.role === "toolResult" && entry.message.toolCallId === "wait-call",
+		);
+	assert.equal(saved.message.details.health, "deadline-only");
 	f.session.setActiveToolsByName([]);
 	await f.session.prompt("status with wait tools disabled");
 	assert.ok(!contexts[2].systemPrompt.includes(FLOW_WAIT_GUIDANCE[2]));

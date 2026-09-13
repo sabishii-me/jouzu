@@ -12,7 +12,10 @@ export interface FlowInputItem {
 	text: string;
 	images?: ImageContent[];
 	/** One bounded summary can represent a retained result manifest without inline IDs. */
-	resultManifest?: { reference: string; members: { id: string; revision: string }[] };
+	resultManifest?: {
+		reference: string;
+		members: { id: string; revision: string }[];
+	};
 }
 interface Fragment {
 	members: FlowMember[];
@@ -40,7 +43,7 @@ export class FlowModelInput {
 		Object.freeze(this);
 	}
 
-	static compose(attemptId: string, items: FlowInputItem[], maxBytes: number): FlowModelInput {
+	static compose(attemptId: string, items: FlowInputItem[], maxBytes: number, format: 1 | 2 = 2): FlowModelInput {
 		if (!validId(attemptId) || !Array.isArray(items) || items.length === 0 || items.length > 1024)
 			throw new FlowLedgerError("identity", "Flow composition requires an attempt and 1–1024 items.");
 		if (!Number.isSafeInteger(maxBytes) || maxBytes < 1)
@@ -85,26 +88,25 @@ export class FlowModelInput {
 				)
 			)
 				throw new FlowLedgerError("schema", "Invalid flow image content.");
-			// A member whose text is itself a JSON object (wait decisions, result envelopes) is inlined
-			// once instead of serialized twice, so one JSON layer carries the whole composed part.
-			let content: unknown = item.text;
-			try {
-				const parsed = JSON.parse(item.text);
-				if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) content = parsed;
-			} catch {
-				/* Plain prose stays a string. */
+			// Only structured result/wait payloads are JSON. Work and user text are opaque.
+			// Embed the validated source lexeme to preserve large numbers, duplicate keys,
+			// and whitespace rather than round-tripping through JavaScript values.
+			let content = JSON.stringify(item.text);
+			if (format === 2 && (item.kind === "wait" || item.kind === "result")) {
+				try {
+					const parsed: unknown = JSON.parse(item.text);
+					if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) content = item.text;
+				} catch {
+					/* Plain prose stays a string. */
+				}
 			}
+			const results = item.resultManifest
+				? `,"results":${JSON.stringify({ count: represented.length, manifest: item.resultManifest.reference })}`
+				: "";
 			const parts: Part[] = [
 				{
 					type: "text",
-					text: JSON.stringify({
-						flowInput: JSON.parse(marker),
-						kind: item.kind,
-						content,
-						...(item.resultManifest
-							? { results: { count: represented.length, manifest: item.resultManifest.reference } }
-							: {}),
-					}),
+					text: `{"flowInput":${marker},"kind":${JSON.stringify(item.kind)},"content":${content}${results}}`,
 				},
 				...images,
 			];

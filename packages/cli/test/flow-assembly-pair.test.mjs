@@ -91,8 +91,9 @@ test("a live wait blocks lane continuations and delivers its decision once", asy
 	});
 	await f.session.prompt("start the sweep and wait for it");
 	const blocked = f.bodies.length;
-	const waitResult = toolResults(f.sessionManager).find((text) => text.includes('"state":"waiting"'));
-	assert.ok(waitResult?.includes('"token"'), "agent_wait returned a live wait with a reusable token");
+	const [wait] = await f.ingress.branch().attachment.waits.snapshot();
+	const waitResult = toolResults(f.sessionManager).find((text) => text.includes(`agent_wait waiting [${wait.token}]`));
+	assert.ok(waitResult, "agent_wait returned a live wait with a reusable token");
 
 	// The running lane would otherwise auto-continue at agent_end; the live wait must suppress it.
 	await idle(250);
