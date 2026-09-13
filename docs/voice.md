@@ -10,6 +10,8 @@ Voice reads the saved login each time you start recording. `SHISA_API_KEY` takes
 
 Capture uses the microphone on the machine running Jouzu. Over SSH, that is the remote machine, not your laptop. Allow microphone access for the terminal or Node.js when your operating system asks.
 
+Signing out with `/logout shisa` or the Shisa entry in `/logout` cancels recording and discards its uninserted text. Voice remains disabled in this process until `/login shisa` succeeds, even if `SHISA_API_KEY` is set.
+
 ## Commands
 
 | Command | Action |

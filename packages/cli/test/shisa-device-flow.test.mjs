@@ -498,7 +498,7 @@ test("an unexpected token approval payload fails without leaking secrets", async
 	assertNoSecretMaterial(JSON.stringify(events));
 });
 
-test("extension registers the shisa provider and reconnects with the stored install id", async () => {
+test("extension registers the shisa provider and reconnects with the stored install id", async (t) => {
 	const home = mkdtempSync(join(tmpdir(), "jouzu-shisa-extension-"));
 	try {
 		const paths = resolveJouzuPaths({ homeOverride: home });
@@ -508,6 +508,10 @@ test("extension registers the shisa provider and reconnects with the stored inst
 		// Before any link: gateway placeholder base URL, no network, no state file.
 		let captured;
 		const pi = {
+			registerCommand() {},
+			on(event, handler) {
+				if (event === "session_shutdown") t.after(handler);
+			},
 			registerProvider: (name, config) => {
 				captured = { name, config };
 			},
@@ -519,7 +523,7 @@ test("extension registers the shisa provider and reconnects with the stored inst
 		const sleep = instantSleep();
 		const extension = createShisaExtension({ paths, jouzuVersion: "0.1.8", env: {}, fetchImpl: mock, sleep });
 		assert.equal(extension.name, "jouzu-shisa");
-		extension.factory(pi);
+		await extension.factory(pi);
 		assert.equal(captured.name, SHISA_PROVIDER_ID);
 		assert.equal(captured.config.api, "openai-completions");
 		assert.equal(captured.config.baseUrl, DEFAULT_SHISA_GATEWAY_URL);
@@ -537,6 +541,7 @@ test("extension registers the shisa provider and reconnects with the stored inst
 		const linked = readShisaLinkState(statePath);
 		assert.equal(linked?.endpoints.openai_base_url, "https://gateway.shisa.ai/v1");
 		assert.equal(linked?.acked, true);
+		assert.equal(linked?.gateway_url, DEFAULT_SHISA_GATEWAY_URL);
 		assert.equal(captured.config.baseUrl, "https://gateway.shisa.ai/v1", "re-registration serves the linked endpoint");
 		const firstCodeRequest = JSON.parse(mock.calls[0].init.body);
 		assert.equal(firstCodeRequest.client_version, "0.1.8");
@@ -547,7 +552,7 @@ test("extension registers the shisa provider and reconnects with the stored inst
 		mock2.enqueue(jsonResponse(200, TOKEN_BODY));
 		mock2.enqueue(jsonResponse(204));
 		const extension2 = createShisaExtension({ paths, jouzuVersion: "0.1.8", env: {}, fetchImpl: mock2, sleep });
-		extension2.factory(pi);
+		await extension2.factory(pi);
 		await captured.config.oauth.login({
 			...callbacks,
 			onDeviceCode: (info) => callbacks.onDeviceCode(info),
@@ -624,7 +629,17 @@ for (const storageFailure of [false, "directory", "locked", "malformed"]) {
 					refreshOnCreate: false,
 				});
 		let provider;
-		createShisaExtension({ paths, jouzuVersion: "0.1.8", env: {}, fetchImpl: mock, sleep: instantSleep() }).factory({
+		await createShisaExtension({
+			paths,
+			jouzuVersion: "0.1.8",
+			env: {},
+			fetchImpl: mock,
+			sleep: instantSleep(),
+		}).factory({
+			registerCommand() {},
+			on(event, handler) {
+				if (event === "session_shutdown") t.after(handler);
+			},
 			registerProvider: (id, config) => {
 				provider = config;
 				runtime?.registerProvider(id, config);

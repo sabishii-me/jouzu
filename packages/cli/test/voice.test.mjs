@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { resolveJouzuPaths } from "../dist/paths.js";
+import { setShisaSignedOut } from "../dist/shisa-link/credentials.js";
 import { newShisaInstallId, shisaLinkStatePath, writeShisaLinkState } from "../dist/shisa-link/state.js";
 import { captureEnvironment } from "../dist/voice/capture.js";
 import { createVoiceExtension, renderVoiceWidget } from "../dist/voice/integration.js";
@@ -472,4 +473,23 @@ test("invalid linked voice endpoints fail before capture or connection without e
 	assert.equal(h.captureOptions, undefined);
 	assert.match(h.calls.at(-1)[1], /endpoint is invalid/);
 	assert.doesNotMatch(JSON.stringify(h.calls), /secret-endpoint|saved-voice-secret/);
+});
+
+test("Shisa sign-out cancels recording and suppresses an unchanged environment key", async (t) => {
+	const env = { SHISA_API_KEY: "test-env-key" };
+	const h = await harness(t, { env });
+	t.after(() => setShisaSignedOut(h.paths, false));
+	await h.command("start");
+	const previous = h.connectionOptions;
+	setShisaSignedOut(h.paths, true);
+	assert.ok(h.calls.some(([name]) => name === "connection.cancel"));
+	assert.ok(h.calls.some(([name]) => name === "capture.cancel"));
+	await h.command("start");
+	assert.equal(h.connectionOptions, previous);
+	assert.match(h.calls.at(-1)[1], /Signed out of Shisa/);
+	assert.equal(env.SHISA_API_KEY, "test-env-key");
+	setShisaSignedOut(h.paths, false);
+	await h.command("start");
+	assert.notEqual(h.connectionOptions, previous);
+	assert.equal(h.draft, "existing draft");
 });

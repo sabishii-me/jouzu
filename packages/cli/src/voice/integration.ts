@@ -2,7 +2,7 @@ import type { ExtensionContext, InlineExtension } from "@earendil-works/pi-codin
 import { type KeyId, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { createJouzuKeybindingsManager, effectiveJouzuKeys, isPrintableKeyId } from "../jouzu-keybindings.js";
 import type { JouzuPaths } from "../paths.js";
-import { readShisaLoginToken } from "../shisa-link/credentials.js";
+import { isShisaSignedOut, onShisaAuthChange, readShisaLoginToken } from "../shisa-link/credentials.js";
 import { readShisaLinkState, shisaLinkStatePath } from "../shisa-link/state.js";
 import { fitTerminalText, sanitizeTerminalText } from "../terminal-layout.js";
 import type { CaptureOptions, VoiceCapture } from "./capture.js";
@@ -160,6 +160,10 @@ export function createVoiceExtension(paths: JouzuPaths, overrides: Partial<Voice
 			const start = async (ctx: ExtensionContext) => {
 				if (run || deviceQuery) {
 					ctx.ui.notify("Voice is already active. Stop or cancel it first.", "info");
+					return;
+				}
+				if (isShisaSignedOut(paths)) {
+					ctx.ui.notify("Signed out of Shisa. Run /login shisa before using /voice.", "error");
 					return;
 				}
 				const envKey = deps.env.SHISA_API_KEY?.trim();
@@ -323,7 +327,20 @@ export function createVoiceExtension(paths: JouzuPaths, overrides: Partial<Voice
 						handler: (ctx) => command("", ctx),
 					});
 			}
+			const onAuthChange = () => {
+				if (isShisaSignedOut(paths)) {
+					deviceQuery?.abort();
+					deviceQuery = undefined;
+					cancel();
+				}
+			};
+			let removeAuthListener: (() => void) | undefined = onShisaAuthChange(paths, onAuthChange);
+			pi.on("session_start", () => {
+				removeAuthListener ??= onShisaAuthChange(paths, onAuthChange);
+			});
 			pi.on("session_shutdown", () => {
+				removeAuthListener?.();
+				removeAuthListener = undefined;
 				deviceQuery?.abort();
 				deviceQuery = undefined;
 				cancel();

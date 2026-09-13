@@ -67,6 +67,7 @@ A normal launch reconciles the selected profile. It stops before launching if a 
 Inside Jouzu:
 
 - `/login` configures provider authentication in Jouzu's isolated agent root.
+- `/logout shisa` revokes the key issued by Shisa sign-in and removes its saved credentials. Selecting Shisa in `/logout` does the same.
 - `/workflow` opens agent definitions and child runs. Configure separate planner, coder, and reviewer models, or add your own roles. See [Agents and runs](https://github.com/shisa-ai/jouzu/blob/main/docs/subagents.md).
 - `/model` or `Ctrl+L` opens the Jouzu Palette Models view without clearing the prompt draft.
 - `Ctrl+P` and its reverse binding cycle through available favorites in the current model scope.
@@ -103,6 +104,12 @@ Jouzu provides its prompt and status surfaces directly:
 - The **Status Bar** shows local workspace, Git, detected project runtime, context, and active-branch token facts. Fields compact and then disappear by semantic priority on narrow terminals.
 
 These surfaces use terminal display columns rather than JavaScript string length and are tested with CJK, full-width spaces, combining marks, emoji, ANSI color, and no-color output. The compact bar does not report provider quota or session cost until Jouzu has an authoritative source for those facts.
+
+## Shisa sign-out
+
+`/logout shisa` attempts server revocation before removing the local Shisa credential and device link. If the server cannot confirm revocation, Jouzu signs out locally and asks you to disconnect the device in the Shisa dashboard. A local storage failure is reported separately. Other providers retain their credentials.
+
+Sign-out stops voice recording and removes Shisa catalog models from the picker. `SHISA_API_KEY` is left unchanged but is not used by Jouzu's Shisa login, catalog, or voice integration for the rest of this process. Run `/login shisa` to reconnect, or unset the variable before restarting to stay signed out.
 
 ## Voice input
 

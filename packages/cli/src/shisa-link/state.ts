@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { readFileSync, rmSync } from "node:fs";
+import { lstatSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { JouzuPaths } from "../paths.js";
 import { writeFilePrivateAtomic } from "../private-fs.js";
@@ -38,6 +38,8 @@ export interface ShisaLinkState {
 	org: ShisaOrg;
 	endpoints: ShisaLinkEndpoints;
 	link_token: string;
+	/** Gateway that issued this link; absent on sign-ins saved before this field existed. */
+	gateway_url?: string;
 	/** Whether the device-link acknowledgement has been confirmed by the platform. */
 	acked: boolean;
 	/** Present when the login response carried a credits bonus offer. */
@@ -110,6 +112,7 @@ export function parseShisaLinkState(value: unknown): ShisaLinkState | undefined 
 		org,
 		endpoints,
 		link_token: linkToken,
+		...(typeof value.gateway_url === "string" ? { gateway_url: value.gateway_url } : {}),
 		acked: value.acked,
 		...(bonus ? { bonus } : {}),
 	};
@@ -122,6 +125,8 @@ export function parseShisaLinkState(value: unknown): ShisaLinkState | undefined 
 export function readShisaLinkState(path: string): ShisaLinkState | undefined {
 	let contents: string;
 	try {
+		const metadata = lstatSync(path);
+		if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size > 64 * 1024) return undefined;
 		contents = readFileSync(path, "utf8");
 	} catch {
 		return undefined;

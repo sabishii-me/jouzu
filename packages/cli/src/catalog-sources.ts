@@ -10,7 +10,7 @@ import {
 } from "./model-catalog.js";
 import type { JouzuPaths } from "./paths.js";
 import { validatePrivateDirectory, writeFilePrivateAtomic } from "./private-fs.js";
-import { readShisaLoginToken } from "./shisa-link/credentials.js";
+import { isShisaSignedOut, readShisaLoginToken } from "./shisa-link/credentials.js";
 
 const REGISTRY_MAX_BYTES = 256 * 1024;
 const OVERRIDES_MAX_BYTES = 64 * 1024;
@@ -416,6 +416,7 @@ export function catalogSourceCredentialAvailable(
 	env: NodeJS.ProcessEnv,
 	paths?: JouzuPaths,
 ): boolean {
+	if (paths && isShisaApiCatalogEndpoint(source) && isShisaSignedOut(paths)) return false;
 	const state = catalogSourceCredentialState(source, env, paths);
 	return !state || state.envSet || state.stored || state.login === true;
 }
@@ -520,7 +521,9 @@ export function resolveCatalogSources(
 	// credential, is the user's own registration of the built-in source. It keeps its label,
 	// enabled state, and URL-keyed cache, and the code-owned descriptor stays out of the way.
 	const claimed = base.some((source) => source.id === SHISA_API_CATALOG_SOURCE_ID || isShisaApiCatalogEndpoint(source));
-	const sources = claimed ? base : [builtin, ...base];
+	const sources = (claimed ? base : [builtin, ...base]).map((source) =>
+		isShisaApiCatalogEndpoint(source) && isShisaSignedOut(paths) ? { ...source, enabled: false } : source,
+	);
 	return options.includeDisabled ? sources : sources.filter((source) => source.enabled);
 }
 
@@ -654,6 +657,8 @@ export function resolveCatalogBearer(
 	paths?: JouzuPaths,
 ): string | undefined {
 	if (source.auth.type === "none") return undefined;
+	if (paths && isShisaApiCatalogEndpoint(source) && isShisaSignedOut(paths))
+		throw new CatalogSourceError("Signed out of Shisa. Run /login shisa to reconnect.");
 	const name = source.auth.credentialRef.slice(4);
 	const fromEnv = envCredentialValue(source, env);
 	if (fromEnv) return fromEnv;

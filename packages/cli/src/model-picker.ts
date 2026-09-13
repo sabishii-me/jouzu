@@ -68,6 +68,7 @@ import {
 import type { JouzuPaths } from "./paths.js";
 import { detectBannerColorMode, renderBrandGradient } from "./presentation.js";
 import type { SessionUiStyles } from "./session-ui/index.js";
+import { onShisaAuthChange } from "./shisa-link/credentials.js";
 import { createWorkflowIntegration } from "./subagents/integration.js";
 import {
 	fitTerminalText,
@@ -1052,6 +1053,7 @@ export function createJouzuModelPicker(
 			});
 			pi.on("session_start", async (event, ctx) => {
 				activeCtx = ctx;
+				removeShisaAuthListener ??= onShisaAuthChange(paths, reloadCatalogs);
 				if (event.reason === "reload") {
 					const refreshes = await Promise.allSettled([
 						catalogProjection.refresh(pi, ctx, catalogs, AbortSignal.timeout(15_000)),
@@ -1274,7 +1276,10 @@ export function createJouzuModelPicker(
 					);
 				}
 			});
+			let removeShisaAuthListener: (() => void) | undefined = onShisaAuthChange(paths, reloadCatalogs);
 			pi.on("session_shutdown", (_event, ctx) => {
+				removeShisaAuthListener?.();
+				removeShisaAuthListener = undefined;
 				catalogProjection.release(pi, ctx);
 				activeCtx = undefined;
 				pendingDispatch = undefined;

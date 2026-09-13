@@ -507,6 +507,7 @@ export async function loginShisaDeviceFlow(
 		org: token.org,
 		endpoints: token.endpoints,
 		link_token: token.link_token,
+		gateway_url: deps.gatewayUrl,
 		acked: false,
 		...(token.bonus ? { bonus: token.bonus } : {}),
 	};
