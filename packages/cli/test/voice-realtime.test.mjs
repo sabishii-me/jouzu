@@ -195,3 +195,16 @@ test("oversized server messages fail without exposing the message", async (t) =>
 	await connectVoice(options(t, endpoint, { onError: resolveError }));
 	assert.match((await failed).message, /connection failed/);
 });
+
+test("rejected voice authentication explains login and environment-key recovery", async (t) => {
+	const endpoint = await server(t, () => assert.fail("must not connect"), {
+		verifyClient: (_info, done) => done(false, 401, "test-secret"),
+	});
+	await assert.rejects(
+		connectVoice(options(t, endpoint)),
+		(error) =>
+			/login shisa/.test(error.message) &&
+			/SHISA_API_KEY/.test(error.message) &&
+			!error.message.includes("test-secret"),
+	);
+});

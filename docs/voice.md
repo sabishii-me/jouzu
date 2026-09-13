@@ -4,7 +4,9 @@
 
 ## Setup
 
-Set `SHISA_API_KEY` in the environment before starting Jouzu. The key must have `shisa/asr-realtime` access; chat or batch transcription access alone is not enough.
+Run `/login shisa` in Jouzu, or set `SHISA_API_KEY` in the environment before starting it. The credential must have `shisa/asr-realtime` access; chat or batch transcription access alone is not enough.
+
+Voice reads the saved login each time you start recording. `SHISA_API_KEY` takes precedence and uses the public Shisa voice endpoint. A saved login uses the ASR endpoint returned during sign-in. Without either credential, `/voice` reports that a Shisa login or `SHISA_API_KEY` is required and leaves the microphone off.
 
 Capture uses the microphone on the machine running Jouzu. Over SSH, that is the remote machine, not your laptop. Allow microphone access for the terminal or Node.js when your operating system asks.
 
@@ -53,7 +55,7 @@ Bare keys are ignored so they remain available for typing. `/voice cancel` is al
 
 ## Privacy and limits
 
-- Audio is sent to `wss://api.shisa.ai/ws/asr/realtime` only after you start recording. The API key is sent in the authentication header, not in the URL or to the capture helper.
+- Audio is sent only after you start recording, to the saved login’s ASR endpoint or `wss://api.shisa.ai/ws/asr/realtime` when using an environment key. The API key is sent in the authentication header, not in the URL or to the capture helper.
 - Jouzu keeps audio in bounded memory and writes no recording files. Audio already sent to Shisa cannot be recalled by cancelling. Shisa's service policies apply to that data.
 - Recording stops after ten minutes and attempts to finalize the transcript. Network connection and microphone startup each time out after ten seconds; final transcription times out after thirty seconds.
 - A slow upload, oversized response, or transcript above the bounded text limit stops recording rather than accumulating audio indefinitely. Available finalized text is inserted with `[garbled]` markers after a failure.

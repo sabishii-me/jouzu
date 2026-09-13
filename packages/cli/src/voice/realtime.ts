@@ -19,7 +19,7 @@ export interface VoiceConnectionOptions {
 	onPreview(text: string): void;
 	onSnapshot?(snapshot: VoiceSnapshot): void;
 	onError(error: Error): void;
-	/** Local protocol-test seam; the interactive command uses the fixed Shisa endpoint. */
+	/** ASR endpoint from the saved Shisa login; defaults to the public Shisa endpoint. */
 	endpoint?: string;
 	connectTimeoutMs?: number;
 	finishTimeoutMs?: number;
@@ -83,7 +83,7 @@ export function connectVoice(options: VoiceConnectionOptions): Promise<VoiceConn
 			response.resume();
 			const message =
 				response.statusCode === 401
-					? "Voice authentication failed. Check SHISA_API_KEY."
+					? "Voice authentication failed. Run /login shisa again or check SHISA_API_KEY."
 					: response.statusCode === 403
 						? "Voice access denied. Your Shisa key needs shisa/asr-realtime access."
 						: "Voice connection was rejected. Check service availability and try again.";

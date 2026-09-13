@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { resolveJouzuPaths } from "../dist/paths.js";
+import { newShisaInstallId, shisaLinkStatePath, writeShisaLinkState } from "../dist/shisa-link/state.js";
 import { captureEnvironment } from "../dist/voice/capture.js";
 import { createVoiceExtension, renderVoiceWidget } from "../dist/voice/integration.js";
 import { VoiceReviewRequired, VoiceTranscript } from "../dist/voice/transcript.js";
@@ -72,7 +73,8 @@ async function harness(t, overrides = {}) {
 			},
 		},
 	};
-	await createVoiceExtension(resolveJouzuPaths({ homeOverride: home }), {
+	const paths = resolveJouzuPaths({ homeOverride: home });
+	await createVoiceExtension(paths, {
 		env: { SHISA_API_KEY: "test-key" },
 		async connect(options) {
 			connectionOptions = options;
@@ -102,6 +104,7 @@ async function harness(t, overrides = {}) {
 	});
 	t.after(() => handlers.get("session_shutdown")());
 	return {
+		paths,
 		calls,
 		connection,
 		capture,
@@ -235,6 +238,10 @@ test("missing credentials and noninteractive modes never start capture", async (
 	const h = await harness(t, { env: {} });
 	await h.command("start");
 	assert.equal(h.connectionOptions, undefined);
+	assert.deepEqual(
+		h.calls.find(([name]) => name === "notify"),
+		["notify", "Voice requires a Shisa login or SHISA_API_KEY. Run /login shisa or set SHISA_API_KEY.", "error"],
+	);
 	for (const mode of ["print", "json", "rpc"]) {
 		h.ctx.mode = mode;
 		await h.command("start");
@@ -395,4 +402,74 @@ test("microphone helper environment excludes service credentials and Node inject
 			XDG_RUNTIME_DIR: "/run/user/test",
 		},
 	);
+});
+
+async function saveVoiceLogin(paths, endpoint = "wss://asr.example.test/realtime") {
+	mkdirSync(paths.agentDir, { recursive: true });
+	writeFileSync(
+		join(paths.agentDir, "auth.json"),
+		JSON.stringify({
+			shisa: { type: "oauth", access: "saved-voice-secret", refresh: "", expires: Number.MAX_SAFE_INTEGER },
+		}),
+	);
+	await writeShisaLinkState(shisaLinkStatePath(paths), {
+		install_id: newShisaInstallId(),
+		authorization_id: "test-auth",
+		api_key_uuid: "test-key",
+		org: { id: "org", name: "Test", slug: "test" },
+		link_token: "test-link",
+		acked: true,
+		endpoints: {
+			openai_base_url: "https://api.example.test/v1",
+			model_catalog_url: "https://api.example.test/catalog",
+			asr_realtime_url: endpoint,
+		},
+	});
+}
+
+test("voice uses a login saved after startup and its ASR endpoint, and respects local logout", async (t) => {
+	const h = await harness(t, { env: {} });
+	await saveVoiceLogin(h.paths);
+	await h.command("start");
+	assert.equal(h.connectionOptions.apiKey, "saved-voice-secret");
+	assert.equal(h.connectionOptions.endpoint, "wss://asr.example.test/realtime");
+	assert.ok(h.captureOptions);
+	await h.command("cancel");
+	writeFileSync(join(h.paths.agentDir, "auth.json"), "{}");
+	const previous = h.connectionOptions;
+	await h.command("start");
+	assert.equal(h.connectionOptions, previous);
+	assert.equal(h.calls.at(-1)[2], "error");
+	assert.match(h.calls.at(-1)[1], /Shisa login or SHISA_API_KEY/);
+	assert.doesNotMatch(JSON.stringify(h.calls), /saved-voice-secret|test-link/);
+});
+
+test("an explicit voice API key overrides saved login without using its endpoint", async (t) => {
+	const h = await harness(t, { env: { SHISA_API_KEY: "explicit-voice-key" } });
+	await saveVoiceLogin(h.paths);
+	await h.command("start");
+	assert.equal(h.connectionOptions.apiKey, "explicit-voice-key");
+	assert.equal(h.connectionOptions.endpoint, undefined);
+});
+
+for (const auth of ["{broken", JSON.stringify({ shisa: { type: "oauth", access: "expired-key", expires: 1 } })]) {
+	test(`unusable saved voice login requires authentication (${auth === "{broken" ? "malformed" : "expired"})`, async (t) => {
+		const h = await harness(t, { env: {} });
+		mkdirSync(h.paths.agentDir, { recursive: true });
+		writeFileSync(join(h.paths.agentDir, "auth.json"), auth);
+		await h.command("start");
+		assert.equal(h.connectionOptions, undefined);
+		assert.equal(h.captureOptions, undefined);
+		assert.match(h.calls.at(-1)[1], /Shisa login or SHISA_API_KEY/);
+	});
+}
+
+test("invalid linked voice endpoints fail before capture or connection without exposing their contents", async (t) => {
+	const h = await harness(t, { env: {} });
+	await saveVoiceLogin(h.paths, "ws://remote.example.test/secret-endpoint");
+	await h.command("start");
+	assert.equal(h.connectionOptions, undefined);
+	assert.equal(h.captureOptions, undefined);
+	assert.match(h.calls.at(-1)[1], /endpoint is invalid/);
+	assert.doesNotMatch(JSON.stringify(h.calls), /secret-endpoint|saved-voice-secret/);
 });

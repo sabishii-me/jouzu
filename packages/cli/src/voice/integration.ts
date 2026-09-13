@@ -2,6 +2,8 @@ import type { ExtensionContext, InlineExtension } from "@earendil-works/pi-codin
 import { type KeyId, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { createJouzuKeybindingsManager, effectiveJouzuKeys, isPrintableKeyId } from "../jouzu-keybindings.js";
 import type { JouzuPaths } from "../paths.js";
+import { readShisaLoginToken } from "../shisa-link/credentials.js";
+import { readShisaLinkState, shisaLinkStatePath } from "../shisa-link/state.js";
 import { fitTerminalText, sanitizeTerminalText } from "../terminal-layout.js";
 import type { CaptureOptions, VoiceCapture } from "./capture.js";
 import { VoiceError } from "./errors.js";
@@ -160,10 +162,34 @@ export function createVoiceExtension(paths: JouzuPaths, overrides: Partial<Voice
 					ctx.ui.notify("Voice is already active. Stop or cancel it first.", "info");
 					return;
 				}
-				const apiKey = deps.env.SHISA_API_KEY;
+				const envKey = deps.env.SHISA_API_KEY?.trim();
+				const apiKey = envKey || readShisaLoginToken(paths);
 				if (!apiKey) {
-					ctx.ui.notify("Set SHISA_API_KEY with shisa/asr-realtime access before using /voice.", "error");
+					ctx.ui.notify(
+						"Voice requires a Shisa login or SHISA_API_KEY. Run /login shisa or set SHISA_API_KEY.",
+						"error",
+					);
 					return;
+				}
+				// An explicit environment key uses the public endpoint, independently of
+				// a saved login's account or staging endpoint.
+				const endpoint = envKey ? undefined : readShisaLinkState(shisaLinkStatePath(paths))?.endpoints.asr_realtime_url;
+				if (endpoint) {
+					try {
+						const url = new URL(endpoint);
+						const local = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+						if (
+							(url.protocol !== "wss:" && !(url.protocol === "ws:" && local)) ||
+							url.username ||
+							url.password ||
+							url.hash
+						) {
+							throw new Error("Invalid voice endpoint");
+						}
+					} catch {
+						ctx.ui.notify("The saved Shisa voice endpoint is invalid. Run /login shisa again.", "error");
+						return;
+					}
 				}
 				const active: ActiveRecording = { controller: new AbortController(), ctx, state: "starting", preview: "" };
 				run = active;
@@ -186,6 +212,7 @@ export function createVoiceExtension(paths: JouzuPaths, overrides: Partial<Voice
 				try {
 					active.connection = await deps.connect({
 						apiKey,
+						...(endpoint ? { endpoint } : {}),
 						language,
 						signal: active.controller.signal,
 						onPreview(text) {
