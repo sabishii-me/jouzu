@@ -63,6 +63,8 @@ test("theme assigns distinct semantic status colors while no-color retains text"
 	]) {
 		seen.length = 0;
 		const old = process.env.NO_COLOR;
+		const oldTerm = process.env.TERM;
+		process.env.TERM = "xterm-256color";
 		delete process.env.NO_COLOR;
 		try {
 			const colored = subagentComponent({ ...run, status }, theme).render(48);
@@ -75,6 +77,8 @@ test("theme assigns distinct semantic status colors while no-color retains text"
 		} finally {
 			if (old === undefined) delete process.env.NO_COLOR;
 			else process.env.NO_COLOR = old;
+			if (oldTerm === undefined) delete process.env.TERM;
+			else process.env.TERM = oldTerm;
 		}
 	}
 });
