@@ -403,13 +403,8 @@ function openBrowserFromCallbacks(callbacks: OAuthLoginCallbacks): ((url: string
 
 export interface ShisaLoginIo {
 	writeLinkState(state: ShisaLinkState): Promise<void>;
-	/**
-	 * Optional direct credential-store write. Production persists the
-	 * credential through the login return value (Pi's credential store writes
-	 * it after this flow resolves); a caller that owns a store write provides
-	 * it here so the acknowledgement is strictly ordered behind both writes.
-	 */
-	writeCredential?(credential: OAuthCredentials): Promise<void>;
+	/** Persist through the host credential store before acknowledging delivery. */
+	writeCredential(credential: OAuthCredentials): Promise<void>;
 }
 
 export interface ShisaLoginDeps extends ShisaLoginIo {
@@ -496,9 +491,9 @@ export async function loginShisaDeviceFlow(
 		signal: callbacks.signal,
 	});
 
-	// 4. Persist first (link state, plus a direct credential write when the
-	// caller owns one), then acknowledge. The response is re-deliverable, so
-	// a crash before the acknowledgement is recovered by signing in again.
+	// 4. Persist both files before acknowledgement closes server-side re-delivery.
+	// Pi writes the returned credential again after login; that later write cannot
+	// be the first durable copy because acknowledgement happens inside this call.
 	const credential: OAuthCredentials = {
 		type: "oauth",
 		access: token.api_key.secret,
@@ -515,8 +510,12 @@ export async function loginShisaDeviceFlow(
 		acked: false,
 		...(token.bonus ? { bonus: token.bonus } : {}),
 	};
-	await deps.writeLinkState(state);
-	await deps.writeCredential?.(credential);
+	try {
+		await deps.writeLinkState(state);
+		await deps.writeCredential(credential);
+	} catch {
+		throw new Error("Could not save Shisa sign-in. Check Jouzu's storage permissions and sign in again.");
+	}
 
 	// 5. Acknowledge the link. Retries are bounded; a later successful
 	// GET /device/link also acknowledges, and the worst case of never
@@ -546,7 +545,9 @@ export async function loginShisaDeviceFlow(
 			// The ack itself succeeded; the marker update is best-effort.
 		}
 	} else {
-		callbacks.onProgress?.("Signed in. The device link confirmation will complete automatically later.");
+		callbacks.onProgress?.(
+			"Shisa sign-in was saved, but confirmation failed. Sign in again to avoid losing access when the confirmation window expires.",
+		);
 	}
 	return credential;
 }

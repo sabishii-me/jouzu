@@ -10,6 +10,7 @@ import {
 } from "./model-catalog.js";
 import type { JouzuPaths } from "./paths.js";
 import { validatePrivateDirectory, writeFilePrivateAtomic } from "./private-fs.js";
+import { readShisaLoginToken } from "./shisa-link/credentials.js";
 
 const REGISTRY_MAX_BYTES = 256 * 1024;
 const OVERRIDES_MAX_BYTES = 64 * 1024;
@@ -379,26 +380,7 @@ function envCredentialValue(source: CatalogSource, env: NodeJS.ProcessEnv): stri
 
 /** Read the login credential only for the exact Shisa endpoint and auth reference. */
 function shisaLoginToken(source: CatalogSource, paths: JouzuPaths): string | undefined {
-	if (!isShisaApiCatalogEndpoint(source)) return undefined;
-	const authPath = join(paths.agentDir, "auth.json");
-	try {
-		const metadata = lstatSync(authPath);
-		if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size > 1024 * 1024) return undefined;
-		// Read the shared file without importing Pi: catalog status also powers doctor
-		// when the interactive runtime cannot load.
-		const auth = parseStrictJson(readFileSync(authPath, "utf8").replace(/^\uFEFF/u, ""));
-		const credential = isRecord(auth) && isRecord(auth.shisa) ? auth.shisa : undefined;
-		if (
-			credential?.type !== "oauth" ||
-			typeof credential.access !== "string" ||
-			typeof credential.expires !== "number" ||
-			credential.expires <= Date.now()
-		)
-			return undefined;
-		return validateCatalogSourceToken(credential.access);
-	} catch {
-		return undefined;
-	}
+	return isShisaApiCatalogEndpoint(source) ? readShisaLoginToken(paths) : undefined;
 }
 
 /**

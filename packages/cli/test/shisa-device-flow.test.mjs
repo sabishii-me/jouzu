@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -133,6 +133,7 @@ function loginDeps(overrides = {}) {
 			writeLinkState: async (state) => {
 				order.push(`state:${state.acked ? "acked" : "pending"}`);
 			},
+			writeCredential: async () => {},
 			fetchImpl: mock,
 			sleep,
 			ackAttempts: overrides.ackAttempts ?? 3,
@@ -588,3 +589,64 @@ test("extension logout support leaves no state behind through clearShisaLinkStat
 		rmSync(home, { recursive: true, force: true });
 	}
 });
+
+for (const storageFailure of [false, "directory", "locked", "malformed"]) {
+	test(`production Shisa login saves auth before acknowledgement (storage failure: ${storageFailure})`, async (t) => {
+		const home = mkdtempSync(join(tmpdir(), "jouzu-shisa-persist-"));
+		t.after(() => rmSync(home, { recursive: true, force: true }));
+		const paths = resolveJouzuPaths({ homeOverride: home });
+		const authPath = join(paths.agentDir, "auth.json");
+		mkdirSync(paths.agentDir, { recursive: true });
+		const other = { type: "api_key", key: "unrelated-test-key" };
+		if (storageFailure === "directory") mkdirSync(authPath);
+		else if (storageFailure === "malformed") writeFileSync(authPath, "{broken");
+		else writeFileSync(authPath, JSON.stringify({ other }));
+		if (storageFailure === "locked") mkdirSync(`${authPath}.lock`);
+		const mock = createFetchMock();
+		mock.enqueue(jsonResponse(201, DEVICE_CODE_BODY));
+		mock.enqueue(jsonResponse(200, TOKEN_BODY));
+		mock.enqueue(() => {
+			assert.equal(storageFailure, false, "failed storage must never acknowledge");
+			const auth = JSON.parse(readFileSync(authPath, "utf8"));
+			assert.equal(auth.shisa.access, TOKEN_BODY.api_key.secret);
+			if (process.platform !== "win32") assert.equal(statSync(authPath).mode & 0o777, 0o600);
+			assert.deepEqual(auth.other, other);
+			assert.equal(readShisaLinkState(shisaLinkStatePath(paths)).acked, false);
+			return jsonResponse(204);
+		});
+		const { ModelRuntime } = await import("@earendil-works/pi-coding-agent");
+		const runtime = storageFailure
+			? undefined
+			: await ModelRuntime.create({
+					authPath,
+					modelsPath: null,
+					modelsStorePath: join(home, "model-store.json"),
+					refreshOnCreate: false,
+				});
+		let provider;
+		createShisaExtension({ paths, jouzuVersion: "0.1.8", env: {}, fetchImpl: mock, sleep: instantSleep() }).factory({
+			registerProvider: (id, config) => {
+				provider = config;
+				runtime?.registerProvider(id, config);
+			},
+		});
+		const { callbacks } = fakeCallbacks();
+		const login = runtime
+			? runtime.login("shisa", "oauth", { prompt: async () => assert.fail("unexpected prompt"), notify() {} })
+			: provider.oauth.login(callbacks);
+		if (storageFailure) {
+			await assert.rejects(login, /Could not save Shisa sign-in/);
+			assert.equal(mock.calls.length, 2);
+			if (storageFailure === "locked") {
+				assert.equal(existsSync(`${authPath}.lock`), true, "existing lock is preserved");
+				assert.deepEqual(JSON.parse(readFileSync(authPath, "utf8")), { other });
+			}
+			if (storageFailure === "malformed") assert.equal(readFileSync(authPath, "utf8"), "{broken");
+			assert.equal(readShisaLinkState(shisaLinkStatePath(paths)).acked, false);
+		} else {
+			await login;
+			assert.equal(mock.calls.length, 3);
+			assert.equal(readShisaLinkState(shisaLinkStatePath(paths)).acked, true);
+		}
+	});
+}
