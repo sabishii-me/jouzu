@@ -1,4 +1,5 @@
 import type { InlineExtension } from "@earendil-works/pi-coding-agent";
+import { Text } from "@earendil-works/pi-tui";
 import { type FlowUnaccountableWork, formatFlowStatus, projectFlowStatus } from "./flow-status.js";
 import type { PiSessionFlowIngress } from "./pi-session-ingress.js";
 import { FlowLedgerError } from "./receipt-ledger.js";
@@ -20,6 +21,111 @@ const USAGE = [
 	"/flow resolve <attempt> retry|discard decides an interrupted turn whose outcome is unknown.",
 	"/flow reset (or /flow clear) releases a stuck reservation without stopping jobs or deleting receipts.",
 ].join("\n");
+
+const truncate = (text: string, max: number): string => {
+	const first = text.split("\n")[0] ?? text;
+	return first.length > max ? `${first.slice(0, max - 1)}…` : first;
+};
+const shortRef = (reference: unknown): string =>
+	typeof reference === "string" ? reference.replace(/^flow-results:/, "").slice(0, 12) : "?";
+
+interface FlowTheme {
+	fg(color: string, text: string): string;
+}
+
+interface FlowPart {
+	flowInput?: unknown[];
+	kind?: string;
+	content?: unknown;
+}
+
+/** One transcript line group per composed member; expansion shows the exact envelope. */
+function renderFlowPart(parsed: FlowPart, lines: string[], theme: FlowTheme): void {
+	let content = parsed.content;
+	if (typeof content === "string") {
+		// Pre-single-serialization sessions stored a stringified envelope here.
+		try {
+			const inner: unknown = JSON.parse(content);
+			if (inner && typeof inner === "object" && !Array.isArray(inner)) content = inner;
+		} catch {
+			/* Prose stays prose. */
+		}
+	}
+	if (parsed.kind === "wait" && content && typeof content === "object" && "wait" in content) {
+		const wait = (content as { wait: Record<string, unknown> }).wait;
+		const state = String(wait.state ?? "unknown");
+		const observations = Array.isArray(wait.observations) ? wait.observations : [];
+		const satisfied = observations.filter((item) => (item as { state?: string })?.state === "satisfied").length;
+		const mark =
+			state === "resolved"
+				? theme.fg("success", "✓ wait resolved")
+				: state === "expired"
+					? theme.fg("warning", "⏱ wait expired")
+					: theme.fg("warning", `⏳ wait ${state}`);
+		lines.push(
+			observations.length
+				? `${mark}${theme.fg("muted", ` — ${satisfied}/${observations.length} dependencies satisfied`)}`
+				: mark,
+		);
+		if (typeof wait.reason === "string" && wait.reason) lines.push(theme.fg("dim", truncate(wait.reason, 120)));
+		for (const item of observations) {
+			const observation = item as {
+				handle?: string;
+				producer?: string;
+				until?: string;
+				health?: string;
+				state?: string;
+			};
+			lines.push(
+				theme.fg(
+					"dim",
+					`  · ${observation.handle ?? "?"} (${observation.producer ?? "?"}/${observation.until ?? "?"})${observation.health ? ` · ${observation.health}` : ""}${observation.state ? ` · ${observation.state}` : ""}`,
+				),
+			);
+		}
+		return;
+	}
+	if (parsed.kind === "result" && content && typeof content === "object") {
+		const envelope = content as {
+			total?: number;
+			counts?: { success?: number; failure?: number; cancelled?: number };
+			manifest?: string;
+			sample?: { status?: string; title?: string; id?: string }[];
+			omitted?: number;
+			noReply?: unknown;
+		};
+		const counts = envelope.counts ?? {};
+		const head = [
+			theme.fg("accent", `◆ ${envelope.total ?? "?"} result${envelope.total === 1 ? "" : "s"}`),
+			theme.fg("success", `✓${counts.success ?? 0}`),
+			counts.failure ? theme.fg("error", `✗${counts.failure}`) : undefined,
+			counts.cancelled ? theme.fg("warning", `⊘${counts.cancelled}`) : undefined,
+		].filter((item): item is string => Boolean(item));
+		lines.push(head.join(theme.fg("dim", " · ")));
+		for (const sample of (envelope.sample ?? []).slice(0, 4)) {
+			const ok = sample.status === "success";
+			lines.push(
+				`  ${theme.fg(ok ? "success" : "error", ok ? "✓" : "✗")} ${truncate(String(sample.title ?? sample.id ?? "?"), 100)}`,
+			);
+		}
+		if (envelope.omitted)
+			lines.push(theme.fg("dim", `  +${envelope.omitted} omitted · manifest ${shortRef(envelope.manifest)}`));
+		else if (envelope.manifest) lines.push(theme.fg("dim", `  manifest ${shortRef(envelope.manifest)}`));
+		if (envelope.noReply) lines.push(theme.fg("dim", "  notification only — no reply owed"));
+		return;
+	}
+	if (parsed.kind === "work" && typeof content === "string") {
+		const [first, ...rest] = content.split("\n");
+		lines.push(`${theme.fg("accent", "▶ work")} ${truncate(first, 120)}`);
+		if (rest.length) lines.push(theme.fg("dim", truncate(rest.join("\n"), 200)));
+		return;
+	}
+	if (parsed.kind === "alert" && typeof content === "string") {
+		lines.push(`${theme.fg("warning", "⚠ alert")} ${truncate(content, 160)}`);
+		return;
+	}
+	lines.push(typeof content === "string" ? content : JSON.stringify(content));
+}
 
 /**
  * The user's view of and controls over held work. Every reply goes to the terminal through
@@ -48,6 +154,29 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 			);
 		},
 		factory(pi) {
+			pi.registerMessageRenderer("jouzu-flow", (message, { expanded, outputPad }, theme) => {
+				const lines: string[] = [];
+				const parts = Array.isArray(message.content)
+					? message.content
+					: [{ type: "text" as const, text: String(message.content ?? "") }];
+				for (const part of parts) {
+					if (part.type !== "text") continue;
+					let parsed: FlowPart;
+					try {
+						parsed = JSON.parse(part.text) as FlowPart;
+					} catch {
+						lines.push(part.text);
+						continue;
+					}
+					if (!parsed || parsed.flowInput?.[0] !== "jouzu-flow") {
+						lines.push(part.text);
+						continue;
+					}
+					renderFlowPart(parsed, lines, theme);
+					if (expanded) lines.push(theme.fg("dim", part.text));
+				}
+				return new Text(lines.join("\n"), outputPad, 0);
+			});
 			pi.on("agent_end", async (_event, ctx) => {
 				// Kept fresh here rather than captured at load: the context is replaced with the session.
 				if (ctx) announce = (text) => ctx.ui.notify(text, "info");

@@ -85,13 +85,22 @@ export class FlowModelInput {
 				)
 			)
 				throw new FlowLedgerError("schema", "Invalid flow image content.");
+			// A member whose text is itself a JSON object (wait decisions, result envelopes) is inlined
+			// once instead of serialized twice, so one JSON layer carries the whole composed part.
+			let content: unknown = item.text;
+			try {
+				const parsed = JSON.parse(item.text);
+				if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) content = parsed;
+			} catch {
+				/* Plain prose stays a string. */
+			}
 			const parts: Part[] = [
 				{
 					type: "text",
 					text: JSON.stringify({
 						flowInput: JSON.parse(marker),
 						kind: item.kind,
-						content: item.text,
+						content,
 						...(item.resultManifest
 							? { results: { count: represented.length, manifest: item.resultManifest.reference } }
 							: {}),

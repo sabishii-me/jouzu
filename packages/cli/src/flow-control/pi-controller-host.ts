@@ -203,7 +203,16 @@ export class PiControllerHost implements FlowControllerHost {
 		this.requests.register(input);
 		await this.queue.enqueue(input.attemptId, () => {
 			if (pending.revoked) throw new FlowLedgerError("stale", "Controller input was revoked before enqueue.");
-			pending.item = this.session.agent.followUp({ role: "user", content: input.content, timestamp: Date.now() });
+			// Custom-type delivery: the transcript stores a renderable custom entry while
+			// convertToLlm presents the identical composed parts to the model as user input.
+			pending.item = this.session.agent.followUp({
+				role: "custom",
+				customType: "jouzu-flow",
+				content: input.content,
+				display: true,
+				details: { attemptId: input.attemptId },
+				timestamp: Date.now(),
+			});
 		});
 	}
 	async run(): Promise<void> {

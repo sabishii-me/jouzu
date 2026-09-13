@@ -23,7 +23,22 @@ export function waitToolResponse(wait: FlowWaitState) {
 			: "deadline-only",
 		unmet: wait.unmet,
 	};
-	return { content: [{ type: "text" as const, text: JSON.stringify(details) }], details };
+	// The token stays in the text because cancelling the wait needs it and details do not reach
+	// the model. Everything else here is scannable context; the exact payload stays in details.
+	const handles = wait.on
+		.map(
+			(handle) => `${handle.handle} (${handle.producer}/${handle.until}${handle.health ? ` · ${handle.health}` : ""})`,
+		)
+		.join(", ");
+	const check = wait.checkAt === undefined ? "" : ` · check ${new Date(wait.checkAt).toISOString()}`;
+	const text = [
+		`agent_wait ${wait.state} [${wait.token}] — ${handles}${check} · deadline ${new Date(wait.expiresAt).toISOString()}`,
+		wait.unmet.length ? `${wait.unmet.length} unmet` : undefined,
+		wait.reason || undefined,
+	]
+		.filter(Boolean)
+		.join(" — ");
+	return { content: [{ type: "text" as const, text }], details };
 }
 export const waitToolContentHash = (content: unknown) =>
 	createHash("sha256").update(JSON.stringify(content)).digest("hex");
