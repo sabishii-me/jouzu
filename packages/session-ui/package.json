@@ -8,6 +8,14 @@
 		".": {
 			"types": "./dist/index.d.ts",
 			"import": "./dist/index.js"
+		},
+		"./layout": {
+			"types": "./dist/layout.d.ts",
+			"import": "./dist/layout.js"
+		},
+		"./color": {
+			"types": "./dist/color.d.ts",
+			"import": "./dist/color.js"
 		}
 	},
 	"files": [
