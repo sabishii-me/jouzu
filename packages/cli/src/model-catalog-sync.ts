@@ -15,7 +15,9 @@ import {
 	resolveCatalogSources,
 } from "./catalog-sources.js";
 import {
+	type CatalogThinkingLevelGap,
 	catalogDocumentSha256,
+	catalogThinkingLevelGaps,
 	MODEL_CATALOG_MAX_BYTES,
 	MODEL_CATALOG_MEDIA_TYPE,
 	type ModelCatalogDocument,
@@ -91,6 +93,7 @@ export type CatalogSyncStatus =
 			sequence?: string;
 			validatedAt?: string;
 			offeringCount?: number;
+			thinkingLevelGaps?: CatalogThinkingLevelGap[];
 			lastError?: { code: string; message: string; at: string };
 			credentialName?: string;
 			credentialAvailable?: boolean;
@@ -314,9 +317,11 @@ export function getCatalogSourceStatus(
 			? readAccountState(paths, source.url, origin.activeAccountRefHash)
 			: undefined;
 		let offeringCount: number | undefined;
+		let thinkingLevelGaps: CatalogThinkingLevelGap[] | undefined;
 		if (account?.active && origin?.activeAccountRefHash) {
-			offeringCount = loadDocument(accountRoot(paths, source.url, origin.activeAccountRefHash), account.active)
-				.modelOfferings.length;
+			const document = loadDocument(accountRoot(paths, source.url, origin.activeAccountRefHash), account.active);
+			offeringCount = document.modelOfferings.length;
+			thinkingLevelGaps = catalogThinkingLevelGaps(document);
 		}
 		return {
 			schemaVersion: 1,
@@ -330,6 +335,7 @@ export function getCatalogSourceStatus(
 			...(account?.active ? { revision: account.active.revision, sequence: account.active.sequence } : {}),
 			...(account?.validatedAt ? { validatedAt: account.validatedAt } : {}),
 			...(offeringCount !== undefined ? { offeringCount } : {}),
+			...(thinkingLevelGaps ? { thinkingLevelGaps } : {}),
 			...(account?.lastError ? { lastError: account.lastError } : {}),
 			...(credentialName ? { credentialName, credentialAvailable } : {}),
 			...(credential ? { credentialEnv: credential.envSet, credentialStored: credential.stored } : {}),

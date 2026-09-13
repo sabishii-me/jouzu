@@ -8,6 +8,7 @@ import {
 } from "./camoufox-adapter.js";
 import type { KeybindingPlan } from "./keybindings.js";
 import type { JouzuMetadata } from "./metadata.js";
+import type { CatalogThinkingLevelGap } from "./model-catalog.js";
 import { loadModelPickerState } from "./model-picker-state.js";
 import type { JouzuPaths } from "./paths.js";
 import type { ReleaseExtensionStatus } from "./release-extensions.js";
@@ -34,6 +35,12 @@ const PROVIDER_ENVIRONMENT_KEYS = [
 	"MINIMAX_API_KEY",
 ] as const;
 
+export interface DoctorCatalogLevels {
+	activeCatalogs: number;
+	offerings: number;
+	gaps: readonly CatalogThinkingLevelGap[];
+}
+
 export interface DoctorContext {
 	metadata: JouzuMetadata;
 	paths: JouzuPaths;
@@ -56,6 +63,8 @@ export interface DoctorContext {
 	keybindingDiagnostic?: string;
 	releaseExtensionStatus?: ReleaseExtensionStatus;
 	releaseExtensionDiagnostic?: string;
+	catalogLevels?: DoctorCatalogLevels;
+	catalogDiagnostic?: string;
 }
 
 export type DoctorSeverity = "warning" | "problem";
@@ -299,6 +308,15 @@ export function createDoctorReport(context: DoctorContext): DoctorResult {
 			`Release extension inventory is unavailable: ${context.releaseExtensionDiagnostic}`,
 		);
 	}
+	const catalogGaps = context.catalogLevels?.gaps.length ?? 0;
+	if (context.catalogDiagnostic) {
+		warning("catalog.statusUnavailable", `Catalog status is unavailable: ${context.catalogDiagnostic}`);
+	} else if (catalogGaps > 0) {
+		warning(
+			"catalog.thinkingLevels",
+			`Catalog: ${catalogGaps} of ${context.catalogLevels?.offerings ?? 0} offerings declare reasoning but no selectable levels, so the client falls back to permissive defaults. Run "jz catalog status" for the list.`,
+		);
+	}
 	if (camoufoxRuntime.status === "invalid") {
 		problem(
 			"camoufox.runtimeInvalid",
@@ -371,6 +389,18 @@ export function createDoctorReport(context: DoctorContext): DoctorResult {
 		describeInstallChannel(context.updateStatus?.installChannel),
 	);
 	field("runtime", "executable", "Executable", context.executable);
+	field(
+		"runtime",
+		"catalog.thinkingLevels",
+		"Catalog thinking levels",
+		context.catalogDiagnostic
+			? "unavailable"
+			: !context.catalogLevels || context.catalogLevels.activeCatalogs === 0
+				? "no active catalog"
+				: catalogGaps > 0
+					? `${catalogGaps} of ${context.catalogLevels.offerings} offerings without declared levels`
+					: "complete",
+	);
 	field("runtime", "update.policy", "Self-update policy", context.updateStatus?.policy ?? "unavailable");
 	field("runtime", "update.channel", "Self-update channel", context.updateStatus?.installChannel ?? "unavailable");
 	field(

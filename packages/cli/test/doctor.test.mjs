@@ -102,6 +102,51 @@ test("doctor reports an injected healthy Linux runtime without mutating roots", 
 	assert.equal(rmSync(root, { recursive: true, force: true }), undefined);
 });
 
+test("doctor summarizes catalog thinking-level gaps and points to the catalog detail", () => {
+	const root = mkdtempSync(join(tmpdir(), "jouzu-doctor-catalog-"));
+	rmSync(root, { recursive: true, force: true });
+	const reportFor = (extra) =>
+		createDoctorReport({
+			metadata: metadata(),
+			paths: paths(root),
+			profile: { id: "core", source: "default" },
+			piRuntimeVersion: "0.84.2",
+			executable: "/opt/jouzu/node_modules/jouzu/dist/cli.js",
+			env: { HOME: "/home/user", ANTHROPIC_API_KEY: "redacted" },
+			platform: "linux",
+			commandPaths: { git: "/usr/bin/git", bash: "/usr/bin/bash", npm: "/usr/bin/npm" },
+			...extra,
+		});
+	const complete = reportFor({ catalogLevels: { activeCatalogs: 1, offerings: 36, gaps: [] } });
+	assert.match(complete.text, /Catalog thinking levels: complete/);
+	assert.doesNotMatch(complete.text, /jz catalog status/);
+	assert.equal(complete.healthy, true);
+
+	const gaps = reportFor({
+		catalogLevels: {
+			activeCatalogs: 2,
+			offerings: 36,
+			gaps: [
+				{ providerId: "aiand", modelId: "deepseek-ai/deepseek-v4-flash" },
+				{ providerId: "aiand", modelId: "qwen/qwen3.6-27b" },
+			],
+		},
+	});
+	assert.match(gaps.text, /Catalog thinking levels: 2 of 36 offerings without declared levels/);
+	assert.match(gaps.text, /- Catalog: 2 of 36 offerings declare reasoning but no selectable levels/);
+	assert.match(gaps.text, /Run "jz catalog status" for the list/);
+	assert.equal(gaps.healthy, true, "a catalog gap is a warning, not a problem");
+
+	const unconfigured = reportFor({ catalogLevels: { activeCatalogs: 0, offerings: 0, gaps: [] } });
+	assert.match(unconfigured.text, /Catalog thinking levels: no active catalog/);
+
+	const unavailable = reportFor({ catalogDiagnostic: "cached catalog digest mismatch" });
+	assert.match(unavailable.text, /Catalog thinking levels: unavailable/);
+	assert.match(unavailable.text, /Catalog status is unavailable: cached catalog digest mismatch/);
+
+	assert.equal(rmSync(root, { recursive: true, force: true }), undefined);
+});
+
 test("doctor reports model picker counts and unreadable state without rewriting it", () => {
 	const root = mkdtempSync(join(tmpdir(), "jouzu-doctor-model-picker-"));
 	try {

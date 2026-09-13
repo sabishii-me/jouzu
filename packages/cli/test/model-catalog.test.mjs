@@ -5,6 +5,7 @@ import { test } from "node:test";
 
 import {
 	catalogDocumentSha256,
+	catalogThinkingLevelGaps,
 	checkCatalogConformance,
 	MODEL_CATALOG_MEDIA_TYPE,
 	ModelCatalogError,
@@ -38,6 +39,20 @@ test("canonical account snapshot and local compatibility pack conform", () => {
 	assert.equal(pack.matchRules.length, 1);
 	assert.equal(MODEL_CATALOG_MEDIA_TYPE, "application/vnd.jouzu.model-catalog+json; version=1");
 	assert.match(catalogDocumentSha256(snapshotText), /^[0-9a-f]{64}$/);
+});
+
+test("gap analysis flags reasoning offerings that declare no selectable levels", () => {
+	const parsed = (document) => parseAndValidateModelCatalog(JSON.stringify(document), { remote: true });
+	const document = accountSnapshot();
+	assert.deepEqual(catalogThinkingLevelGaps(parsed(document)), [], "a non-reasoning offering needs no levels");
+
+	document.modelOfferings[0].capabilities = ["text", "streaming", "tool_calling", "reasoning"];
+	assert.deepEqual(catalogThinkingLevelGaps(parsed(document)), [
+		{ providerId: "ai.example.gateway", modelId: "example-model" },
+	]);
+
+	document.modelOfferings[0].supportedThinkingLevels = ["low", "medium", "high"];
+	assert.deepEqual(catalogThinkingLevelGaps(parsed(document)), [], "a declared set closes the gap");
 });
 
 test("per-model reasoning defaults match the schema and remain optional", () => {

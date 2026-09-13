@@ -203,6 +203,8 @@ jouzu catalog refresh
 jouzu catalog refresh office
 ```
 
+`catalog status` lists offerings that declare the `reasoning` capability without `supportedThinkingLevels`. Without a declared set, Jouzu keeps Pi's adapter defaults, where every level below `xhigh` stays selectable and the literal level name is sent to the provider, so a catalog should declare levels for every reasoning offering. `jz doctor` reports the count and points here for the list.
+
 `JOUZU_MODEL_CATALOG_URL` and optional `JOUZU_MODEL_CATALOG_TOKEN` remain a single-source shorthand when `catalogs.json` does not exist. Refresh requests never follow redirects, so a bearer token cannot be forwarded to another origin.
 
 A structurally valid large catalog change can be quarantined instead of activated. Review its status, then accept only the exact displayed revision and SHA-256 digest with `jouzu catalog accept REVISION --digest SHA256 --source SOURCE_ID`.
@@ -226,7 +228,7 @@ jz pi --help
 jz -- --version
 ```
 
-`doctor` is non-mutating and reports the install/update channel and policy, keybinding-default state, exact Pi tag/commit, platform/runtime prerequisites, resolved roots, profile hashes, package count, authentication presence, proxy/CA status, shared skill surface, warnings, and actionable problems. It reports presence only and does not print credential values.
+`doctor` is non-mutating and reports the install/update channel and policy, keybinding-default state, exact Pi tag/commit, platform/runtime prerequisites, resolved roots, profile hashes, package count, authentication presence, proxy/CA status, shared skill surface, catalog thinking-level completeness, warnings, and actionable problems. It reports presence only and does not print credential values.
 
 `--json` prints the same diagnostics as experimental schema 1, so scripts can read individual fields and issues without parsing the human layout. The report includes `"experimental": true`; its structure and identifiers may change before the stable machine-diagnostics contract planned for v0.3/v0.4. Exit status is unchanged: `1` when a problem is reported.
 

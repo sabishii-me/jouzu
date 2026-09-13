@@ -34,6 +34,12 @@ function formatOneCatalogStatus(status: CatalogSyncStatus): string[] {
 	if (transportWarning) lines.push(`  Warning: ${transportWarning}`);
 	if (status.catalogId) lines.push(`  Catalog: ${status.catalogId}`);
 	if (status.offeringCount !== undefined) lines.push(`  Models: ${status.offeringCount}`);
+	if (status.thinkingLevelGaps?.length) {
+		lines.push(
+			`  Thinking levels: ${status.thinkingLevelGaps.length} of ${status.offeringCount ?? "?"} offerings declare reasoning but no selectable levels`,
+		);
+		for (const gap of status.thinkingLevelGaps) lines.push(`    ${gap.providerId}/${gap.modelId}`);
+	}
 	if (status.revision) lines.push(`  Revision: ${status.revision} (sequence ${status.sequence})`);
 	if (status.validatedAt) lines.push(`  Validated: ${status.validatedAt}`);
 	if (status.credentialName) {

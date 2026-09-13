@@ -56,6 +56,28 @@ test("built-in source without a key is visible and idle with no network work", (
 	}
 });
 
+test("catalog status lists offerings that declare reasoning without selectable levels", () => {
+	const status = {
+		schemaVersion: 1,
+		status: "active",
+		configured: true,
+		sourceId: "codex-pool",
+		label: "codex-pool",
+		enabled: true,
+		endpoint: "http://localhost:8989/v1/jouzu/model-catalog",
+		catalogId: "ai.shisa.codex-pool",
+		revision: "sha256:fixture",
+		sequence: "7",
+		offeringCount: 36,
+		thinkingLevelGaps: [{ providerId: "aiand", modelId: "deepseek-ai/deepseek-v4-flash" }],
+		quarantined: 0,
+	};
+	const text = formatCatalogStatus(status);
+	assert.match(text, /Thinking levels: 1 of 36 offerings declare reasoning but no selectable levels/u);
+	assert.match(text, /aiand\/deepseek-ai\/deepseek-v4-flash/u);
+	assert.doesNotMatch(formatCatalogStatus({ ...status, thinkingLevelGaps: [] }), /Thinking levels:/u);
+});
+
 test("catalog file validation fails gracefully", () => {
 	const temporary = mkdtempSync(join(tmpdir(), "jouzu-catalog-command-"));
 	try {

@@ -15,8 +15,10 @@ import {
 	resetKeybindings,
 } from "./keybindings.js";
 import { loadMetadata } from "./metadata.js";
+import { catalogThinkingLevelGaps } from "./model-catalog.js";
 import {
 	acceptQuarantinedCatalog,
+	loadActiveModelCatalogs,
 	refreshAllModelCatalogs,
 	refreshAvailableModelCatalogs,
 	refreshModelCatalog,
@@ -209,6 +211,8 @@ export async function runMainCli(args: string[]): Promise<void> {
 		let keybindingDiagnostic: string | undefined;
 		let releaseExtensionStatus: ReturnType<typeof inspectReleaseExtensions> | undefined;
 		let releaseExtensionDiagnostic: string | undefined;
+		let catalogLevels: Parameters<typeof createDoctorReport>[0]["catalogLevels"];
+		let catalogDiagnostic: string | undefined;
 		try {
 			updateStatus = updater.status();
 		} catch (error) {
@@ -224,6 +228,16 @@ export async function runMainCli(args: string[]): Promise<void> {
 			probeReleaseRuntimeCompatibility(releaseExtensionStatus);
 		} catch (error) {
 			releaseExtensionDiagnostic = error instanceof Error ? error.message : String(error);
+		}
+		try {
+			const catalogs = loadActiveModelCatalogs(paths, process.env);
+			catalogLevels = {
+				activeCatalogs: catalogs.length,
+				offerings: catalogs.reduce((total, catalog) => total + catalog.document.modelOfferings.length, 0),
+				gaps: catalogs.flatMap((catalog) => catalogThinkingLevelGaps(catalog.document)),
+			};
+		} catch (error) {
+			catalogDiagnostic = error instanceof Error ? error.message : String(error);
 		}
 		const result = createDoctorReport({
 			metadata,
@@ -241,6 +255,8 @@ export async function runMainCli(args: string[]): Promise<void> {
 			...(keybindingDiagnostic ? { keybindingDiagnostic } : {}),
 			...(releaseExtensionStatus ? { releaseExtensionStatus } : {}),
 			...(releaseExtensionDiagnostic ? { releaseExtensionDiagnostic } : {}),
+			...(catalogLevels ? { catalogLevels } : {}),
+			...(catalogDiagnostic ? { catalogDiagnostic } : {}),
 		});
 		console.log(parsed.json ? JSON.stringify(result.report, null, 2) : result.text);
 		if (!result.healthy) process.exitCode = 1;
