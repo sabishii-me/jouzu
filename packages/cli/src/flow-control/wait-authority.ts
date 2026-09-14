@@ -23,6 +23,9 @@ export interface FlowAuthorityWork {
 	userInputs?: { id: string; revision: number }[];
 	/** Campaign this work identity represents, named by its owning producer. */
 	binding?: FlowWorkBinding;
+	/** Producer state revision and the verified invocation that created this work. */
+	producerRevision?: string;
+	origin?: { id: string; revision: number };
 	/** Omitted in legacy records, whose work remains active. */
 	lifecycle?: { state: FlowWorkStatus; changedAt: number; reason: string };
 }
@@ -149,6 +152,9 @@ export function validateWaitAuthority(authority: FlowWaitAuthority): void {
 			!identity(work.owner) ||
 			!revision(work.revision) ||
 			!instant(work.createdAt) ||
+			(work.producerRevision !== undefined && !identity(work.producerRevision)) ||
+			(work.origin !== undefined &&
+				(!work.origin || !identity(work.origin.id) || !revision(work.origin.revision) || work.origin.id === work.id)) ||
 			(work.binding !== undefined &&
 				(!work.binding ||
 					work.binding.producer !== work.owner ||

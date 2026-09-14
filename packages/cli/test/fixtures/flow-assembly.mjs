@@ -205,3 +205,21 @@ export async function installedProducerExtensions({ freshMultiloop = false } = {
 		{ name: "pi-background-tasks", factory: background.module.default },
 	];
 }
+
+/** Installed task extension with an isolated backing file selected while its factory runs. */
+export async function installedTaskExtension(taskFile) {
+	const tasks = await bundleExtension("@lhl/pi-tasks/src/index.ts");
+	return {
+		name: "pi-tasks",
+		factory(pi) {
+			const previous = process.env.PI_TASKS;
+			process.env.PI_TASKS = taskFile;
+			try {
+				tasks.module.default(pi);
+			} finally {
+				if (previous === undefined) delete process.env.PI_TASKS;
+				else process.env.PI_TASKS = previous;
+			}
+		},
+	};
+}

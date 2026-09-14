@@ -401,9 +401,62 @@ export class FlowWaitStore {
 				work.binding = structuredClone(captured);
 				for (const participant of shared)
 					if (!work.participants.includes(participant)) work.participants.push(participant);
-			} else if (work.lifecycle?.state === "paused") {
-				work = changeAuthorityWork(authority, work.id, work.owner, work.revision, "active", "Binding resumed", now);
+			} else {
+				if (work.lifecycle?.state === "paused")
+					work = changeAuthorityWork(authority, work.id, work.owner, work.revision, "active", "Binding resumed", now);
+				for (const participant of shared)
+					work = shareAuthorityWork(authority, work.id, work.owner, work.revision, participant);
 			}
+			return work;
+		});
+	}
+	/** A producer can derive work only from a live invocation that explicitly includes it. */
+	deriveWorkBinding(
+		binding: FlowWorkBinding,
+		producerRevision: string,
+		origin: { id: string; revision: number },
+		now: number,
+		participants: readonly string[] = [],
+	) {
+		const captured = captureWorkBinding(binding),
+			parent = { id: origin.id, revision: origin.revision },
+			shared = [...participants];
+		return this.authorityChange(now, (authority) => {
+			const source = requireAuthorityWork(authority, parent.id, captured.producer, parent.revision);
+			if ((source.lifecycle?.state ?? "active") !== "active")
+				throw new FlowLedgerError("stale", "Task origin is no longer active.");
+			const existing = findLiveBoundWork(authority, captured);
+			if (existing) return existing;
+			const work = registerAuthorityWork(
+				authority,
+				`${captured.producer}-work:${randomUUID()}`,
+				captured.producer,
+				now,
+			);
+			work.binding = captured;
+			work.origin = parent;
+			work.producerRevision = producerRevision;
+			for (const participant of shared)
+				if (!work.participants.includes(participant)) work.participants.push(participant);
+			return work;
+		});
+	}
+	/** Producer state changes revoke the preceding tool revision even when lifecycle stays active. */
+	synchronizeWorkBinding(binding: FlowWorkBinding, producerRevision: string, status: FlowWorkStatus, now: number) {
+		const captured = captureWorkBinding(binding);
+		return this.authorityChange(now, (authority, state) => {
+			let work = findLiveBoundWork(authority, captured);
+			if (!work) return undefined;
+			const revision = work.revision;
+			work = changeAuthorityWork(authority, work.id, work.owner, revision, status, "Producer state changed", now);
+			if (work.producerRevision !== producerRevision) {
+				work.producerRevision = producerRevision;
+				if (work.revision === revision) work.revision++;
+			}
+			if (["stopped", "completed"].includes(status))
+				state.waits = state.waits.map((wait) =>
+					wait.workId === work.id && wait.state === "waiting" ? cancelFlowWait(wait, "Task ended", now) : wait,
+				);
 			return work;
 		});
 	}

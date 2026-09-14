@@ -56,6 +56,12 @@ The files under `packages/cli/test/flow-*.test.mjs` substitute the provider, dri
 | Recovery and retention | `flow-history-recovery`, `flow-uncertain-resolution`, `flow-attempt-retention`, `flow-retirement-context` |
 | Assembly and lifecycle | `flow-assembly-*`, `flow-session-registry`, `flow-session-service`, `flow-ownership` |
 
+### Installed task adapter
+
+`flow-task-adapter.test.mjs` loads the installed pi-tasks extension and the production flow assembly. It tests background execution and waits from a task continuation, explicit user-input and pause holds, dependency ordering, three admitted attempts without progress, task ownership across resume, and rejection of an unadapted extension borrowing a previous user turn. `flow-task-producer.test.mjs` covers stale revisions, completion, deletion, foreign identities, and preservation of a separate flow pause. `flow-task-patch.test.mjs` checks the pinned build patch and refusal to overwrite unexpected package bytes. The consumed-queue race test completes a task before provider dispatch and checks that no stale request reaches the provider. `flow-task-context-guard.test.mjs` checks cancellation notes for mixed input, abort failures, and persisted cancellation markers. Mixed input retains its source bytes; ignoring the cancelled task instruction depends on the model following the added note. These tests run in the default suite without another checkout.
+
+The standalone wait-decision case in `flow-assembly-pair.test.mjs` starts another background job, declares a wait, and cancels it from a decision turn. Context tests reject a foreign work or branch and preserve paused/completed work states.
+
 ### Task continuation integration
 
 To qualify changes to task cancellation or Jouzu's task-message handling, provide a pi-tasks source checkout and run:

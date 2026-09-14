@@ -23,6 +23,7 @@ test("the assembly registers the controller extensions the launcher passes to Pi
 	assert.deepEqual(
 		flow.extensions.map((extension) => extension.name),
 		[
+			"jouzu-task-controller",
 			"jouzu-multiloop-controller",
 			"jouzu-background-controller",
 			"jouzu-flow-waits",

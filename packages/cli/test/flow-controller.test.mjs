@@ -410,7 +410,7 @@ for (const reverse of [false, true])
 			);
 		const lane = { lane: "test", runTag: "run" };
 		const campaign = f.attachment.waits.boundWork(multiloopWorkBinding(lane));
-		assert.deepEqual(campaign.participants, ["multiloop", "bg"]);
+		assert.deepEqual(campaign.participants, ["multiloop", "bg", "tasks"]);
 		const handle = { producer: "multiloop", handle: "job", execution: "execution" };
 		await f.attachment.waits.registerExecution(
 			{ ...handle, workId: campaign.id, revision: 1, predicates: [{ until: "exit", state: "pending" }] },

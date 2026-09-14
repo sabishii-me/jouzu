@@ -6,6 +6,7 @@ import { createFlowNoReplyExtension } from "./no-reply-tool.js";
 import type { PiFlowAttachment } from "./pi-attachment.js";
 import { PiSessionFlowIngress } from "./pi-session-ingress.js";
 import { FlowLedgerError } from "./receipt-ledger.js";
+import { createTaskControllerExtension } from "./task-extension.js";
 import { createFlowWaitExtension } from "./wait-tools.js";
 
 export interface FlowControlLimits {
@@ -55,6 +56,7 @@ export function createFlowControlRuntime(options: FlowControlRuntimeOptions): Fl
 		if (!attached) throw new FlowLedgerError("stale", "Flow control ingress is not attached.");
 		return attached;
 	};
+	const tasks = createTaskControllerExtension({ ingress, onError: options.onError });
 	const multiloop = createMultiloopControllerExtension({ ingress, onError: options.onError });
 	const background = createBackgroundControllerExtension({
 		ingress,
@@ -69,13 +71,18 @@ export function createFlowControlRuntime(options: FlowControlRuntimeOptions): Fl
 	const noReply = createFlowNoReplyExtension({ ingress });
 	const status = createFlowStatusExtension({
 		ingress,
-		unaccountable: () =>
-			multiloop
+		unaccountable: () => [
+			...multiloop
 				.unboundLanes()
 				.map((lane) => ({ producer: "multiloop", description: `lane ${lane.lane} (${lane.runTag})` })),
+			...tasks.unboundTasks().map((task) => ({
+				producer: "tasks",
+				description: `task #${task.taskId}; start with TaskUpdate in_progress or TaskExecute from a user turn`,
+			})),
+		],
 	});
 	return {
-		extensions: [multiloop, background, waitTools, noReply, status],
+		extensions: [tasks, multiloop, background, waitTools, noReply, status],
 		ingress,
 		async flowIngressFactory({ sessionManager }) {
 			// The host replaces the session for resume, fork, rewind, and session switching, and calls
@@ -96,10 +103,13 @@ export function createFlowControlRuntime(options: FlowControlRuntimeOptions): Fl
 				qualifyProviderRoute: true,
 				maxInputBytes: limits.maxInputBytes,
 				maxResultBytes: limits.maxResultBytes,
-				userWorkParticipants: ["bg", "multiloop"],
+				userWorkParticipants: ["bg", "multiloop", "tasks"],
 				host: {
 					maxPayloadBytes: limits.maxPayloadBytes,
-					consumedAttempt: multiloop.consumedAttempt,
+					consumedAttempt: (attempt) => {
+						multiloop.consumedAttempt(attempt);
+						tasks.consumedAttempt(attempt);
+					},
 				},
 				policy: () => ({ userPending: false, recoveryBlocked: false, waitingWorkIds: [] }),
 				autoRelease: { onError: options.onError, retireHistory: true },

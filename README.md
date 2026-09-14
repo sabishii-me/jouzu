@@ -93,6 +93,8 @@ A direct switch is blocked only when the estimated active context plus a 4,096-t
 
 Session flow control is on by default. Background completions wait for active work and queued messages, then arrive in batches. Goals, measured loops, and other automatic work share this scheduling. Task lists advance through remaining work by default unless interrupted; `TaskReorder` changes their order, and `TaskList` shows what runs next. Waits have deadlines and can check whether a background process is still alive.
 
+Task continuations keep the task's work identity, so they can start background jobs and declare or cancel waits. Dependencies and explicit pauses hold automatic continuation. Use `TaskUpdate` with `waitForUser: true` when an answer is needed, or `paused: true` to pause a task; clear the corresponding field to continue. A task with unchanged instructions and state stops after three admitted continuation attempts. Saved tasks without a work binding appear in `/flow`; start them with `TaskUpdate` (`status: "in_progress"`) or `TaskExecute` from a user turn.
+
 Run `/flow` to see held work and its recovery commands. `/flow pause` holds automatic turns, and `/flow resume` releases them. Interrupting a turn also pauses automatic work until your next message or `/flow resume`. Pausing does not stop running shell jobs.
 
 If the session stays stuck after an interrupt, run `/flow reset` while idle. It releases the blocked turn without stopping background jobs or deleting execution records. When Jouzu cannot tell whether a provider answered a request, `/flow resolve <attempt> retry|discard` records your decision; retrying may repeat a turn the provider already answered.

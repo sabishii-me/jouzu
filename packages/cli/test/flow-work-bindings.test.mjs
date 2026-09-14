@@ -308,3 +308,49 @@ test("a legacy lane record with an unpaused hold still reports waiting work afte
 	assert.equal(resumed.id, held.id);
 	assert.equal(resumed.lifecycle.state, "active");
 });
+
+for (const variant of ["valid", "unshared", "stale", "paused", "foreign"])
+	test(`derived producer work requires an authorized origin: ${variant}`, async (t) => {
+		const f = await fixture(t);
+		let parent = await f.store.registerWork("origin", "host-user", 1, [{ id: "input", revision: 1 }]);
+		if (variant !== "unshared") parent = await f.store.shareWork(parent.id, parent.owner, parent.revision, "tasks", 2);
+		if (variant === "paused")
+			parent = await f.store.changeWork(parent.id, parent.owner, parent.revision, "paused", "Pause", 3);
+		const binding = { producer: "tasks", key: ["task-identity"] };
+		const origin = {
+			id: variant === "foreign" ? "elsewhere" : parent.id,
+			revision: variant === "stale" ? 1 : parent.revision,
+		};
+		const derive = () => f.store.deriveWorkBinding(binding, "task-revision", origin, 4, ["bg"]);
+		if (variant !== "valid") {
+			await assert.rejects(derive());
+			assert.equal(f.store.boundWork(binding), undefined);
+			return;
+		}
+		const work = await derive();
+		origin.id = "mutated";
+		assert.deepEqual(work.origin, { id: parent.id, revision: parent.revision });
+		assert.deepEqual(work.participants, ["tasks", "bg"]);
+		await f.reopen();
+		assert.deepEqual(f.store.boundWork(binding), work);
+		const changed = await f.store.synchronizeWorkBinding(binding, "next-revision", "active", 5);
+		assert.equal(changed.id, work.id);
+		assert.equal(changed.revision, work.revision + 1);
+		await f.store.synchronizeWorkBinding(binding, "next-revision", "completed", 6);
+		assert.equal(f.store.boundWork(binding), undefined);
+	});
+
+test("trusted activation shares task authority with a saved loop generation", async (t) => {
+	const f = await fixture(t);
+	const binding = multiloopWorkBinding({ lane: "saved", runTag: "run" });
+	const original = await f.store.activateWorkBinding(binding, 1, ["bg"]);
+	await f.reopen();
+	assert.deepEqual(f.store.boundWork(binding).participants, ["multiloop", "bg"]);
+	const resumed = await f.store.activateWorkBinding(binding, 2, ["bg", "tasks"]);
+	assert.equal(resumed.id, original.id);
+	assert.equal(resumed.revision, original.revision + 1);
+	assert.deepEqual(resumed.participants, ["multiloop", "bg", "tasks"]);
+	assert.deepEqual(await f.store.activateWorkBinding(binding, 3, ["bg", "tasks"]), resumed);
+	const task = await f.store.deriveWorkBinding({ producer: "tasks", key: ["task"] }, "revision", resumed, 4);
+	assert.deepEqual(task.origin, { id: resumed.id, revision: resumed.revision });
+});

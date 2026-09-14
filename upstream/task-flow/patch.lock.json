@@ -1,0 +1,9 @@
+{
+	"schemaVersion": 1,
+	"package": "@lhl/pi-tasks",
+	"version": "0.6.1",
+	"sourceCommit": "14b0f6c941635468b84f392e8a33524e2589bc70",
+	"before": "55efc88b2d2618e4a048d7dce09789125abf4d68effc1b370eec1d74affa4cb8",
+	"after": "8e07b386433835ebfc4b301ad4a6a100bc24df2581860d60e799e8292f7d9b53",
+	"runtime": "19dafa543c408d5cb474d23ed4cc1c6e839a7543df6fd1f59ab61257d7706d3a"
+}
