@@ -48,6 +48,10 @@ export function isBuiltinApiProvider(api) {
 		);
 	} else if (path === "dist/api/openai-completions.js") {
 		change(
+			"        reasoning: rawUsage.completion_tokens_details?.reasoning_tokens || 0,",
+			"        reasoning: rawUsage.completion_tokens_details?.reasoning_tokens ?? rawUsage.reasoning_tokens ?? 0,",
+		);
+		change(
 			"convertMessages(model, context, compat, { grammarToolInputProperties });",
 			"convertMessages(model, context, compat, { grammarToolInputProperties, onMessageConverted: options?.onMessageConverted });",
 		);
