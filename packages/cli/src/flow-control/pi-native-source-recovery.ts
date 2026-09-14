@@ -93,9 +93,22 @@ export async function recoverNativeSources(
 			throw new FlowLedgerError("stale", "Native context changed during source recovery.");
 	};
 	assertCurrent();
-	const projected = manager
+	let projected = manager
 		.buildContextEntries()
 		.flatMap((entry) => sessionEntryToContextMessages(entry).map((message) => ({ entry, message })));
+	const transcriptMessages = structuredClone(projected.map((item) => item.message));
+	// Pi retains a retriable terminal response in history but removes it from
+	// live context before continuing, including after overflow compaction.
+	// Permit that single omission only at a request boundary; every surviving
+	// message must still match the authoritative projection below.
+	const terminal = projected.at(-1)?.message;
+	if (
+		atRequestBoundary &&
+		projected.length === live.length + 1 &&
+		terminal?.role === "assistant" &&
+		(terminal.stopReason === "error" || terminal.stopReason === "length")
+	)
+		projected = projected.slice(0, -1);
 	const messages = projected.map((item) => item.message);
 	// Pi timestamps a custom transcript entry separately from its live message.
 	// Compare every other field, then retain the exact live object and bytes.
@@ -192,7 +205,7 @@ export async function recoverNativeSources(
 		unresolved,
 		apply() {
 			assertCurrent();
-			if (!isDeepStrictEqual(manager.buildSessionContext().messages, messages))
+			if (!isDeepStrictEqual(manager.buildSessionContext().messages, transcriptMessages))
 				throw new FlowLedgerError("stale", "Pi context changed before source restoration.");
 			// Bind the verified projection to the unchanged live messages.
 			return bindings;

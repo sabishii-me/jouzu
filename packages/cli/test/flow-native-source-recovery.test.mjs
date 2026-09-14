@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { deferred } from "../../../scripts/fixtures/pi-flow-session.mjs";
+import { recoverNativeSources } from "../dist/flow-control/pi-native-source-recovery.js";
 import { afterCleanup } from "./fixtures/cleanup.mjs";
 import { nativeRequests } from "./fixtures/native-requests.mjs";
 
@@ -93,6 +94,37 @@ test("native source recovery respects Pi compaction context selection", async (t
 		(await next.dispatch.sources(next.session.agent.state.messages)).map((source) => source.operationId),
 		[records[1].dispatch.operationId],
 	);
+});
+
+for (const stopReason of ["error", "length"]) {
+	test(`request recovery accepts Pi's omitted terminal ${stopReason} after compaction`, async (t) => {
+		const f = await nativeRequests(t, { retainInputs: true });
+		await f.session.prompt("kept input");
+		const [record] = await f.attachment.submissions.snapshot();
+		const terminal = { ...f.session.agent.state.messages.at(-1), stopReason };
+		f.session.sessionManager.appendMessage(terminal);
+		f.session.sessionManager.appendCompaction("summary", record.dispatch.promptHistory[0].entryId, 100);
+		const projected = f.session.sessionManager.buildSessionContext().messages;
+		// Pi restores the persisted failure during compaction, then removes it before continue().
+		f.session.agent.state.messages = projected.slice(0, -1);
+		const live = f.session.agent.state.messages;
+		await assert.rejects(recoverNativeSources(f.session, f.attachment.submissions), { code: "identity" });
+		const recovered = await recoverNativeSources(f.session, f.attachment.submissions, true);
+		assert.equal(recovered.recovered, 1);
+		assert.equal(recovered.unresolved, 0);
+		assert.equal(recovered.apply().get(live.find((message) => message.role === "user")).length, 1);
+		assert.equal(f.session.agent.state.messages, live);
+		assert.equal(f.session.sessionManager.buildSessionContext().messages.at(-1).stopReason, stopReason);
+		live.find((message) => message.role === "user").content[0].text = "changed input";
+		await assert.rejects(recoverNativeSources(f.session, f.attachment.submissions, true), { code: "identity" });
+	});
+}
+
+test("request recovery still rejects omitted successful assistant messages", async (t) => {
+	const f = await nativeRequests(t, { retainInputs: true });
+	await f.session.prompt("kept input");
+	f.session.agent.state.messages = f.session.agent.state.messages.slice(0, -1);
+	await assert.rejects(recoverNativeSources(f.session, f.attachment.submissions, true), { code: "identity" });
 });
 
 test("changed native transcript receipts stop recovery without replacing live context", async (t) => {
