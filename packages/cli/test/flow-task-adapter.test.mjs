@@ -3,12 +3,14 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { assistantToolCalls } from "../../../scripts/fixtures/pi-flow-session.mjs";
 import {
 	afterFlowCleanup,
 	assembledSession,
 	installedProducerExtensions,
 	installedTaskExtension,
+	replacedSession,
 } from "./fixtures/flow-assembly.mjs";
 import { controlledBackground } from "./fixtures/flow-background-gate.mjs";
 import { waitDependencyFrom } from "./fixtures/flow-wait-dependency.mjs";
@@ -346,4 +348,113 @@ test("task completion after queue consumption prevents a stale provider request"
 	assert.equal(f.bodies.length, 3);
 	assert.deepEqual(f.errors, []);
 	assert.equal(f.ingress.automatedPause(), undefined);
+});
+
+test("stale task cancellation preserves joined results through provider delivery and reopen", {
+	timeout: 15000,
+}, async (t) => {
+	const setupData = await setup(t);
+	let capturedSource;
+	const queuedUser = "保存する user instruction arriving during cancellation";
+	let completed = false,
+		offer = false;
+	setupData.producerExtensions.push({
+		name: "complete-task-with-results",
+		factory(pi) {
+			pi.on("message_start", async (event) => {
+				if (completed || event.message.role !== "custom" || event.message.customType !== "jouzu-flow") return;
+				completed = true;
+				capturedSource = structuredClone(event.message);
+				const saved = JSON.parse(await readFile(setupData.taskFile, "utf8"));
+				saved.tasks[0].status = "completed";
+				await writeFile(setupData.taskFile, JSON.stringify(saved));
+				await f.session.followUp(queuedUser);
+			});
+		},
+	});
+	const f = await assembledSession(t, {
+		...setupData,
+		persist: true,
+		script: (_body, index) => {
+			if (index === 0)
+				return call("TaskCreate", { subject: "Stale with results", description: "Cancel only this work" });
+			if (index === 1) offer = true;
+			return { text: "Received" };
+		},
+	});
+	const result = {
+		id: "important",
+		revision: "1",
+		producer: "preserve",
+		execution: "exec-important",
+		status: "failure",
+		title: "重要な結果",
+		reference: "log:important",
+		warnings: ["Do not lose this warning"],
+	};
+	const registration = f.ingress.registerProducer({
+		version: 1,
+		namespace: "preserve",
+		snapshot: async () =>
+			offer
+				? [
+						{
+							id: result.id,
+							revision: "1",
+							producer: "preserve",
+							sequence: 0,
+							rank: 6,
+							independent: true,
+							runnable: true,
+						},
+					]
+				: [],
+		build: () => assert.fail("use result metadata"),
+		describeResult: async () => result,
+	});
+	t.after(() => registration.dispose());
+	await f.session.prompt("Create the task");
+	await until(f, () => completed && f.bodies.length >= 3);
+	await f.session.waitForIdle();
+	const body = f.bodies.find((body) => JSON.stringify(body).includes("Do not lose this warning"));
+	assert.ok(body, "the joined result reaches the provider despite task cancellation");
+	assert.ok(JSON.stringify(body).includes("task instruction in the preceding flow message is cancelled"));
+	await until(f, async () =>
+		(await f.ingress.branch().attachment.ledger.snapshot()).attempts.some((a) => a.phase === "settled"),
+	);
+	const attempts = (await f.ingress.branch().attachment.ledger.snapshot()).attempts;
+	assert.ok(
+		attempts.some(
+			(attempt) =>
+				attempt.phase === "settled" &&
+				attempt.members.some((member) => member.kind === "work") &&
+				attempt.members.some((member) => member.id === result.id),
+		),
+	);
+	await f.session.prompt("/flow reset");
+	await f.session.prompt("User input after cancellation");
+	assert.ok(JSON.stringify(f.bodies.at(-1)).includes("User input after cancellation"));
+	assert.ok(
+		f.bodies.some((body) => JSON.stringify(body).includes(queuedUser)),
+		"queued user input survives cancellation",
+	);
+	registration.dispose();
+	const file = f.sessionManager.getSessionFile();
+	const next = await replacedSession(t, f, {
+		reason: "resume",
+		persist: true,
+		producerExtensions: setupData.producerExtensions,
+		sessionManager: SessionManager.open(file),
+	});
+	await next.session.prompt("Continue after reopening mixed input");
+	const restored = next.sessionManager
+		.getBranch()
+		.find((entry) => entry.type === "custom_message" && entry.details?.attemptId === capturedSource.details.attemptId);
+	assert.deepEqual(restored.content, capturedSource.content, "original composed bytes survive reload");
+	assert.deepEqual(restored.details, capturedSource.details);
+	assert.ok(JSON.stringify(next.bodies).includes(queuedUser));
+	assert.ok(JSON.stringify(next.bodies).includes("Do not lose this warning"));
+	assert.ok(JSON.stringify(next.bodies).includes("task instruction in the preceding flow message is cancelled"));
+	assert.deepEqual(next.errors, []);
+	assert.deepEqual(f.errors, []);
 });

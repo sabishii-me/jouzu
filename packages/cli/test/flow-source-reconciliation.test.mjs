@@ -16,6 +16,10 @@ for (const reset of [false, true])
 		await f.session.prompt("Old input that never reached the provider");
 		store.begin = begin;
 		assert.equal(f.bodies.length, 0);
+		const undelivered = (await f.ingress.branch().attachment.submissions.snapshot()).find((record) =>
+			JSON.stringify(record.submission).includes("Old input that never reached the provider"),
+		);
+		assert.ok(undelivered, "failed input remains available for inspection and explicit resubmission");
 		assert.match(f.ingress.automatedPause(), /flow admission failed/);
 		const manager = f.sessionManager;
 		manager.appendCompaction("Earlier request failed before delivery.", manager.getLeafId(), 100);
@@ -28,6 +32,14 @@ for (const reset of [false, true])
 			producerExtensions: producers,
 		});
 		if (reset) await next.session.prompt("/flow reset");
+		const recovered = (await next.ingress.branch().attachment.submissions.snapshot()).find(
+			(record) => record.id === undelivered.id,
+		);
+		assert.deepEqual(
+			recovered?.submission,
+			undelivered.submission,
+			"compaction/reset preserves the exact undelivered input",
+		);
 		await next.session.prompt("Continue with current input");
 		await next.session.prompt("Another current input");
 		assert.equal(next.bodies.length, 2);
@@ -41,6 +53,14 @@ for (const reset of [false, true])
 		});
 		await after.session.prompt("Continue after another reopen");
 		assert.equal(after.bodies.length, 1);
+		const retained = (await after.ingress.branch().attachment.submissions.snapshot()).find(
+			(record) => record.id === undelivered.id,
+		);
+		assert.deepEqual(
+			retained?.submission,
+			undelivered.submission,
+			"a second reopen does not erase failed input or turn it into successful delivery",
+		);
 		assert.deepEqual(f.errors, []);
 		assert.deepEqual(next.errors, []);
 		assert.deepEqual(after.errors, []);
