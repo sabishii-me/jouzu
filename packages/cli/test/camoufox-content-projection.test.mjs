@@ -171,3 +171,107 @@ test("the registered tool leaves an unrecognized tool name unchanged", async () 
 	assert.deepEqual(result.content, delegateResult.content);
 	assert.deepEqual(result.details, delegateResult.details);
 });
+
+test("a screenshot under the limit is attached and dropped from details", () => {
+	const data = "aGk=";
+	const projected = projectCamoufoxToolResult(
+		"tff-fetch_url",
+		fetchResult({
+			url: "https://example.com",
+			status: 200,
+			format: "html",
+			html: "<p>hi</p>",
+			bytes: 9,
+			screenshot: { encoding: "base64", mimeType: "image/jpeg", data, bytes: 3 },
+		}),
+	);
+	assert.deepEqual(
+		projected.content.filter((block) => block.type === "image"),
+		[{ type: "image", data, mimeType: "image/jpeg" }],
+	);
+	assert.match(textOf(projected), /screenshot: image\/jpeg, 3 B attached to this result\./);
+	assert.equal("screenshot" in projected.details, false);
+});
+
+test("a screenshot over the limit is reported instead of attached", () => {
+	const projected = projectCamoufoxToolResult(
+		"tff-fetch_url",
+		fetchResult({
+			url: "https://example.com",
+			status: 200,
+			format: "html",
+			html: "<p>hi</p>",
+			bytes: 9,
+			screenshot: { encoding: "base64", mimeType: "image/png", data: "x".repeat(64), bytes: 2 * 1024 * 1024 },
+		}),
+	);
+	assert.equal(projected.content.filter((block) => block.type === "image").length, 0);
+	assert.match(textOf(projected), /screenshot omitted: 2\.0 MiB exceeds the 1\.0 MiB attachment limit/);
+	assert.equal("screenshot" in projected.details, false);
+});
+
+test("a screenshot without a byte count is measured from its encoded data", () => {
+	const projected = projectCamoufoxToolResult(
+		"tff-fetch_url",
+		fetchResult({
+			url: "https://example.com",
+			status: 200,
+			format: "html",
+			html: "<p>hi</p>",
+			bytes: 9,
+			screenshot: { mimeType: "image/png", data: "x".repeat(4 * 1024 * 1024) },
+		}),
+	);
+	assert.equal(projected.content.filter((block) => block.type === "image").length, 0);
+	assert.match(textOf(projected), /3\.0 MiB exceeds the 1\.0 MiB attachment limit/);
+});
+
+test("a fetch without a screenshot adds no image and no note", () => {
+	const projected = projectCamoufoxToolResult(
+		"tff-fetch_url",
+		fetchResult({ url: "https://example.com", status: 200, format: "html", html: "<p>hi</p>", bytes: 9 }),
+	);
+	assert.equal(projected.content.filter((block) => block.type === "image").length, 0);
+	assert.doesNotMatch(textOf(projected), /screenshot/);
+});
+
+const fetchToolWithParams = (seen) =>
+	lazyTool({ name: "tff-fetch_url", label: "Fetch URL", description: "Fetch a URL.", parameters: {} }, async () => ({
+		execute: async (_toolCallId, params) => {
+			seen.params = params;
+			return fetchResult({ url: "https://example.com", status: 200, format: "html", html: "<p>hi</p>", bytes: 9 });
+		},
+	}));
+
+test("a screenshot request without a format is sent as jpeg", async () => {
+	const seen = {};
+	const tool = fetchToolWithParams(seen);
+	await tool.execute(
+		"call-1",
+		{ url: "https://example.com", screenshot: { full_page: true } },
+		undefined,
+		undefined,
+		undefined,
+	);
+	assert.deepEqual(seen.params.screenshot, { full_page: true, format: "jpeg" });
+});
+
+test("an explicit screenshot format is preserved", async () => {
+	const seen = {};
+	const tool = fetchToolWithParams(seen);
+	await tool.execute(
+		"call-1",
+		{ url: "https://example.com", screenshot: { format: "png", full_page: false } },
+		undefined,
+		undefined,
+		undefined,
+	);
+	assert.deepEqual(seen.params.screenshot, { format: "png", full_page: false });
+});
+
+test("a fetch without a screenshot passes its parameters through", async () => {
+	const seen = {};
+	const tool = fetchToolWithParams(seen);
+	await tool.execute("call-1", { url: "https://example.com" }, undefined, undefined, undefined);
+	assert.deepEqual(seen.params, { url: "https://example.com" });
+});

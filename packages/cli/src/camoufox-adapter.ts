@@ -81,8 +81,18 @@ const fetchUrlParameters = Type.Object({
 	screenshot: Type.Optional(
 		Type.Object({
 			full_page: Type.Optional(Type.Boolean()),
-			format: Type.Optional(Type.Union([Type.Literal("png"), Type.Literal("jpeg")])),
-			quality: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
+			format: Type.Optional(
+				Type.Union([Type.Literal("png"), Type.Literal("jpeg")], {
+					description: "Image format. Defaults to jpeg, which is smaller; png is lossless and larger.",
+				}),
+			),
+			quality: Type.Optional(
+				Type.Integer({
+					minimum: 1,
+					maximum: 100,
+					description: "JPEG quality. Only valid when format is jpeg.",
+				}),
+			),
 		}),
 	),
 });
@@ -484,6 +494,16 @@ async function loadCamoufoxRuntime(stateDir: string, signal?: AbortSignal): Prom
 // `content`, which is also what the terminal renderer and the HTML export read
 // when a tool registers no renderResult of its own.
 export const CAMOUFOX_CONTENT_CHAR_LIMIT = 50_000;
+// Screenshots cost context in proportion to their encoded size, so only images
+// under this bound are attached. The runtime's own 10 MiB cap is a transfer
+// limit and fails the whole fetch, which is far above a useful image budget.
+export const CAMOUFOX_SCREENSHOT_BYTE_LIMIT = 1024 * 1024;
+
+function formatBytes(bytes: number): string {
+	if (bytes < 1024) return `${bytes} B`;
+	if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KiB`;
+	return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+}
 
 function boundedContent(text: string): string {
 	if (text.length <= CAMOUFOX_CONTENT_CHAR_LIMIT) return text;
@@ -514,17 +534,56 @@ function fetchedBodyText(details: Record<string, unknown>): string {
 	return typeof body === "string" ? boundedContent(body) : "";
 }
 
-// The body is projected into `content`, and nothing reads it from `details`:
-// no provider serializer sends `details`, these tools register no renderResult,
-// and the terminal renderer falls back to `content`. Dropping the second copy
-// keeps up to `max_bytes` (2 MiB by default) out of the stored tool result. The
-// structured search list stays, because it is small and useful to a renderer.
-function withoutProjectedBody(details: Record<string, unknown>): Record<string, unknown> {
-	if (!("markdown" in details) && !("html" in details)) return details;
+interface ScreenshotProjection {
+	block?: { type: "image"; data: string; mimeType: string };
+	line?: string;
+}
+
+// The runtime returns the image in `details.screenshot` alone, where no provider
+// or renderer reads it. Attach it to `content`, which pi-ai converts for image
+// models and replaces with a placeholder for models without image support, and
+// report the size instead when it exceeds the attachment bound.
+function screenshotProjection(details: Record<string, unknown>): ScreenshotProjection {
+	const screenshot = details.screenshot;
+	if (!screenshot || typeof screenshot !== "object") return {};
+	const { data, mimeType, bytes } = screenshot as Record<string, unknown>;
+	if (typeof data !== "string" || typeof mimeType !== "string") return {};
+	const size = typeof bytes === "number" ? bytes : Math.floor((data.length * 3) / 4);
+	if (size > CAMOUFOX_SCREENSHOT_BYTE_LIMIT) {
+		return {
+			line: `screenshot omitted: ${formatBytes(size)} exceeds the ${formatBytes(CAMOUFOX_SCREENSHOT_BYTE_LIMIT)} attachment limit. Retry with screenshot.full_page=false, or lower screenshot.quality.`,
+		};
+	}
+	return {
+		block: { type: "image", data, mimeType },
+		line: `screenshot: ${mimeType}, ${formatBytes(size)} attached to this result.`,
+	};
+}
+
+// The body and the screenshot are projected into `content`, and nothing reads
+// either from `details`: no provider serializer sends `details`, these tools
+// register no renderResult, and the terminal renderer falls back to `content`.
+// Dropping the second copy keeps up to `max_bytes` (2 MiB by default) and an
+// entire base64 image out of the stored tool result. The structured search list
+// stays, because it is small and useful to a renderer.
+function withoutProjectedPayload(details: Record<string, unknown>): Record<string, unknown> {
+	if (!("markdown" in details) && !("html" in details) && !("screenshot" in details)) return details;
 	const metadata = { ...details };
 	delete metadata.markdown;
 	delete metadata.html;
+	delete metadata.screenshot;
 	return metadata;
+}
+
+/** Default a screenshot request to JPEG, which is several times smaller than PNG. */
+function preferJpegScreenshot(params: unknown): unknown {
+	if (typeof params !== "object" || params === null) return params;
+	const input = params as Record<string, unknown>;
+	const screenshot = input.screenshot;
+	if (typeof screenshot !== "object" || screenshot === null) return input;
+	const options = screenshot as Record<string, unknown>;
+	if (options.format !== undefined) return input;
+	return { ...input, screenshot: { ...options, format: "jpeg" } };
 }
 
 /** Move a Camoufox tool's payload from `details` into the model-visible `content`. */
@@ -543,13 +602,18 @@ export function projectCamoufoxToolResult(
 			: toolName === "tff-fetch_url"
 				? fetchedBodyText(details)
 				: "";
-	const text = payload ? `${header}\n\n${payload}` : header;
+	const screenshot = toolName === "tff-fetch_url" ? screenshotProjection(details) : {};
+	const parts = [header, screenshot.line ?? "", payload].filter((part) => part.length > 0);
 	// Preserve any non-text block, such as an image, that the tool returned.
 	const nonText = result.content.filter((block) => block.type !== "text");
 	return {
 		...result,
-		content: [{ type: "text" as const, text }, ...nonText],
-		details: toolName === "tff-fetch_url" ? withoutProjectedBody(details) : details,
+		content: [
+			{ type: "text" as const, text: parts.join("\n\n") },
+			...nonText,
+			...(screenshot.block ? [screenshot.block] : []),
+		],
+		details: toolName === "tff-fetch_url" ? withoutProjectedPayload(details) : details,
 	};
 }
 
@@ -562,7 +626,8 @@ export function lazyTool(
 		...definition,
 		async execute(toolCallId, params, signal, onUpdate, context) {
 			const delegate = await getDelegate(signal);
-			const result = await delegate.execute(toolCallId, params, signal, onUpdate, context);
+			const delegateParams = definition.name === "tff-fetch_url" ? preferJpegScreenshot(params) : params;
+			const result = await delegate.execute(toolCallId, delegateParams, signal, onUpdate, context);
 			return projectCamoufoxToolResult(definition.name, result);
 		},
 	};
@@ -624,7 +689,7 @@ export function createJouzuCamoufoxExtension(pi: ExtensionAPI, stateDir: string)
 					"selector: returns the outerHTML of the first match only. No-match raises config_invalid.",
 					"format='markdown': returns the page as markdown in the tool result (the raw HTML is omitted). Use when the page content is the target, not the markup.",
 					"A fetched body is capped at 50000 characters in the tool result and marked when truncated. Narrow selector to read the remainder.",
-					"screenshot: returns base64 image in details.screenshot. full_page=true captures the whole page; default is viewport. Images > 10 MiB are rejected.",
+					"screenshot: attaches the image to the tool result, which models without image support receive as a placeholder. JPEG is the default; full_page=true captures the whole page, and the default is the viewport. An image over 1 MiB is not attached, and the result reports its size instead.",
 					"timeout_ms is clamped between 1000 and 120000; shared across nav + wait_for_selector.",
 					"max_bytes caps the *returned body* (markdown if requested, else HTML); default 2 MiB, max 50 MiB. Oversized responses are truncated and flagged.",
 					"isolate: true opens a one-shot browser context so cookies/storage do not leak across calls.",
