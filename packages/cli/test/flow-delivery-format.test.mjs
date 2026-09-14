@@ -150,6 +150,55 @@ test("result rendering counts hidden samples and preserves warnings and cancelle
 	assert.deepEqual(input.content, before);
 });
 
+test("result rendering covers the four-sample cap boundary and omitted members", async () => {
+	const compose = async (count, maxBytes = 20000) => {
+		const members = Array.from({ length: count }, (_, i) => ({
+			id: `r${i}`,
+			producer: "bg",
+			execution: `e${i}`,
+			revision: "1",
+			status: "success",
+			title: `job ${i}`,
+			reference: `ref${i}`,
+			warnings: [],
+		}));
+		const { item } = await buildFlowResultEnvelope({
+			attemptId: "a",
+			runMembers: [],
+			id: "i",
+			revision: "1",
+			members,
+			producerOrder: ["bg"],
+			maxBytes,
+			retain: async () => `flow-results:${"a".repeat(64)}`,
+		});
+		return FlowModelInput.compose("a", [item], maxBytes).content;
+	};
+	const hiddenCount = (lines) => lines.join("\n").match(/\+(\d+) more results/)?.[1];
+	const shownCount = (lines) => lines.filter((line) => /^\s+[✓⊘✗] /.test(line)).length;
+
+	// Four results is the last count that fits whole; five is the first that hides one.
+	for (const count of [1, 3, 4]) {
+		const lines = render(await compose(count));
+		assert.match(lines.join("\n"), new RegExp(`◆ ${count} results?`));
+		assert.equal(hiddenCount(lines), undefined);
+		assert.equal(shownCount(lines), count);
+	}
+	for (const count of [5, 6, 7, 12]) {
+		const lines = render(await compose(count));
+		assert.match(lines.join("\n"), new RegExp(`◆ ${count} results`));
+		assert.equal(shownCount(lines), 4);
+		assert.equal(hiddenCount(lines), String(count - 4));
+	}
+
+	// The hidden count is everything not listed, so omitted members add to it while
+	// the header keeps the true total. A live boundary reports the same two numbers.
+	const tight = render(await compose(7, 1200));
+	assert.match(tight.join("\n"), /◆ 7 results/);
+	assert.ok(shownCount(tight) <= 4);
+	assert.equal(hiddenCount(tight), String(7 - shownCount(tight)));
+});
+
 for (const content of [
 	{ wait: null },
 	{ wait: { state: "resolved", observations: [null] } },
