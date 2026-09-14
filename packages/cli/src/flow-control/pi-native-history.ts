@@ -170,8 +170,9 @@ export class PiNativeHistory {
 		session: AgentSession,
 		store: FlowSubmissionStore,
 		assertActive: () => void,
+		atRequestBoundary = false,
 	): Promise<{ recovered: number; unresolved: number }> {
-		const recovery = await recoverNativeSources(session, store);
+		const recovery = await recoverNativeSources(session, store, atRequestBoundary);
 		assertActive();
 		this.sources = recovery.apply();
 		return { recovered: recovery.recovered, unresolved: recovery.unresolved };

@@ -7,6 +7,8 @@ import { FlowLedgerError, type FlowScope } from "./receipt-ledger.js";
 import { retiredIdentityHash } from "./retired-identities.js";
 
 export interface NativeRequest {
+	/** Explicit recovery releases the hold without asserting a provider outcome. */
+	reset?: true;
 	id: string;
 	ownerId: string;
 	/**
@@ -68,13 +70,19 @@ export interface NativeSourceCapture {
 	context?: NativeSourceDisposition;
 	model?: NativeSourceDisposition;
 }
+interface SourceReconciliation {
+	key: string;
+	reason: "compacted" | "reset";
+}
 interface Header {
+	reconciled?: SourceReconciliation[];
 	version: 1;
 	scope: FlowScope;
 	ids: string[];
 	retired?: string[];
 }
 export const MAX_RETIRED_NATIVE_REQUESTS = 16384;
+const sourceIdentity = (source: NativeSourceClaim) => retiredIdentityHash("native-source", nativeSourceKey(source));
 const requestIdentity = (id: string) => retiredIdentityHash("native-request", id);
 const headerAddress = value<Header>("jouzu.flow.native-requests", "v1");
 const address = (id: string) => value<NativeRequest>("jouzu.flow.native-request", id);
@@ -90,7 +98,9 @@ const identity = (id: unknown) => typeof id === "string" && id.length > 0 && id.
 const hash = (text: unknown) => typeof text === "string" && /^[a-f0-9]{64}$/.test(text);
 
 export const nativeRequestHeld = (record: NativeRequest): boolean =>
-	record.outcome === "withheld" && (!!record.requiredSources?.length || !!record.requiredProjections?.length);
+	!record.reset &&
+	record.outcome === "withheld" &&
+	(!!record.requiredSources?.length || !!record.requiredProjections?.length);
 export const nativeHoldPending = (record: NativeRequest): boolean =>
 	nativeRequestHeld(record) &&
 	(record.requiredSources?.length
@@ -106,7 +116,6 @@ export const nativeHoldHash = (record: NativeRequest): string => record.withheld
 export class FlowNativeRequestStore {
 	private initialized = false;
 	private blocked = true;
-	private recoveryReset = false;
 	private queueableRequest?: string;
 	get recoveryBlocked(): boolean {
 		return this.blocked;
@@ -211,6 +220,7 @@ export class FlowNativeRequestStore {
 				!identity(record.id) ||
 				!identity(record.ownerId) ||
 				![record.sourceHash, record.transformedHash, record.modelHash, record.systemHash].every(hash) ||
+				(record.reset !== undefined && record.reset !== true) ||
 				(record.outcome !== undefined && !["success", "failure", "aborted", "withheld"].includes(record.outcome)) ||
 				(payload !== undefined &&
 					(!payload ||
@@ -347,7 +357,9 @@ export class FlowNativeRequestStore {
 			}
 		}
 	}
-	private transact<T>(update: (records: NativeRequest[], retired: string[]) => T): Promise<T> {
+	private transact<T>(
+		update: (records: NativeRequest[], retired: string[], reconciled: SourceReconciliation[]) => T,
+	): Promise<T> {
 		return this.ownership.run(() =>
 			this.session.mutate(async (mutation, context) => {
 				const saved = (await mutation.getValue(headerAddress, context))?.value;
@@ -355,6 +367,14 @@ export class FlowNativeRequestStore {
 				const header: Header = saved ?? { version: 1, scope: this.scope, ids: [] };
 				const retired = Array.isArray(header.retired) ? [...header.retired] : [];
 				const retiredIds = new Set(retired);
+				const reconciled = structuredClone(header.reconciled ?? []);
+				if (
+					!Array.isArray(reconciled) ||
+					reconciled.length > MAX_RETIRED_NATIVE_REQUESTS ||
+					reconciled.some((item) => !item || !hash(item.key) || !["compacted", "reset"].includes(item.reason)) ||
+					new Set(reconciled.map((item) => item.key)).size !== reconciled.length
+				)
+					throw new FlowLedgerError("schema", "Invalid native source reconciliation.");
 				if (
 					header.version !== 1 ||
 					header.scope?.sessionId !== this.scope.sessionId ||
@@ -380,11 +400,17 @@ export class FlowNativeRequestStore {
 				);
 				this.validate(records);
 				const previous = new Map(records.map((record) => [record.id, JSON.stringify(record)]));
-				const result = update(records, retired);
+				const result = update(records, retired, reconciled);
 				this.validate(records);
 				const changed = records.filter((record) => previous.get(record.id) !== JSON.stringify(record));
 				const removed = [...previous.keys()].filter((id) => !records.some((record) => record.id === id));
-				if (!saved || changed.length || removed.length || retired.length !== (header.retired?.length ?? 0))
+				if (
+					!saved ||
+					changed.length ||
+					removed.length ||
+					retired.length !== (header.retired?.length ?? 0) ||
+					reconciled.length !== (header.reconciled?.length ?? 0)
+				)
 					await mutation.commit(
 						[
 							setValue(headerAddress, {
@@ -392,6 +418,7 @@ export class FlowNativeRequestStore {
 								scope: this.scope,
 								ids: records.map((record) => record.id),
 								...(retired.length ? { retired } : {}),
+								...(reconciled.length ? { reconciled } : {}),
 							}),
 							...changed.map((record) => setValue(address(record.id), record)),
 							...removed.map((id) => deleteValue(address(id))),
@@ -399,7 +426,7 @@ export class FlowNativeRequestStore {
 						context,
 					);
 				this.blocked = this.requiresRecovery(records);
-				const unresolved = records.filter((record) => record.outcome === undefined);
+				const unresolved = records.filter((record) => record.outcome === undefined && !record.reset);
 				const candidate = unresolved.length === 1 ? unresolved[0] : undefined;
 				this.queueableRequest =
 					candidate?.ownerId === this.ownership.token &&
@@ -413,7 +440,7 @@ export class FlowNativeRequestStore {
 	private requiresRecovery(records: NativeRequest[]): boolean {
 		return records.some(
 			(record) =>
-				record.outcome === undefined ||
+				(record.outcome === undefined && !record.reset) ||
 				(nativeHoldPending(record) &&
 					!record.retryAuthorization?.requestId &&
 					record.retryAuthorization?.ownerId !== this.ownership.token),
@@ -425,7 +452,7 @@ export class FlowNativeRequestStore {
 			const record = records.find((item) => item.id === id);
 			if (!record || !nativeHoldPending(record) || nativeHoldHash(record) !== expectedHash)
 				throw new FlowLedgerError("stale", "Native content hold changed or is unavailable.");
-			if (records.some((item) => item.outcome === undefined) || record.retryAuthorization?.requestId)
+			if (records.some((item) => item.outcome === undefined && !item.reset) || record.retryAuthorization?.requestId)
 				throw new FlowLedgerError("busy", "Native retry already has a request or requires reconciliation.");
 			record.retryAuthorization = { ownerId: this.ownership.token };
 		});
@@ -437,7 +464,7 @@ export class FlowNativeRequestStore {
 			const record = records.find((item) => item.id === id);
 			if (!record || !nativeRequestHeld(record) || nativeHoldHash(record) !== expectedHash)
 				throw new FlowLedgerError("stale", "Native content hold changed or is unavailable.");
-			if (records.some((item) => item.outcome === undefined) || record.retryAuthorization?.requestId)
+			if (records.some((item) => item.outcome === undefined && !item.reset) || record.retryAuthorization?.requestId)
 				throw new FlowLedgerError("busy", "Native cancellation requires an unconsumed hold.");
 			if (
 				!selected.length ||
@@ -458,7 +485,7 @@ export class FlowNativeRequestStore {
 				throw new FlowLedgerError("stale", "Native projection hold changed or is unavailable.");
 			if (record.requiredSources?.length)
 				throw new FlowLedgerError("identity", "Cancel the required native input that owns this projection hold.");
-			if (records.some((item) => item.outcome === undefined) || record.retryAuthorization?.requestId)
+			if (records.some((item) => item.outcome === undefined && !item.reset) || record.retryAuthorization?.requestId)
 				throw new FlowLedgerError("busy", "Projection cancellation requires an unconsumed hold.");
 			if (
 				!selected.length ||
@@ -473,7 +500,7 @@ export class FlowNativeRequestStore {
 	/** Retire only duplicate successful observations while preserving compact replay fences. */
 	retireSuperseded(): Promise<number> {
 		return this.transact((records, retired) => {
-			if (this.requiresRecovery(records) || records.some((record) => record.outcome === undefined))
+			if (this.requiresRecovery(records) || records.some((record) => record.outcome === undefined && !record.reset))
 				throw new FlowLedgerError("busy", "Request history retirement requires settled requests.");
 			const selected = new Set(supersededNativeRequests(records));
 			if (retired.length + selected.size > MAX_RETIRED_NATIVE_REQUESTS)
@@ -513,13 +540,57 @@ export class FlowNativeRequestStore {
 	snapshot(): Promise<NativeRequest[]> {
 		return this.transact((records) => structuredClone(records));
 	}
+	/** Preserve receipts while explicitly releasing their unresolved holds. */
 	reset(): Promise<void> {
-		return this.transact((records, retired) => {
-			records.splice(0, records.length);
-			retired.splice(0, retired.length);
-			this.recoveryReset = true;
+		return this.transact((records) => {
+			for (const record of records)
+				if (record.outcome === undefined || nativeHoldPending(record)) {
+					record.reset = true;
+					delete record.retryAuthorization;
+				}
 		});
 	}
+	/** Only the host may supply source identities proven absent from the current context. */
+	reconcileSources(claims: NativeSourceClaim[], reason: SourceReconciliation["reason"]): Promise<number> {
+		if (
+			!["compacted", "reset"].includes(reason) ||
+			!Array.isArray(claims) ||
+			claims.length > MAX_RETIRED_NATIVE_REQUESTS ||
+			claims.some(
+				(claim) =>
+					!claim ||
+					!identity(claim.operationId) ||
+					(claim.prompt === undefined) === (claim.queue === undefined) ||
+					(claim.prompt !== undefined &&
+						(!claim.prompt ||
+							![claim.prompt.inputIndex, claim.prompt.messageIndex].every(
+								(value) => Number.isSafeInteger(value) && value >= 0,
+							))) ||
+					(claim.queue !== undefined &&
+						(!claim.queue ||
+							!identity(claim.queue.id) ||
+							!Number.isSafeInteger(claim.queue.revision) ||
+							claim.queue.revision < 1)),
+			)
+		)
+			return Promise.reject(new FlowLedgerError("identity", "Invalid source reconciliation identity."));
+		const keys = claims.map(sourceIdentity);
+		return this.transact((_records, _retired, reconciled) => {
+			const previous = new Set(reconciled.map((item) => item.key));
+			const added = [...new Set(keys)].filter((key) => !previous.has(key));
+			if (reconciled.length + added.length > MAX_RETIRED_NATIVE_REQUESTS)
+				throw new FlowLedgerError("capacity", "Native source reconciliation history is full.");
+			reconciled.push(...added.map((key) => ({ key, reason })));
+			return added.length;
+		});
+	}
+	reconciledSources(): Promise<ReadonlySet<string>> {
+		return this.transact((_records, _retired, reconciled) => new Set(reconciled.map((item) => item.key)));
+	}
+	async sourceReconciled(source: NativeSourceClaim): Promise<boolean> {
+		return (await this.reconciledSources()).has(sourceIdentity(source));
+	}
+
 	begin(
 		input: Omit<
 			NativeRequest,
@@ -549,7 +620,7 @@ export class FlowNativeRequestStore {
 			...(input.projectionCapture !== undefined ? { projectionCapture: structuredClone(input.projectionCapture) } : {}),
 			...(input.waitTokens?.length ? { waitTokens: [...new Set(input.waitTokens)] } : {}),
 		};
-		return this.transact((records, retired) => {
+		return this.transact((records, retired, reconciled) => {
 			if (retired.includes(requestIdentity(captured.id)))
 				throw new FlowLedgerError("stale", "Native request identity has been retired.");
 			if (records.some((record) => record.id === captured.id))
@@ -567,14 +638,14 @@ export class FlowNativeRequestStore {
 			if (requireUnreceived) {
 				if (!claims || !captured.sourceCapture)
 					throw new FlowLedgerError("identity", "Required native input has no consumption inventory.");
-				if (this.recoveryReset) this.recoveryReset = false;
-				else {
+				{
 					const capturedKeys = new Set(captured.sourceCapture.members.map(nativeSourceKey));
 					const claimKeys = new Set(claims.map(nativeSourceKey));
 					if (
 						captured.sourceCapture.members.some((source) => !claimKeys.has(nativeSourceKey(source))) ||
 						claims.some(
 							(claim) =>
+								!reconciled.some((item) => item.key === sourceIdentity(claim)) &&
 								!received.has(nativeSourceKey(claim)) &&
 								!cancelled.has(nativeSourceKey(claim)) &&
 								!capturedKeys.has(nativeSourceKey(claim)),

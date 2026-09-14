@@ -6,10 +6,9 @@ import { ensurePrivateDirectory } from "../private-fs.js";
 import { FlowOwnershipError } from "./ownership.js";
 
 /**
- * Version of the durable record shapes in this directory. State written under an earlier version is
- * isolated rather than migrated: flow control is opt-in and has no released users, so a migration
- * would be written for shapes that will never be produced again. Bump this whenever a persisted
- * record changes shape.
+ * Version of incompatible durable record shapes. Optional fields with validated defaults can be
+ * added without isolating existing sessions. Incompatible changes require an explicit migration
+ * or isolation policy before this version advances.
  */
 export const FLOW_STATE_VERSION = 2;
 

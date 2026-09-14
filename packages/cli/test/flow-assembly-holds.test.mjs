@@ -226,7 +226,14 @@ test("compaction holds automated work and the held work runs once afterwards", a
 	releaseSummary();
 	await compacted;
 	await scheduling;
-	await until(() => carrying(f.bodies, "work intent-1") === 1, "the held producer work to run after compaction");
+	await until(() => carrying(f.bodies, "work intent-1") === 1, "the held producer work to run after compaction").catch(
+		async (error) => {
+			throw new Error(
+				`${error.message}; flow errors: ${JSON.stringify(f.errors)}; agent error: ${f.session.agent.state.errorMessage}`,
+				{ cause: error },
+			);
+		},
+	);
 	await settle();
 	assert.equal(carrying(f.bodies, "work intent-1"), 1, "and to run exactly once");
 

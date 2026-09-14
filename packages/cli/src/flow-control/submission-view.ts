@@ -4,6 +4,8 @@ import { type NativeSubmissionRequestView, projectNativeSubmissionRequests } fro
 import { type FlowAttempt, FlowLedgerError, type FlowLedgerState } from "./receipt-ledger.js";
 import type { RetainedSubmission } from "./submission-store.js";
 
+export const UNAVAILABLE_INPUT_REASON = "Input was not dispatched before the session ended. Submit it again to run it.";
+
 export interface FlowSubmissionView {
 	id: string;
 	revision: number;
@@ -18,7 +20,7 @@ export interface FlowSubmissionView {
 
 /** Keep historical diagnostics in storage, but expose only holds on unconsumed live revisions. */
 export function activeAdmissionHolds(record: RetainedSubmission) {
-	if (record.status === "cancelled") return [];
+	if (record.unavailable || record.status === "cancelled") return [];
 	return (record.holds ?? []).filter((hold) =>
 		hold.phase === "submission"
 			? !record.dispatch
@@ -71,6 +73,15 @@ export function projectFlowSubmissions(
 	return records.map((record): FlowSubmissionView => {
 		if (record.submission.scope.sessionId !== ledger.scope.sessionId)
 			throw new FlowLedgerError("scope", "Retained submission belongs to another session.");
+		if (record.unavailable && record.status !== "cancelled")
+			return {
+				id: record.id,
+				revision: record.revision,
+				admission: "held",
+				delivery: "none",
+				attemptIds: [],
+				reason: UNAVAILABLE_INPUT_REASON,
+			};
 		const attempts = links.get(record.id) ?? [];
 		const claims = record.dispatch?.queueClaims ?? [];
 		const nativeHistory = !!record.dispatch?.queueHistory?.length || !!record.dispatch?.promptHistory?.length;

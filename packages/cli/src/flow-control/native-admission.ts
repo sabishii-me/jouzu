@@ -45,7 +45,7 @@ export function completedWithoutNativeInput(record: RetainedSubmission): boolean
  * Omitting the set keeps the conservative reading, so a caller with no view of the queue is unchanged.
  */
 export function awaitingNativeInput(record: RetainedSubmission, liveQueue?: ReadonlySet<string>): boolean {
-	if (record.status === "cancelled" || completedWithoutNativeInput(record)) return false;
+	if (record.unavailable || record.status === "cancelled" || completedWithoutNativeInput(record)) return false;
 	if (!record.dispatch) return true;
 	if (record.dispatch.promptClaims?.length || record.dispatch.promptHistory?.length) return false;
 	const inputs = record.dispatch.inputs;

@@ -45,7 +45,9 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 			const holding = inspected.submissions.some((submission) => submission.admission === "held");
 			if (!holding) return;
 			announce(
-				"Flow control paused after an interrupt. Automated work resumes on your next message. Run /flow for details.",
+				reason === "a turn was interrupted"
+					? "Flow control paused after an interrupt. Automated work resumes on your next message. Run /flow for details."
+					: "Flow control paused after an admission failure. Pending work is held. Run /flow for details or /flow reset to recover.",
 			);
 		},
 		factory(pi) {
@@ -121,11 +123,16 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 								}
 								throw error;
 							}
-							if (result.kind === "inactive") {
+							if (result.recoveryHeld) {
+								notify(
+									"Flow reset preserved pending evidence that still needs reconciliation. Run /flow for the remaining hold.",
+									"error",
+								);
+							} else if (result.kind === "inactive") {
 								notify("Flow reset completed. No active reservation was found; continue with a new message.");
 							} else {
 								notify(
-									`Cleared flow reservation ${result.attemptId}. Jobs, waits, and receipt history were left unchanged.`,
+									`Cleared flow reservation ${result.attemptId}. Jobs and waits were left unchanged; receipt evidence was preserved.`,
 								);
 							}
 							return;

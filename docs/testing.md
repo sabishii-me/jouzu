@@ -70,6 +70,18 @@ A local HTTP server gates a response to test a follow-up enqueued while a reques
 
 These tests verify cancellation and transport behavior. When valid input accompanies a stale task, the source instruction remains in context with a cancellation note; the tests do not prove that a model will obey that note.
 
+### Saved flow-session recovery
+
+To check recovery against an existing session without changing its files:
+
+```bash
+JOUZU_FLOW_RECOVERY_SESSION=/path/to/session.jsonl \
+JOUZU_FLOW_RECOVERY_ROOT=/path/to/flow \
+node --test packages/cli/test/flow-saved-session-recovery.test.mjs
+```
+
+Run this after the source session has stopped writing. The test copies the transcript, session registry, and active flow branch to a temporary directory. It uses a local provider fixture and requires successful continuation, reset, two more requests, and another session reopen. The source files are only read. Both paths are required when either variable is set; the default suite skips this case when neither is set.
+
 ### Patched-Pi conformance
 
 ```bash

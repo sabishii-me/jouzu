@@ -34,6 +34,14 @@ export function retainMemorySource(manager: SessionManager, receipt: Omit<Memory
 	history.receipts.push({ ...structuredClone(receipt), entryHash: hash(entry) });
 }
 
+/** Memory receipts are valid only for the exact manager lifetime that observed them. */
+export function memorySourceReceipts(manager: SessionManager): MemoryReceipt[] {
+	const history = memoryHistory.get(manager);
+	return !manager.isPersisted() && history?.sessionId === manager.getSessionId()
+		? structuredClone(history.receipts)
+		: [];
+}
+
 function observed(input: FlowNativeInput, position: number): { message: AgentMessage; nativeTimestamp: boolean } {
 	const value = input.args[0];
 	if (input.kind === "prompt" && typeof value === "string")
@@ -55,6 +63,7 @@ function observed(input: FlowNativeInput, position: number): { message: AgentMes
 export async function recoverNativeSources(
 	session: AgentSession,
 	store: FlowSubmissionStore,
+	atRequestBoundary = false,
 ): Promise<{
 	apply(): WeakMap<object, Source[]>;
 	recovered: number;
@@ -67,7 +76,10 @@ export async function recoverNativeSources(
 	const references = [...live],
 		liveHash = hash(live);
 	const assertCurrent = () => {
-		if (!session.isIdle || session.agent.state.isStreaming || session.isRetrying || session.isCompacting)
+		if (
+			!atRequestBoundary &&
+			(!session.isIdle || session.agent.state.isStreaming || session.isRetrying || session.isCompacting)
+		)
 			throw new FlowLedgerError("busy", "Native source recovery requires an idle session.");
 		if (
 			session.sessionId !== store.scope.sessionId ||
@@ -85,10 +97,12 @@ export async function recoverNativeSources(
 		.buildContextEntries()
 		.flatMap((entry) => sessionEntryToContextMessages(entry).map((message) => ({ entry, message })));
 	const messages = projected.map((item) => item.message);
-	if (!isDeepStrictEqual(messages, live))
+	// Pi timestamps a custom transcript entry separately from its live message.
+	// Compare every other field, then retain the exact live object and bytes.
+	const comparable = (message: AgentMessage) => (message.role === "custom" ? { ...message, timestamp: 0 } : message);
+	if (!isDeepStrictEqual(messages.map(comparable), live.map(comparable)))
 		throw new FlowLedgerError("identity", "Live context differs from Pi's transcript reconstruction.");
-	const memory = memoryHistory.get(manager);
-	const memoryReceipts = !manager.isPersisted() && memory?.sessionId === manager.getSessionId() ? memory.receipts : [];
+	const memoryReceipts = memorySourceReceipts(manager);
 	const records = await store.snapshot();
 	assertCurrent();
 	const bindings = new WeakMap<object, Source[]>();
@@ -160,14 +174,15 @@ export async function recoverNativeSources(
 			const normalize = (message: AgentMessage) => (ignoreTimestamp ? { ...message, timestamp: 0 } : message);
 			if (!isDeepStrictEqual(normalize(expected.message), normalize(target.message)))
 				throw new FlowLedgerError("identity", "Native observed input differs from its transcript message.");
+			const liveMessage = live[projected.indexOf(target)];
 			const source: Source = {
 				operationId: dispatch.operationId,
-				messageHash: hash(target.message),
+				messageHash: hash(liveMessage),
 				...(receipt.prompt ? { prompt: receipt.prompt } : { queue: receipt.queue }),
 			};
-			const sources = bindings.get(target.message) ?? [];
+			const sources = bindings.get(liveMessage) ?? [];
 			sources.push(source);
-			bindings.set(target.message, sources);
+			bindings.set(liveMessage, sources);
 			recovered++;
 		}
 	}
@@ -179,8 +194,7 @@ export async function recoverNativeSources(
 			assertCurrent();
 			if (!isDeepStrictEqual(manager.buildSessionContext().messages, messages))
 				throw new FlowLedgerError("stale", "Pi context changed before source restoration.");
-			// Install Pi's equivalent reconstruction and its source map together, without changing message bytes.
-			session.agent.state.messages = messages;
+			// Bind the verified projection to the unchanged live messages.
 			return bindings;
 		},
 	};

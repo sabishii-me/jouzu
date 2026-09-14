@@ -13,7 +13,7 @@ import {
 import { type PiFlowBranchResources, type PiFlowSessionOptions, PiFlowSessionService } from "./pi-session-service.js";
 import { FlowLedgerError } from "./receipt-ledger.js";
 import type { FlowNativeInput } from "./submission-store.js";
-import { activeAdmissionHolds } from "./submission-view.js";
+import { activeAdmissionHolds, UNAVAILABLE_INPUT_REASON } from "./submission-view.js";
 import { captureUserWorkParticipants, retainUserWork } from "./user-work.js";
 import type { FlowWorkStatus } from "./wait-authority.js";
 import { type FlowWaitClock, systemWaitClock } from "./wait-deadlines.js";
@@ -99,6 +99,14 @@ export class PiSessionFlowIngress implements Ingress {
 					};
 				},
 				turn: {
+					failed: (error) => {
+						if (
+							error instanceof FlowLedgerError &&
+							["capacity", "identity", "schema", "stale", "transition"].includes(error.code)
+						) {
+							if (this.pauseAutomated(`flow admission failed (${error.code})`)) this.options.onAutomatedPause?.();
+						}
+					},
 					// An interrupt is not observable directly, so an aborted turn stands for it.
 					aborted: () => {
 						if (this.pauseAutomated("a turn was interrupted")) this.options.onAutomatedPause?.();
@@ -377,7 +385,9 @@ export class PiSessionFlowIngress implements Ingress {
 	async heldInputs(): Promise<{ id: string; reason: string }[]> {
 		const records = await this.branch().attachment.submissions.snapshot();
 		return records.flatMap((record) =>
-			activeAdmissionHolds(record).map((hold) => ({ id: record.id, reason: hold.reason })),
+			record.unavailable && record.status !== "cancelled"
+				? [{ id: record.id, reason: UNAVAILABLE_INPUT_REASON }]
+				: activeAdmissionHolds(record).map((hold) => ({ id: record.id, reason: hold.reason })),
 		);
 	}
 
@@ -442,10 +452,10 @@ export class PiSessionFlowIngress implements Ingress {
 		return this.manage((service) => service.cancelNativeContext(id, revision, inputIndex));
 	}
 	reconcileNativeQueueEdit(id: string, revision: number): Promise<void> {
-		return this.manage((service) => service.reconcileNativeQueueEdit(id, revision));
+		return this.repairNative((service) => service.reconcileNativeQueueEdit(id, revision));
 	}
 	resolveUncertainAttempt(id: string, resolution: "retry" | "discard") {
-		return this.manage((service) => service.resolveUncertainAttempt(id, resolution));
+		return this.repairNative((service) => service.resolveUncertainAttempt(id, resolution));
 	}
 	resetFlow() {
 		return this.manage(async (service) => {
@@ -455,8 +465,16 @@ export class PiSessionFlowIngress implements Ingress {
 		});
 	}
 
+	private repairNative<T>(action: (service: PiFlowSessionService) => Promise<T>): Promise<T> {
+		return this.manage(async (service) => {
+			const result = await action(service);
+			if (this.automatedPauseReason?.startsWith("flow admission failed (")) this.resumeAutomated();
+			return result;
+		});
+	}
+
 	retryNativeRequest(id: string, expectedHash: string): Promise<void> {
-		return this.manage((service) => service.retryNativeRequest(id, expectedHash));
+		return this.repairNative((service) => service.retryNativeRequest(id, expectedHash));
 	}
 	cancelWait(token: string, reason: string) {
 		return this.manage((service) =>
@@ -464,11 +482,11 @@ export class PiSessionFlowIngress implements Ingress {
 		);
 	}
 	cancelNativeSources(id: string, expectedHash: string, indices: number[]): Promise<void> {
-		return this.manage((service) => service.cancelNativeSources(id, expectedHash, indices));
+		return this.repairNative((service) => service.cancelNativeSources(id, expectedHash, indices));
 	}
 
 	cancelNativeProjections(id: string, expectedHash: string, indices: number[]): Promise<void> {
-		return this.manage((service) => service.cancelNativeProjections(id, expectedHash, indices));
+		return this.repairNative((service) => service.cancelNativeProjections(id, expectedHash, indices));
 	}
 
 	private nativeRecoveryBlocked(
@@ -606,7 +624,7 @@ export class PiSessionFlowIngress implements Ingress {
 		// Emergency flow commands must remain reachable when ordinary native admission is
 		// inconsistent. They execute locally and never enter the provider transport.
 		const emergencyFlowCommand =
-			typeof captured.args[0] === "string" && ["/flow reset", "/flow clear"].includes(captured.args[0].trim());
+			user && typeof captured.args[0] === "string" && ["/flow reset", "/flow clear"].includes(captured.args[0].trim());
 		if (user) this.activeUserInput++;
 		// Every send passes through here, so this is where the user speaking again releases an
 		// interrupt's hold. Automated work still waits for an idle boundary, which is what keeps it
@@ -614,6 +632,17 @@ export class PiSessionFlowIngress implements Ingress {
 		if (user) this.resumeAutomated();
 		return this.track(async () => {
 			const branch = this.branch();
+			if (emergencyFlowCommand) {
+				await dispatch();
+				return;
+			}
+			const previous = (await branch.attachment.submissions.snapshot()).find((record) => record.id === captured.id);
+			if (previous) {
+				if (!isDeepStrictEqual(previous.submission, captured))
+					throw new FlowLedgerError("identity", "Submission identity was reused with different content.");
+				return;
+			}
+			await branch.attachment.submissions.archiveCompleted();
 			const saved = await branch.attachment.submissions.retain(captured);
 			if (this.branch() !== branch) throw new FlowLedgerError("stale", "Flow submission branch changed.");
 			if (saved.duplicate || saved.status === "cancelled") return;
@@ -635,13 +664,7 @@ export class PiSessionFlowIngress implements Ingress {
 			if (user) this.retainedUserInput.add(saved.id);
 			this.pending.set(saved.id, { branch, submission: captured, revision: saved.revision, dispatch });
 			try {
-				if (emergencyFlowCommand) {
-					this.pending.delete(saved.id);
-					await dispatch();
-					await this.refreshUserInput();
-				} else {
-					await this.release(saved.id, saved.revision);
-				}
+				await this.release(saved.id, saved.revision);
 			} catch (error) {
 				// Pi revokes a callback when its submission handler throws.
 				this.pending.delete(saved.id);

@@ -2,6 +2,7 @@ import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import type { FlowAdmissionGates } from "./admission.js";
 import { SessionFlowController } from "./controller.js";
 import { isNativeUserInput } from "./native-admission.js";
+import { reconcileNativeSources } from "./native-source-reconciliation.js";
 import { PiFlowAttachment } from "./pi-attachment.js";
 import { bindPiFlowBranch, completePiFlowNavigation } from "./pi-branch-binding.js";
 import { PiControllerHost, type PiControllerHostOptions } from "./pi-controller-host.js";
@@ -28,7 +29,7 @@ export interface PiFlowSessionOptions {
 	/** Reported once when state written under an earlier record shape is moved aside on open. */
 	onIsolatedState?(path: string): void;
 	/** Turn-level signals the session acts on as a whole; see `PiNativeRequests`. */
-	turn?: { aborted(): void };
+	turn?: { aborted(): void; failed?(error: unknown): void };
 	maxInputBytes: number;
 	maxResultBytes: number;
 	/** Host-approved producer participants for work created from user input. */
@@ -134,9 +135,12 @@ export class PiFlowSessionService {
 				waitSourceRecovery.missing.length > 0 ||
 				recovery.unresolved > 0 ||
 				state.attempts.some((attempt) => attempt.phase === "uncertain");
+			await attachment.submissions.archiveCompleted();
+			await attachment.submissions.recoverCallbacks();
 			const native = new PiNativeDispatch(this.session, attachment.submissions, this.options.admitNativeQueue);
 			this.opening.native = native;
 			const sourceRecovery = await native.recoverSources();
+			await reconcileNativeSources(this.session, attachment, native);
 			recoveryBlocked ||= sourceRecovery.unresolved > 0;
 			const requests = new PiNativeRequests(
 				this.session,
@@ -157,6 +161,7 @@ export class PiFlowSessionService {
 							.filter((id): id is string => !!id),
 					),
 				this.options.turn,
+				() => reconcileNativeSources(this.session, attachment, native),
 			);
 			this.opening.requests = requests;
 			const workContext = new FlowWorkContext(() => this.branch().attachment);
@@ -476,9 +481,15 @@ export class PiFlowSessionService {
 						attemptId,
 						"Emergency flow reset from /flow; provider outcome may be unknown.",
 					);
-				branch.native.reset();
+				await branch.attachment.submissions.archiveCompleted();
+				await reconcileNativeSources(this.session, branch.attachment, branch.native, "reset");
 				await branch.attachment.nativeRequests.reset();
-				return { kind: attemptId ? ("cancelled" as const) : ("inactive" as const), attemptId };
+				await branch.attachment.nativeRequests.retireSuperseded();
+				return {
+					kind: attemptId ? ("cancelled" as const) : ("inactive" as const),
+					attemptId,
+					recoveryHeld: branch.host.gate().recoveryBlocked,
+				};
 			});
 			if (result.kind === "busy") throw new FlowLedgerError("busy", "Flow reset requires an idle session.");
 			if (result.value.kind !== "inactive" && result.value.attemptId)

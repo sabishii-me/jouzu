@@ -58,6 +58,28 @@ test("native custom-message recovery uses Pi's persisted renderer data and times
 	assert.deepEqual(next.session.agent.state.messages[0].details, { exact: 1 });
 });
 
+test("custom recovery preserves live timestamps and rejects changed renderer content", async (t) => {
+	const f = await nativeRequests(t, { retainInputs: true });
+	await f.session.sendCustomMessage(
+		{ customType: "fixture", content: [{ type: "text", text: "custom" }], display: true, details: { exact: 1 } },
+		{ triggerTurn: true },
+	);
+	const messages = f.session.agent.state.messages;
+	const custom = messages.find((message) => message.role === "custom");
+	// Force the two host clocks apart without changing the persisted entry or its receipt.
+	custom.timestamp += 1000;
+	const before = structuredClone(messages);
+	assert.deepEqual(await f.dispatch.recoverSources(), { recovered: 1, unresolved: 0 });
+	assert.equal(f.session.agent.state.messages, messages);
+	assert.equal(messages[0], custom);
+	assert.deepEqual(messages, before);
+	await f.session.prompt("next");
+	assert.equal(f.sent.length, 2);
+	custom.details.exact = 2;
+	await assert.rejects(f.dispatch.recoverSources(), { code: "identity" });
+	assert.equal(f.session.agent.state.messages, messages);
+});
+
 test("native source recovery respects Pi compaction context selection", async (t) => {
 	const first = await nativeRequests(t, { retainInputs: true });
 	await first.session.prompt("old");

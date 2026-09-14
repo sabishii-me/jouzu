@@ -299,12 +299,13 @@ export class PiNativeDispatch {
 		this.assertActive();
 		return members;
 	}
-	async recoverSources(): Promise<{ recovered: number; unresolved: number }> {
+	async recoverSources(atRequestBoundary = false): Promise<{ recovered: number; unresolved: number }> {
 		this.assertActive();
-		if (this.active) throw new FlowLedgerError("busy", "Native source recovery requires drained dispatch.");
+		if (this.active && !atRequestBoundary)
+			throw new FlowLedgerError("busy", "Native source recovery requires drained dispatch.");
 		this.active++;
 		try {
-			return await this.history.recover(this.session, this.store, () => this.assertActive());
+			return await this.history.recover(this.session, this.store, () => this.assertActive(), atRequestBoundary);
 		} finally {
 			this.active--;
 			if (!this.active) this.drained?.();

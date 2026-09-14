@@ -439,7 +439,7 @@ test("reopened ingress retains work without reconstructing a dispatch callback",
 	});
 	assert.equal((await next.ingress.branch().attachment.submissions.snapshot())[0].id, record.id);
 	assert.deepEqual(await next.ingress.heldInputs(), [
-		{ id: record.id, reason: "Input is held by host admission policy." },
+		{ id: record.id, reason: "Input was not dispatched before the session ended. Submit it again to run it." },
 	]);
 	await assert.rejects(next.ingress.release(record.id, record.revision), { code: "stale" });
 	assert.equal(next.sent.length, 0);
@@ -1791,7 +1791,7 @@ test("user priority covers retention writes and failed admission remains retaine
 	assert.equal(f.sent.length, 0);
 });
 
-test("retained user priority survives reopening without recreating its callback", async (t) => {
+test("unavailable user input stays inspectable without blocking work after reopen", async (t) => {
 	const first = await fixture(t, { admit: async () => false });
 	await first.session.prompt("retained across reopen");
 	const [record] = await first.ingress.branch().attachment.submissions.snapshot();
@@ -1800,7 +1800,11 @@ test("retained user priority survives reopening without recreating its callback"
 		root: first.root,
 		manager: SessionManager.open(first.session.sessionManager.getSessionFile()),
 	});
-	assert.equal(next.ingress.branch().host.gate().userPending, true);
+	assert.equal(next.ingress.branch().host.gate().userPending, false);
+	const [recovered] = await next.ingress.branch().attachment.submissions.snapshot();
+	assert.equal(recovered.unavailable, "callback-ended");
+	assert.deepEqual(recovered.submission, record.submission);
+	assert.match((await next.ingress.heldInputs())[0].reason, /Submit it again/);
 	await next.ingress.cancelRetained(record.id, 1);
 	assert.equal(next.ingress.branch().host.gate().userPending, false);
 	assert.equal(next.sent.length, 0);

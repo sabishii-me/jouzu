@@ -75,7 +75,8 @@ export class PiNativeRequests {
 		 * route reports here. Maintenance work such as compaction aborts for its own reasons and
 		 * already gates the session while it runs, so it is left out deliberately.
 		 */
-		private readonly turn?: { aborted(): void },
+		private readonly turn?: { aborted(): void; failed?(error: unknown): void },
+		reconcileSources?: () => Promise<unknown>,
 	) {
 		if (!Number.isSafeInteger(maxBytes) || maxBytes < 1)
 			throw new FlowLedgerError("capacity", "Invalid native payload limit.");
@@ -95,6 +96,7 @@ export class PiNativeRequests {
 				this.projectionWaitTokens = undefined;
 				this.references = undefined;
 				try {
+					await reconcileSources?.();
 					let sourceHash = hash(messages),
 						references = [...messages];
 					let members = await identifySources(messages);
@@ -113,6 +115,7 @@ export class PiNativeRequests {
 						const excluded = new Set<number>();
 						for (const source of cancelled) {
 							const member = members.find((item) => nativeSourceKey(item) === nativeSourceKey(source));
+							if (!member && (await store.sourceReconciled(source))) continue;
 							if (!member)
 								throw new FlowLedgerError("identity", "Cancelled native input requires source reconciliation.");
 							excluded.add(member.index);
@@ -183,6 +186,9 @@ export class PiNativeRequests {
 					};
 					this.capture = capture;
 					return result;
+				} catch (error) {
+					this.turn?.failed?.(error);
+					throw error;
 				} finally {
 					this.cloneSourceHash = undefined;
 					this.active--;
@@ -387,6 +393,9 @@ export class PiNativeRequests {
 						capture: this.capture ? structuredClone(this.capture) : undefined,
 						projections: this.projections ? structuredClone(this.projections) : undefined,
 					};
+				} catch (error) {
+					this.turn?.failed?.(error);
+					throw error;
 				} finally {
 					this.capture = undefined;
 					this.references = undefined;
@@ -533,41 +542,52 @@ export class PiNativeRequests {
 					...options,
 					...(flowValidateProvider ? { flowValidateProvider } : {}),
 					onPayload: async (payload, requestModel) => {
-						this.assertActive();
-						options?.signal?.throwIfAborted();
-						if (admitting || finished)
-							throw new FlowLedgerError("transition", "Native payload admission was repeated or outlived its request.");
-						admitting = true;
-						if (
-							requestModel.api !== model.api ||
-							requestModel.provider !== model.provider ||
-							requestModel.id !== model.id
-						)
-							throw new FlowLedgerError("identity", "Native provider identity changed during conversion.");
-						const replacement = await options?.onPayload?.(payload, requestModel);
-						this.assertActive();
-						options?.signal?.throwIfAborted();
-						const { serialized, owned } = copyFlowPayload(replacement === undefined ? payload : replacement, model.api);
-						if (serialized === undefined || Buffer.byteLength(serialized) > maxBytes)
-							throw new FlowLedgerError("capacity", "Native provider payload exceeds its byte limit.");
-						// The body is serialized to bound and identify it, never to locate membership inside it.
-						const admitted = await store.handoff(id, {
-							hash: createHash("sha256").update(serialized).digest("hex"),
-							bytes: Buffer.byteLength(serialized),
-							api: model.api,
-							provider: model.provider,
-							model: model.id,
-						});
-						if (!admitted)
-							throw new FlowLedgerError(
-								"transition",
-								"Native request withheld because required input was changed or unresolved at conversion.",
+						try {
+							this.assertActive();
+							options?.signal?.throwIfAborted();
+							if (admitting || finished)
+								throw new FlowLedgerError(
+									"transition",
+									"Native payload admission was repeated or outlived its request.",
+								);
+							admitting = true;
+							if (
+								requestModel.api !== model.api ||
+								requestModel.provider !== model.provider ||
+								requestModel.id !== model.id
+							)
+								throw new FlowLedgerError("identity", "Native provider identity changed during conversion.");
+							const replacement = await options?.onPayload?.(payload, requestModel);
+							this.assertActive();
+							options?.signal?.throwIfAborted();
+							const { serialized, owned } = copyFlowPayload(
+								replacement === undefined ? payload : replacement,
+								model.api,
 							);
-						handedOff = true;
-						if (composed) await this.composition?.handedOff(composed, options?.signal);
-						this.assertActive();
-						options?.signal?.throwIfAborted();
-						return owned;
+							if (serialized === undefined || Buffer.byteLength(serialized) > maxBytes)
+								throw new FlowLedgerError("capacity", "Native provider payload exceeds its byte limit.");
+							// The body is serialized to bound and identify it, never to locate membership inside it.
+							const admitted = await store.handoff(id, {
+								hash: createHash("sha256").update(serialized).digest("hex"),
+								bytes: Buffer.byteLength(serialized),
+								api: model.api,
+								provider: model.provider,
+								model: model.id,
+							});
+							if (!admitted)
+								throw new FlowLedgerError(
+									"transition",
+									"Native request withheld because required input was changed or unresolved at conversion.",
+								);
+							handedOff = true;
+							if (composed) await this.composition?.handedOff(composed, options?.signal);
+							this.assertActive();
+							options?.signal?.throwIfAborted();
+							return owned;
+						} catch (error) {
+							this.turn?.failed?.(error);
+							throw error;
+						}
 					},
 				});
 				let recorded: Promise<AssistantMessage> | undefined;

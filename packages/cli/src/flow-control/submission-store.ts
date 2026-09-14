@@ -20,6 +20,7 @@ export interface FlowAdmissionHold {
 	queue?: { id: string; revision: number };
 }
 interface RecordData {
+	unavailable?: "callback-ended";
 	id: string;
 	revision: number;
 	status: "retained" | "cancelled";
@@ -81,6 +82,7 @@ interface State {
 	orderIds?: string[];
 }
 export interface RetainedSubmission {
+	unavailable?: "callback-ended";
 	id: string;
 	revision: number;
 	status: "retained" | "cancelled";
@@ -89,6 +91,30 @@ export interface RetainedSubmission {
 	submission: Submission;
 	dispatch?: FlowSubmissionDispatch;
 }
+/** Archival changes the quota, not the retained source or delivery evidence. */
+export function fullyConsumedSubmission(record: RetainedSubmission): boolean {
+	const dispatch = record.dispatch;
+	return (
+		record.status === "retained" &&
+		!record.holds?.length &&
+		dispatch?.phase === "returned" &&
+		!!(dispatch.noInput || dispatch.inputs?.length) &&
+		!(dispatch.inputs ?? []).some((input, inputIndex) => {
+			if (input.queue)
+				return !dispatch.queueClaims?.some(
+					(claim) => claim.id === input.queue?.id && claim.revision === input.queue.revision && claim.consumed,
+				);
+			const count = Array.isArray(input.args[0]) ? input.args[0].length : 1;
+			return Array.from({ length: count }, (_, messageIndex) => messageIndex).some(
+				(messageIndex) =>
+					!dispatch.promptClaims?.some(
+						(claim) => claim.inputIndex === inputIndex && claim.messageIndex === messageIndex,
+					),
+			);
+		})
+	);
+}
+
 type Header = Omit<State, "records"> & { recordIds: string[] };
 const address = value<Header>("jouzu.flow.submissions", "v1");
 const recordAddress = (id: string) => value<RecordData>("jouzu.flow.submission", id);
@@ -288,6 +314,7 @@ export class FlowSubmissionStore {
 		for (const record of state.records) {
 			if (
 				!record ||
+				(record.unavailable !== undefined && record.unavailable !== "callback-ended") ||
 				!identity(record.id) ||
 				ids.has(record.id) ||
 				!Number.isSafeInteger(record.revision) ||
@@ -659,6 +686,29 @@ export class FlowSubmissionStore {
 			return { changed: true, result: undefined };
 		});
 	}
+	/** A new attachment cannot execute callbacks from a prior session lifetime. Keep their input inspectable. */
+	recoverCallbacks(): Promise<number> {
+		return this.transact((state) => {
+			let count = 0;
+			for (const record of state.records)
+				if (
+					record.status === "retained" &&
+					!record.unavailable &&
+					(!record.dispatch || (record.dispatch.phase === "failed" && !record.dispatch.inputs?.length))
+				) {
+					record.unavailable = "callback-ended";
+					count++;
+				}
+			return { changed: count > 0, result: count };
+		});
+	}
+
+	/** Free admission capacity after complete consumption, including extension-origin sends. */
+	async archiveCompleted(): Promise<number> {
+		const selected = (await this.snapshot(false)).filter(fullyConsumedSubmission);
+		return this.archiveHandled(selected.map(({ id, revision }) => ({ id, revision })));
+	}
+
 	/** Freeze handled submissions outside the active admission quota without discarding source receipts. */
 	archiveHandled(selected: readonly { id: string; revision: number }[], assertCurrent?: () => void): Promise<number> {
 		const captured = structuredClone(selected);
