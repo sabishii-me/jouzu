@@ -230,6 +230,7 @@ test("a policy the background producer does not register is refused", async (t) 
 
 test("a standalone wait decision owns its work for background and wait tools", async (t) => {
 	const background = await controlledBackground(t);
+	const nextBackground = await controlledBackground(t);
 	let phase = 0,
 		originalWork,
 		token,
@@ -261,7 +262,7 @@ test("a standalone wait decision owns its work for background and wait tools", a
 			}
 			if (phase === 3) return { text: "Waiting" };
 			if (phase === 4)
-				return assistantToolCalls({ name: "bg_task", arguments: { action: "spawn", command: background.command } });
+				return assistantToolCalls({ name: "bg_task", arguments: { action: "spawn", command: nextBackground.command } });
 			if (phase === 5) {
 				const dependency = waitDependencyFrom(body);
 				assert.equal(dependency.work.id, originalWork);
