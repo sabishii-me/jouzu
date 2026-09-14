@@ -15,7 +15,19 @@ export function transform(path, source) {
 		source = replace(
 			source,
 			'import { spawn } from "node:child_process";',
-			'import { spawn } from "node:child_process";\nimport { backgroundFlowSource } from "./snapshot.js";',
+			'import { spawn, spawnSync } from "node:child_process";\nimport { backgroundFlowSource } from "./snapshot.js";',
+		);
+		source = replace(
+			source,
+			"\t\t\t\tprocess.kill(task.pid, signal);",
+			`				// A Windows shell can own children that retain pipes and the working directory.
+				// Stop the tree before its root disappears, for both stop and session shutdown.
+				process.kill(task.pid, 0);
+				const stopped = spawnSync("taskkill.exe", ["/PID", String(task.pid), "/T", "/F"], {
+					windowsHide: true, encoding: "utf8", timeout: 10000,
+				});
+				if (stopped.error) throw stopped.error;
+				if (stopped.status !== 0) throw new Error(stopped.stderr || "Windows process-tree termination failed.");`,
 		);
 		source = replace(
 			source,

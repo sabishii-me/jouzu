@@ -228,7 +228,7 @@ test("a policy the background producer does not register is refused", async (t) 
 	);
 });
 
-test("a standalone wait decision owns its work for background and wait tools", async (t) => {
+test("a standalone wait decision owns its work for background and wait tools", { timeout: 30000 }, async (t) => {
 	const background = await controlledBackground(t);
 	const nextBackground = await controlledBackground(t);
 	let phase = 0,
@@ -305,6 +305,7 @@ test("a standalone wait decision owns its work for background and wait tools", a
 	await waitForSettledWake(f, before);
 	await f.session.waitForIdle();
 	assert.equal(phase, 7);
+	// The second job is still running: shutdown must stop its shell and child before cleanup.
 	assert.notEqual(nextToken, token);
 	assert.equal(
 		(await f.ingress.branch().attachment.ledger.snapshot()).attempts.find((attempt) => attempt.admission)?.admission

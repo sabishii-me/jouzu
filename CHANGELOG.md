@@ -15,9 +15,9 @@
 
 ### Fixed
 
+- Stop the full background process tree on Windows so child processes do not survive task cancellation or session shutdown.
 - Return rendered page bodies and the full search result list to the model. Mark truncated pages, empty searches, and searches that reach the requested result limit.
 - Attach browser screenshots to tool results, default screenshot requests to JPEG, and report images over 1 MiB with size-reduction instructions.
-
 - Recover flow admission after compaction, interrupted requests, and sustained use exhaust retained history. Preserve pending user input and results through cancellation and recovery, and keep `/flow reset` usable for recoverable retained state.
 - Reopen oversized flow journals by checkpointing retained state without loading the entire journal into one string.
 - Bind task continuations and wait-decision turns to their owning work so authorized background and wait tools remain usable. Respect task holds and reject stale continuations.

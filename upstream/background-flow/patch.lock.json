@@ -7,7 +7,7 @@
 	"files": {
 		"extensions/background-tasks.ts": {
 			"before": "aa9384de228f2a99910278f14ee74e469f143e470d0af183cf0261b36bc6917d",
-			"after": "0d07d2e0eae7c3e18e31b8e118ae7b1f06821a62af240243192612693a884eb1"
+			"after": "dc104ef6cae55b5a131fcb3dcc9061a9038a19e8b8eb553d34aaea946d540fcf"
 		},
 		"extensions/snapshot.ts": {
 			"before": "46c74c0c86367bfb65be7e6435fbb8f08abfe8ca43c8ea99eace152da0f3126a",
