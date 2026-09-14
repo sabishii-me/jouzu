@@ -27,7 +27,7 @@
 ### Testing limits
 
 - Completed live flow probes found no new session lockups or input/result-loss defects after the repairs; some scenarios remain unverified. Cross-turn management of another work's wait remains restricted; users can cancel a wait with `/flow cancel <token>`.
-- The Windows installer is an unpublished, unsigned preview. A diagnostic 0.1.10 installer passed a complete native build and acceptance run on Windows Server 2025 x64. Qualification of the final release payload, clean Windows 10/11 testing, and signing remain pending.
+- The Windows installer is an unsigned preview distributed through GitHub Releases. Native build and acceptance testing covers Windows Server 2025 x64. Clean Windows 10/11 testing remains pending; code signing is planned for v0.2.0.
 
 ## 0.1.9 - 2026-09-13
 

@@ -5,9 +5,11 @@ fd, and the Visual C++ runtime DLLs. Users do not need to install these tools
 or run a terminal command. The target is Windows 10 build 19041 or later on
 x64 hardware.
 
-This builder produces an **unsigned preview for local testing**. Windows may
-show an unknown-publisher warning. Public distribution requires code signing
-and review of the bundled components' redistribution terms.
+Download the **unsigned v0.1.10 preview** from the
+[GitHub release page](https://github.com/shisa-ai/jouzu/releases/tag/v0.1.10).
+Windows may show an unknown-publisher warning. Native acceptance tests passed
+on Windows Server 2025 x64; clean Windows 10/11 testing remains pending.
+Code signing is planned for v0.2.0.
 
 ## Use
 
@@ -86,7 +88,7 @@ a corrupt version, and checks uninstall data preservation. It writes
 installation for manual inspection instead of testing uninstall.
 
 Also open the desktop shortcut, select a folder, and check the first-launch
-screen in the terminal. Test this on clean Windows 10 and Windows 11 machines
-before public distribution; a Windows Server run alone does not qualify
+screen in the terminal. Clean Windows 10 and Windows 11 testing remains
+pending for the v0.1.10 preview; a Windows Server run alone does not qualify
 those desktop versions. Provider sign-in and microphone access require
 separate interactive checks.

@@ -45,9 +45,9 @@ jz doctor
 npx --yes jouzu --version
 ```
 
-[GitHub Releases](https://github.com/shisa-ai/jouzu/releases) include the same tested npm tarball, checksums, and package manifest from v0.1.7 onward. These release assets contain npm packages.
+[GitHub Releases](https://github.com/shisa-ai/jouzu/releases) include the same tested npm tarball, checksums, and package manifest from v0.1.7 onward. The Windows installer is a separate download.
 
-An unsigned [Windows installer preview](https://github.com/shisa-ai/jouzu/blob/main/packaging/windows/README.md) can be built locally. It bundles Node.js/npm, Git Bash, Windows Terminal, and native tools, with desktop and Start menu shortcuts. The preview has not been published as a download; clean Windows 10/11 qualification and signing remain pending.
+Download the unsigned Windows x64 installer from the [v0.1.10 release page](https://github.com/shisa-ai/jouzu/releases/tag/v0.1.10). It bundles Node.js/npm, Git Bash, Windows Terminal, and native tools, with desktop and Start menu shortcuts. Windows may show an unknown-publisher warning. The preview has been tested on Windows Server 2025; clean Windows 10/11 testing remains pending. See [Windows installer preview](https://github.com/shisa-ai/jouzu/blob/main/packaging/windows/README.md) for setup and testing details.
 
 ## Quick start
 
@@ -359,7 +359,7 @@ Managed profile assets are UTF-8. Existing CP932/Shift-JIS profile targets produ
 
 ## Known limitations
 
-- Published releases use npm and require separately installed Node.js/npm, Git, and Bash. The Windows installer preview bundles these dependencies but remains unsigned and unpublished.
+- npm installation requires separately installed Node.js/npm, Git, and Bash. The unsigned Windows installer preview bundles these dependencies.
 - The installer preview has native test coverage on Windows Server 2025 x64; clean Windows 10/11 qualification remains pending.
 - Shisa AI access requires sign-in or an API key.
 - Existing Pi `models.json` and `auth.json` require separate first-run consent; other stock Pi state is not imported.
