@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "architecture": "x64",
+  "downloads": {
+    "node": {
+      "version": "24.19.0",
+      "file": "node.zip",
+      "url": "https://nodejs.org/dist/v24.19.0/node-v24.19.0-win-x64.zip",
+      "sha256": "57f71ab3652e797d84acddc79c81cc9ff1c6ddb2a1974cdb83f00fee9bff4c73"
+    },
+    "git": {
+      "version": "2.55.0.5",
+      "file": "git.exe",
+      "url": "https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.5/PortableGit-2.55.0.5-64-bit.7z.exe",
+      "sha256": "5aa8a20f6e9abb2c755f0e73c91c687701a46b309ad84a0ca6509380fa4ae290"
+    },
+    "terminal": {
+      "version": "1.24.11911.0",
+      "file": "terminal.zip",
+      "url": "https://github.com/microsoft/terminal/releases/download/v1.24.11911.0/Microsoft.WindowsTerminal_1.24.11911.0_x64.zip",
+      "sha256": "7691efeb71c8dd0b95536c84e366fa4cf809a42c534912f9cefa1056534383bd"
+    },
+    "inno": {
+      "version": "7.1.0",
+      "file": "inno.exe",
+      "url": "https://github.com/jrsoftware/issrc/releases/download/is-7_1_0/innosetup-7.1.0-x64.exe",
+      "sha256": "0362a383ed217d4c4239b5933866dd96d3eb2102737da92f80f6057a4b40df2f"
+    },
+    "rg": {
+      "version": "15.2.0",
+      "file": "rg.zip",
+      "url": "https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-x86_64-pc-windows-msvc.zip",
+      "sha256": "71b2fef860abe467217a538ff31de02f5258807c0129f771846f87bd029aafc5"
+    },
+    "fd": {
+      "version": "10.5.0",
+      "file": "fd.zip",
+      "url": "https://github.com/sharkdp/fd/releases/download/v10.5.0/fd-v10.5.0-x86_64-pc-windows-msvc.zip",
+      "sha256": "a227701b8551c35a9931d9f6da75503cf86d88e182d71fb849a70864c5d57cd7"
+    },
+    "vclibs": {
+      "version": "14.0-desktop",
+      "file": "vclibs.appx",
+      "url": "https://aka.ms/Microsoft.VCLibs.x64.14.00.Desktop.appx",
+      "sha256": "b56a9101f706f9d95f815f5b7fa6efbac972e86573d378b96a07cff5540c5961"
+    }
+  }
+}

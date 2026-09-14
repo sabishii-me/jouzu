@@ -1,6 +1,6 @@
 # Windows prerequisites for Jouzu v0.1
 
-Jouzu v0.1 is an npm developer preview, not a native Windows installer.
+Published Jouzu v0.1 releases use npm. A [Windows installer preview](../packaging/windows/README.md) can also be built locally; it bundles Node/npm, Git Bash, Windows Terminal, and the runtime DLLs.
 
 Jouzu v0.1.5's bundled extension set passed the full Linux, macOS, and Windows qualification matrix with Node 22 and 24. The prerequisites below describe the v0.1 npm environment.
 
@@ -44,5 +44,3 @@ CP932/Shift-JIS is not a managed-profile encoding. If an existing profile target
 - No MSI, MSIX, signed installer, portable ZIP, or automatic PATH configuration.
 - No claim that all third-party Pi extensions support native Windows.
 - Console behavior outside Windows Terminal and Git Bash is not part of the v0.1 support claim.
-
-Standalone archives are explicitly deferred. The npm artifact is the only v0.1 application channel. A self-contained Windows distribution is planned for a later release after native payload, shell, signing, proxy, and package-compatibility qualification.
