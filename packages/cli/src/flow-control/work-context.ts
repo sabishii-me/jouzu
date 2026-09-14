@@ -1,7 +1,9 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { isDeepStrictEqual } from "node:util";
 import type { PiFlowAttachment } from "./pi-attachment.js";
 import { FlowLedgerError } from "./receipt-ledger.js";
 import { requireAuthorityWork } from "./wait-authority.js";
+import { waitDecisionIntent } from "./wait-decisions.js";
 
 interface WorkIdentity {
 	id: string;
@@ -70,6 +72,17 @@ export class FlowWorkContext {
 		if (state.activeAttemptId !== attemptId || !attempt || attempt.phase !== "queued")
 			throw new FlowLedgerError("stale", "Work invocation requires the active queued attempt.");
 		const intent = attempt.admission?.choice.intent;
+		if (intent?.rank === 3 && intent.producer === "jouzu-wait-decisions") {
+			const waits = await attachment.waits.snapshot();
+			const wait = waits.find((item) => isDeepStrictEqual(waitDecisionIntent(item), intent));
+			if (!wait) throw new FlowLedgerError("stale", "Selected wait decision no longer matches retained state.");
+			const authority = await attachment.waits.authoritySnapshot();
+			const work = authority.work.find((item) => item.id === wait.workId);
+			if (this.attachment() !== attachment) throw new FlowLedgerError("stale", "Selected wait branch changed.");
+			// Paused or finished work may receive a notification, but cannot restart tools.
+			if (!work || (work.lifecycle?.state ?? "active") !== "active") return this.run(undefined, invoke);
+			return this.run({ id: work.id, actor: work.owner, revision: work.revision }, invoke);
+		}
 		if (!intent || ![4, 5].includes(intent.rank)) return this.run(undefined, invoke);
 		if (!intent.workId) return this.run(undefined, invoke);
 		const authority = await attachment.waits.authoritySnapshot();

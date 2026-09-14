@@ -227,3 +227,93 @@ test("a policy the background producer does not register is refused", async (t) 
 		[],
 	);
 });
+
+test("a standalone wait decision owns its work for background and wait tools", async (t) => {
+	const background = await controlledBackground(t);
+	let phase = 0,
+		originalWork,
+		token,
+		nextToken;
+	const f = await assembledSession(t, {
+		producerExtensions: await installedProducerExtensions(),
+		script: (body) => {
+			if (phase++ === 0)
+				return assistantToolCalls({ name: "bg_task", arguments: { action: "spawn", command: background.command } });
+			if (phase === 2) {
+				const dependency = waitDependencyFrom(body);
+				originalWork = dependency.work.id;
+				return assistantToolCalls({
+					name: "agent_wait",
+					arguments: {
+						work: originalWork,
+						reason: "Wait for job",
+						deadline: "30m",
+						on: [
+							{
+								producer: dependency.producer,
+								handle: dependency.handle,
+								execution: dependency.execution,
+								until: dependency.until,
+							},
+						],
+					},
+				});
+			}
+			if (phase === 3) return { text: "Waiting" };
+			if (phase === 4)
+				return assistantToolCalls({ name: "bg_task", arguments: { action: "spawn", command: background.command } });
+			if (phase === 5) {
+				const dependency = waitDependencyFrom(body);
+				assert.equal(dependency.work.id, originalWork);
+				return assistantToolCalls({
+					name: "agent_wait",
+					arguments: {
+						work: originalWork,
+						reason: "Inspect next job",
+						deadline: "30m",
+						on: [
+							{
+								producer: dependency.producer,
+								handle: dependency.handle,
+								execution: dependency.execution,
+								until: dependency.until,
+							},
+						],
+					},
+				});
+			}
+			if (phase === 6) {
+				const result = body.messages.findLast(
+					(message) => message.role === "tool" && message.content.includes("agent_wait"),
+				);
+				nextToken = result.content.match(/agent_wait \w+ \[([^\]]+)\]/)?.[1];
+				assert.ok(nextToken);
+				return assistantToolCalls({
+					name: "agent_wait_cancel",
+					arguments: { token: nextToken, reason: "Decision complete" },
+				});
+			}
+			return { text: "Decision complete" };
+		},
+	});
+	await f.session.prompt("Run and wait for a job");
+	const waits = await f.ingress.branch().attachment.waits.snapshot();
+	token = waits[0].token;
+	const before = f.bodies.length;
+	await background.release();
+	await waitForSettledWake(f, before);
+	await f.session.waitForIdle();
+	assert.equal(phase, 7);
+	assert.notEqual(nextToken, token);
+	assert.equal(
+		(await f.ingress.branch().attachment.ledger.snapshot()).attempts.find((attempt) => attempt.admission)?.admission
+			.choice.intent.rank,
+		3,
+	);
+	assert.deepEqual(f.errors, []);
+	assert.ok(
+		!toolResults(f.sessionManager).some(
+			(text) => text.includes("does not belong") || text.includes("requires current owning work"),
+		),
+	);
+});

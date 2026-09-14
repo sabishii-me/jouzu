@@ -12,7 +12,7 @@ import type { FlowWaitStore } from "./wait-store.js";
 import { type FlowWaitToolReceipt, observedWaitToolReceipt } from "./wait-tool-response.js";
 
 const namespace = "jouzu-wait-decisions";
-function descriptor(wait: FlowWaitState): FlowIntent | undefined {
+export function waitDecisionIntent(wait: FlowWaitState): FlowIntent | undefined {
 	// Explicit gate cancellation is already handled by its caller; it does not request a decision turn.
 	if (wait.state === "waiting" || wait.state === "cancelled") return undefined;
 	const id = createHash("sha256")
@@ -34,7 +34,7 @@ function descriptor(wait: FlowWaitState): FlowIntent | undefined {
 export function retainedWaitDecisionIds(waits: readonly FlowWaitState[]): Set<string> {
 	return new Set(
 		waits.flatMap((wait) => {
-			const intent = descriptor(wait);
+			const intent = waitDecisionIntent(wait);
 			return intent ? [intent.id] : [];
 		}),
 	);
@@ -72,7 +72,7 @@ async function deliveredNativeDecisions(
 ): Promise<Set<string>> {
 	const expected = new Map(
 		waits.flatMap((wait) => {
-			const intent = descriptor(wait);
+			const intent = waitDecisionIntent(wait);
 			return intent ? [[intent.id, decisionText(wait)] as const] : [];
 		}),
 	);
@@ -106,7 +106,7 @@ async function deliveredNativeDecisions(
 				if (projection.message.role === "toolResult") {
 					const receipt = observedWaitToolReceipt(projection.message, toolReceipts);
 					const wait = receipt && waits.find((wait) => wait.token === receipt.token);
-					const intent = wait && descriptor(wait);
+					const intent = wait && waitDecisionIntent(wait);
 					if (intent) delivered.add(intent.id);
 				} else acknowledge(projection.message);
 			}
@@ -129,7 +129,7 @@ async function deliveredNativeDecisions(
  * evidence.
  */
 function deliveredComposedDecision(wait: FlowWaitState, ledger: FlowLedgerState): boolean {
-	const intent = descriptor(wait);
+	const intent = waitDecisionIntent(wait);
 	if (!intent) return false;
 	return ledger.attempts.some((attempt) => {
 		if (attempt.phase !== "settled" || attempt.outcome !== "success") return false;
@@ -176,7 +176,7 @@ export async function observedFlowWaits(
 	const delivered = await deliveredNativeDecisions(waits, native, toolReceipts);
 	return waits.filter((wait) => {
 		if (wait.state === "cancelled") return true;
-		const intent = descriptor(wait);
+		const intent = waitDecisionIntent(wait);
 		if (!intent) return false;
 		return delivered.has(intent.id) || deliveredComposedDecision(wait, ledger);
 	});
@@ -199,7 +199,7 @@ export function createFlowWaitDecisionProducer(
 			const ledger = await native?.ledger?.snapshot();
 			signal.throwIfAborted();
 			return waits.flatMap((wait) => {
-				const intent = descriptor(wait);
+				const intent = waitDecisionIntent(wait);
 				if (!intent || delivered.has(intent.id)) return [];
 				return ledger && deliveredComposedDecision(wait, ledger) ? [] : [intent];
 			});
@@ -208,7 +208,7 @@ export function createFlowWaitDecisionProducer(
 			signal.throwIfAborted();
 			const waits = await store.snapshot();
 			signal.throwIfAborted();
-			const wait = waits.find((candidate) => isDeepStrictEqual(descriptor(candidate), intent));
+			const wait = waits.find((candidate) => isDeepStrictEqual(waitDecisionIntent(candidate), intent));
 			if (!wait) throw new FlowLedgerError("stale", "Wait decision no longer matches retained state.");
 			return {
 				id: intent.id,

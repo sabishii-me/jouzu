@@ -204,3 +204,36 @@ test("native root may select consumed user work after revoking the old scope", a
 		await context.runTool(async () => assert.equal(context.current().id, "other"));
 	});
 });
+
+for (const variant of ["valid", "foreign-work", "foreign-branch", "paused", "completed"])
+	test(`wait-decision authority validates its durable identity: ${variant}`, async (t) => {
+		const { waitDecisionIntent } = await import("../dist/flow-control/wait-decisions.js");
+		const { context, attachment } = await fixture(t);
+		const wait = {
+			token: "wait",
+			scope: attachment.ledger.scope,
+			workId: "work",
+			state: "expired",
+			createdAt: 0,
+			endedAt: 1,
+		};
+		const intent = waitDecisionIntent(wait);
+		if (variant === "foreign-work") intent.workId = "other";
+		if (variant === "foreign-branch")
+			intent.id = waitDecisionIntent({ ...wait, scope: { ...wait.scope, branchId: "elsewhere" } }).id;
+		attachment.waits.snapshot = async () => [wait];
+		attachment.ledger.snapshot = async () => ({
+			activeAttemptId: "attempt",
+			attempts: [{ id: "attempt", phase: "queued", admission: { choice: { intent } } }],
+		});
+		if (["paused", "completed"].includes(variant))
+			await attachment.waits.changeWork("work", "lane", 1, variant, "Lifecycle test", 1);
+		const invoke = () =>
+			context.runSelected("attempt", async () => {
+				assert.throws(() => context.authorize("other"), { code: "identity" });
+				if (variant === "valid") assert.equal(context.authorize("work").actor, "lane");
+				else assert.equal(context.current(), undefined);
+			});
+		if (variant.startsWith("foreign")) await assert.rejects(invoke(), { code: "stale" });
+		else await invoke();
+	});
