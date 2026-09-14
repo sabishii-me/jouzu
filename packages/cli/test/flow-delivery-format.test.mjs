@@ -199,6 +199,54 @@ test("result rendering covers the four-sample cap boundary and omitted members",
 	assert.equal(hiddenCount(tight), String(7 - shownCount(tight)));
 });
 
+test("an over-long member title wraps within the width and survives whole on expansion", async () => {
+	// The producer caps a task title at 512 characters, then appends ": <status> (exit N)".
+	const title = `${'W'.repeat(512)}: completed (exit 0)`;
+	const { item } = await buildFlowResultEnvelope({
+		attemptId: "a",
+		runMembers: [],
+		id: "i",
+		revision: "1",
+		members: [
+			{
+				id: "r0",
+				producer: "bg",
+				execution: "e0",
+				revision: "1",
+				status: "success",
+				title,
+				reference: "ref0",
+				warnings: [],
+			},
+		],
+		producerOrder: ["bg"],
+		maxBytes: 20000,
+		retain: async () => `flow-results:${"a".repeat(64)}`,
+	});
+	const input = FlowModelInput.compose("a", [item], 20000);
+
+	for (const width of [40, 80]) {
+		const lines = render(input.content, false, width);
+		for (const line of lines) assert.ok(terminalTextWidth(line) <= width, `${terminalTextWidth(line)} > ${width}: ${line}`);
+		// The sample wraps rather than collapsing to one line: the title fills more than one row.
+		assert.ok(lines.filter((line) => line.includes("W")).length >= 2);
+	}
+
+	const collapsed = render(input.content, false, 80).join("\n");
+	assert.ok(collapsed.includes("…"), "the sample marks where it was cut");
+	// The collapsed sample fits the title to about 100 columns before wrapping, so the
+	// marker plus the title never spans much more than that however long the title is.
+	const sampleLines = render(input.content, false, 80).filter((line) => line.includes("W"));
+	const titleColumns = sampleLines.reduce(
+		(total, line, index) => total + terminalTextWidth((index === 0 ? line.replace(/^\s+[✓⊘✗]\s/, "") : line).trimEnd()),
+		0,
+	);
+	assert.ok(titleColumns <= 105, `collapsed title spans ${titleColumns} columns`);
+	// A consequence of that cap: a long title loses its status suffix in the collapsed view.
+	assert.ok(!collapsed.includes("completed (exit 0)"));
+	assert.ok(render(input.content, true, 20000).join("\n").includes(title), "expansion keeps the full title");
+});
+
 for (const content of [
 	{ wait: null },
 	{ wait: { state: "resolved", observations: [null] } },
