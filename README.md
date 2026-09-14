@@ -95,6 +95,8 @@ Session flow control is on by default. Background completions wait for active wo
 
 Task continuations keep the task's work identity, so they can start background jobs and declare or cancel waits. Dependencies and explicit pauses hold automatic continuation. Use `TaskUpdate` with `waitForUser: true` when an answer is needed, or `paused: true` to pause a task; clear the corresponding field to continue. A task with unchanged instructions and state stops after three admitted continuation attempts. Saved tasks without a work binding appear in `/flow`; start them with `TaskUpdate` (`status: "in_progress"`) or `TaskExecute` from a user turn.
 
+Run `/flow runtime` to see the running and installed builds and the resolved flow-adapter paths and hashes captured at startup. Jouzu warns once per session if the installed build changes or a required adapter patch differs at startup. Restart to load a changed build.
+
 Run `/flow` to see held work and its recovery commands. `/flow pause` holds automatic turns, and `/flow resume` releases them. Interrupting a turn also pauses automatic work until your next message or `/flow resume`. Pausing does not stop running shell jobs.
 
 If the session stays stuck after an interrupt, run `/flow reset` while idle. It releases the blocked turn without stopping background jobs or deleting execution records. When Jouzu cannot tell whether a provider answered a request, `/flow resolve <attempt> retry|discard` records your decision; retrying may repeat a turn the provider already answered.

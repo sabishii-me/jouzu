@@ -33,6 +33,7 @@ export interface FlowControlRuntimeOptions {
 	/** Reported to the user; flow failures never silently bypass admission. */
 	onError(error: unknown): void;
 	limits?: Partial<FlowControlLimits>;
+	runtimeReport?(): string;
 }
 
 export interface FlowControlRuntime {
@@ -71,6 +72,7 @@ export function createFlowControlRuntime(options: FlowControlRuntimeOptions): Fl
 	const noReply = createFlowNoReplyExtension({ ingress });
 	const status = createFlowStatusExtension({
 		ingress,
+		runtimeReport: options.runtimeReport,
 		unaccountable: () => [
 			...multiloop
 				.unboundLanes()

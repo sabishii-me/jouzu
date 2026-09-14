@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { copyFileSync, mkdirSync, readFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
@@ -32,3 +32,26 @@ if (serverVersion !== version || cliPackage.bundleDependencies?.includes(serverP
 mkdirSync(dirname(destination), { recursive: true });
 copyFileSync(source, destination);
 console.log(`copied Pi ${version} lock to ${destination}`);
+
+// Runtime diagnostics reuse the same expected bytes as the build patch checks.
+const taskPatch = JSON.parse(readFileSync(resolve(root, "upstream/task-flow/patch.lock.json"), "utf8"));
+const backgroundPatch = JSON.parse(readFileSync(resolve(root, "upstream/background-flow/patch.lock.json"), "utf8"));
+const loopPatch = JSON.parse(readFileSync(resolve(root, "upstream/multiloop-wait-skill/patch.lock.json"), "utf8"));
+const patches = [
+	{ package: taskPatch.package, files: { "src/index.ts": taskPatch.after, "src/jouzu-flow.ts": taskPatch.runtime } },
+	{
+		package: backgroundPatch.package,
+		files: {
+			...Object.fromEntries(Object.entries(backgroundPatch.files).map(([path, hashes]) => [path, hashes.after])),
+			"extensions/jouzu-flow.ts": backgroundPatch.runtime,
+		},
+	},
+	{
+		package: loopPatch.package,
+		files: {
+			[loopPatch.extension.path]: loopPatch.extension.after,
+			"extensions/pi-multiloop/jouzu-flow.ts": loopPatch.runtime,
+		},
+	},
+];
+writeFileSync(resolve(dirname(destination), "flow-patches.json"), `${JSON.stringify(patches, null, 2)}\n`);

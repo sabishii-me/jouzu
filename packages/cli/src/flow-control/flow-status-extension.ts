@@ -9,10 +9,12 @@ export interface FlowStatusOptions {
 	/** Work a loaded producer still names that this session holds no authority for. */
 	unaccountable?(): FlowUnaccountableWork[];
 	now?(): number;
+	runtimeReport?(): string;
 }
 
 const USAGE = [
 	"/flow shows what session flow control is holding.",
+	"/flow runtime shows running and installed builds and startup package paths and hashes.",
 	"/flow retry <request> authorizes one withheld request.",
 	"/flow cancel <token> removes a wait's dependency gate without stopping its job.",
 	"/flow pause holds every automated turn in this session; /flow resume releases it.",
@@ -62,6 +64,10 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 					const [verb, target, choice, ...rest] = args.trim().split(/\s+/).filter(Boolean);
 					const notify = (text: string, level: "info" | "error" = "info") => ctx.ui.notify(text, level);
 					try {
+						if (verb === "runtime" && !target && !choice && !rest.length) {
+							notify(options.runtimeReport?.() ?? "Runtime diagnostics are unavailable in this session.");
+							return;
+						}
 						const ingress = options.ingress();
 						if (verb === undefined) {
 							const inspected = await ingress.inspect();

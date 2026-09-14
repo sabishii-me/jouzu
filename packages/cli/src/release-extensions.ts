@@ -392,11 +392,26 @@ export function formatReleaseExtensionFailure(failure: ReleaseExtensionFailure):
 	return `Optional extension ${failure.packageName}@${failure.packageVersion} is unavailable.${tools} ${failure.error} Run \`jz doctor\` for details.`;
 }
 
-export function createReleaseExtensionDiagnostics(status: ReleaseExtensionStatus): InlineExtension {
+export function createReleaseExtensionDiagnostics(
+	status: ReleaseExtensionStatus,
+	runtime?: { warnings(): string[] },
+): InlineExtension {
 	return {
 		name: "jouzu-release-extension-diagnostics",
 		factory: (pi) => {
+			const warned = new Set<string>();
+			const warn = (context: { hasUI: boolean; ui: { notify(message: string, level: "warning"): void } }) => {
+				for (const message of runtime?.warnings() ?? []) {
+					if (warned.has(message)) continue;
+					warned.add(message);
+					if (context.hasUI) context.ui.notify(message, "warning");
+					else console.error(`Jouzu warning: ${message}`);
+				}
+			};
+			pi.on("agent_end", (_event, context) => warn(context));
 			pi.on("session_start", (_event, context) => {
+				warned.clear();
+				warn(context);
 				for (const failure of status.degradedExtensions) {
 					const message = formatReleaseExtensionFailure(failure);
 					if (context.hasUI) context.ui.notify(message, "warning");

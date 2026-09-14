@@ -45,6 +45,7 @@ import {
 	withReleaseExtensionConflictPolicy,
 } from "./release-extensions.js";
 import { configurePiProcess, type ProfileSelection, resolveProfileSelection } from "./runtime.js";
+import { createRuntimeDiagnostics } from "./runtime-diagnostics.js";
 import { withJouzuOutput } from "./runtime-output.js";
 import { createShisaExtension } from "./shisa-link/extension.js";
 import { offerShisaOnboarding } from "./shisa-link/onboarding.js";
@@ -324,7 +325,11 @@ export async function runMainCli(args: string[]): Promise<void> {
 	probeReleaseRuntimeCompatibility(releaseExtensionStatus);
 	ensureReleaseRuntimeCompatibility(releaseExtensionStatus);
 	const piArgs = withReleaseExtensionArguments(parsed.args, releaseExtensionStatus);
-	const releaseDiagnostics = createReleaseExtensionDiagnostics(releaseExtensionStatus);
+	const runtimeDiagnostics = createRuntimeDiagnostics(
+		metadata,
+		usesReleaseExtensions(parsed.args) ? releaseExtensionStatus.resolvedPackageRoots : {},
+	);
+	const releaseDiagnostics = createReleaseExtensionDiagnostics(releaseExtensionStatus, runtimeDiagnostics);
 	const textguard = parsed.options.textguardPython
 		? (await import("./textguard-extension.js")).createTextGuardExtension({
 				python: parsed.options.textguardPython,
@@ -349,6 +354,7 @@ export async function runMainCli(args: string[]): Promise<void> {
 		process.env.JOUZU_FLOW_CONTROL !== "0"
 			? (await import("./flow-control/flow-runtime.js")).createFlowControlRuntime({
 					root: join(paths.stateDir, "flow"),
+					runtimeReport: runtimeDiagnostics.report,
 					onError: (error) =>
 						console.error(`Jouzu flow control: ${error instanceof Error ? error.message : String(error)}`),
 				})
