@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.1.10 - Unreleased
+
+### Added
+
+- Add an unsigned Windows installer preview with per-user installation, bundled Node.js/npm, Git Bash, Windows Terminal, ripgrep, and fd. Desktop and Start menu shortcuts open a project-folder picker and Jouzu setup. Installation verifies the payload before activation, supports rollback, and preserves user data outside the installation directory on uninstall. See [Windows installer preview](packaging/windows/README.md).
+- Inspect the loaded flow runtime with `/flow runtime`, including build and extension identity, and warn when a rebuild requires restarting the session.
+
+### Changed
+
+- Start resumed interactive sessions with automatic turns paused. Your next message or `/flow resume` releases the pause; inspecting `/flow` leaves it paused.
+- Render flow wakes as readable wait and result summaries, with the full envelope available on expansion. Present structured wait and result content to the model without nested JSON serialization while preserving receipts and source bytes.
+- Explain how task continuations, background completion notifications, and dependency waits work together in agent guidance. Encourage waiting for completion instead of repeated polling.
+
+### Fixed
+
+- Recover flow admission after compaction, interrupted requests, and sustained use exhaust retained history. Preserve pending user input and results through cancellation and recovery, and keep `/flow reset` usable for recoverable retained state.
+- Reopen oversized flow journals by checkpointing retained state without loading the entire journal into one string.
+- Bind task continuations and wait-decision turns to their owning work so authorized background and wait tools remain usable. Respect task holds and reject stale continuations.
+- Recheck quiet background processes through producer snapshots. Keep health decisions on the affected wait so later waits and completion results remain usable; repair older execution health records on reattachment.
+- Preserve top-level reasoning-token usage reported by compatible providers.
+
+### Testing limits
+
+- Completed live flow probes found no new session lockups or input/result-loss defects after the repairs; some scenarios remain unverified. Cross-turn management of another work's wait remains restricted; users can cancel a wait with `/flow cancel <token>`.
+- The Windows installer is an unpublished, unsigned preview. Native testing used Windows Server 2025 x64 and a 0.1.9 payload. A 0.1.10 installer, clean Windows 10/11 qualification, signing, and an uninterrupted final build/acceptance run remain pending.
+
 ## 0.1.9 - 2026-09-13
 
 ### Added
