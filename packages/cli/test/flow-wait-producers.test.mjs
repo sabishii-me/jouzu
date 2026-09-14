@@ -436,3 +436,161 @@ test("execution retirement rechecks producer eligibility and registration owners
 	assert.throws(selection.assertCurrent, { code: "stale" });
 	assert.deepEqual((await f.attachment.waits.authoritySnapshot()).executions, records);
 });
+
+for (const state of ["unhealthy", "health-unknown"]) {
+	test(`reattachment repairs retained ${state} execution without changing its decided wait`, async (t) => {
+		const f = await fixture(t);
+		await f.attachment.waits.registerExecution(
+			{ producer: "bg", ...identity, revision: 1, predicates: [{ until: "exit", state: "pending" }] },
+			2,
+			0,
+		);
+		const request = waitRequest();
+		request.on[0].health = "pid";
+		await f.attachment.waits.declareOwned("lane", 2, request, 0, Date.now() + 100000);
+		// Reproduce the persisted format written by the former monitor.
+		await f.attachment.waits.observeExecution(request.on[0], 2, [{ until: "exit", state }], 1);
+		const [decided] = await f.attachment.waits.snapshot();
+		await f.reopen();
+		const producer = source();
+		f.attachment.waitProducers.register(producer, (error) => f.errors.push(error));
+		await f.attachment.waitProducers.restorePending();
+		assert.equal(producer.listeners, 1);
+		assert.deepEqual((await f.attachment.waits.authoritySnapshot()).executions[0].predicates, [
+			{ until: "exit", state: "pending" },
+		]);
+		assert.deepEqual((await f.attachment.waits.snapshot())[0], decided);
+		await f.attachment.waits.declareOwned("lane", 2, { ...waitRequest(), token: "retry" }, Date.now(), 100000);
+		producer.emit(evidence(2, "satisfied"));
+		await f.attachment.waitProducers.probeExecution("bg", identity.execution);
+		assert.equal((await f.attachment.waits.snapshot())[1].state, "resolved");
+		assert.deepEqual((await f.attachment.waits.snapshot())[0], decided);
+		await f.reopen();
+		assert.equal((await f.attachment.waits.snapshot())[1].state, "resolved");
+		assert.deepEqual(f.errors, []);
+	});
+}
+
+test("a late snapshot cannot overwrite a completion delivered during the probe", async (t) => {
+	const f = await fixture(t),
+		entered = deferred(),
+		answer = deferred();
+	let calls = 0;
+	const producer = source(async () => {
+		if (++calls === 1) return evidence();
+		entered.resolve();
+		return answer.promise;
+	});
+	const binding = await f.attachment.waitProducers
+		.register(producer, (error) => f.errors.push(error))
+		.bind(identity, 2);
+	const probe = f.attachment.waitProducers.probeExecution("bg", identity.execution);
+	await entered.promise;
+	producer.emit(evidence(2, "satisfied"));
+	await binding.flush();
+	answer.resolve(evidence());
+	await probe;
+	assert.equal((await f.attachment.waits.authoritySnapshot()).executions[0].predicates[0].state, "satisfied");
+	assert.deepEqual(f.errors, []);
+});
+
+test("an abandoned snapshot cannot publish late evidence or close the subscription", async (t) => {
+	const f = await fixture(t),
+		entered = deferred(),
+		answer = deferred();
+	let calls = 0;
+	const producer = source(async () => {
+		if (++calls === 1) return evidence();
+		entered.resolve();
+		return answer.promise;
+	});
+	const binding = await f.attachment.waitProducers
+		.register(producer, (error) => f.errors.push(error))
+		.bind(identity, 2);
+	const abort = new AbortController();
+	const probe = f.attachment.waitProducers.probeExecution("bg", identity.execution, abort.signal);
+	const rejected = assert.rejects(probe, { name: "AbortError" });
+	await entered.promise;
+	abort.abort();
+	answer.resolve(evidence(2, "failed"));
+	await rejected;
+	assert.equal(producer.listeners, 1);
+	producer.emit(evidence(2, "satisfied"));
+	await binding.flush();
+	assert.equal((await f.attachment.waits.authoritySnapshot()).executions[0].predicates[0].state, "satisfied");
+	assert.deepEqual(f.errors, []);
+});
+
+test("repair preserves producer terminal predicates and refuses ownership changes", async (t) => {
+	const f = await fixture(t);
+	const store = f.attachment.waits;
+	const predicates = [
+		{ until: "exit", state: "health-unknown" },
+		{ until: "output", state: "satisfied" },
+	];
+	await store.registerExecution({ producer: "bg", ...identity, revision: 2, predicates }, 2, 0);
+	const before = await store.authoritySnapshot();
+	await assert.rejects(
+		store.synchronizeExecution(
+			{
+				producer: "bg",
+				...identity,
+				revision: 1,
+				predicates: [
+					{ until: "exit", state: "pending" },
+					{ until: "output", state: "pending" },
+				],
+			},
+			2,
+			1,
+		),
+		/terminal evidence/,
+	);
+	await assert.rejects(
+		store.synchronizeExecution({ producer: "bg", ...identity, handle: "other", revision: 1, predicates }, 2, 1),
+		/ownership/,
+	);
+	assert.deepEqual(await store.authoritySnapshot(), before);
+	await store.synchronizeExecution(
+		{
+			producer: "bg",
+			...identity,
+			revision: 1,
+			predicates: [
+				{ until: "exit", state: "pending" },
+				{ until: "output", state: "satisfied" },
+			],
+		},
+		2,
+		1,
+	);
+	assert.equal((await store.authoritySnapshot()).executions[0].predicates[1].state, "satisfied");
+});
+
+test("wait-local health survives reopening while completion stays subscribable", async (t) => {
+	const f = await fixture(t);
+	const store = f.attachment.waits;
+	await store.registerExecution(
+		{ producer: "bg", ...identity, revision: 1, predicates: [{ until: "exit", state: "pending" }] },
+		2,
+		0,
+	);
+	const request = waitRequest();
+	request.on[0].health = "pid";
+	await store.declareOwned("lane", 2, request, 0, Date.now() + 100000);
+	const [execution] = (await store.authoritySnapshot()).executions;
+	assert.equal(await store.observeWaitHealth(request.token, request.on[0], execution, "health-unknown", 1), true);
+	const original = await store.snapshot();
+	await f.reopen();
+	assert.deepEqual(await f.attachment.waits.snapshot(), original);
+	const producer = source();
+	f.attachment.waitProducers.register(producer, (error) => f.errors.push(error));
+	await f.attachment.waitProducers.restorePending();
+	assert.equal(producer.listeners, 1);
+	await f.attachment.waits.declareOwned("lane", 2, { ...waitRequest(), token: "retry" }, Date.now(), 100000);
+	producer.emit(evidence(2, "satisfied"));
+	await f.attachment.waitProducers.probeExecution("bg", identity.execution);
+	assert.equal((await f.attachment.waits.snapshot())[1].state, "resolved");
+	assert.deepEqual((await f.attachment.waits.snapshot())[0], original[0]);
+	assert.deepEqual(f.errors, []);
+});

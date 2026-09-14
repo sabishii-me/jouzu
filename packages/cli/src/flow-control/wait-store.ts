@@ -30,6 +30,7 @@ import {
 	cancelFlowWait,
 	createFlowWait,
 	expireFlowWait,
+	type FlowWaitHandle,
 	type FlowWaitObservation,
 	type FlowWaitState,
 	reconcileFlowWait,
@@ -85,6 +86,18 @@ function validateWait(wait: FlowWaitState): void {
 		);
 	}
 	if (!isDeepStrictEqual(wait, expected)) throw new FlowLedgerError("schema", "Invalid retained wait state.");
+}
+
+const isHealthDecision = (state: string) => state === "unhealthy" || state === "health-unknown";
+
+/** A health decision belongs to this wait. Producer results still take precedence. */
+function ownedWaitObservations(authority: FlowWaitAuthority, wait: FlowWaitState): FlowWaitObservation[] {
+	return authorityObservations(authority, wait.scope, wait.workId, wait.on).map((observation, index) => {
+		const prior = wait.observations[index];
+		return observation.state === "pending" && prior && isHealthDecision(prior.state)
+			? { ...observation, state: prior.state }
+			: observation;
+	});
 }
 
 /** Atomic wait transitions under the existing branch writer lease; no producer callbacks run in a transaction. */
@@ -255,7 +268,7 @@ export class FlowWaitStore {
 			if (wait.state === "waiting" && state.authority?.waitTokens.includes(wait.token)) {
 				const work = state.authority.work.find((work) => work.id === wait.workId);
 				if (work) requireOpenAuthorityWork(work);
-				const observations = authorityObservations(state.authority, state.scope, wait.workId, wait.on);
+				const observations = ownedWaitObservations(state.authority, wait);
 				if (!isDeepStrictEqual(wait, reconcileFlowWait(wait, observations, wait.createdAt)))
 					throw new FlowLedgerError("identity", "Live wait does not match registered execution evidence.");
 			}
@@ -361,7 +374,7 @@ export class FlowWaitStore {
 			validateWaitAuthority(authority);
 			state.waits = state.waits.map((wait) =>
 				wait.state === "waiting" && authority.waitTokens.includes(wait.token)
-					? reconcileFlowWait(wait, authorityObservations(authority, state.scope, wait.workId, wait.on), now)
+					? reconcileFlowWait(wait, ownedWaitObservations(authority, wait), now)
 					: wait,
 			);
 			return result;
@@ -490,6 +503,22 @@ export class FlowWaitStore {
 			if (!existing) return registerAuthorityExecution(authority, captured, workRevision, now);
 			if (existing.workId !== captured.workId || existing.handle !== captured.handle)
 				throw new FlowLedgerError("identity", "Execution snapshot changed registered ownership.");
+			if (existing.predicates.some((predicate) => isHealthDecision(predicate.state))) {
+				if (
+					existing.predicates.length !== captured.predicates.length ||
+					existing.predicates.some((prior) => {
+						const next = captured.predicates.find((item) => item.until === prior.until);
+						return !next || (prior.state !== "pending" && !isHealthDecision(prior.state) && prior.state !== next.state);
+					})
+				)
+					throw new FlowLedgerError("transition", "Execution repair changed producer terminal evidence.");
+				const repaired = registerAuthorityExecution({ ...authority, executions: [] }, captured, workRevision, now);
+				existing.revision = repaired.revision;
+				existing.predicates = repaired.predicates;
+				existing.observedAt = now;
+				existing.healthSince = now;
+				return existing;
+			}
 			return observeAuthorityExecution(authority, captured, captured.revision, captured.predicates, now);
 		});
 	}
@@ -524,6 +553,38 @@ export class FlowWaitStore {
 			execution.healthEvidence = retainFlowHealthEvidence(execution.healthEvidence, captured);
 			execution.healthSince ??= now;
 			return execution;
+		});
+	}
+
+	/** Commit only against the exact evidence assessed; a concurrent producer report wins. */
+	observeWaitHealth(
+		token: string,
+		handle: FlowWaitHandle,
+		expected: FlowAuthorityExecution,
+		verdict: "unhealthy" | "health-unknown",
+		now: number,
+	): Promise<boolean> {
+		const captured = structuredClone({ handle, expected });
+		return this.update((state) => {
+			const wait = state.waits.find((wait) => wait.token === token);
+			if (wait?.state !== "waiting" || !state.authority?.waitTokens.includes(token)) return false;
+			const index = wait.on.findIndex((item) => isDeepStrictEqual(item, captured.handle));
+			const execution = state.authority.executions.find(
+				(item) => item.producer === handle.producer && item.execution === handle.execution,
+			);
+			if (
+				index < 0 ||
+				!handle.health ||
+				!execution ||
+				execution.workId !== wait.workId ||
+				!isDeepStrictEqual(execution, captured.expected)
+			)
+				return false;
+			const observations = ownedWaitObservations(state.authority, wait);
+			if (observations[index].state !== "pending") return false;
+			observations[index].state = verdict;
+			state.waits[state.waits.indexOf(wait)] = reconcileFlowWait(wait, observations, now);
+			return true;
 		});
 	}
 

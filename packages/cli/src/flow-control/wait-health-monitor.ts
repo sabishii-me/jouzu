@@ -6,7 +6,7 @@ import type { FlowWaitHandle, FlowWaitState } from "./wait-state.js";
 import type { FlowWaitStore } from "./wait-store.js";
 
 export interface FlowHealthMonitorOptions {
-	store: Pick<FlowWaitStore, "snapshot" | "authoritySnapshot" | "observeExecution">;
+	store: Pick<FlowWaitStore, "snapshot" | "authoritySnapshot" | "observeWaitHealth">;
 	/** Resolves the policy a wait requested, or undefined once its producer is gone. */
 	policy(handle: FlowWaitHandle, workId: string): FlowHealthPolicy | undefined;
 	/**
@@ -14,7 +14,7 @@ export interface FlowHealthMonitorOptions {
 	 * directly before treating stale evidence as a decision. Resolves when the producer has
 	 * reported, or is abandoned once the policy's probe timeout passes.
 	 */
-	probe(handle: FlowWaitHandle): Promise<unknown>;
+	probe(handle: FlowWaitHandle, signal: AbortSignal): Promise<unknown>;
 	clock: FlowWaitClock;
 	onError(error: unknown): void;
 }
@@ -27,8 +27,8 @@ const key = (handle: { producer: string; handle: string; execution: string }) =>
  *
  * Evidence arriving from a producer is what refreshes health; this exists for its absence. An
  * execution that stops reporting produces no event, so only a timer can notice that its evidence
- * went stale and its probe went unanswered. A decision is written as an execution predicate, the
- * same path all producer evidence takes, so the wait's own reducer decides the outcome.
+ * went stale and its probe went unanswered. Health decisions are retained on the affected wait, so later waits and producer results
+ * remain independent of that assessment.
  */
 export class FlowWaitHealthMonitor {
 	private stopped = false;
@@ -45,16 +45,18 @@ export class FlowWaitHealthMonitor {
 	 * abandons the wait rather than the request: the grace period then decides on its own schedule.
 	 */
 	private async probeOnce(handle: FlowWaitHandle, timeoutMs: number): Promise<void> {
+		const abort = new AbortController();
 		let release: (() => void) | undefined;
 		const bounded = new Promise<void>((resolve) => {
 			release = this.options.clock.after(timeoutMs, resolve);
 		});
 		try {
-			await Promise.race([this.options.probe(handle).then(() => undefined), bounded]);
+			await Promise.race([this.options.probe(handle, abort.signal).then(() => undefined), bounded]);
 		} catch (error) {
 			// A producer that throws is evidence it cannot answer, which grace already handles.
 			this.options.onError(error);
 		} finally {
+			abort.abort();
 			release?.();
 		}
 	}
@@ -92,13 +94,18 @@ export class FlowWaitHealthMonitor {
 			.filter((wait) => wait.state === "waiting")
 			.flatMap((wait) =>
 				wait.on
-					.filter((handle) => handle.health !== undefined)
+					.filter(
+						(handle, index) =>
+							handle.health !== undefined && !["unhealthy", "health-unknown"].includes(wait.observations[index]?.state),
+					)
 					.flatMap((handle) => {
 						const execution = byKey.get(key(handle));
 						// A wait cannot be live without its execution registered, so a miss is a real
 						// inconsistency rather than a race to absorb silently.
 						if (!execution) throw new FlowLedgerError("identity", "Monitored dependency has no registered execution.");
-						return execution.predicates.some((predicate) => predicate.state === "pending")
+						return execution.predicates.some(
+							(predicate) => predicate.until === handle.until && predicate.state === "pending",
+						)
 							? [{ wait, handle, execution }]
 							: [];
 					}),
@@ -115,6 +122,8 @@ export class FlowWaitHealthMonitor {
 				this.options.store.authoritySnapshot(),
 			]);
 			if (this.stopped) return;
+			const liveTokens = new Set(waits.filter((wait) => wait.state === "waiting").map((wait) => wait.token));
+			for (const id of this.probed) if (!liveTokens.has(JSON.parse(id)[0])) this.probed.delete(id);
 			let next = Infinity;
 			for (const { wait, handle, execution } of this.monitored(waits, authority.executions)) {
 				const policy = this.options.policy(handle, wait.workId);
@@ -125,37 +134,27 @@ export class FlowWaitHealthMonitor {
 					policy,
 					execution.healthEvidence,
 					now,
-					execution.healthSince ?? execution.observedAt,
+					Math.max(wait.createdAt, execution.healthSince ?? execution.observedAt),
 					wait.expiresAt,
 				);
+				const since = Math.max(wait.createdAt, execution.healthSince ?? execution.observedAt);
+				const staleAt = Math.max(execution.healthEvidence?.observedAt ?? since, since) + policy.freshnessMs;
+				const probeKey = JSON.stringify([wait.token, key(handle)]);
+				// A delayed scan must still ask before deciding that evidence is unavailable.
+				if (verdict.state !== "unhealthy" && now >= staleAt && !this.probed.has(probeKey)) {
+					this.probed.add(probeKey);
+					await this.probeOnce(handle, policy.probeTimeoutMs);
+					if (this.stopped) return;
+					this.requested = true;
+					continue;
+				}
+				if (now < staleAt) this.probed.delete(probeKey);
 				if (verdict.state === "healthy") {
-					// Evidence has gone stale when the next check is the end of grace rather than a
-					// cadence step. Ask the producer once, bounded, before that grace runs out.
-					const since = execution.healthSince ?? execution.observedAt;
-					const staleAt = Math.max(execution.healthEvidence?.observedAt ?? since, since) + policy.freshnessMs;
-					if (now >= staleAt && !this.probed.has(key(handle))) {
-						this.probed.add(key(handle));
-						await this.probeOnce(handle, policy.probeTimeoutMs);
-						if (this.stopped) return;
-						this.requested = true;
-						continue;
-					}
-					if (now < staleAt) this.probed.delete(key(handle));
 					if (verdict.nextCheckAt < wait.expiresAt) next = Math.min(next, verdict.nextCheckAt);
 					continue;
 				}
-				// Terminal for this dependency. The execution transition guard refuses to overwrite an
-				// already terminal predicate, so a decision cannot displace a real result.
-				await this.options.store.observeExecution(
-					{ producer: handle.producer, handle: handle.handle, execution: handle.execution },
-					execution.revision + 1,
-					execution.predicates.map((predicate) =>
-						predicate.until === handle.until && predicate.state === "pending"
-							? { until: predicate.until, state: verdict.state }
-							: predicate,
-					),
-					now,
-				);
+				// End this wait's dependency assessment without changing the producer's exit state.
+				await this.options.store.observeWaitHealth(wait.token, handle, execution, verdict.state, now);
 				if (this.stopped) return;
 				// Storage changed, so the next pass reads the decision rather than trusting this one.
 				this.requested = true;

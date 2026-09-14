@@ -138,6 +138,23 @@ test("wait tools use host work authority and cannot claim another registered wor
 	const [wait] = await attachment.waits.snapshot();
 	assert.equal(wait.workId, "work");
 	assert.equal(wait.state, "waiting");
+	await attachment.waits.shareWork("other", "lane", 1, "bg", 2);
+	await context.run({ ...work, id: "other", revision: 2 }, async () => {
+		await assert.rejects(
+			tools
+				.get("agent_wait_cancel")
+				.execute("cancel", { token: wait.token, reason: "User changed work" }, undefined, undefined, {
+					sessionManager: { getSessionId: () => "session" },
+				}),
+			/Requested work does not belong to this invocation/,
+		);
+		await assert.rejects(
+			execute({ ...request, replaceToken: wait.token }),
+			/Requested work does not belong to this invocation/,
+		);
+		await assert.rejects(execute({ ...request, work: "other" }), /different ownership/);
+	});
+	assert.deepEqual(await attachment.waits.snapshot(), [wait], "refused management leaves the original wait intact");
 });
 
 test("revocation preserves the invocation reservation until native execution returns", async (t) => {

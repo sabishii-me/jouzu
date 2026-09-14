@@ -57,9 +57,8 @@ const identity = (input: unknown): input is string =>
 	typeof input === "string" && input.length > 0 && input.length <= 512;
 const revision = (input: number) => Number.isSafeInteger(input) && input > 0;
 const instant = (input: number) => Number.isSafeInteger(input) && input >= 0;
-// `unhealthy` and `health-unknown` are terminal like any other non-pending predicate, so the
-// transition guard below already stops a late health probe from reopening a settled execution and
-// stops a health decision from overwriting a terminal result.
+// Health evidence is independent of producer terminal predicates. The monitor records its
+// decision on the wait; producer observations remain available for subsequent waits.
 const validHealthEvidence = (evidence: FlowHealthEvidence): boolean =>
 	!!evidence &&
 	identity(evidence.policy) &&

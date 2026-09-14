@@ -43,11 +43,15 @@ interface ProducerRegistration {
 		workRevision: number,
 	): Promise<{ flush(): Promise<void>; close(): Promise<void> }>;
 	flushExecution(execution: string): Promise<boolean>;
+	probeExecution(execution: string, signal?: AbortSignal): Promise<boolean>;
 	closeExecution(execution: string): Promise<boolean>;
 	canRetireExecution(identity: FlowExecutionIdentity): boolean;
 	healthPolicies(identity: FlowExecutionIdentity): FlowHealthPolicy[];
 	close(): Promise<void>;
 }
+
+// Health decisions written by earlier builds are not producer terminal evidence.
+const needsExecutionEvidence = (state: string) => ["pending", "unhealthy", "health-unknown"].includes(state);
 
 /** One namespace registration per attachment; each execution has one subscription owner. */
 export class FlowWaitProducerRegistry {
@@ -126,6 +130,12 @@ export class FlowWaitProducerRegistry {
 				if (!binding) return false;
 				await binding.close();
 				if (bindings.get(execution) === binding) bindings.delete(execution);
+				return true;
+			},
+			probeExecution: async (execution: string, signal?: AbortSignal) => {
+				const binding = bindings.get(execution);
+				if (!binding) return false;
+				await binding.probe(signal);
 				return true;
 			},
 			flushExecution: async (execution: string) => {
@@ -236,11 +246,11 @@ export class FlowWaitProducerRegistry {
 	 * requires: a quiet execution reports nothing on its own, so staleness alone cannot decide until
 	 * the producer has been asked directly.
 	 */
-	async probeExecution(namespace: string, execution: string): Promise<boolean> {
+	async probeExecution(namespace: string, execution: string, signal?: AbortSignal): Promise<boolean> {
 		if (this.closed) return false;
 		const producer = this.producers.get(namespace);
 		if (!producer) return false;
-		return producer.flushExecution(execution);
+		return producer.probeExecution(execution, signal);
 	}
 
 	async bindForWait(
@@ -259,7 +269,7 @@ export class FlowWaitProducerRegistry {
 		if (known && (known.workId !== captured.workId || known.handle !== captured.handle))
 			throw new FlowLedgerError("identity", "Wait execution has different ownership.");
 		if (this.closed) throw new FlowLedgerError("stale", "Wait producer registry is closed.");
-		if (known?.predicates.every((predicate) => predicate.state !== "pending")) return;
+		if (known?.predicates.every((predicate) => !needsExecutionEvidence(predicate.state))) return;
 		const producer = this.producers.get(namespace);
 		if (!producer) throw new FlowLedgerError("identity", "Wait producer is not attached.");
 		if (!(await producer.flushExecution(captured.execution))) await producer.bind(captured, workRevision);
@@ -275,7 +285,7 @@ export class FlowWaitProducerRegistry {
 			let closed = 0;
 			for (const execution of authority.executions) {
 				if (this.closed) throw new FlowLedgerError("stale", "Wait producer registry is closed.");
-				if (execution.predicates.some((predicate) => predicate.state === "pending")) continue;
+				if (execution.predicates.some((predicate) => needsExecutionEvidence(predicate.state))) continue;
 				if (await this.producers.get(execution.producer)?.closeExecution(execution.execution)) closed++;
 			}
 			return closed;
@@ -292,7 +302,7 @@ export class FlowWaitProducerRegistry {
 		if (this.closed) throw new FlowLedgerError("stale", "Wait producer registry is closed.");
 		if (this.updating) throw new FlowLedgerError("busy", "Producer subscriptions are changing.");
 		const selected = records.flatMap((execution) => {
-			if (execution.predicates.some((predicate) => predicate.state === "pending")) return [];
+			if (execution.predicates.some((predicate) => needsExecutionEvidence(predicate.state))) return [];
 			const producer = this.producers.get(execution.producer);
 			const identity = {
 				scope: { ...this.scope },
@@ -329,7 +339,7 @@ export class FlowWaitProducerRegistry {
 		try {
 			const authority = await this.store.authoritySnapshot();
 			const pending = authority.executions.filter((execution) =>
-				execution.predicates.some((predicate) => predicate.state === "pending"),
+				execution.predicates.some((predicate) => needsExecutionEvidence(predicate.state)),
 			);
 			const missing = [
 				...new Set(
@@ -552,6 +562,26 @@ class ExecutionBinding {
 		} while (this.buffer.length);
 		this.abort.signal.throwIfAborted();
 		this.ready = true;
+	}
+	/** Re-read the producer without blocking event delivery while its snapshot is pending. */
+	async probe(signal?: AbortSignal): Promise<void> {
+		await this.flush();
+		const active = signal ? AbortSignal.any([signal, this.abort.signal]) : this.abort.signal;
+		active.throwIfAborted();
+		const evidence = this.check(await this.snapshot(structuredClone(this.identity), active));
+		active.throwIfAborted();
+		const report = this.tail.then(async () => {
+			active.throwIfAborted();
+			const current = (await this.store.authoritySnapshot()).executions.find(
+				(item) => item.producer === this.namespace && item.execution === this.identity.execution,
+			);
+			active.throwIfAborted();
+			// An event may have advanced the execution while the snapshot was in flight.
+			if (current && evidence.revision < current.revision) return;
+			await this.observe(evidence);
+		});
+		this.tail = report.catch(() => {});
+		await report;
 	}
 	async flush(): Promise<void> {
 		await this.starting;

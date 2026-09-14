@@ -475,3 +475,112 @@ test("a result receipt survives the live task being cleared", async (t) => {
 	assert.deepEqual(results.retainedWorkIds(), []);
 	assert.throws(() => source.setResultReceipt("bg-result:missing", "1", "delivered", true), /unavailable/);
 });
+
+test("real background snapshot probing keeps a quiet process waitable and detects a missed exit", async (t) => {
+	const { spawn } = await import("node:child_process");
+	const { once } = await import("node:events");
+	const { FlowWaitHealthMonitor } = await import("../dist/flow-control/wait-health-monitor.js");
+	const { createBackgroundFlowSource } = await loadBackground(t);
+	const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+	await once(child, "spawn");
+	t.after(async () => {
+		if (child.exitCode === null && child.signalCode === null) {
+			const exit = once(child, "exit");
+			child.kill();
+			await exit;
+		}
+	});
+	const directory = await mkdtemp(join(tmpdir(), "jouzu-health-real-"));
+	const scope = { sessionId: "health-real", branchId: "branch" };
+	const attachment = await PiFlowAttachment.open(directory, scope);
+	const now = Date.now();
+	t.mock.timers.enable({ apis: ["Date"], now });
+	const { systemWaitClock } = await import("../dist/flow-control/wait-deadlines.js");
+	t.mock.method(systemWaitClock, "now", () => Date.now());
+	const task = {
+		id: "quiet",
+		sessionId: scope.sessionId,
+		status: "running",
+		pid: child.pid,
+		flow: { version: 1, execution: "quiet-execution", scope, work: { id: "work", revision: 2 } },
+	};
+	const api = createBackgroundFlowSource(() => [task]);
+	const errors = [];
+	await attachment.waits.registerWork("work", "lane", now);
+	await attachment.waits.shareWork("work", "lane", 1, "bg", now);
+	attachBackgroundWaitSource(
+		attachment,
+		api,
+		(error) => errors.push(error),
+		() => ({ id: "work", revision: 2 }),
+	);
+	const identity = { producer: "bg", handle: task.id, execution: task.flow.execution };
+	await attachment.waitProducers.bindForWait(
+		"bg",
+		{ workId: "work", handle: task.id, execution: task.flow.execution },
+		2,
+	);
+	const handle = { ...identity, until: "exit", health: "bg-process-alive-v1" };
+	const request = {
+		token: "first",
+		scope,
+		workId: "work",
+		reason: "quiet process",
+		mode: "all",
+		on: [handle],
+		expiresAt: now + 1000000,
+	};
+	await attachment.waits.declareOwned("lane", 2, request, now, 1000000);
+	const monitor = new FlowWaitHealthMonitor({
+		store: attachment.waits,
+		policy: (h) =>
+			attachment.waitProducers.healthPolicy(
+				h.producer,
+				{ workId: "work", handle: h.handle, execution: h.execution },
+				h.health,
+			),
+		probe: (h, signal) => attachment.waitProducers.probeExecution(h.producer, h.execution, signal),
+		clock: { now: () => Date.now(), after: () => () => {} },
+		onError: (error) => errors.push(error),
+	});
+	t.after(async () => {
+		await monitor.stop();
+		await attachment.close();
+		await rm(directory, { recursive: true, force: true });
+	});
+	t.mock.timers.tick(120000);
+	await monitor.refresh();
+	assert.equal(
+		(await attachment.waits.authoritySnapshot()).executions[0].healthEvidence.observedAt,
+		Date.now(),
+		"a probe actually rechecks the quiet process",
+	);
+	t.mock.timers.tick(35000);
+	await monitor.refresh();
+	assert.equal((await attachment.waits.snapshot())[0].state, "waiting");
+	const exited = once(child, "exit");
+	child.kill();
+	await exited;
+	// The producer intentionally still says running: no producer exit event was emitted.
+	t.mock.timers.tick(120000);
+	await monitor.refresh();
+	assert.equal((await attachment.waits.snapshot())[0].state, "unhealthy");
+	assert.deepEqual((await attachment.waits.authoritySnapshot()).executions[0].predicates, [
+		{ until: "exit", state: "pending" },
+	]);
+	assert.equal(await attachment.waitProducers.closeTerminalSubscriptions(), 0);
+	const next = await attachment.waits.declareOwned(
+		"lane",
+		2,
+		{ ...request, token: "next", on: [{ ...identity, until: "exit" }] },
+		Date.now(),
+		1000000,
+	);
+	assert.equal(next.state, "waiting", "a health decision does not poison the execution");
+	task.status = "completed";
+	api.publish(task);
+	await attachment.waitProducers.probeExecution("bg", task.flow.execution);
+	assert.equal((await attachment.waits.snapshot()).find((w) => w.token === "next").state, "resolved");
+	assert.equal((await attachment.waits.snapshot()).find((w) => w.token === "first").state, "unhealthy");
+	assert.deepEqual(errors, []);
+});

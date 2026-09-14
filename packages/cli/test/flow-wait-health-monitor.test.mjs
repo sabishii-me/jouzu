@@ -86,9 +86,9 @@ async function fixture(t, { policyFor = () => policy, onProbe } = {}) {
 		store,
 		policy: policyFor,
 		// The producer answers a probe by reporting fresh evidence, the way a real one would.
-		probe: async (handle) => {
+		probe: async (handle, signal) => {
 			probes.push(handle.execution);
-			await onProbe?.(store, time.now());
+			await onProbe?.(store, time.now(), signal);
 		},
 		clock: time,
 		onError: (error) => errors.push(error),
@@ -135,9 +135,9 @@ test("an execution that stops reporting ends the wait after its probe and grace"
 	assert.equal(await waitState(f.store), "waiting", "grace has not run out");
 	await f.time.advance(1);
 	assert.equal(await waitState(f.store), "health-unknown");
-	// The decision is recorded on the execution itself, which is what makes it survive a reopen.
+	// The decision is durable on the wait; the execution remains eligible for later results.
 	const [execution] = (await f.store.authoritySnapshot()).executions;
-	assert.deepEqual(execution.predicates, [{ until: "exit", state: "health-unknown" }]);
+	assert.deepEqual(execution.predicates, [{ until: "exit", state: "pending" }]);
 	assert.deepEqual(f.errors, []);
 });
 
@@ -248,4 +248,140 @@ test("a producer that cannot answer its probe still ends the wait when grace run
 	assert.equal(f.errors.length, 1);
 	await f.time.advance(15_000);
 	assert.equal(await waitState(f.store), "health-unknown");
+});
+
+test("a delayed first scan probes before declaring health unknown", async (t) => {
+	const f = await fixture(t, {
+		onProbe: (store, now) =>
+			store.observeExecutionHealth(
+				monitored,
+				{ policy: policy.name, revision: 1, observedAt: now, state: "healthy" },
+				now,
+			),
+	});
+	await f.time.advance(100_000);
+	await f.monitor.refresh();
+	assert.deepEqual(f.probes, ["exec"]);
+	assert.equal(await waitState(f.store), "waiting");
+	assert.deepEqual(f.errors, []);
+});
+
+test("health unknown leaves a fresh wait and subsequent completion usable", async (t) => {
+	const f = await fixture(t);
+	await f.time.advance(100_000);
+	await f.monitor.refresh();
+	assert.equal(await waitState(f.store), "health-unknown");
+	const [original] = await f.store.snapshot();
+	const request = {
+		token: "retry",
+		scope,
+		workId: "work",
+		reason: "retry",
+		mode: "all",
+		on: [monitored],
+		expiresAt: 10_000_000,
+	};
+	await f.store.declareOwned("lane", 2, request, f.time.now(), 10_000_000);
+	await f.monitor.refresh();
+	assert.equal((await f.store.snapshot())[1].state, "waiting");
+	await f.store.observeExecution(monitored, 2, [{ until: "exit", state: "satisfied" }], f.time.now());
+	assert.deepEqual((await f.store.snapshot())[0], original);
+	assert.equal((await f.store.snapshot())[1].state, "resolved");
+	assert.deepEqual(f.errors, []);
+});
+
+test("producer evidence arriving after assessment wins the atomic health update", async (t) => {
+	const f = await fixture(t);
+	const [assessed] = (await f.store.authoritySnapshot()).executions;
+	await f.store.observeExecutionHealth(
+		monitored,
+		{ policy: policy.name, revision: 1, observedAt: 100, state: "healthy" },
+		100,
+	);
+	assert.equal(await f.store.observeWaitHealth("token", monitored, assessed, "health-unknown", 100), false);
+	assert.equal(await waitState(f.store), "waiting");
+	const [latest] = (await f.store.authoritySnapshot()).executions;
+	await f.store.observeExecution(monitored, 2, [{ until: "exit", state: "satisfied" }], 101);
+	assert.equal(await f.store.observeWaitHealth("token", monitored, latest, "health-unknown", 101), false);
+	assert.equal(await waitState(f.store), "resolved");
+});
+
+test("any-mode retains local health across updates and lets another result resolve", async (t) => {
+	const f = await fixture(t);
+	await f.store.registerExecution(
+		{
+			producer: "bg",
+			handle: "other",
+			execution: "other",
+			workId: "work",
+			revision: 1,
+			predicates: [{ until: "exit", state: "pending" }],
+		},
+		2,
+		0,
+	);
+	await f.store.declareOwned(
+		"lane",
+		2,
+		{
+			token: "any",
+			scope,
+			workId: "work",
+			reason: "either",
+			mode: "any",
+			on: [monitored, { ...monitored, handle: "other", execution: "other", health: undefined }],
+			expiresAt: 10_000_000,
+		},
+		0,
+		10_000_000,
+		"token",
+	);
+	await f.time.advance(100_000);
+	await f.monitor.refresh();
+	let wait = (await f.store.snapshot()).find((w) => w.token === "any");
+	assert.equal(wait.state, "waiting");
+	assert.equal(wait.observations[0].state, "health-unknown");
+	await f.store.observeExecutionHealth(
+		monitored,
+		{ policy: policy.name, revision: 1, observedAt: f.time.now(), state: "healthy" },
+		f.time.now(),
+	);
+	await f.monitor.refresh();
+	wait = (await f.store.snapshot()).find((w) => w.token === "any");
+	assert.equal(wait.observations[0].state, "health-unknown");
+	assert.deepEqual(f.probes, ["exec"]);
+	await f.store.observeExecution(
+		{ ...monitored, handle: "other", execution: "other" },
+		2,
+		[{ until: "exit", state: "satisfied" }],
+		f.time.now(),
+	);
+	assert.equal((await f.store.snapshot()).find((w) => w.token === "any").state, "resolved");
+	assert.deepEqual(f.errors, []);
+});
+
+test("an unanswered probe times out and aborts before the health decision", async (t) => {
+	let started, probeSignal;
+	const entered = new Promise((resolve) => {
+		started = resolve;
+	});
+	const f = await fixture(t, {
+		onProbe: (_store, _now, signal) => {
+			probeSignal = signal;
+			started();
+			return new Promise(() => {});
+		},
+	});
+	await f.time.advance(60_000);
+	const running = f.monitor.refresh();
+	await entered;
+	await f.time.advance(5_000);
+	await running;
+	assert.equal(probeSignal.aborted, true);
+	assert.equal(await waitState(f.store), "waiting");
+	await f.time.advance(10_000);
+	await f.monitor.refresh();
+	assert.equal(await waitState(f.store), "health-unknown");
+	assert.deepEqual(f.probes, ["exec"]);
+	assert.deepEqual(f.errors, []);
 });
