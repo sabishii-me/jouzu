@@ -201,7 +201,7 @@ test("result rendering covers the four-sample cap boundary and omitted members",
 
 test("an over-long member title wraps within the width and survives whole on expansion", async () => {
 	// The producer caps a task title at 512 characters, then appends ": <status> (exit N)".
-	const title = `${'W'.repeat(512)}: completed (exit 0)`;
+	const title = `${"W".repeat(512)}: completed (exit 0)`;
 	const { item } = await buildFlowResultEnvelope({
 		attemptId: "a",
 		runMembers: [],
@@ -227,7 +227,8 @@ test("an over-long member title wraps within the width and survives whole on exp
 
 	for (const width of [40, 80]) {
 		const lines = render(input.content, false, width);
-		for (const line of lines) assert.ok(terminalTextWidth(line) <= width, `${terminalTextWidth(line)} > ${width}: ${line}`);
+		for (const line of lines)
+			assert.ok(terminalTextWidth(line) <= width, `${terminalTextWidth(line)} > ${width}: ${line}`);
 		// The sample wraps rather than collapsing to one line: the title fills more than one row.
 		assert.ok(lines.filter((line) => line.includes("W")).length >= 2);
 	}
