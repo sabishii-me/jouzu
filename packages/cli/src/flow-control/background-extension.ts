@@ -1,6 +1,7 @@
 import type { ExtensionAPI, InlineExtension, SessionManager } from "@earendil-works/pi-coding-agent";
 import { attachBackgroundWaitSource, type BackgroundFlowSourceAPI } from "./background-adapter.js";
 import { BackgroundResultProducer, type BackgroundResultSourceAPI } from "./background-results.js";
+import type { SessionFlowController } from "./controller.js";
 import type { PiFlowAttachment } from "./pi-attachment.js";
 import type { PiSessionFlowIngress } from "./pi-session-ingress.js";
 import { FlowLedgerError } from "./receipt-ledger.js";
@@ -17,6 +18,7 @@ export function createBackgroundControllerExtension(options: {
 	let attached: PiFlowAttachment | undefined;
 	let results: BackgroundResultProducer | undefined;
 	let registration: ReturnType<PiSessionFlowIngress["registerProducer"]> | undefined;
+	let controller: SessionFlowController | undefined;
 	let installed: PiFlowAttachment | undefined;
 	let events: ExtensionAPI["events"] | undefined;
 	return {
@@ -30,7 +32,8 @@ export function createBackgroundControllerExtension(options: {
 				const ingress = options.ingress();
 				if (ingress.branch().attachment !== attached)
 					throw new FlowLedgerError("stale", "Background result branch changed.");
-				registration = ingress.branch().controller.register(results, async () => ingress.requestRelease());
+				controller = ingress.branch().controller;
+				registration = controller.register(results, async () => ingress.requestRelease());
 				installed = attached;
 				ingress.requestRelease();
 			};
@@ -67,6 +70,7 @@ export function createBackgroundControllerExtension(options: {
 			attachBackgroundWaitSource(attachment, source, options.onError, options.currentWork);
 			attached = attachment;
 			registration = undefined;
+			controller = undefined;
 			if (options.ingress) {
 				if (typeof source.activateResults !== "function" || typeof source.acknowledgeResult !== "function")
 					throw new FlowLedgerError("schema", "Background result delivery API is unavailable.");
@@ -74,7 +78,20 @@ export function createBackgroundControllerExtension(options: {
 					attachment,
 					source as BackgroundFlowSourceAPI & BackgroundResultSourceAPI,
 					() => {
-						if (attached === attachment && registration) void registration.changed().catch(options.onError);
+						if (attached !== attachment || !registration || !controller) return;
+						const owner = controller;
+						const current = registration;
+						const report = (error: unknown) => {
+							if (attached === attachment && registration === current && owner.view().state !== "closed")
+								options.onError(error);
+						};
+						// Child exit callbacks can arrive while the controller is closed but its source is draining.
+						if (owner.view().state === "closed") return;
+						try {
+							void current.changed().catch(report);
+						} catch (error) {
+							report(error);
+						}
 					},
 				);
 			}

@@ -15,7 +15,7 @@
 
 ### Fixed
 
-- Stop the full background process tree on Windows so child processes do not survive task cancellation or session shutdown.
+- Stop the full background process tree on Windows so child processes do not survive task cancellation or session shutdown. Ignore late completion notifications after their flow controller closes.
 - Return rendered page bodies and the full search result list to the model. Mark truncated pages, empty searches, and searches that reach the requested result limit.
 - Attach browser screenshots to tool results, default screenshot requests to JPEG, and report images over 1 MiB with size-reduction instructions.
 - Recover flow admission after compaction, interrupted requests, and sustained use exhaust retained history. Preserve pending user input and results through cancellation and recovery, and keep `/flow reset` usable for recoverable retained state.
@@ -27,7 +27,7 @@
 ### Testing limits
 
 - Completed live flow probes found no new session lockups or input/result-loss defects after the repairs; some scenarios remain unverified. Cross-turn management of another work's wait remains restricted; users can cancel a wait with `/flow cancel <token>`.
-- The Windows installer is an unpublished, unsigned preview. Native testing used Windows Server 2025 x64 and a 0.1.9 payload. A 0.1.10 installer, clean Windows 10/11 qualification, signing, and an uninterrupted final build/acceptance run remain pending.
+- The Windows installer is an unpublished, unsigned preview. A diagnostic 0.1.10 installer passed a complete native build and acceptance run on Windows Server 2025 x64. Qualification of the final release payload, clean Windows 10/11 testing, and signing remain pending.
 
 ## 0.1.9 - 2026-09-13
 
