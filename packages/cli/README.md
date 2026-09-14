@@ -16,6 +16,8 @@ Jouzu v0.1.x is **alpha** software. Expect frequent updates and changes.
 
 ## Requirements
 
+For npm installations:
+
 - Node.js 22.19 or newer and npm
 - Git
 - Bash (`bash` on Linux/macOS; Git Bash on Windows)
@@ -41,7 +43,9 @@ jz doctor
 npx --yes jouzu --version
 ```
 
-[GitHub Releases](https://github.com/shisa-ai/jouzu/releases) include the same tested npm tarball, checksums, and package manifest from v0.1.7 onward. These are npm packages, not standalone executables.
+[GitHub Releases](https://github.com/shisa-ai/jouzu/releases) include the same tested npm tarball, checksums, and package manifest from v0.1.7 onward. These release assets contain npm packages.
+
+An unsigned [Windows installer preview](https://github.com/shisa-ai/jouzu/blob/main/packaging/windows/README.md) can be built locally. It bundles Node.js/npm, Git Bash, Windows Terminal, and native tools, with desktop and Start menu shortcuts. The preview has not been published as a download; clean Windows 10/11 qualification and signing remain pending.
 
 ## Quick start
 
@@ -184,13 +188,15 @@ Conflicting plans exit with status 3. Backups are retained below the Jouzu state
 
 ## State and isolation
 
-Default roots are:
+Default roots for npm installations are:
 
 | Platform | Agent/config | State and sessions | Cache |
 | --- | --- | --- | --- |
 | Linux | `${XDG_CONFIG_HOME:-~/.config}/jouzu/agent` | `${XDG_STATE_HOME:-~/.local/state}/jouzu` | `${XDG_CACHE_HOME:-~/.cache}/jouzu` |
 | macOS | `~/Library/Application Support/Jouzu/agent` | `~/Library/Application Support/Jouzu/state` | `~/Library/Caches/Jouzu` |
 | Windows | `%APPDATA%\Jouzu\agent` | `%LOCALAPPDATA%\Jouzu\state` | `%LOCALAPPDATA%\Jouzu\cache` |
+
+The Windows installer preview stores configuration, sessions, and caches under `%LOCALAPPDATA%\JouzuDesktop\data`.
 
 Override all roots together with `--jouzu-home <path>` or `JOUZU_HOME`:
 
@@ -337,6 +343,8 @@ jz self-update policy off
 
 `JOUZU_NO_UPDATE=1` disables startup checks for one invocation. `JOUZU_UPDATE_POLICY=auto-restart|notify|off` overrides the persisted policy for one process (an invalid value fails safe as `off`), and `JOUZU_UPDATE_INTERVAL_HOURS` changes the successful-check cadence. `self-update check --json` and `self-update status --json` provide machine-readable results.
 
+The Windows installer preview updates by running a newer installer. Desktop launches disable automatic npm updates.
+
 Startup checks contact the configured npm registry but send no Jouzu telemetry. Updates finish before the interactive session starts.
 
 Interactive launches clear the current viewport and show a compact adaptive Jouzu header. Set `JOUZU_NO_CLEAR=1` to preserve existing terminal output. `NO_COLOR` disables banner color.
@@ -349,13 +357,14 @@ Managed profile assets are UTF-8. Existing CP932/Shift-JIS profile targets produ
 
 ## Known limitations
 
-- npm is the only v0.1 application channel.
-- Node, npm, Git, Bash, and provider credentials are not bundled.
+- Published releases use npm and require separately installed Node.js/npm, Git, and Bash. The Windows installer preview bundles these dependencies but remains unsigned and unpublished.
+- The installer preview has native test coverage on Windows Server 2025 x64; clean Windows 10/11 qualification remains pending.
+- Shisa AI access requires sign-in or an API key.
 - Existing Pi `models.json` and `auth.json` require separate first-run consent; other stock Pi state is not imported.
 - Catalogs need input types and context/output limits to add models. Authenticated gateway catalogs supply the provider connection; other catalogs require a configured provider with a matching API.
 - Third-party Pi packages execute trusted code with the user's permissions and have their own platform support.
 - `Ctrl+Enter` and `Ctrl+Up` delivery depends on terminal/OS key reporting; both semantic bindings remain user-customizable.
-- Release checks cover Linux, macOS, and Windows, including native dependencies, npm installs, browser first use, and updater rollback.
+- npm release checks cover Linux, macOS, and Windows, including native dependencies, installs, browser first use, and updater rollback. Installer qualification is separate.
 
 ## Development
 
