@@ -355,6 +355,9 @@ export class PiNativeRequests {
 						throw new FlowLedgerError("identity", "Native request has no model conversion checkpoint.");
 					if (this.capture?.model && this.capture.model.hash !== hash(input.modelMessages))
 						throw new FlowLedgerError("stale", "Native model input changed after source disposition capture.");
+					// Continuous follow-ups may never expose an idle boundary. At this checkpoint
+					// the previous request has finished; retain its evidence before preparing another.
+					if (!store.recoveryBlocked) await store.retireSuperseded();
 					await store.begin(
 						{
 							id: input.requestId,
