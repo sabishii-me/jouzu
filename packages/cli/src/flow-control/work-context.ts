@@ -22,6 +22,7 @@ interface Invocation {
 export class FlowWorkContext {
 	private active?: Invocation;
 	private selected?: Invocation;
+	private returnWork: WorkIdentity[] = [];
 	private readonly invocations = new AsyncLocalStorage<Invocation | undefined>();
 	constructor(private readonly attachment: () => PiFlowAttachment) {}
 
@@ -56,6 +57,7 @@ export class FlowWorkContext {
 			invocation.active = false;
 			invocation.operation.active = false;
 			this.selected = undefined;
+			this.returnWork = [];
 			this.active = undefined;
 		}
 	}
@@ -100,7 +102,7 @@ export class FlowWorkContext {
 	}
 
 	/** Select fresh tool authority after exact native consumption; old scopes are never modified. */
-	async selectToolWork(work: { id: string; actor: string; revision: number }): Promise<boolean> {
+	async selectToolWork(work: WorkIdentity, retainParent = false): Promise<boolean> {
 		const root = this.active;
 		const caller = this.invocations.getStore();
 		if (!root || !caller || caller.operation !== root.operation || !root.operation.active) return false;
@@ -118,9 +120,34 @@ export class FlowWorkContext {
 		)
 			throw new FlowLedgerError("stale", "Queued work invocation changed.");
 		if (caller !== root) this.checkLifetime(caller);
+		if (retainParent && caller !== root) {
+			const previous = this.selected ?? root;
+			if (caller.parent !== previous)
+				throw new FlowLedgerError("stale", "Task selection changed before selecting child work.");
+			if (previous.work && previous.work.id !== work.id) this.returnWork.push({ ...previous.work });
+		} else this.returnWork = [];
 		if (this.selected) this.selected.active = false;
 		this.selected = { work: { ...work }, attachment, active: true, operation: root.operation };
 		return true;
+	}
+
+	/** Return only to authority retained when this invocation selected a child task. */
+	async returnFromToolWork(): Promise<boolean> {
+		const caller = this.invocations.getStore();
+		const selected = this.selected;
+		if (!caller || !selected || caller.parent !== selected) return false;
+		this.checkLifetime(caller);
+		const authority = await selected.attachment.waits.authoritySnapshot();
+		this.checkLifetime(caller);
+		const completed = authority.work.find((item) => item.id === selected.work?.id);
+		if (completed?.lifecycle?.state !== "completed") return false;
+		const parent = this.returnWork.at(-1);
+		if (!parent) return false;
+		const remaining = this.returnWork.slice(0, -1);
+		// selectToolWork validates the exact retained revision and active lifecycle.
+		const restored = await this.selectToolWork(parent);
+		if (restored) this.returnWork = remaining;
+		return restored;
 	}
 
 	captureInvocationCheck(): () => boolean {

@@ -254,3 +254,55 @@ for (const variant of ["valid", "foreign-work", "foreign-branch", "paused", "com
 		if (variant.startsWith("foreign")) await assert.rejects(invoke(), { code: "stale" });
 		else await invoke();
 	});
+
+for (const change of ["none", "revision", "paused", "branch", "revoked", "consumed"])
+	test(`completed child returns only to retained live authority: ${change}`, async (t) => {
+		const { context, attachment, changeBranch } = await fixture(t);
+		await context.run(work, async () => {
+			await context.runTool(async () => context.selectToolWork(otherWork, true));
+			await context.runTool(async () => {
+				assert.equal(await context.returnFromToolWork(), false, "active child cannot return");
+				await attachment.waits.changeWork("other", "lane", 1, "completed", "Done", 1);
+				if (change === "revision") await attachment.waits.shareWork("work", "lane", 1, "bg", 2);
+				if (change === "paused") await attachment.waits.changeWork("work", "lane", 1, "paused", "Pause", 2);
+				if (change === "branch") changeBranch();
+				if (change === "revoked") context.revoke();
+				if (change === "consumed") {
+					await context.selectToolWork(work);
+					assert.equal(await context.returnFromToolWork(), false);
+				} else if (change !== "none") await assert.rejects(context.returnFromToolWork(), { code: "stale" });
+				else assert.equal(await context.returnFromToolWork(), true);
+			});
+			if (["none", "consumed"].includes(change))
+				await context.runTool(async () => assert.equal(context.current().id, "work"));
+		});
+	});
+
+test("nested task selections return one authorized scope at a time", async (t) => {
+	const { context, attachment } = await fixture(t);
+	await attachment.waits.registerWork("nested", "lane", 0);
+	await context.run(work, async () => {
+		await context.runTool(async () => context.selectToolWork(otherWork, true));
+		await context.runTool(async () => context.selectToolWork({ ...work, id: "nested" }, true));
+		await context.runTool(async () => {
+			await attachment.waits.changeWork("nested", "lane", 1, "completed", "Done", 1);
+			assert.equal(await context.returnFromToolWork(), true);
+		});
+		await context.runTool(async () => {
+			assert.equal(context.current().id, "other");
+			await attachment.waits.changeWork("other", "lane", 1, "completed", "Done", 2);
+			assert.equal(await context.returnFromToolWork(), true);
+		});
+		await context.runTool(async () => assert.equal(context.current().id, "work"));
+	});
+});
+
+test("an admitted task cannot return to authority it never selected", async (t) => {
+	const { context, attachment } = await fixture(t);
+	await context.run(otherWork, async () => {
+		await context.runTool(async () => {
+			await attachment.waits.changeWork("other", "lane", 1, "completed", "Done", 1);
+			assert.equal(await context.returnFromToolWork(), false);
+		});
+	});
+});

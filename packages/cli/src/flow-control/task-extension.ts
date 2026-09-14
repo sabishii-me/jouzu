@@ -153,18 +153,23 @@ export function createTaskControllerExtension(options: {
 								);
 								if (source?.owner !== "host-user" && origin.id !== work.id && origin.id !== work.origin?.id)
 									throw new FlowLedgerError("identity", "Task selection belongs to another work invocation.");
-								await branch.workContext.selectToolWork({ id: work.id, actor: "tasks", revision: work.revision });
+								await branch.workContext.selectToolWork({ id: work.id, actor: "tasks", revision: work.revision }, true);
 							} else if (origin) {
 								// Refresh this task's revision for following tools after its own metadata changes.
 								const current = (await branch.attachment.waits.authoritySnapshot()).work.find(
 									(item) => item.id === origin.id,
 								);
 								if (current?.owner === "tasks" && (current.lifecycle?.state ?? "active") === "active")
-									await branch.workContext.selectToolWork({
-										id: current.id,
-										actor: "tasks",
-										revision: current.revision,
-									});
+									await branch.workContext.selectToolWork(
+										{
+											id: current.id,
+											actor: "tasks",
+											revision: current.revision,
+										},
+										true,
+									);
+								else if (current?.owner === "tasks" && current.lifecycle?.state === "completed")
+									await branch.workContext.returnFromToolWork();
 							}
 							changed();
 							return result;

@@ -502,3 +502,39 @@ test("stale task cancellation preserves joined results through provider delivery
 	assert.deepEqual(next.errors, []);
 	assert.deepEqual(f.errors, []);
 });
+
+for (const goal of [false, true])
+	test(`completing a selected task returns following tools to the invocation (goal=${goal})`, {
+		timeout: 15000,
+	}, async (t) => {
+		const setupData = await setup(t);
+		const f = await assembledSession(t, {
+			...setupData,
+			script: (_body, index) => {
+				if (index === 0)
+					return call("TaskCreateMany", {
+						tasks: [
+							{ subject: "First", description: "First bounded step" },
+							{ subject: "Second", description: "Second bounded step" },
+						],
+					});
+				if (index === 1) return call("TaskUpdate", { taskId: "1", status: "in_progress" });
+				if (index === 2) return call("TaskUpdate", { taskId: "1", status: "completed" });
+				if (index === 3) return call("TaskList", {});
+				if (index === 4) return call("TaskUpdate", { taskId: "2", status: "in_progress" });
+				if (index === 5) return call("TaskUpdate", { taskId: "2", status: "completed" });
+				if (index === 6) return call("TaskList", {});
+				if (goal && index === 7) return call("update_goal", { status: "complete" });
+				return { text: "Both steps completed" };
+			},
+		});
+		await f.session.prompt(`${goal ? "/goal " : ""}Create and complete both steps in this invocation`);
+		await until(f, () => f.bodies.length >= (goal ? 9 : 8));
+		await f.session.waitForIdle();
+		assert.ok(
+			messages(f).every((message) => !message.isError),
+			JSON.stringify(messages(f)),
+		);
+		assert.deepEqual(f.errors, []);
+		assert.equal(f.bodies.length, goal ? 9 : 8);
+	});
