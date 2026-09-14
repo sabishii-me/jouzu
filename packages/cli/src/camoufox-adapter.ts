@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync 
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { AgentToolResult, ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { ensurePrivateDirectory, validatePrivateDirectory } from "./private-fs.js";
 import { acquireStateLock, type StateLockInspection } from "./state-lock.js";
@@ -81,8 +81,18 @@ const fetchUrlParameters = Type.Object({
 	screenshot: Type.Optional(
 		Type.Object({
 			full_page: Type.Optional(Type.Boolean()),
-			format: Type.Optional(Type.Union([Type.Literal("png"), Type.Literal("jpeg")])),
-			quality: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
+			format: Type.Optional(
+				Type.Union([Type.Literal("png"), Type.Literal("jpeg")], {
+					description: "Image format. Defaults to jpeg, which is smaller; png is lossless and larger.",
+				}),
+			),
+			quality: Type.Optional(
+				Type.Integer({
+					minimum: 1,
+					maximum: 100,
+					description: "JPEG quality. Only valid when format is jpeg.",
+				}),
+			),
 		}),
 	),
 });
@@ -477,7 +487,138 @@ async function loadCamoufoxRuntime(stateDir: string, signal?: AbortSignal): Prom
 	};
 }
 
-function lazyTool(
+// Pi sends only a tool result's `content` to the model; `details` is for logs
+// and UI rendering. The Camoufox runtime reports the fetched body and the
+// search result list in `details` alone, so a result reaching the model
+// unchanged carries a byte count and nothing to read. Promote the payload into
+// `content`, which is also what the terminal renderer and the HTML export read
+// when a tool registers no renderResult of its own.
+export const CAMOUFOX_CONTENT_CHAR_LIMIT = 50_000;
+// Screenshots cost context in proportion to their encoded size, so only images
+// under this bound are attached. The runtime's own 10 MiB cap is a transfer
+// limit and fails the whole fetch, which is far above a useful image budget.
+export const CAMOUFOX_SCREENSHOT_BYTE_LIMIT = 1024 * 1024;
+
+function formatBytes(bytes: number): string {
+	if (bytes < 1024) return `${bytes} B`;
+	if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KiB`;
+	return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+}
+
+function boundedContent(text: string): string {
+	if (text.length <= CAMOUFOX_CONTENT_CHAR_LIMIT) return text;
+	return `${text.slice(0, CAMOUFOX_CONTENT_CHAR_LIMIT)}\n\n[truncated at ${CAMOUFOX_CONTENT_CHAR_LIMIT} of ${text.length} characters; re-fetch with a narrower selector to read the rest]`;
+}
+
+function searchResultText(details: Record<string, unknown>): string {
+	const results = Array.isArray(details.results) ? details.results : [];
+	if (results.length === 0) {
+		return "No results. An empty list can also mean the provider served a results page the extractor did not recognize, so treat it as inconclusive rather than as proof the query matched nothing. Retry, or pin `engine` to compare providers.";
+	}
+	const lines = results
+		.map((entry) => {
+			const result = entry as Record<string, unknown>;
+			const line = `${String(result.rank ?? "")}. ${String(result.title ?? "")} — ${String(result.url ?? "")}`;
+			const snippet = typeof result.snippet === "string" ? result.snippet.trim() : "";
+			return snippet ? `${line}\n   ${snippet}` : line;
+		})
+		.join("\n");
+	// `atLimit` only says the count equals the requested maximum, so the list is
+	// reported as possibly incomplete rather than as truncated.
+	if (details.atLimit !== true) return lines;
+	return `${lines}\n\n${results.length} results, the requested maximum. The provider may have had more matches; raise max_results or narrow the query to check.`;
+}
+
+function fetchedBodyText(details: Record<string, unknown>): string {
+	const body = details.format === "markdown" ? details.markdown : details.html;
+	return typeof body === "string" ? boundedContent(body) : "";
+}
+
+interface ScreenshotProjection {
+	block?: { type: "image"; data: string; mimeType: string };
+	line?: string;
+}
+
+// The runtime returns the image in `details.screenshot` alone, where no provider
+// or renderer reads it. Attach it to `content`, which pi-ai converts for image
+// models and replaces with a placeholder for models without image support, and
+// report the size instead when it exceeds the attachment bound.
+function screenshotProjection(details: Record<string, unknown>): ScreenshotProjection {
+	const screenshot = details.screenshot;
+	if (!screenshot || typeof screenshot !== "object") return {};
+	const { data, mimeType, bytes } = screenshot as Record<string, unknown>;
+	if (typeof data !== "string" || typeof mimeType !== "string") return {};
+	const size = typeof bytes === "number" ? bytes : Math.floor((data.length * 3) / 4);
+	if (size > CAMOUFOX_SCREENSHOT_BYTE_LIMIT) {
+		return {
+			line: `screenshot omitted: ${formatBytes(size)} exceeds the ${formatBytes(CAMOUFOX_SCREENSHOT_BYTE_LIMIT)} attachment limit. Retry with screenshot.full_page=false, or lower screenshot.quality.`,
+		};
+	}
+	return {
+		block: { type: "image", data, mimeType },
+		line: `screenshot: ${mimeType}, ${formatBytes(size)} attached to this result.`,
+	};
+}
+
+// The body and the screenshot are projected into `content`, and nothing reads
+// either from `details`: no provider serializer sends `details`, these tools
+// register no renderResult, and the terminal renderer falls back to `content`.
+// Dropping the second copy keeps up to `max_bytes` (2 MiB by default) and an
+// entire base64 image out of the stored tool result. The structured search list
+// stays, because it is small and useful to a renderer.
+function withoutProjectedPayload(details: Record<string, unknown>): Record<string, unknown> {
+	if (!("markdown" in details) && !("html" in details) && !("screenshot" in details)) return details;
+	const metadata = { ...details };
+	delete metadata.markdown;
+	delete metadata.html;
+	delete metadata.screenshot;
+	return metadata;
+}
+
+/** Default a screenshot request to JPEG, which is several times smaller than PNG. */
+function preferJpegScreenshot(params: unknown): unknown {
+	if (typeof params !== "object" || params === null) return params;
+	const input = params as Record<string, unknown>;
+	const screenshot = input.screenshot;
+	if (typeof screenshot !== "object" || screenshot === null) return input;
+	const options = screenshot as Record<string, unknown>;
+	if (options.format !== undefined) return input;
+	return { ...input, screenshot: { ...options, format: "jpeg" } };
+}
+
+/** Move a Camoufox tool's payload from `details` into the model-visible `content`. */
+export function projectCamoufoxToolResult(
+	toolName: string,
+	result: AgentToolResult<unknown>,
+): AgentToolResult<unknown> {
+	const details = (result.details ?? {}) as Record<string, unknown>;
+	const header = result.content
+		.filter((block) => block.type === "text")
+		.map((block) => block.text)
+		.join("\n");
+	const payload =
+		toolName === "tff-search_web"
+			? searchResultText(details)
+			: toolName === "tff-fetch_url"
+				? fetchedBodyText(details)
+				: "";
+	const screenshot = toolName === "tff-fetch_url" ? screenshotProjection(details) : {};
+	const parts = [header, screenshot.line ?? "", payload].filter((part) => part.length > 0);
+	// Preserve any non-text block, such as an image, that the tool returned.
+	const nonText = result.content.filter((block) => block.type !== "text");
+	return {
+		...result,
+		content: [
+			{ type: "text" as const, text: parts.join("\n\n") },
+			...nonText,
+			...(screenshot.block ? [screenshot.block] : []),
+		],
+		details: toolName === "tff-fetch_url" ? withoutProjectedPayload(details) : details,
+	};
+}
+
+/** Register a tool whose delegate is resolved on first call, projecting its payload. */
+export function lazyTool(
 	definition: Omit<ToolDefinition, "execute">,
 	getDelegate: (signal?: AbortSignal) => Promise<ToolDefinition>,
 ): ToolDefinition {
@@ -485,7 +626,9 @@ function lazyTool(
 		...definition,
 		async execute(toolCallId, params, signal, onUpdate, context) {
 			const delegate = await getDelegate(signal);
-			return delegate.execute(toolCallId, params, signal, onUpdate, context);
+			const delegateParams = definition.name === "tff-fetch_url" ? preferJpegScreenshot(params) : params;
+			const result = await delegate.execute(toolCallId, delegateParams, signal, onUpdate, context);
+			return projectCamoufoxToolResult(definition.name, result);
 		},
 	};
 }
@@ -544,8 +687,9 @@ export function createJouzuCamoufoxExtension(pi: ExtensionAPI, stateDir: string)
 					"render_mode: 'static' = DOM parsed only (fastest); 'render' = post-load (default); 'render-and-wait' = networkidle (pair with wait_for_selector for determinism — networkidle is fragile on modern pages).",
 					"wait_for_selector: only valid with render_mode='render-and-wait'. Waits for the element to be visible, reusing timeout_ms as the combined budget.",
 					"selector: returns the outerHTML of the first match only. No-match raises config_invalid.",
-					"format='markdown': returns markdown in details.markdown (HTML is dropped from details to save tokens). Use when the page content is the target, not the markup.",
-					"screenshot: returns base64 image in details.screenshot. full_page=true captures the whole page; default is viewport. Images > 10 MiB are rejected.",
+					"format='markdown': returns the page as markdown in the tool result (the raw HTML is omitted). Use when the page content is the target, not the markup.",
+					"A fetched body is capped at 50000 characters in the tool result and marked when truncated. Narrow selector to read the remainder.",
+					"screenshot: attaches the image to the tool result, which models without image support receive as a placeholder. JPEG is the default; full_page=true captures the whole page, and the default is the viewport. An image over 1 MiB is not attached, and the result reports its size instead.",
 					"timeout_ms is clamped between 1000 and 120000; shared across nav + wait_for_selector.",
 					"max_bytes caps the *returned body* (markdown if requested, else HTML); default 2 MiB, max 50 MiB. Oversized responses are truncated and flagged.",
 					"isolate: true opens a one-shot browser context so cookies/storage do not leak across calls.",
@@ -570,6 +714,8 @@ export function createJouzuCamoufoxExtension(pi: ExtensionAPI, stateDir: string)
 					"tff-search_web installs its exact browser client runtime on first use, then downloads the Camoufox browser if needed.",
 					"max_results is clamped to [1, 50]; default 10.",
 					"Default engine is 'auto' (Google first, DuckDuckGo fallback). Set engine to 'google' or 'duckduckgo' to pin a specific provider.",
+					"An empty result list is inconclusive: a provider can serve a results page the extractor does not recognize. Retry, or pin `engine`, before concluding the query matched nothing.",
+					"A result count equal to max_results is reported as possibly incomplete; raise max_results or narrow the query to check.",
 				],
 				parameters: searchWebParameters,
 				executionMode: camoufoxExecutionMode,
