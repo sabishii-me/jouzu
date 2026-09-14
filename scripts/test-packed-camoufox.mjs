@@ -107,7 +107,12 @@ async function probe(temp, consumer) {
 			new AbortController().signal,
 		);
 		assert.equal(result.details.status, 200);
-		assert.match(result.details.markdown, /Example Domain/u);
+		const fetchedText = result.content
+			.filter((block) => block.type === "text")
+			.map((block) => block.text)
+			.join("\n");
+		assert.match(fetchedText, /Example Domain/u);
+		assert.equal("markdown" in result.details, false);
 		assert.equal(existsSync(runtimePaths.receipt), true, "the first tool call did not install the runtime receipt");
 		assert.equal(adapter.inspectJouzuCamoufoxRuntime(stateDir).status, "ready");
 		const runtimeManifest = JSON.parse(readFileSync(join(jouzuRoot, "camoufox-runtime", "package.json"), "utf8"));

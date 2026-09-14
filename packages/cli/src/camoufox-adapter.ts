@@ -481,7 +481,8 @@ async function loadCamoufoxRuntime(stateDir: string, signal?: AbortSignal): Prom
 // and UI rendering. The Camoufox runtime reports the fetched body and the
 // search result list in `details` alone, so a result reaching the model
 // unchanged carries a byte count and nothing to read. Promote the payload into
-// `content` and leave `details` intact for the terminal renderer.
+// `content`, which is also what the terminal renderer and the HTML export read
+// when a tool registers no renderResult of its own.
 export const CAMOUFOX_CONTENT_CHAR_LIMIT = 50_000;
 
 function boundedContent(text: string): string {
@@ -494,7 +495,7 @@ function searchResultText(details: Record<string, unknown>): string {
 	if (results.length === 0) {
 		return "No results. An empty list can also mean the provider served a results page the extractor did not recognize, so treat it as inconclusive rather than as proof the query matched nothing. Retry, or pin `engine` to compare providers.";
 	}
-	return results
+	const lines = results
 		.map((entry) => {
 			const result = entry as Record<string, unknown>;
 			const line = `${String(result.rank ?? "")}. ${String(result.title ?? "")} — ${String(result.url ?? "")}`;
@@ -502,11 +503,28 @@ function searchResultText(details: Record<string, unknown>): string {
 			return snippet ? `${line}\n   ${snippet}` : line;
 		})
 		.join("\n");
+	// `atLimit` only says the count equals the requested maximum, so the list is
+	// reported as possibly incomplete rather than as truncated.
+	if (details.atLimit !== true) return lines;
+	return `${lines}\n\n${results.length} results, the requested maximum. The provider may have had more matches; raise max_results or narrow the query to check.`;
 }
 
 function fetchedBodyText(details: Record<string, unknown>): string {
 	const body = details.format === "markdown" ? details.markdown : details.html;
 	return typeof body === "string" ? boundedContent(body) : "";
+}
+
+// The body is projected into `content`, and nothing reads it from `details`:
+// no provider serializer sends `details`, these tools register no renderResult,
+// and the terminal renderer falls back to `content`. Dropping the second copy
+// keeps up to `max_bytes` (2 MiB by default) out of the stored tool result. The
+// structured search list stays, because it is small and useful to a renderer.
+function withoutProjectedBody(details: Record<string, unknown>): Record<string, unknown> {
+	if (!("markdown" in details) && !("html" in details)) return details;
+	const metadata = { ...details };
+	delete metadata.markdown;
+	delete metadata.html;
+	return metadata;
 }
 
 /** Move a Camoufox tool's payload from `details` into the model-visible `content`. */
@@ -528,10 +546,15 @@ export function projectCamoufoxToolResult(
 	const text = payload ? `${header}\n\n${payload}` : header;
 	// Preserve any non-text block, such as an image, that the tool returned.
 	const nonText = result.content.filter((block) => block.type !== "text");
-	return { ...result, content: [{ type: "text" as const, text }, ...nonText] };
+	return {
+		...result,
+		content: [{ type: "text" as const, text }, ...nonText],
+		details: toolName === "tff-fetch_url" ? withoutProjectedBody(details) : details,
+	};
 }
 
-function lazyTool(
+/** Register a tool whose delegate is resolved on first call, projecting its payload. */
+export function lazyTool(
 	definition: Omit<ToolDefinition, "execute">,
 	getDelegate: (signal?: AbortSignal) => Promise<ToolDefinition>,
 ): ToolDefinition {
@@ -627,6 +650,7 @@ export function createJouzuCamoufoxExtension(pi: ExtensionAPI, stateDir: string)
 					"max_results is clamped to [1, 50]; default 10.",
 					"Default engine is 'auto' (Google first, DuckDuckGo fallback). Set engine to 'google' or 'duckduckgo' to pin a specific provider.",
 					"An empty result list is inconclusive: a provider can serve a results page the extractor does not recognize. Retry, or pin `engine`, before concluding the query matched nothing.",
+					"A result count equal to max_results is reported as possibly incomplete; raise max_results or narrow the query to check.",
 				],
 				parameters: searchWebParameters,
 				executionMode: camoufoxExecutionMode,
