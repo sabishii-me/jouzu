@@ -354,6 +354,7 @@ export async function runMainCli(args: string[]): Promise<void> {
 		process.env.JOUZU_FLOW_CONTROL !== "0"
 			? (await import("./flow-control/flow-runtime.js")).createFlowControlRuntime({
 					root: join(paths.stateDir, "flow"),
+					interactive: interactiveStartup,
 					runtimeReport: runtimeDiagnostics.report,
 					onError: (error) =>
 						console.error(`Jouzu flow control: ${error instanceof Error ? error.message : String(error)}`),

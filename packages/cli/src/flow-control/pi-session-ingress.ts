@@ -629,7 +629,9 @@ export class PiSessionFlowIngress implements Ingress {
 		// Every send passes through here, so this is where the user speaking again releases an
 		// interrupt's hold. Automated work still waits for an idle boundary, which is what keeps it
 		// out of the very turn being submitted: the hold ends, the queue does not jump.
-		if (user) this.resumeAutomated();
+		const flowCommand = typeof captured.args[0] === "string" && /^\/flow(?:\s|$)/.test(captured.args[0].trim());
+		// Inspection must not release a hold. Flow commands perform their own explicit state changes.
+		if (user && !flowCommand) this.resumeAutomated();
 		return this.track(async () => {
 			const branch = this.branch();
 			if (emergencyFlowCommand) {

@@ -54,6 +54,13 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 		},
 		factory(pi) {
 			pi.registerMessageRenderer("jouzu-flow", renderFlowMessage);
+			pi.on("session_start", (_event, ctx) => {
+				if (ctx.hasUI && options.ingress().automatedPause() === "the session was reopened")
+					ctx.ui.notify(
+						"Flow control is paused after reopening this session. Inspect with /flow; resume automation with /flow resume or your next message.",
+						"info",
+					);
+			});
 			pi.on("agent_end", async (_event, ctx) => {
 				// Kept fresh here rather than captured at load: the context is replaced with the session.
 				if (ctx) announce = (text) => ctx.ui.notify(text, "info");
@@ -143,7 +150,7 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 							}
 							return;
 						}
-						if (rest.length || choice || !target) {
+						if (rest.length || choice || (!target && verb !== "pause" && verb !== "resume")) {
 							notify(USAGE, "error");
 							return;
 						}
@@ -181,7 +188,7 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 								return;
 							}
 							// Releasing only lifts the gate; the ordinary boundary decides when work runs.
-							await ingress.releaseReady();
+							ingress.requestRelease();
 							notify("Resumed automated turns. They run from the next idle boundary.");
 							return;
 						}

@@ -30,6 +30,8 @@ export const defaultFlowControlLimits: FlowControlLimits = {
 export interface FlowControlRuntimeOptions {
 	/** Directory owning this installation's durable flow state. */
 	root: string;
+	/** Reopened interactive histories wait for the user before automated work can run. */
+	interactive?: boolean;
 	/** Reported to the user; flow failures never silently bypass admission. */
 	onError(error: unknown): void;
 	limits?: Partial<FlowControlLimits>;
@@ -136,6 +138,8 @@ export function createFlowControlRuntime(options: FlowControlRuntimeOptions): Fl
 						);
 				},
 			});
+			if (options.interactive && sessionManager.getEntries().length > 0)
+				attached.pauseAutomated("the session was reopened");
 			return attached;
 		},
 		async dispose() {

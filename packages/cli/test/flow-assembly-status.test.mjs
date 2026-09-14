@@ -425,3 +425,17 @@ for (const action of ["start", "goal-resume", "multiloop-resume", "detached-resu
 			false,
 		);
 	});
+
+test("session pause and resume commands accept no target and inspection preserves the hold", async (t) => {
+	const f = await assembledSession(t, { producerExtensions: await installedProducerExtensions() });
+	const notices = capturedNotices(f.session);
+	await f.session.prompt("/flow pause");
+	assert.equal(f.ingress.automatedPause(), "held from /flow");
+	await f.session.prompt("/flow");
+	await f.session.prompt("/flow resume extra junk");
+	assert.equal(f.ingress.automatedPause(), "held from /flow");
+	await f.session.prompt("/flow resume");
+	assert.equal(f.ingress.automatedPause(), undefined);
+	assert.equal(f.bodies.length, 0);
+	assert.ok(notices.some((notice) => notice.text.includes("Resumed automated turns")));
+});

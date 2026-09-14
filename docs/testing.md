@@ -151,6 +151,8 @@ Known limits:
 
 ### Manual inspection
 
+Reopening an interactive session with existing history starts with flow control paused. Automated continuations and notifications stay held until `/flow resume` or the next user message. `/flow` inspection preserves the pause. Background processes keep running while delivery is held.
+
 In an interactive session, `/flow` shows what flow control is holding and repairs a hold:
 
 ```text

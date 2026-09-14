@@ -202,48 +202,61 @@ test("a completed dependency releases the next task with its own work identity",
 	assert.deepEqual(f.errors, []);
 });
 
-test("session resume recovers the same task work without borrowing the next user turn", {
-	timeout: 20000,
-}, async (t) => {
-	const { SessionManager } = await import("@earendil-works/pi-coding-agent");
-	const { replacedSession } = await import("./fixtures/flow-assembly.mjs");
-	const setupData = await setup(t);
-	let f;
-	f = await assembledSession(t, {
-		...setupData,
-		persist: true,
-		script: (_body, index) => {
-			if (index === 0) return call("TaskCreate", { subject: "Resume", description: "Continue after resume" });
-			f.ingress.pauseAutomated("a turn was interrupted");
-			return { text: "Interrupted before task continuation" };
-		},
+for (const interactive of [false, true])
+	test(`session resume preserves task work (interactive=${interactive})`, {
+		timeout: 20000,
+	}, async (t) => {
+		const { SessionManager } = await import("@earendil-works/pi-coding-agent");
+		const { replacedSession } = await import("./fixtures/flow-assembly.mjs");
+		const setupData = await setup(t);
+		let f;
+		f = await assembledSession(t, {
+			...setupData,
+			interactive,
+			persist: true,
+			script: (_body, index) => {
+				if (index === 0) return call("TaskCreate", { subject: "Resume", description: "Continue after resume" });
+				f.ingress.pauseAutomated("a turn was interrupted");
+				return { text: "Interrupted before task continuation" };
+			},
+		});
+		await f.session.prompt("Create a resumable task");
+		await f.session.waitForIdle();
+		assert.equal(f.bodies.length, 2);
+		const original = (await f.ingress.branch().attachment.waits.authoritySnapshot()).work.find(
+			(work) => work.owner === "tasks",
+		);
+
+		const next = await replacedSession(t, f, {
+			reason: "resume",
+			persist: true,
+			sessionManager: SessionManager.open(f.sessionManager.getSessionFile()),
+			producerExtensions: setupData.producerExtensions,
+			script: (_body, index) =>
+				index === 0 ? call("TaskUpdate", { taskId: "1", status: "completed" }) : { text: "Completed after resume" },
+		});
+		if (interactive) {
+			assert.equal(next.ingress.automatedPause(), "the session was reopened");
+			await next.ingress.releaseReady();
+			await new Promise((resolve) => setTimeout(resolve, 100));
+			assert.equal(next.bodies.length, 0, "startup task continuations remain held");
+			await next.session.prompt("/flow");
+			assert.equal(next.ingress.automatedPause(), "the session was reopened");
+			assert.equal(next.bodies.length, 0, "inspection does not resume automation");
+			await next.session.prompt("/flow resume");
+		}
+		await until(next, () => next.bodies.length >= 2);
+		await next.session.waitForIdle();
+		const attempts = (await next.ingress.branch().attachment.ledger.snapshot()).attempts.filter(
+			(attempt) => attempt.admission?.choice.intent.producer === "tasks",
+		);
+		assert.equal(attempts.at(-1).admission.choice.intent.workId, original.id);
+		assert.ok(
+			messages(next).every((message) => !message.isError),
+			JSON.stringify(messages(next)),
+		);
+		assert.deepEqual(next.errors, []);
 	});
-	await f.session.prompt("Create a resumable task");
-	await f.session.waitForIdle();
-	assert.equal(f.bodies.length, 2);
-	const original = (await f.ingress.branch().attachment.waits.authoritySnapshot()).work.find(
-		(work) => work.owner === "tasks",
-	);
-	const next = await replacedSession(t, f, {
-		reason: "resume",
-		persist: true,
-		sessionManager: SessionManager.open(f.sessionManager.getSessionFile()),
-		producerExtensions: setupData.producerExtensions,
-		script: (_body, index) =>
-			index === 0 ? call("TaskUpdate", { taskId: "1", status: "completed" }) : { text: "Completed after resume" },
-	});
-	await until(next, () => next.bodies.length >= 2);
-	await next.session.waitForIdle();
-	const attempts = (await next.ingress.branch().attachment.ledger.snapshot()).attempts.filter(
-		(attempt) => attempt.admission?.choice.intent.producer === "tasks",
-	);
-	assert.equal(attempts.at(-1).admission.choice.intent.workId, original.id);
-	assert.ok(
-		messages(next).every((message) => !message.isError),
-		JSON.stringify(messages(next)),
-	);
-	assert.deepEqual(next.errors, []);
-});
 
 test("an unadapted extension turn cannot borrow preceding user authority to create task work", {
 	timeout: 15000,

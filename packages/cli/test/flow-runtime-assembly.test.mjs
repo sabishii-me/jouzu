@@ -221,3 +221,50 @@ test("two concurrent assemblies keep separate scopes and receipts", async (t) =>
 	assert.ok(JSON.stringify(b.bodies).includes("second session"));
 	assert.ok(!JSON.stringify(b.bodies).includes("first session"));
 });
+
+test("interactive startup pauses existing history before attachment and leaves fresh sessions ready", async (t) => {
+	const { flow, root } = await runtime(t, { interactive: true });
+	const fresh = SessionManager.inMemory(root);
+	assert.equal((await flow.flowIngressFactory({ cwd: root, sessionManager: fresh })).automatedPause(), undefined);
+	const restored = SessionManager.inMemory(root);
+	restored.appendMessage({ role: "user", content: "Earlier request", timestamp: Date.now() });
+	const ingress = await flow.flowIngressFactory({ cwd: root, sessionManager: restored });
+	assert.equal(ingress.automatedPause(), "the session was reopened");
+	const { session, bodies } = await createQualifiedFlowSession(t, {
+		root,
+		sessionManager: restored,
+		extensions: flow.extensions,
+		ingress: {
+			version: 1,
+			attach: (target) => ingress.attach(target),
+			submit: (...args) => ingress.submit(...args),
+			beforeBranchChange: () => ingress.beforeBranchChange(),
+			branchChanged: () => ingress.branchChanged(),
+			dispose: () => ingress.dispose(),
+		},
+	});
+	assert.equal(bodies.length, 0);
+	await session.prompt("Continue with my new instruction");
+	assert.equal(ingress.automatedPause(), undefined);
+	assert.equal(bodies.length, 1);
+});
+
+test("interactive resume explains the pause and its release controls", async (t) => {
+	const { flow, root } = await runtime(t, { interactive: true });
+	const manager = SessionManager.inMemory(root);
+	manager.appendMessage({ role: "user", content: "Earlier request", timestamp: Date.now() });
+	await flow.flowIngressFactory({ cwd: root, sessionManager: manager });
+	const events = new Map();
+	flow.extensions
+		.find((extension) => extension.name === "jouzu-flow-status")
+		.factory({
+			registerMessageRenderer() {},
+			registerCommand() {},
+			on: (name, handler) => events.set(name, handler),
+		});
+	const notices = [];
+	events.get("session_start")({}, { hasUI: true, ui: { notify: (text) => notices.push(text) } });
+	assert.equal(notices.length, 1);
+	assert.match(notices[0], /paused after reopening/);
+	assert.match(notices[0], /\/flow resume or your next message/);
+});
