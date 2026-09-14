@@ -60,6 +60,10 @@ The files under `packages/cli/test/flow-*.test.mjs` substitute the provider, dri
 
 `flow-wait-tools.test.mjs` checks wait guidance in the assembled system prompt, deduplication, and removal when wait tools are disabled. Extension-specific guidance follows the active background, task, and scheduling tools. `capability-routing.test.mjs` checks routing availability; `evals/core-capability-routing.json` includes long-running dependencies, replacement-job notifications, tasks awaiting a person, and status questions during a wait. The corpus records expected behavior; schema and routing tests do not measure model compliance.
 
+### Flow journal checkpoints
+
+`flow-journal-checkpoint.test.mjs` verifies streaming checkpoints on reopen and ongoing writes, preserved values and sequence numbers, deletions, torn final transactions, and refusal to rewrite malformed complete records. Flow journals checkpoint accumulated scalar updates at 32 MiB under the writer lease; this keeps historical updates from exceeding the JSONL reader's string limit. Checkpointing preserves current input, result, wait, and receipt records rather than resetting flow state.
+
 ### Preservation across cancellation and recovery
 
 `flow-preservation.test.mjs` delivers a bounded result envelope with omitted members, preempts selection with user input, then resets, retires history, and reopens. It compares every retained member's status, title, reference, and warnings. The mixed-input case in `flow-task-adapter.test.mjs` completes a consumed task while its result shares the turn and a user message queues; provider requests and reopened history must preserve the result, user instruction, original flow content, and cancellation note. `flow-source-reconciliation.test.mjs` also verifies that failed input remains inspectable after compaction, reset, and two reopens.
