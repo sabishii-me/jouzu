@@ -23,6 +23,10 @@ const expectedCaseIds = [
 	"long-running-shell-process",
 	"explicit-reminder",
 	"durable-user-facing-documentation",
+	"background-dependency-wait",
+	"replacement-job-notification",
+	"task-awaiting-user-input",
+	"status-during-dependency-wait",
 ];
 
 function assertStringArray(value, subject) {
@@ -121,4 +125,15 @@ test("Core keeps repository discipline inline and generates bounded decision-tim
 	assert.match(routing, /One user-approved persistent objective/);
 	assert.match(routing, /Repeated measured improvement/);
 	assert.match(routing, /read `jouzu-clear-writing` at its listed `<location>`/);
+});
+
+test("dependency routing is available only when waits are active", () => {
+	const plain = buildCapabilityRoutingGuidance({ selectedTools: ["bg_task", "TaskUpdate"] });
+	assert.doesNotMatch(plain, /`agent_wait`/);
+	const waiting = buildCapabilityRoutingGuidance({
+		selectedTools: ["bg_task", "TaskUpdate", "agent_wait", "schedule_prompt"],
+	});
+	assert.match(waiting, /Remaining work depends on asynchronous execution/);
+	assert.match(waiting, /Once waiting, end the turn/);
+	assert.match(waiting, /do not add timer-based polling/);
 });

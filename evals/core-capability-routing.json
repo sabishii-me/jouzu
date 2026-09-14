@@ -199,6 +199,87 @@
         "skills": ["multiloop"],
         "tools": ["schedule_prompt"]
       }
+    },
+    {
+      "id": "background-dependency-wait",
+      "prompt": "The background evaluation will finish in about three hours. Its tool returned a work ID and an exit dependency. No independent work remains.",
+      "expect": {
+        "skills": [],
+        "tools": [
+          "agent_wait"
+        ],
+        "behaviors": [
+          "declare-exact-dependency-with-bounded-deadline",
+          "end-turn-and-await-completion",
+          "verify-output-before-completing-task"
+        ]
+      },
+      "avoid": {
+        "skills": [],
+        "tools": [
+          "schedule_prompt"
+        ]
+      }
+    },
+    {
+      "id": "replacement-job-notification",
+      "prompt": "The completion notification says bg-21 was stopped. That was the job we replaced; bg-22 is still producing the required output.",
+      "expect": {
+        "skills": [],
+        "tools": [],
+        "behaviors": [
+          "match-execution-identity",
+          "preserve-wait-for-replacement",
+          "do-not-mark-current-work-complete"
+        ]
+      },
+      "avoid": {
+        "skills": [],
+        "tools": [
+          "schedule_prompt"
+        ]
+      }
+    },
+    {
+      "id": "task-awaiting-user-input",
+      "prompt": "The tracked task needs a decision from the user before it can proceed. No asynchronous job can answer that question.",
+      "expect": {
+        "skills": [],
+        "tools": [
+          "TaskUpdate"
+        ],
+        "behaviors": [
+          "set-waitForUser",
+          "ask-user-and-end-turn"
+        ]
+      },
+      "avoid": {
+        "skills": [],
+        "tools": [
+          "agent_wait",
+          "schedule_prompt"
+        ]
+      }
+    },
+    {
+      "id": "status-during-dependency-wait",
+      "prompt": "The user asks for a progress summary while our declared background wait is still active.",
+      "expect": {
+        "skills": [],
+        "tools": [],
+        "behaviors": [
+          "use-supplied-wait-state",
+          "preserve-token-and-original-expiry",
+          "answer-user-without-renewing-wait"
+        ]
+      },
+      "avoid": {
+        "skills": [],
+        "tools": [
+          "agent_wait",
+          "schedule_prompt"
+        ]
+      }
     }
   ]
 }

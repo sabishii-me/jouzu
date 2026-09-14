@@ -346,3 +346,26 @@ test("an invalid policy definition is rejected rather than trusted from the prod
 		{ code: "identity" },
 	);
 });
+
+test("workflow guidance follows active extensions and does not duplicate itself", () => {
+	let active = ["agent_wait", "bg_task", "TaskUpdate", "schedule_prompt"],
+		before;
+	createFlowWaitExtension({ maxDurationMs: 5000 }).factory({
+		on(name, handler) {
+			if (name === "before_agent_start") before = handler;
+		},
+		getActiveTools: () => active,
+		registerTool() {},
+	});
+	const first = before({ systemPrompt: "Custom system prompt" }).systemPrompt;
+	assert.match(first, /notifyOnExit: false/);
+	assert.match(first, /TaskUpdate waitForUser: true/);
+	assert.match(first, /schedule_prompt for an action due/);
+	assert.match(first, /older job does not describe its replacement/);
+	assert.equal(before({ systemPrompt: first }), undefined);
+	active = ["agent_wait"];
+	const reduced = before({ systemPrompt: "Custom system prompt" }).systemPrompt;
+	assert.doesNotMatch(reduced, /bg_task|TaskUpdate|schedule_prompt/);
+	active = ["bg_task", "TaskUpdate", "schedule_prompt"];
+	assert.equal(before({ systemPrompt: "Custom system prompt" }), undefined);
+});

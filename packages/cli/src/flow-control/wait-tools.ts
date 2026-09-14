@@ -6,14 +6,40 @@ import type { FlowWaitHandle } from "./wait-state.js";
 import { waitToolResponse } from "./wait-tool-response.js";
 
 export const FLOW_WAIT_GUIDANCE = [
-	"Continue useful work independent of live dependencies. Before ending a turn whose remaining work depends on asynchronous execution, call agent_wait with the owning work and exact producer handles returned by its tools.",
-	"State the dependency in the reason and choose a mandatory hard deadline with bounded slack. The returned expiresAt is the effective deadline after the session cap.",
-	"Request health only with a policy name the dependency's own tool result offered for that execution; anything else is refused. A dependency without one is deadline-only, and checkAfter needs at least one monitored dependency. Health can end a wait early as unhealthy or health-unknown, and never extends the deadline.",
-	"After agent_wait returns waiting and no independent work remains, end the turn. Do not poll status, create extra continuations, or call unrelated tools to keep a goal, loop, or task active.",
-	"Use the latest supplied wait state after user input or context restoration. Status questions preserve the token and original expiry; do not redeclare or renew a wait for a status question.",
-	"When work changes, cancel or explicitly replace its affected wait and update the owning work before ending the turn. Replacement requires replaceToken. At expiry or dependency failure, decide whether to repair, stop, or explicitly declare a new wait.",
-	"agent_wait_cancel removes only the dependency gate. It does not stop the underlying process, retire requested work, or complete a goal or task.",
+	"Flow control coordinates automated continuations, dependency waits, and completion notifications. Workflow tools track the requested work; a wait holds its next automatic turn while a dependency runs. Ending your turn leaves that work and its background jobs in place.",
+	"Continue independent work while dependencies run. When remaining work depends on asynchronous execution, call agent_wait with the owning work and exact dependency values returned by the producer's tools. Do not invent handles or borrow a work ID from an unrelated turn; if ownership is refused, report the blocker instead of repeatedly retrying.",
+	"State the dependency in the reason and choose a hard deadline with bounded slack for its expected duration. The returned expiresAt is the effective deadline after the session cap; expiry is a decision point, not proof the job stopped.",
+	"Request health only with a policy name offered for that execution. Without one, the wait is deadline-only. checkAfter needs a monitored dependency. Health may end a wait early as unhealthy or health-unknown; it never extends the deadline.",
+	"After agent_wait returns waiting and no independent work remains, briefly state what is running, what will unblock you, and what you will verify, then end the turn. Trust completion delivery; do not poll status, add timer-based checks, or create extra continuations merely to stay active. Inspect logs for a concrete diagnostic question or an explicit user request.",
+	"On a wake, match each result's producer and execution identity to the work you are waiting for. A stopped or completed older job does not describe its replacement. Notifications can be batched; inspect every relevant result and retrieve omitted details when needed. Verify output and completion criteria before marking requested work complete.",
+	"After user input or context restoration, use the supplied wait state and preserve pending work. A status question does not renew or replace a wait. At expiry or dependency failure, decide whether to repair, stop, or declare a new wait; do not retry the wait automatically.",
+	"When work changes, cancel or explicitly replace its affected wait and update the owning work. Replacement requires replaceToken. agent_wait_cancel removes only the dependency gate; it does not stop the process or complete the work.",
+	"The user can inspect holds with /flow and build identity with /flow runtime, pause or resume automation, or use /flow reset to recover a stuck session. These are user slash commands, not shell commands or agent tools. Report remaining blockers; do not claim reset delivered pending work.",
 ];
+
+/** Include extension-specific controls only when their tools are active. */
+export function flowWaitGuidance(activeTools: readonly string[]): string[] {
+	const tools = new Set(activeTools);
+	if (!tools.has("agent_wait")) return [];
+	return [
+		...FLOW_WAIT_GUIDANCE,
+		...(tools.has("bg_task")
+			? [
+					"With bg_task, keep exit notifications enabled when relying on its completion wake; notifyOnExit: false suppresses that result notification. Use the returned wait dependency to hold task or loop continuation while the job runs.",
+				]
+			: []),
+		...(tools.has("TaskUpdate")
+			? [
+					"For a task awaiting a person, use TaskUpdate waitForUser: true; for an explicit task pause, use paused: true. Clear the corresponding field when ready to resume. Use blockedBy for task dependencies. A description saying 'blocked' does not suspend automatic task continuation.",
+				]
+			: []),
+		...(tools.has("schedule_prompt")
+			? [
+					"Use schedule_prompt for an action due at an explicit time or on a recurring schedule, not to poll a running job that already reports completion.",
+				]
+			: []),
+	];
+}
 
 export interface FlowWaitToolOptions {
 	attachment(): PiFlowAttachment;
@@ -133,10 +159,11 @@ export function createFlowWaitExtension(options: FlowWaitToolOptions): InlineExt
 		name: "jouzu-flow-waits",
 		factory(pi) {
 			pi.on("before_agent_start", (event) => {
-				if (!pi.getActiveTools().includes("agent_wait")) return;
-				const missing = FLOW_WAIT_GUIDANCE.filter((line) => !event.systemPrompt.includes(line));
+				const missing = flowWaitGuidance(pi.getActiveTools()).filter((line) => !event.systemPrompt.includes(line));
 				if (missing.length)
-					return { systemPrompt: `${event.systemPrompt}\n\nDependency waits:\n${missing.join("\n")}` };
+					return {
+						systemPrompt: `${event.systemPrompt}\n\nFlow control and workflow coordination:\n${missing.join("\n")}`,
+					};
 			});
 			pi.registerTool({
 				name: "agent_wait",

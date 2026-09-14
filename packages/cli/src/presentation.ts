@@ -129,7 +129,7 @@ export function buildCapabilityRoutingGuidance(options: BuildSystemPromptOptions
 		taskTools.length > 0,
 		"Finite work with distinct steps",
 		codeNames(taskTools),
-		"Skip task tracking for straightforward work; a task list is not an autonomous loop.",
+		"Skip task tracking for straightforward work. Open tasks may auto-advance; record blockers with task controls.",
 	);
 	const goalTools = selectedNames(["get_goal", "update_goal"], tools);
 	add(
@@ -152,10 +152,16 @@ export function buildCapabilityRoutingGuidance(options: BuildSystemPromptOptions
 		"This runs a process; it does not track requirements or define completion.",
 	);
 	add(
+		tools.has("agent_wait"),
+		"Remaining work depends on asynchronous execution",
+		"`agent_wait`",
+		"Use the returned work and dependency identities. Once waiting, end the turn; flow control holds dependent continuation and delivers eligible wakes.",
+	);
+	add(
 		tools.has("schedule_prompt"),
 		"A reminder or recurring action at an explicit time",
 		"`schedule_prompt`",
-		"Do not schedule work merely because it may continue later.",
+		"Use an explicit time requirement; do not add timer-based polling for a job that reports completion.",
 	);
 	add(
 		skills.has("jouzu-clear-writing"),
