@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.10 - Unreleased
+## 0.1.10 - 2026-09-15
 
 ### Added
 
@@ -14,6 +14,9 @@
 - Explain how task continuations, background completion notifications, and dependency waits work together in agent guidance. Encourage waiting for completion instead of repeated polling.
 
 ### Fixed
+
+- Return rendered page bodies and the full search result list to the model. Mark truncated pages, empty searches, and searches that reach the requested result limit.
+- Attach browser screenshots to tool results, default screenshot requests to JPEG, and report images over 1 MiB with size-reduction instructions.
 
 - Recover flow admission after compaction, interrupted requests, and sustained use exhaust retained history. Preserve pending user input and results through cancellation and recovery, and keep `/flow reset` usable for recoverable retained state.
 - Reopen oversized flow journals by checkpointing retained state without loading the entire journal into one string.

@@ -26,6 +26,8 @@ For Windows setup, see [Windows prerequisites](https://github.com/shisa-ai/jouzu
 
 `web_fetch` and `batch_web_fetch` work from the default installation. The rendered-browser tools install their exact Camoufox runtime from npm on the first `tff-fetch_url` or `tff-search_web` call, then download the Camoufox browser if needed. These downloads require network access and writable Jouzu state. `jz doctor` reports whether the optional runtime is absent, ready, or invalid.
 
+Rendered fetches return up to 50,000 characters to the model and mark truncation. Search results mark empty responses as inconclusive and results at the requested limit as possibly incomplete. Browser screenshots default to JPEG and attach only when at most 1 MiB.
+
 On older enterprise Linux distributions, install the GTK/X11/audio libraries required by Firefox. If the system NSS is older than Camoufox requires, set `JOUZU_CAMOUFOX_LIBRARY_PATH` to a compatible NSS library directory; Jouzu applies it only to the browser child.
 
 ## Install
