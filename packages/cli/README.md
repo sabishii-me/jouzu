@@ -117,6 +117,7 @@ Core and JA load the same release-owned extension set:
 - `bg_task` runs and monitors non-blocking shell processes.
 - `web_fetch` and `batch_web_fetch` retrieve readable HTTP content; `tff-fetch_url` and `tff-search_web` use rendered Camoufox browser access when needed.
 - `TaskCreate` and related task tools track finite work; `get_goal` and `update_goal` support a user-created `/goal`; `multiloop_*` records approved measured loops.
+- `/goal` lists running and paused goals with command hints. Use `/goal pause`, `/goal stop`, or `/goal resume`, optionally followed by a `lane/run-tag`; without a target, the command selects the attached goal or the only matching goal. `/multiloop` shows all runs.
 - pi-vcc automatically handles threshold and overflow compaction. Compaction reduces the active transcript; it does not end active work. `vcc_recall` retrieves missing details from the current session, including entries dropped from the active transcript, but cannot trigger compaction.
 - Code previews render supported tool calls and results. Typing `$` at a token boundary opens skill suggestions.
 

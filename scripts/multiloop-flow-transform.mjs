@@ -1,3 +1,4 @@
+import { transformGoalCommands } from "./multiloop-goal-transform.mjs";
 export const extensionPath = "extensions/pi-multiloop/index.ts";
 function replace(source, from, to) {
 	if (source.split(from).length !== 2) throw new Error("Multiloop flow source anchor differs.");
@@ -56,7 +57,7 @@ export function transformMultiloopFlow(source) {
 		"  function updateStatus(ctx: ExtensionContext | ExtensionCommandContext) {",
 		"  function updateStatus(ctx: ExtensionContext | ExtensionCommandContext) {\n    multiloopFlow(ctx.sessionManager.getSessionId())?.changed(runningStates().map((state) => ({ lane: state.lane, runTag: state.runTag })));",
 	);
-	return transformMultiloopLifecycle(source);
+	return transformGoalCommands(transformMultiloopLifecycle(source));
 }
 
 export function transformMultiloopLifecycle(source) {
