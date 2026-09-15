@@ -34,7 +34,7 @@ $null = Run (Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe
     '/nologo','/target:exe','/platform:x64','/define:GUI','/main:LauncherTests',('/out:' + $argumentTests),
     '/reference:System.Drawing.dll','/reference:System.Web.Extensions.dll','/reference:System.Windows.Forms.dll',
     '/reference:System.Security.dll','/reference:System.Core.dll',
-    (Join-Path $PSScriptRoot 'Jouzu.cs'),(Join-Path $PSScriptRoot 'Jouzu.test.cs'))
+    (Join-Path $PSScriptRoot 'Jouzu.cs'),(Join-Path $PSScriptRoot 'Updates.cs'),(Join-Path $PSScriptRoot 'Jouzu.test.cs'))
 $results.arguments = (Run $argumentTests @()).Trim()
 Write-Host 'Installing as a standard user'
 $watch = [Diagnostics.Stopwatch]::StartNew()

@@ -129,7 +129,24 @@ internal static class Jouzu {
         } finally { if (File.Exists(temporary)) File.Delete(temporary); }
     }
 #if GUI
-    static string ChooseWorkingFolder() {
+    internal static void CheckForInstallerUpdate(Form form, LinkLabel update, Func<InstallerUpdates.Offer> check) {
+        // Finish the bounded check and cache it even when the user opens a folder immediately.
+        var worker = new Thread(() => {
+            InstallerUpdates.Offer offer;
+            try { offer = check(); } catch { return; }
+            if (offer == null) return;
+            try {
+                form.BeginInvoke((Action)(() => {
+                    if (form.IsDisposed) return;
+                    update.Text = "Jouzu " + offer.Version + " is available — Download update";
+                    update.LinkArea = new LinkArea(update.Text.Length - "Download update".Length, "Download update".Length);
+                    update.Tag = offer; update.Visible = true;
+                }));
+            } catch (InvalidOperationException) { /* The folder chooser has closed. */ }
+        });
+        worker.Start();
+    }
+    static string ChooseWorkingFolder(string installedVersion) {
         Application.EnableVisualStyles();
         string preferencePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "JouzuDesktop", "launcher.json");
         var preference = ReadFolderPreference(preferencePath);
@@ -141,6 +158,13 @@ internal static class Jouzu {
             var choose = new Button { Text = preference.Folder.Length == 0 ? "Choose folder…" : "Choose another folder…", AutoSize = true, TabIndex = 1 };
             var remember = new CheckBox { Text = "Remember this folder", Checked = preference.Remember, AutoSize = true, TabIndex = 2 };
             var warning = new Label { Text = preference.Warning, AutoSize = true, MaximumSize = new System.Drawing.Size(560, 0) };
+            var update = new LinkLabel { AutoSize = true, Visible = false, TabIndex = 5, AccessibleName = "Download Jouzu update" };
+            update.LinkClicked += (sender, e) => {
+                var offer = update.Tag as InstallerUpdates.Offer;
+                if (offer == null) return;
+                try { Process.Start(new ProcessStartInfo(offer.Url) { UseShellExecute = true }); }
+                catch { MessageBox.Show(form, "The browser could not open. Download the Windows installer from github.com/shisa-ai/jouzu/releases.", "Jouzu", MessageBoxButtons.OK, MessageBoxIcon.Information); }
+            };
             var buttons = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight };
             var open = new Button { Text = "Open", AutoSize = true, Enabled = Directory.Exists(folder.Text), TabIndex = 3 };
             var cancel = new Button { Text = "Cancel", AutoSize = true, DialogResult = DialogResult.Cancel, TabIndex = 4 };
@@ -163,10 +187,13 @@ internal static class Jouzu {
                 form.DialogResult = DialogResult.OK;
             };
             buttons.Controls.Add(open); buttons.Controls.Add(cancel);
-            foreach (Control control in new Control[] { heading, explanation, folder, choose, remember, warning, buttons }) layout.Controls.Add(control);
+            foreach (Control control in new Control[] { heading, explanation, folder, choose, remember, warning, update, buttons }) layout.Controls.Add(control);
             form.Controls.Add(layout); form.AcceptButton = open; form.CancelButton = cancel;
             form.Icon = System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath);
-            form.Shown += (sender, e) => { if (open.Enabled) open.Focus(); else choose.Focus(); };
+            form.Shown += (sender, e) => {
+                if (open.Enabled) open.Focus(); else choose.Focus();
+                CheckForInstallerUpdate(form, update, () => InstallerUpdates.Check(installedVersion));
+            };
             return form.ShowDialog() == DialogResult.OK ? folder.Text : null;
         }
     }
@@ -193,7 +220,7 @@ internal static class Jouzu {
             string project;
             if (args.Length == 2 && args[0] == "--project") project = Path.GetFullPath(args[1]);
             else if (args.Length == 0) {
-                project = ChooseWorkingFolder();
+                project = ChooseWorkingFolder(Text(ReadJson(Path.Combine(payload, "manifest.json")), "version"));
                 if (project == null) return 0;
             } else throw new Exception("Use Jouzu.exe --project <folder>, or open Jouzu without arguments to choose a working folder.");
             if (!Directory.Exists(project)) throw new Exception("The working folder does not exist.");

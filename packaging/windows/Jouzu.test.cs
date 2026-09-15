@@ -53,8 +53,118 @@ internal static class LauncherTests {
             Check(Directory.GetFiles(Path.GetDirectoryName(state), "*.tmp").Length == 0, "Preference write left temporary files");
         } finally { Directory.Delete(root, true); }
     }
+    static string Release(string version, string suffix = "-x64-unsigned.exe", bool draft = false, bool prerelease = false) {
+        string asset = "JouzuSetup-" + version + "-0123456789abcdef" + suffix;
+        return "{\"tag_name\":\"v" + version + "\",\"draft\":" + draft.ToString().ToLowerInvariant() + ",\"prerelease\":" + prerelease.ToString().ToLowerInvariant() +
+            ",\"assets\":[{\"state\":\"uploaded\",\"name\":\"" + asset + "\",\"browser_download_url\":\"https://github.com/shisa-ai/jouzu/releases/download/v" + version + "/" + asset + "\"}]}";
+    }
+    static void Updates() {
+        string valid = "[" + Release("0.1.11") + "]";
+        Check(InstallerUpdates.Select(valid, "0.1.10").Version == "0.1.11", "New installer missing");
+        Check(InstallerUpdates.Select(valid, "0.1.11") == null, "Equal version offered");
+        Check(InstallerUpdates.Select(valid, "0.1.12") == null, "Downgrade offered");
+        Check(InstallerUpdates.Select(valid, "invalid") == null, "Invalid installed version accepted");
+        Check(InstallerUpdates.Select("[" + Release("0.1.9") + "," + Release("0.1.12") + "," + Release("0.1.11") + "]", "0.1.8").Version == "0.1.12", "Version selection depends on feed order");
+        foreach (string excluded in new [] { Release("0.1.12", "-arm64.exe"), Release("0.1.12", "-x64.exe", true), Release("0.1.12", "-x64.exe", false, true), Release("0.1.12-beta"), Release("0.1.12").Replace("uploaded", "new"), Release("0.1.12").Replace("https://github.com/", "https://evil.example/"), "{\"tag_name\":\"v0.1.12\",\"draft\":false,\"prerelease\":false,\"assets\":[]}" })
+            Check(InstallerUpdates.Select("[" + excluded + "," + Release("0.1.11") + "]", "0.1.10").Version == "0.1.11", "Invalid release selected");
+        Check(InstallerUpdates.Select("[" + Release("0.1.12", "-x64.exe") + "]", "0.1.10") != null, "Signed asset missing");
+        Check(InstallerUpdates.Validate("0.1.12", "v0.1.12", "../evil.exe") == null, "Unsafe asset accepted");
+        Check(InstallerUpdates.Validate("0.1.12", "v0.1.13", "JouzuSetup-0.1.12-x64.exe") == null, "Tag mismatch accepted");
+        bool oversized = false;
+        try { using (var stream = new MemoryStream(new byte[11])) InstallerUpdates.ReadBounded(stream, 10); } catch (InvalidDataException) { oversized = true; }
+        Check(oversized, "Oversized response accepted");
+        string root = Path.Combine(Path.GetTempPath(), "jouzu-updates-" + Guid.NewGuid().ToString("N"));
+        string cache = Path.Combine(root, "installer-update.json");
+        var now = new DateTime(2026, 9, 16, 0, 0, 0, DateTimeKind.Utc);
+        int calls = 0;
+        Func<int, string> fetch = page => { calls++; return valid; };
+        try {
+            Check(InstallerUpdates.Check(cache, "0.1.10", now, fetch) != null && calls == 1, "Initial discovery failed");
+            Check(InstallerUpdates.Check(cache, "0.1.10", now.AddHours(23), fetch) != null && calls == 1, "Daily cache ignored");
+            Check(InstallerUpdates.Check(cache, "0.1.11", now.AddHours(23), fetch) == null, "Cached offer survives upgrade");
+            InstallerUpdates.Check(cache, "0.1.10", now.AddHours(24), fetch);
+            Check(calls == 2, "Daily cache did not expire");
+            File.WriteAllText(cache, "broken");
+            Check(InstallerUpdates.Check(cache, "0.1.10", now, fetch) != null && calls == 3, "Corrupt cache did not recover");
+            using (var gate = new FileStream(cache + ".lock", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None))
+                Check(InstallerUpdates.Check(cache, "0.1.10", now, fetch) == null && calls == 3, "Concurrent check not skipped");
+            Check(InstallerUpdates.Check(cache, "0.1.10", now.AddDays(2), page => { calls++; throw new IOException("offline"); }) == null, "Offline check escaped");
+            InstallerUpdates.Check(cache, "0.1.10", now.AddDays(2).AddHours(1), fetch);
+            Check(calls == 4, "Failed check was not throttled");
+            Check(InstallerUpdates.Check(cache, "0.1.10", now.AddDays(3), fetch) != null && calls == 5, "Offline check never recovered");
+            Check(InstallerUpdates.Check(cache, "0.1.10", now, fetch) != null && calls == 6, "Future timestamp blocked check");
+            Check(InstallerUpdates.Check(Path.Combine(cache, "invalid.json"), "0.1.10", now, fetch) == null, "Storage error escaped");
+            File.Delete(cache);
+            string fullPage = "[" + String.Join(",", Enumerable.Repeat(Release("0.1.9"), 100)) + "]";
+            int pages = 0;
+            Check(InstallerUpdates.Check(cache, "0.1.10", now, page => { pages++; return page == 1 ? fullPage : valid; }) != null && pages == 2, "Release pagination failed");
+            File.Delete(cache); pages = 0;
+            Check(InstallerUpdates.Check(cache, "0.1.10", now, page => { pages++; return fullPage; }) == null && pages == 3, "Pagination not bounded");
+            File.Delete(cache);
+            Check(InstallerUpdates.Check(cache, "0.1.10", now, page => "{}") == null, "Malformed response escaped");
+        } finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+    static void UpdateNotification() {
+        using (var ready = new System.Threading.ManualResetEvent(false))
+        using (var form = new System.Windows.Forms.Form())
+        using (var link = new System.Windows.Forms.LinkLabel { Visible = false })
+        using (var timer = new System.Windows.Forms.Timer { Interval = 25 }) {
+            form.Controls.Add(link);
+            var deadline = DateTime.UtcNow.AddSeconds(5);
+            bool rendered = false, responsive = false;
+            form.Shown += (sender, e) => {
+                Jouzu.CheckForInstallerUpdate(form, link, () => {
+                    ready.WaitOne(3000);
+                    return InstallerUpdates.Validate("0.1.11", "v0.1.11", "JouzuSetup-0.1.11-x64-unsigned.exe");
+                });
+                timer.Start();
+            };
+            timer.Tick += (sender, e) => {
+                responsive = true; ready.Set();
+                if (link.Visible) {
+                    rendered = link.Text.Contains("0.1.11") && link.Text.Substring(link.LinkArea.Start, link.LinkArea.Length) == "Download update" &&
+                        ((InstallerUpdates.Offer)link.Tag).Url == "https://github.com/shisa-ai/jouzu/releases/download/v0.1.11/JouzuSetup-0.1.11-x64-unsigned.exe";
+                    form.Close();
+                } else if (DateTime.UtcNow >= deadline) form.Close();
+            };
+            form.Show();
+            while (!form.IsDisposed && DateTime.UtcNow < deadline) {
+                System.Windows.Forms.Application.DoEvents();
+                System.Threading.Thread.Sleep(10);
+            }
+            timer.Stop();
+            Check(responsive && rendered, "Update notification blocked the UI or failed to render");
+        }
+        using (var form = new System.Windows.Forms.Form())
+        using (var link = new System.Windows.Forms.LinkLabel()) {
+            form.Dispose();
+            using (var finished = new System.Threading.ManualResetEvent(false)) {
+                Jouzu.CheckForInstallerUpdate(form, link, () => {
+                    finished.Set();
+                    return InstallerUpdates.Validate("0.1.11", "v0.1.11", "JouzuSetup-0.1.11-x64.exe");
+                });
+                Check(finished.WaitOne(3000), "Closed-form check did not finish");
+            }
+        }
+    }
     [STAThread]
     static int Main(string[] args) {
+        if (args.Length == 2 && args[0] == "--finish-update-check") {
+            var form = new System.Windows.Forms.Form();
+            var link = new System.Windows.Forms.LinkLabel();
+            form.Dispose();
+            Jouzu.CheckForInstallerUpdate(form, link, () => {
+                System.Threading.Thread.Sleep(150);
+                File.WriteAllText(args[1], "completed");
+                return null;
+            });
+            return 0;
+        }
+        if (args.Length == 1 && args[0] == "--live-update-check") {
+            var offer = InstallerUpdates.Select(InstallerUpdates.Fetch(1), "0.0.0");
+            Check(offer != null, "Published installer not found");
+            Console.WriteLine("Live GitHub installer discovery: " + offer.Version + " " + offer.Url); return 0;
+        }
         if (args.Length == 3 && args[0] == "--shortcut") {
             if (!String.Equals(ReadShortcut(args[1]), args[2], StringComparison.OrdinalIgnoreCase)) throw new Exception("Windows Unicode shortcut target differs");
             Console.WriteLine("Windows Unicode shortcut target passed"); return 0;
@@ -69,6 +179,17 @@ internal static class LauncherTests {
                 if (Marshal.PtrToStringUni(Marshal.ReadIntPtr(parsed, (i + 1) * IntPtr.Size)) != values[i]) throw new Exception("Argument changed: " + i);
         } finally { LocalFree(parsed); }
         FolderPreferences();
-        Console.WriteLine("Windows launcher argument and folder preference tests passed"); return 0;
+        Updates();
+        UpdateNotification();
+        string marker = Path.Combine(Path.GetTempPath(), "jouzu-update-finished-" + Guid.NewGuid().ToString("N"));
+        try {
+            var info = new System.Diagnostics.ProcessStartInfo(System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName,
+                "--finish-update-check " + Jouzu.Quote(marker)) { UseShellExecute = false, CreateNoWindow = true };
+            using (var child = System.Diagnostics.Process.Start(info)) {
+                if (!child.WaitForExit(5000)) { child.Kill(); throw new Exception("Update worker did not exit"); }
+                Check(child.ExitCode == 0 && File.Exists(marker), "Closing the launcher abandoned the update check");
+            }
+        } finally { if (File.Exists(marker)) File.Delete(marker); }
+        Console.WriteLine("Windows launcher argument, folder preference, and installer update tests passed"); return 0;
     }
 }

@@ -346,9 +346,9 @@ jz self-update policy off
 
 `JOUZU_NO_UPDATE=1` disables startup checks for one invocation. `JOUZU_UPDATE_POLICY=auto-restart|notify|off` overrides the persisted policy for one process (an invalid value fails safe as `off`), and `JOUZU_UPDATE_INTERVAL_HOURS` changes the successful-check cadence. `self-update check --json` and `self-update status --json` provide machine-readable results.
 
-The Windows installer preview updates by running a newer installer. Desktop launches disable automatic npm updates.
+The Windows installer preview checks GitHub Releases from its working-folder screen once per 24 hours and offers a **Download update** link when a newer stable x64 installer is available. Run the downloaded installer to upgrade. Desktop launches disable automatic npm updates.
 
-Startup checks contact the configured npm registry but send no Jouzu telemetry. Updates finish before the interactive session starts.
+For npm installations, startup checks contact the configured npm registry but send no Jouzu telemetry. Updates finish before the interactive session starts.
 
 Interactive launches clear the current viewport and show a compact adaptive Jouzu header. Set `JOUZU_NO_CLEAR=1` to preserve existing terminal output. `NO_COLOR` disables banner color.
 

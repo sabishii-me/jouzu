@@ -12,8 +12,8 @@ on Windows Server 2025 x64; clean Windows 10/11 testing remains pending.
 Code signing is planned for v0.2.0.
 
 This page describes installers built from this source. The working-folder screen,
-JZ icon, and expanded catalog diagnostics described below are not included in the
-published v0.1.10 installer.
+update notification, JZ icon, and expanded catalog diagnostics described below
+are not included in the published v0.1.10 installer.
 
 ## Use
 
@@ -49,6 +49,15 @@ installer does not change the system PATH or install a background service.
 Custom `shellPath` and `npmCommand` settings are preserved.
 
 ## Updates and repair
+
+The working-folder screen checks GitHub Releases in the background at most once
+per 24 hours. When a newer stable x64 installer is available, select **Download
+update** to open its download in your browser, then run the downloaded installer.
+You can open your working folder while the check runs. If you close the screen
+before it finishes, the result is saved for the next launch. Failed checks leave the
+launcher usable and retry after 24 hours. Checks use Windows system proxy and
+certificate settings. The check scans the 300 most recent releases and stores
+its result in `%LOCALAPPDATA%\JouzuDesktop\installer-update.json`.
 
 Run a newer installer to install another version. Activation verifies every
 payload file and probes the bundled CLI before changing `current.json`.
@@ -153,6 +162,12 @@ Run from a non-elevated Windows PowerShell session with a new test directory:
   -Installer C:\artifacts\windows-build\JouzuSetup-…-x64-unsigned.exe `
   -TestDirectory C:\Users\me\AppData\Local\JouzuAcceptance
 ```
+
+The launcher tests cover installer selection, cache expiry, offline recovery,
+concurrent checks, update-link rendering, and completing a check after the folder
+screen closes. They use release fixtures without network requests. After compiling
+`LauncherTests.exe`, run `LauncherTests.exe --live-update-check` to check GitHub
+and print a published installer URL without downloading it.
 
 The test installs to a path containing Japanese characters and spaces,
 hides system Node/Git from PATH, runs the bundled tools and doctor, exercises
