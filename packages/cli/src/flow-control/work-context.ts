@@ -25,6 +25,10 @@ export class FlowWorkContext {
 	private readonly invocations = new AsyncLocalStorage<Invocation | undefined>();
 	constructor(private readonly attachment: () => PiFlowAttachment) {}
 
+	get busy(): boolean {
+		return this.active !== undefined;
+	}
+
 	async run<T>(work: WorkIdentity | undefined, invoke: () => Promise<T>): Promise<T> {
 		if (this.active) throw new FlowLedgerError("busy", "Work invocation is already active.");
 		const invocation = {

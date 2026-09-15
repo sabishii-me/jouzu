@@ -483,11 +483,12 @@ export class PiFlowSessionService {
 					);
 				await branch.attachment.submissions.archiveCompleted();
 				await reconcileNativeSources(this.session, branch.attachment, branch.native, "reset");
-				await branch.attachment.nativeRequests.reset();
+				const releasedRequests = await branch.attachment.nativeRequests.reset();
 				await branch.attachment.nativeRequests.retireSuperseded();
 				return {
 					kind: attemptId ? ("cancelled" as const) : ("inactive" as const),
 					attemptId,
+					releasedRequests,
 					recoveryHeld: branch.host.gate().recoveryBlocked,
 				};
 			});

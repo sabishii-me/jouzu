@@ -169,7 +169,11 @@ export function formatFlowStatus(status: FlowStatus, now: number): string {
 	const lines: string[] = [];
 	if (status.paused) {
 		lines.push(`Paused: ${status.paused}`);
-		lines.push("Resume now with: /flow resume");
+		lines.push(
+			status.paused.startsWith("flow admission failed (")
+				? "Repair the cause, then run /flow reset and send a new message."
+				: "Resume now with: /flow resume",
+		);
 		lines.push("");
 	}
 	if (status.waiting.length) {
@@ -198,8 +202,14 @@ export function formatFlowStatus(status: FlowStatus, now: number): string {
 		lines.push("Withheld requests");
 		for (const request of status.retryable) {
 			lines.push(`- ${request.requestId} (${request.reason})`);
+			lines.push(
+				request.reason === "required-input"
+					? "  Required input was removed or changed before sending."
+					: "  Required context was removed or changed before sending.",
+			);
 			lines.push(`  retry with: /flow retry ${request.requestId}`);
 		}
+		lines.push("After repairing the cause, /flow reset releases these holds and keeps their receipts.");
 	}
 	if (status.uncertain.length) {
 		if (lines.length) lines.push("");

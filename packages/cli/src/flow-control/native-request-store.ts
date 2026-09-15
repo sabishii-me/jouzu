@@ -97,10 +97,9 @@ export const nativeSourceKey = (source: NativeSourceClaim) =>
 const identity = (id: unknown) => typeof id === "string" && id.length > 0 && id.length <= 512;
 const hash = (text: unknown) => typeof text === "string" && /^[a-f0-9]{64}$/.test(text);
 
-export const nativeRequestHeld = (record: NativeRequest): boolean =>
-	!record.reset &&
-	record.outcome === "withheld" &&
-	(!!record.requiredSources?.length || !!record.requiredProjections?.length);
+const nativeRequestWithheld = (record: NativeRequest): boolean =>
+	record.outcome === "withheld" && (!!record.requiredSources?.length || !!record.requiredProjections?.length);
+export const nativeRequestHeld = (record: NativeRequest): boolean => !record.reset && nativeRequestWithheld(record);
 export const nativeHoldPending = (record: NativeRequest): boolean =>
 	nativeRequestHeld(record) &&
 	(record.requiredSources?.length
@@ -143,7 +142,8 @@ export class FlowNativeRequestStore {
 		for (const [recordIndex, record] of records.entries()) {
 			if (
 				record.retryAuthorization !== undefined &&
-				(!nativeRequestHeld(record) ||
+				(!nativeRequestWithheld(record) ||
+					(record.reset && !record.retryAuthorization?.requestId) ||
 					!record.retryAuthorization ||
 					!identity(record.retryAuthorization.ownerId) ||
 					(record.retryAuthorization.requestId !== undefined &&
@@ -168,7 +168,7 @@ export class FlowNativeRequestStore {
 				throw new FlowLedgerError("identity", "Native retry has no matching authorization.");
 			if (
 				record.cancelledSources !== undefined &&
-				(!nativeRequestHeld(record) ||
+				(!nativeRequestWithheld(record) ||
 					!Array.isArray(record.cancelledSources) ||
 					new Set(record.cancelledSources).size !== record.cancelledSources.length ||
 					record.cancelledSources.some((index) => !record.requiredSources?.includes(index)))
@@ -188,7 +188,7 @@ export class FlowNativeRequestStore {
 				throw new FlowLedgerError("identity", "Invalid required projection positions.");
 			if (
 				record.cancelledProjections !== undefined &&
-				(!nativeRequestHeld(record) ||
+				(!nativeRequestWithheld(record) ||
 					record.requiredSources?.length ||
 					!Array.isArray(record.cancelledProjections) ||
 					!record.cancelledProjections.length ||
@@ -203,7 +203,7 @@ export class FlowNativeRequestStore {
 					record.projectionCapture.model?.count !== record.sourceCapture?.model?.count)
 			)
 				throw new FlowLedgerError("identity", "Projection and native conversion capture different contexts.");
-			if (record.withheldPayload !== undefined && (!nativeRequestHeld(record) || record.payload))
+			if (record.withheldPayload !== undefined && (!nativeRequestWithheld(record) || record.payload))
 				throw new FlowLedgerError("schema", "Invalid withheld native payload.");
 			if (
 				record.kind !== undefined &&
@@ -541,13 +541,17 @@ export class FlowNativeRequestStore {
 		return this.transact((records) => structuredClone(records));
 	}
 	/** Preserve receipts while explicitly releasing their unresolved holds. */
-	reset(): Promise<void> {
+	reset(): Promise<number> {
 		return this.transact((records) => {
+			let released = 0;
 			for (const record of records)
-				if (record.outcome === undefined || nativeHoldPending(record)) {
+				if ((!record.reset && record.outcome === undefined) || nativeHoldPending(record)) {
 					record.reset = true;
-					delete record.retryAuthorization;
+					// A used authorization is the retained retry's provenance, not permission to send again.
+					if (!record.retryAuthorization?.requestId) delete record.retryAuthorization;
+					released++;
 				}
+			return released;
 		});
 	}
 	/** Only the host may supply source identities proven absent from the current context. */

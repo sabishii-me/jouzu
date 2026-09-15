@@ -621,10 +621,9 @@ export class PiSessionFlowIngress implements Ingress {
 	submit(submission: Submission, dispatch: () => Promise<void>): Promise<void> {
 		const captured = structuredClone(submission);
 		const user = isNativeUserInput(captured);
-		// Emergency flow commands must remain reachable when ordinary native admission is
-		// inconsistent. They execute locally and never enter the provider transport.
-		const emergencyFlowCommand =
-			user && typeof captured.args[0] === "string" && ["/flow reset", "/flow clear"].includes(captured.args[0].trim());
+		// Local flow inspection and repair must remain reachable while provider admission is blocked.
+		const localFlowCommand =
+			user && typeof captured.args[0] === "string" && /^\/flow(?:\s|$)/.test(captured.args[0].trim());
 		if (user) this.activeUserInput++;
 		// Every send passes through here, so this is where the user speaking again releases an
 		// interrupt's hold. Automated work still waits for an idle boundary, which is what keeps it
@@ -634,7 +633,11 @@ export class PiSessionFlowIngress implements Ingress {
 		if (user && !flowCommand) this.resumeAutomated();
 		return this.track(async () => {
 			const branch = this.branch();
-			if (emergencyFlowCommand) {
+			if (
+				localFlowCommand &&
+				(branch.host.gate().recoveryBlocked ||
+					/^\/flow(?:\s+(?:runtime|reset|clear))?$/.test((captured.args[0] as string).trim()))
+			) {
 				await dispatch();
 				return;
 			}
@@ -804,12 +807,15 @@ export class PiSessionFlowIngress implements Ingress {
 				: undefined;
 			if (this.branch() !== branch || this.pending.get(id) !== pending)
 				throw new FlowLedgerError("stale", "User dispatch changed during work registration.");
+			const startsWork =
+				work && pending.submission.api === "prompt" && this.session?.isIdle && !this.session.isStreaming;
+			// A prior prompt can own work while its asynchronous authority check precedes Pi's streaming flag.
+			if (startsWork && branch.workContext.busy) return false;
 			if (user) this.activeUserInput++;
 			this.pending.delete(id);
 			try {
 				const dispatch = () => branch.native.dispatch(id, revision, pending.submission.id, pending.dispatch);
-				if (work && pending.submission.api === "prompt" && this.session?.isIdle && !this.session.isStreaming)
-					await branch.workContext.run(work, dispatch);
+				if (startsWork) await branch.workContext.run(work, dispatch);
 				else await dispatch();
 				await this.refreshUserInput();
 				return true;

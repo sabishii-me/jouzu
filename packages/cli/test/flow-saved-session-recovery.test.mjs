@@ -7,6 +7,7 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 import {
 	afterFlowCleanup,
 	assembledSession,
+	capturedNotices,
 	installedProducerExtensions,
 	replacedSession,
 } from "./fixtures/flow-assembly.mjs";
@@ -32,6 +33,23 @@ test("saved session recovers on a disposable copy, resets, and resumes again", {
 		sessionManager: SessionManager.open(sessionFile),
 		producerExtensions,
 	});
+	if (f.ingress.branch().attachment.nativeRequests.recoveryBlocked) {
+		const notices = capturedNotices(f.session);
+		await f.session.prompt("/flow");
+		assert.ok(notices.length, "saved recovery state must not block inspection");
+		assert.match(notices.map((notice) => notice.text).join("\n"), /\/flow reset/);
+		const before = await f.ingress.branch().attachment.nativeRequests.snapshot();
+		await f.session.prompt("/flow reset");
+		assert.equal(f.ingress.branch().attachment.nativeRequests.recoveryBlocked, false);
+		assert.equal(f.bodies.length, 0, "reset itself does not call the provider");
+		const after = await f.ingress.branch().attachment.nativeRequests.snapshot();
+		for (const receipt of before.filter((record) => record.outcome === "withheld")) {
+			const preserved = after.find((record) => record.id === receipt.id);
+			assert.equal(preserved?.reset, true);
+			assert.deepEqual(preserved.withheldPayload, receipt.withheldPayload);
+			assert.equal(preserved.outcome, "withheld");
+		}
+	}
 	await f.session.prompt("continue");
 	assert.equal(f.bodies.length, 1, JSON.stringify(await f.ingress.inspect()));
 	await f.session.prompt("/flow reset");

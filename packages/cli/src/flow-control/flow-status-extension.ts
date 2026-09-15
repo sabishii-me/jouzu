@@ -141,6 +141,10 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 									"Flow reset preserved pending evidence that still needs reconciliation. Run /flow for the remaining hold.",
 									"error",
 								);
+							} else if (result.releasedRequests) {
+								notify(
+									`Flow reset released ${result.releasedRequests} request hold${result.releasedRequests === 1 ? "" : "s"}${result.attemptId ? ` and cleared reservation ${result.attemptId}` : ""}. Receipt evidence was preserved. Continue with a new message.`,
+								);
 							} else if (result.kind === "inactive") {
 								notify("Flow reset completed. No active reservation was found; continue with a new message.");
 							} else {

@@ -517,6 +517,7 @@ export class PiNativeRequests {
 			this.active++;
 			let handedOff = false;
 			let admitting = false;
+			let admissionFailure: { error: unknown } | undefined;
 			let finished = false;
 			const settle = () => {
 				if (!finished) {
@@ -585,6 +586,7 @@ export class PiNativeRequests {
 							options?.signal?.throwIfAborted();
 							return owned;
 						} catch (error) {
+							admissionFailure = { error };
 							this.turn?.failed?.(error);
 							throw error;
 						}
@@ -596,6 +598,7 @@ export class PiNativeRequests {
 						try {
 							const message = await response.result();
 							this.assertActive();
+							if (!handedOff && admissionFailure) throw admissionFailure.error;
 							if (!handedOff)
 								throw new FlowLedgerError("transition", "Native provider returned without payload admission.");
 							if (!["stop", "length", "toolUse", "error", "aborted"].includes(message.stopReason))
