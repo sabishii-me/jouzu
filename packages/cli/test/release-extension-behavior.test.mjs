@@ -425,6 +425,20 @@ test("required web extensions fetch without installing the optional browser runt
 		assert.equal(batch.details.succeeded, 2);
 		assert.equal(batch.details.failed, 0);
 
+		// The installed renderer lists each URL with its settled status instead of one summary line.
+		const batchComponent = getTool(extensions, "batch_web_fetch").renderResult?.(
+			batch,
+			{ expanded: false },
+			fakeTheme(),
+			{ lastComponent: undefined, isError: false, invalidate() {} },
+		);
+		const batchLines = batchComponent?.render(120) ?? [];
+		assert.equal(batchLines.length, 3);
+		assert.match(batchLines[0] ?? "", /^Fetched 2\/2 URLs/u);
+		assert.equal(batchLines.filter((line) => line.includes("https://example.com/")).length, 1);
+		assert.equal(batchLines.filter((line) => line.includes("https://www.iana.org/help/example-domains")).length, 1);
+		assert.ok(batchLines.slice(1).every((line) => line.includes("✓")));
+
 		assert.ok(getTool(extensions, "tff-fetch_url"));
 		assert.ok(getTool(extensions, "tff-search_web"));
 		assert.equal(existsSync(join(root, "state", "camoufox-runtime")), false);
