@@ -47,7 +47,7 @@ npx --yes jouzu --version
 
 [GitHub Releases](https://github.com/shisa-ai/jouzu/releases) include the same tested npm tarball, checksums, and package manifest from v0.1.7 onward. The Windows installer is a separate download.
 
-Download the unsigned Windows x64 installer from the [v0.1.10 release page](https://github.com/shisa-ai/jouzu/releases/tag/v0.1.10). It bundles Node.js/npm, Git Bash, Windows Terminal, and native tools, with desktop and Start menu shortcuts. Windows may show an unknown-publisher warning. The preview has been tested on Windows Server 2025; clean Windows 10/11 testing remains pending. See [Windows installer preview](https://github.com/shisa-ai/jouzu/blob/main/packaging/windows/README.md) for setup and testing details.
+Download the unsigned Windows x64 installer from the [v0.1.10 release page](https://github.com/shisa-ai/jouzu/releases/tag/v0.1.10). It bundles Node.js/npm, Git Bash, Windows Terminal, and native tools, with desktop and Start menu shortcuts. The launcher shows the working folder before it opens a terminal and can remember it for later launches; if the saved folder is unavailable, it asks for another folder instead of opening a different one. Windows may show an unknown-publisher warning. The preview has been tested on Windows Server 2025; clean Windows 10/11 testing remains pending. See [Windows installer preview](https://github.com/shisa-ai/jouzu/blob/main/packaging/windows/README.md) for setup and testing details.
 
 ## Quick start
 
@@ -103,7 +103,7 @@ Task continuations keep the task's work identity, so they can start background j
 
 Run `/flow runtime` to see the running and installed builds and the resolved flow-adapter paths and hashes captured at startup. Jouzu warns once per session if the installed build changes or a required adapter patch differs at startup. Restart to load a changed build.
 
-Run `/flow` to see held work and its recovery commands. `/flow pause` holds automatic turns, and `/flow resume` releases them. Interrupting a turn also pauses automatic work until your next message or `/flow resume`. Pausing does not stop running shell jobs.
+Run `/flow` to see held work, why it is held, and its recovery commands. The report names the submitted source, the stage that failed, and the owning task with its dependencies. It keeps the original failure cause after a reset. `/flow pause` holds automatic turns, and `/flow resume` releases them. Interrupting a turn also pauses automatic work until your next message or `/flow resume`. Pausing does not stop running shell jobs.
 
 If the session stays stuck after an interrupt, run `/flow reset` while idle. It releases the blocked turn without stopping background jobs or deleting execution records. When Jouzu cannot tell whether a provider answered a request, `/flow resolve <attempt> retry|discard` records your decision; retrying may repeat a turn the provider already answered.
 
@@ -235,7 +235,7 @@ Settings reports each source's status and model count. `Enter` edits the selecte
 
 A global context ceiling sits above the source list. `↑` from the first source row focuses it, and `←` and `→` step through 128K, 192K, 256K, 384K, 512K, 768K, 1M, or off. The ceiling is stored in `context-policy.json` next to `catalogs.json`. Compaction, the footer percentage, and the model picker's fit check use the smaller of the model's declared window and the ceiling, so a 1M-token model under a 384K ceiling compacts as if its window were 384K. Catalog `limits.contextWindow` values compose through the same minimum, and an explicit `models.json` `modelOverrides.contextWindow` still outranks the ceiling. Turning the ceiling off restores the declared windows in the same session.
 
-Refresh uses ETag/`304`, validates complete bytes before activation, partitions private cache by source and account, and keeps each source's last valid catalog on network or validation failure. CLI status and refresh operate on all enabled sources or one named source:
+Refresh uses ETag/`304`, validates complete bytes before activation, partitions private cache by source and account, and keeps each source's last valid catalog on network or validation failure. A failed refresh records one bounded cause and the action to take: DNS resolution, connection, timeout, proxy authentication, HTTP 401, 403, or 407, certificate verification, or local catalog-data access. `catalog status` shows the recorded `Last error` and reports the overall status as degraded until a refresh succeeds. Recorded text excludes the bearer token and nested request details. CLI status and refresh operate on all enabled sources or one named source:
 
 ```bash
 jouzu catalog status

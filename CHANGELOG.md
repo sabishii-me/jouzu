@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.1.11 - 2026-09-15
+
+### Added
+
+- List running and paused goals with `/goal`, and pause, stop, or resume one with `/goal pause`, `/goal stop`, or `/goal resume`, optionally followed by a `lane/run-tag`. Without a target, the command selects the attached goal or the only matching goal; `/multiloop` shows all runs.
+- Show the selected working folder in the Windows launcher before it opens a terminal, with an option to remember it for later launches. If the saved folder is unavailable, the launcher asks for another folder instead of opening a different one. The launchers and installer use a transparent JZ icon. See [Windows installer preview](packaging/windows/README.md).
+- Report catalog access failures with the cause and the action to take: DNS resolution, connection, timeout, proxy authentication, HTTP 401, 403, or 407, certificate verification, or local catalog-data access. The first refresh failure is retained until a refresh succeeds, and `catalog status` reports it as `Last error` with the overall status degraded.
+
+### Changed
+
+- Explain held flow work in `/flow`: the submitted source, the stage that failed, the owning task and its dependencies, and the original failure cause after a reset.
+- Render `batch_web_fetch` as one row per requested URL with its queued, fetching, done, or error status, elapsed time, and extracted size, instead of one summary line.
+
+### Fixed
+
+- Continue automatic work across mid-run compaction, including compaction that keeps no original transcript tail. Recovery verifies the compaction boundary and earlier delivery instead of replaying input, and settles the terminal response from history when the active summary covers it.
+- Keep the continuation instruction in model context so a requested compaction continuation is admitted instead of rejected.
+- Keep `/flow` inspection and reset usable while work is held: report released holds, retain the original admission error and request receipts across a reset, and defer competing idle dispatches.
+- Return task tool authority to the invoking work after a task completes automatically, and allow task inspection without granting authority to the completed task.
+- Authenticate catalog models with the saved Shisa login, so `/login shisa` alone supplies the account's models without an environment key or a separate catalog token.
+
+### Testing limits
+
+- Flow recovery and compaction changes are covered by assembled-session and unit tests. No live provider session has been resumed against the rebuilt implementation.
+- The Windows launcher screen, JZ icon, and installer build have no native Windows verification, and desktop proxy, certificate-trust, and live model access remain unverified. Building and testing a v0.1.11 installer on Windows 10/11 is required before claiming native qualification; the published v0.1.10 installer does not contain these changes.
+- Catalog login and failure diagnostics are covered by tests with environment keys unset and by a loopback HTTP fixture; no live gateway or paid model request was made.
+
 ## 0.1.10 - 2026-09-15
 
 ### Added
