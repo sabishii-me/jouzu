@@ -1,4 +1,3 @@
-import { transformGoalCommands } from "./multiloop-goal-transform.mjs";
 export const extensionPath = "extensions/pi-multiloop/index.ts";
 function replace(source, from, to) {
 	if (source.split(from).length !== 2) throw new Error("Multiloop flow source anchor differs.");
@@ -57,7 +56,7 @@ export function transformMultiloopFlow(source) {
 		"  function updateStatus(ctx: ExtensionContext | ExtensionCommandContext) {",
 		"  function updateStatus(ctx: ExtensionContext | ExtensionCommandContext) {\n    multiloopFlow(ctx.sessionManager.getSessionId())?.changed(runningStates().map((state) => ({ lane: state.lane, runTag: state.runTag })));",
 	);
-	return transformGoalCommands(transformMultiloopLifecycle(source));
+	return transformMultiloopLifecycle(source);
 }
 
 export function transformMultiloopLifecycle(source) {
@@ -167,6 +166,11 @@ export function transformMultiloopLifecycle(source) {
 	source = source.replace(
 		/^( +)(await multiloopFlow\(ctx.sessionManager.getSessionId\(\)\)\?\.transition\?\.\(id, "(?:active|stopped)"\);)$/gm,
 		"$1$2\n$1if (pausedQuickGoal && stateKey(pausedQuickGoal) === stateKey(id)) pausedQuickGoal = null;",
+	);
+	source = replace(
+		source,
+		'        pi.sendUserMessage(buildAutoContinuePrompt([resumed], taskSnapshotFor(ctx)), { deliverAs: "followUp" });',
+		'        queueExplicitFlow(pi, ctx, resumed, "goal-resume", () => buildAutoContinuePrompt([resumed], taskSnapshotFor(ctx)));',
 	);
 	return source;
 }

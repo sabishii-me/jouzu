@@ -29,7 +29,7 @@ test("goal overview and lifecycle commands stay local and recover saved goals", 
 	await f.session.prompt("/goal stop");
 	await f.session.prompt("/goal");
 	assert.match(notices.at(-1).text, /No running or paused goals/);
-	assert.match(notices.at(-1).text, /1 other runs.*\/multiloop/);
+	assert.match(notices.at(-1).text, /Other runs hidden: 1.*\/multiloop/);
 	await f.session.prompt(`/goal resume ${target}`);
 	assert.match(notices.at(-1).text, /Resumed goal/);
 	await f.session.prompt("/goal clear");
@@ -66,7 +66,7 @@ test("goal commands filter measured runs and reject ambiguous saved goals", asyn
 	await f.session.prompt("/goal");
 	assert.match(notices.at(-1).text, /second objective/);
 	assert.doesNotMatch(notices.at(-1).text, /measured objective/);
-	assert.match(notices.at(-1).text, /1 other runs/);
+	assert.match(notices.at(-1).text, /Other runs hidden: 1/);
 	await f.session.prompt("/goal resume");
 	assert.match(notices.at(-1).text, /Could not select a goal/);
 	for (const operation of ["resume", "pause", "stop"]) {

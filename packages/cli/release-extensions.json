@@ -77,8 +77,8 @@
 		{
 			"name": "pi-multiloop",
 			"version": "0.4.0",
-			"source": "git+https://github.com/lhl/pi-multiloop.git#cffc0e58987249dd16d74f1b554623cd103d10d3",
-			"commit": "cffc0e58987249dd16d74f1b554623cd103d10d3",
+			"source": "git+https://github.com/lhl/pi-multiloop.git#9f9f581a09d8f711173bdafccfa49d0d80fea3f6",
+			"commit": "9f9f581a09d8f711173bdafccfa49d0d80fea3f6",
 			"repository": "https://github.com/lhl/pi-multiloop",
 			"license": "MIT",
 			"licenseEvidence": "LICENSE",
