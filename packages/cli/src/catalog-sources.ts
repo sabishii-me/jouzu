@@ -1,10 +1,12 @@
 import { existsSync, lstatSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { readBoundedResponseText } from "./bounded-response.js";
+import { describeCatalogFailure, safeCatalogMessage } from "./catalog-failure.js";
 import {
 	MODEL_CATALOG_MAX_BYTES,
 	MODEL_CATALOG_MEDIA_TYPE,
 	type ModelCatalogDocument,
+	ModelCatalogError,
 	parseAndValidateModelCatalog,
 	parseStrictJson,
 } from "./model-catalog.js";
@@ -98,7 +100,10 @@ export interface CatalogEndpointDiscoveryResult {
 }
 
 export class CatalogSourceError extends Error {
-	constructor(message: string) {
+	constructor(
+		message: string,
+		readonly code = "catalog_source_error",
+	) {
 		super(message);
 		this.name = "CatalogSourceError";
 	}
@@ -658,7 +663,7 @@ export function resolveCatalogBearer(
 ): string | undefined {
 	if (source.auth.type === "none") return undefined;
 	if (paths && isShisaApiCatalogEndpoint(source) && isShisaSignedOut(paths))
-		throw new CatalogSourceError("Signed out of Shisa. Run /login shisa to reconnect.");
+		throw new CatalogSourceError("Signed out of Shisa. Run /login shisa to reconnect.", "auth_required");
 	const name = source.auth.credentialRef.slice(4);
 	const fromEnv = envCredentialValue(source, env);
 	if (fromEnv) return fromEnv;
@@ -670,6 +675,7 @@ export function resolveCatalogBearer(
 	}
 	throw new CatalogSourceError(
 		`Catalog token variable ${name} is not set in this Jouzu process${paths ? " and no token is saved for this source" : ""}. Export it before starting Jouzu or save a token in Settings / Catalogs, then retry.`,
+		"auth_required",
 	);
 }
 
@@ -724,7 +730,7 @@ export async function discoverCatalogEndpoint(
 			}
 			const mediaType = response.headers.get("content-type") ?? "";
 			if (!mediaType.toLowerCase().startsWith(MODEL_CATALOG_MEDIA_TYPE)) {
-				attempts.push({ url, result: `unsupported Content-Type ${mediaType || "missing"}` });
+				attempts.push({ url, result: safeCatalogMessage(`unsupported Content-Type ${mediaType || "missing"}`, token) });
 				continue;
 			}
 			const text = await readBoundedResponseText(response, {
@@ -736,7 +742,10 @@ export async function discoverCatalogEndpoint(
 			return { url, document, text, etag: response.headers.get("etag") ?? undefined, attempts };
 		} catch (error) {
 			if (options.signal?.aborted) throw new CatalogSourceError("Catalog endpoint discovery was canceled.");
-			const message = error instanceof Error ? error.message : String(error);
+			const message =
+				error instanceof CatalogSourceError || error instanceof ModelCatalogError
+					? safeCatalogMessage(error.message, token)
+					: describeCatalogFailure(error, "network").message;
 			attempts.push({ url, result: controller.signal.aborted ? "timed out" : message });
 		} finally {
 			clearTimeout(timeout);

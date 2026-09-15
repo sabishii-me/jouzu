@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -61,6 +61,136 @@ function catalogOriginDirectory(jouzuPaths, environment = env()) {
 	const endpoint = new URL(environment.JOUZU_MODEL_CATALOG_URL).href;
 	return join(jouzuPaths.cacheDir, "model-catalog", createHash("sha256").update(endpoint).digest("hex"));
 }
+
+test("first catalog failure persists a safe cause and successful activation clears it", async () => {
+	const temporary = mkdtempSync(join(tmpdir(), "jouzu-catalog-first-failure-"));
+	try {
+		const jouzuPaths = paths(temporary);
+		const result = await refreshModelCatalog(jouzuPaths, {
+			env: env(),
+			fetch: async () => {
+				throw new TypeError("fetch failed fixture-token", {
+					cause: Object.assign(new Error("private host fixture-token"), { code: "ENOTFOUND" }),
+				});
+			},
+		});
+		assert.equal(result.code, "dns_error");
+		assert.equal(result.catalogStatus.status, "empty");
+		assert.equal(result.catalogStatus.lastError.code, "dns_error");
+		const persisted = getCatalogStatuses(jouzuPaths, env());
+		assert.equal(persisted.status, "degraded");
+		assert.equal(
+			persisted.sources.find((source) => source.endpoint === env().JOUZU_MODEL_CATALOG_URL).lastError.code,
+			"dns_error",
+		);
+		const origin = join(catalogOriginDirectory(jouzuPaths), "origin.json");
+		assert.doesNotMatch(readFileSync(origin, "utf8"), /fixture-token|private host/u);
+		assert.equal(
+			(await refreshModelCatalog(jouzuPaths, { env: env(), fetch: async () => response(snapshot(1)) })).status,
+			"activated",
+		);
+		assert.equal(
+			getCatalogStatuses(jouzuPaths, env()).sources.find((source) => source.endpoint === env().JOUZU_MODEL_CATALOG_URL)
+				.lastError,
+			undefined,
+		);
+		assert.equal(JSON.parse(readFileSync(origin, "utf8")).lastError, undefined);
+	} finally {
+		rmSync(temporary, { recursive: true, force: true });
+	}
+});
+
+test("HTTP authentication, account access, proxy authentication and server failures stay distinct", async () => {
+	for (const [status, code] of [
+		[401, "auth_rejected"],
+		[403, "access_denied"],
+		[407, "proxy_auth_required"],
+		[503, "http_error"],
+	]) {
+		const temporary = mkdtempSync(join(tmpdir(), "jouzu-catalog-http-error-"));
+		try {
+			const jouzuPaths = paths(temporary);
+			const result = await refreshModelCatalog(jouzuPaths, {
+				env: env(),
+				fetch: async () => new Response("fixture-token", { status }),
+			});
+			assert.equal(result.code, code);
+			assert.match(result.message, new RegExp(`HTTP ${status}`));
+			assert.doesNotMatch(result.message, /fixture-token/u);
+			assert.equal(
+				getCatalogStatuses(jouzuPaths, env()).sources.find(
+					(source) => source.endpoint === env().JOUZU_MODEL_CATALOG_URL,
+				).lastError.code,
+				code,
+			);
+		} finally {
+			rmSync(temporary, { recursive: true, force: true });
+		}
+	}
+});
+
+test("missing credentials and bounded validation errors survive first-refresh status", async () => {
+	const temporary = mkdtempSync(join(tmpdir(), "jouzu-catalog-first-auth-"));
+	try {
+		const jouzuPaths = paths(temporary);
+		const source = new CatalogSourceStore(jouzuPaths).add({
+			label: "Private",
+			url: "https://private.example/catalog",
+			auth: { type: "bearer", credentialRef: "env:PRIVATE_TOKEN" },
+		});
+		let calls = 0;
+		const fetch = async () => {
+			calls++;
+			return new Response("", { headers: { "content-type": `text/fixture-token${"x".repeat(1000)}` } });
+		};
+		const missing = await refreshModelCatalog(jouzuPaths, { sourceId: source.id, env: {}, fetch });
+		assert.equal(missing.code, "auth_required");
+		assert.equal(missing.catalogStatus.lastError.code, "auth_required");
+		assert.equal(calls, 0);
+		const invalid = await refreshModelCatalog(jouzuPaths, {
+			sourceId: source.id,
+			env: { PRIVATE_TOKEN: "fixture-token" },
+			fetch,
+		});
+		assert.equal(invalid.code, "catalog_sync_error");
+		assert.equal(invalid.message.length, 512);
+		assert.doesNotMatch(invalid.message, /fixture-token/u);
+		assert.equal(invalid.catalogStatus.lastError.message, invalid.message);
+		assert.equal(calls, 1);
+	} finally {
+		rmSync(temporary, { recursive: true, force: true });
+	}
+});
+
+test("local cache failures are not called network errors and invalid origin state is preserved", async () => {
+	const temporary = mkdtempSync(join(tmpdir(), "jouzu-catalog-local-error-"));
+	try {
+		const jouzuPaths = paths(temporary);
+		mkdirSync(jouzuPaths.configDir, { recursive: true });
+		writeFileSync(jouzuPaths.cacheDir, "fixture file blocking cache directory");
+		let calls = 0;
+		const options = {
+			env: env(),
+			fetch: async () => {
+				calls++;
+				return response(snapshot(1));
+			},
+		};
+		const blocked = await refreshModelCatalog(jouzuPaths, options);
+		assert.ok(["filesystem_error", "cache_error"].includes(blocked.code), blocked.code);
+		assert.equal(calls, 0);
+		rmSync(jouzuPaths.cacheDir);
+		await refreshModelCatalog(jouzuPaths, options);
+		const origin = join(catalogOriginDirectory(jouzuPaths), "origin.json");
+		writeFileSync(origin, "invalid fixture state");
+		const invalid = await refreshModelCatalog(jouzuPaths, options);
+		assert.equal(invalid.code, "catalog_sync_error");
+		assert.equal(readFileSync(origin, "utf8"), "invalid fixture state");
+		assert.equal(calls, 1);
+	} finally {
+		rmSync(temporary, { recursive: true, force: true });
+	}
+});
 
 test("missing endpoint performs no fetch and is a successful unconfigured state", async () => {
 	const temporary = mkdtempSync(join(tmpdir(), "jouzu-catalog-unconfigured-"));

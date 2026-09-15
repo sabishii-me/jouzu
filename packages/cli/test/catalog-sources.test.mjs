@@ -394,6 +394,26 @@ test("endpoint discovery explains missing and rejected bearer credentials", asyn
 	);
 });
 
+test("endpoint discovery preserves safe nested transport codes without exposing bearer values", async () => {
+	await assert.rejects(
+		discoverCatalogEndpoint("https://catalog.example/custom", {
+			auth: { type: "bearer", credentialRef: "env:POOL_TOKEN" },
+			env: { POOL_TOKEN: "fixture-secret" },
+			fetch: async () => {
+				throw new TypeError("fetch failed fixture-secret", {
+					cause: Object.assign(new Error("private details fixture-secret"), { code: "SELF_SIGNED_CERT_IN_CHAIN" }),
+				});
+			},
+		}),
+		(error) => {
+			assert.match(error.message, /SELF_SIGNED_CERT_IN_CHAIN/u);
+			assert.match(error.message, /trusted certificates/u);
+			assert.doesNotMatch(error.message, /fixture-secret|private details/u);
+			return true;
+		},
+	);
+});
+
 test("catalog registry rejects unsafe files, labels, sources, and credential references", () => {
 	const { root, paths, registryPath } = setup();
 	try {

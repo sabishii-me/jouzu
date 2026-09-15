@@ -2,9 +2,11 @@ import { createHash } from "node:crypto";
 import { existsSync, lstatSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
 import { readBoundedResponseText } from "./bounded-response.js";
+import { describeCatalogFailure, safeCatalogMessage } from "./catalog-failure.js";
 import {
 	type CatalogEndpointDiscoveryResult,
 	type CatalogSource,
+	CatalogSourceError,
 	catalogSourceConflict,
 	catalogSourceCredentialAvailable,
 	catalogSourceCredentialName,
@@ -70,9 +72,16 @@ interface CatalogAccountState {
 	quarantined: CatalogQuarantineRef[];
 }
 
+interface CatalogStoredError {
+	code: string;
+	message: string;
+	at: string;
+}
+
 interface CatalogOriginState {
 	schemaVersion: 1;
 	activeAccountRefHash?: string;
+	lastError?: CatalogStoredError;
 }
 
 export type CatalogSyncStatus =
@@ -140,7 +149,10 @@ export interface ActiveModelCatalog {
 export class CatalogSyncError extends Error {
 	readonly exitCode = 1;
 
-	constructor(message: string) {
+	constructor(
+		message: string,
+		readonly code = "catalog_sync_error",
+	) {
 		super(message);
 		this.name = "CatalogSyncError";
 	}
@@ -203,6 +215,19 @@ function readRegularJson(path: string): unknown | undefined {
 	}
 }
 
+function validStoredError(value: unknown): value is CatalogStoredError {
+	if (!value || typeof value !== "object") return false;
+	const record = value as Partial<CatalogStoredError>;
+	return (
+		typeof record.code === "string" &&
+		/^[a-z0-9_]{1,128}$/u.test(record.code) &&
+		typeof record.message === "string" &&
+		record.message.length <= 512 &&
+		typeof record.at === "string" &&
+		Number.isFinite(Date.parse(record.at))
+	);
+}
+
 function parseOriginState(value: unknown): CatalogOriginState | undefined {
 	if (value === undefined) return undefined;
 	if (!value || typeof value !== "object" || Array.isArray(value))
@@ -210,13 +235,15 @@ function parseOriginState(value: unknown): CatalogOriginState | undefined {
 	const record = value as Partial<CatalogOriginState>;
 	if (
 		record.schemaVersion !== 1 ||
-		(record.activeAccountRefHash !== undefined && !/^[0-9a-f]{64}$/u.test(record.activeAccountRefHash))
+		(record.activeAccountRefHash !== undefined && !/^[0-9a-f]{64}$/u.test(record.activeAccountRefHash)) ||
+		(record.lastError !== undefined && !validStoredError(record.lastError))
 	) {
 		throw new CatalogSyncError("catalog origin state is invalid");
 	}
 	return {
 		schemaVersion: 1,
 		...(record.activeAccountRefHash ? { activeAccountRefHash: record.activeAccountRefHash } : {}),
+		...(record.lastError ? { lastError: record.lastError } : {}),
 	};
 }
 
@@ -328,9 +355,10 @@ export function getCatalogSourceStatus(
 			thinkingLevelGaps = catalogThinkingLevelGaps(document);
 			registrationGaps = catalogRegistrationGaps(document);
 		}
+		const lastError = account?.lastError ?? origin?.lastError;
 		return {
 			schemaVersion: 1,
-			status: account?.active ? (account.lastError ? "stale" : "active") : "empty",
+			status: account?.active ? (lastError ? "stale" : "active") : "empty",
 			configured: true,
 			sourceId: source.id,
 			label: source.label,
@@ -342,7 +370,7 @@ export function getCatalogSourceStatus(
 			...(offeringCount !== undefined ? { offeringCount } : {}),
 			...(thinkingLevelGaps ? { thinkingLevelGaps } : {}),
 			...(registrationGaps ? { registrationGaps } : {}),
-			...(account?.lastError ? { lastError: account.lastError } : {}),
+			...(lastError ? { lastError } : {}),
 			...(credentialName ? { credentialName, credentialAvailable } : {}),
 			...(credential ? { credentialEnv: credential.envSet, credentialStored: credential.stored } : {}),
 			...(credential?.login ? { credentialLogin: true } : {}),
@@ -382,7 +410,7 @@ export function getCatalogStatuses(
 	const statuses = sources.map((source) => getCatalogSourceStatus(paths, source, now, env));
 	const enabled = statuses.filter((status) => status.configured && status.enabled);
 	const active = enabled.filter((status) => status.status === "active").length;
-	const degraded = enabled.some((status) => status.status === "stale");
+	const degraded = enabled.some((status) => status.status === "stale" || (status.configured && status.lastError));
 	return {
 		schemaVersion: 1,
 		status: degraded ? "degraded" : active > 0 ? "active" : "empty",
@@ -448,13 +476,6 @@ function trimQuarantine(entries: CatalogQuarantineRef[], accountDirectory: strin
 	return retained;
 }
 
-function errorCode(error: unknown): string {
-	if (error instanceof ModelCatalogError) return error.code;
-	if (error instanceof CatalogSyncError) return "catalog_sync_error";
-	if (error instanceof Error && error.name === "AbortError") return "timeout";
-	return "network_error";
-}
-
 function recordError(
 	paths: JouzuPaths,
 	config: CatalogEndpointConfig,
@@ -463,7 +484,14 @@ function recordError(
 	message: string,
 	now: Date,
 ): void {
-	if (!origin?.activeAccountRefHash) return;
+	if (!origin?.activeAccountRefHash) {
+		writeJson(
+			originStatePath(paths, config.url),
+			{ schemaVersion: 1, lastError: { code, message, at: now.toISOString() } },
+			catalogRoot(paths),
+		);
+		return;
+	}
 	const state = readAccountState(paths, config.url, origin.activeAccountRefHash);
 	if (!state) return;
 	state.lastError = { code, message, at: now.toISOString() };
@@ -487,19 +515,11 @@ export async function refreshCatalogSource(
 	const now = options.now ?? new Date();
 	const catalogStatus = () => getCatalogSourceStatus(paths, source, now, env);
 	let token: string | undefined;
-	try {
-		token = resolveCatalogBearer(source, env, paths);
-	} catch (error) {
-		return {
-			status: "error",
-			catalogStatus: catalogStatus(),
-			code: "auth_required",
-			message: error instanceof Error ? error.message : String(error),
-		};
-	}
-	const config: CatalogEndpointConfig = { url: source.url, ...(token ? { token } : {}) };
+	const config: CatalogEndpointConfig = { url: source.url };
 	let release: (() => void) | undefined;
 	let origin: CatalogOriginState | undefined;
+	let originLoaded = false;
+	let phase: "network" | "filesystem" = "filesystem";
 	try {
 		release = acquireStateLock({
 			path: lockPath(paths, config.url),
@@ -509,17 +529,20 @@ export async function refreshCatalogSource(
 				new CatalogSyncError(`model catalog refresh is busy (${inspection.status})`),
 		});
 		origin = readOriginState(paths, config.url);
+		originLoaded = true;
+		token = resolveCatalogBearer(source, env, paths);
 		const activeState = origin?.activeAccountRefHash
 			? readAccountState(paths, config.url, origin.activeAccountRefHash)
 			: undefined;
 		const headers = new Headers({ Accept: MODEL_CATALOG_MEDIA_TYPE });
-		if (config.token) headers.set("Authorization", `Bearer ${config.token}`);
+		if (token) headers.set("Authorization", `Bearer ${token}`);
 		if (activeState?.etag) headers.set("If-None-Match", activeState.etag);
 		const controller = new AbortController();
 		const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? CATALOG_TOTAL_TIMEOUT_MS);
 		let response: Response;
 		let text: string;
 		try {
+			phase = "network";
 			response = await (options.fetch ?? globalThis.fetch)(config.url, {
 				method: "GET",
 				headers,
@@ -528,6 +551,7 @@ export async function refreshCatalogSource(
 				signal: controller.signal,
 			});
 			if (response.status === 304) {
+				phase = "filesystem";
 				if (!activeState || !origin?.activeAccountRefHash)
 					throw new CatalogSyncError("received 304 without an active cached catalog");
 				activeState.validatedAt = now.toISOString();
@@ -537,7 +561,24 @@ export async function refreshCatalogSource(
 				writeJson(accountStatePath(paths, config.url, origin.activeAccountRefHash), activeState, catalogRoot(paths));
 				return { status: "not-modified", catalogStatus: catalogStatus() };
 			}
-			if (!response.ok) throw new CatalogSyncError(`catalog endpoint returned HTTP ${response.status}`);
+			if (!response.ok) {
+				if (response.status === 401)
+					throw new CatalogSyncError(
+						"Catalog authentication failed (HTTP 401). Sign in again or update this source's saved token or environment credential.",
+						"auth_rejected",
+					);
+				if (response.status === 403)
+					throw new CatalogSyncError(
+						"Catalog access was denied (HTTP 403). Check this account's catalog access with the service operator.",
+						"access_denied",
+					);
+				if (response.status === 407)
+					throw new CatalogSyncError(
+						"The proxy requires authentication (HTTP 407). Check your proxy credentials and configuration.",
+						"proxy_auth_required",
+					);
+				throw new CatalogSyncError(`catalog endpoint returned HTTP ${response.status}`, "http_error");
+			}
 			const mediaType = response.headers.get("content-type") ?? "";
 			if (!mediaType.toLowerCase().startsWith(MODEL_CATALOG_MEDIA_TYPE)) {
 				throw new CatalogSyncError(`catalog endpoint returned unsupported Content-Type: ${mediaType || "missing"}`);
@@ -549,12 +590,15 @@ export async function refreshCatalogSource(
 		} finally {
 			clearTimeout(timeout);
 		}
+		phase = "filesystem";
 		return activateCatalogDocument(paths, source, text, response.headers.get("etag") ?? undefined, now, env);
 	} catch (error) {
-		const code = errorCode(error);
-		const message = error instanceof Error ? error.message : String(error);
+		const { code, message } =
+			error instanceof ModelCatalogError || error instanceof CatalogSyncError || error instanceof CatalogSourceError
+				? { code: error.code, message: safeCatalogMessage(error.message, token) }
+				: describeCatalogFailure(error, phase);
 		try {
-			if (release) recordError(paths, config, origin, code, message, now);
+			if (release && originLoaded) recordError(paths, config, origin, code, message, now);
 		} catch {
 			// Keep the original refresh failure when cached state is also unreadable.
 		}
