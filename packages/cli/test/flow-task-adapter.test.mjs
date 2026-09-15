@@ -538,3 +538,35 @@ for (const goal of [false, true])
 		assert.deepEqual(f.errors, []);
 		assert.equal(f.bodies.length, goal ? 9 : 8);
 	});
+
+test("automatic task completion permits inspection before the next task continuation", {
+	timeout: 15000,
+}, async (t) => {
+	const f = await assembledSession(t, {
+		...(await setup(t)),
+		script: (_body, index) => {
+			if (index === 0)
+				return call("TaskCreateMany", {
+					tasks: [
+						{ subject: "First", description: "First task" },
+						{ subject: "Second", description: "Second task" },
+					],
+				});
+			if (index === 2) return call("TaskUpdate", { taskId: "1", status: "completed" });
+			if (index === 3 || index === 7) return call("TaskList", {});
+			if (index === 4) return call("TaskGet", { taskId: "2" });
+			if (index === 6) return call("TaskUpdate", { taskId: "2", status: "completed" });
+			return { text: "Task turn finished" };
+		},
+	});
+	await f.session.prompt("Create and run two tasks");
+	await until(f, () => f.bodies.length >= 9);
+	await f.session.waitForIdle();
+	assert.equal(f.bodies.length, 9);
+	assert.equal(messages(f).filter((message) => message.toolName === "TaskList").length, 2);
+	assert.ok(
+		messages(f).every((message) => !message.isError),
+		JSON.stringify(messages(f)),
+	);
+	assert.deepEqual(f.errors, []);
+});

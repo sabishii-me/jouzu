@@ -297,12 +297,17 @@ test("nested task selections return one authorized scope at a time", async (t) =
 	});
 });
 
-test("an admitted task cannot return to authority it never selected", async (t) => {
+test("an admitted task releases completed authority without adopting another work", async (t) => {
 	const { context, attachment } = await fixture(t);
 	await context.run(otherWork, async () => {
 		await context.runTool(async () => {
 			await attachment.waits.changeWork("other", "lane", 1, "completed", "Done", 1);
-			assert.equal(await context.returnFromToolWork(), false);
+			assert.equal(await context.returnFromToolWork(), true);
+		});
+		await context.runTool(async () => {
+			assert.equal(context.current(), undefined);
+			assert.throws(() => context.authorize("other"), { code: "identity" });
+			assert.throws(() => context.authorize("work"), { code: "identity" });
 		});
 	});
 });

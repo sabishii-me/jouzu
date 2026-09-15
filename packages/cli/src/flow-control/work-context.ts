@@ -134,15 +134,23 @@ export class FlowWorkContext {
 	/** Return only to authority retained when this invocation selected a child task. */
 	async returnFromToolWork(): Promise<boolean> {
 		const caller = this.invocations.getStore();
-		const selected = this.selected;
+		const selected = this.selected ?? this.active;
 		if (!caller || !selected || caller.parent !== selected) return false;
 		this.checkLifetime(caller);
 		const authority = await selected.attachment.waits.authoritySnapshot();
 		this.checkLifetime(caller);
+		if ((this.selected ?? this.active) !== selected)
+			throw new FlowLedgerError("stale", "Task selection changed before returning from completed work.");
 		const completed = authority.work.find((item) => item.id === selected.work?.id);
 		if (completed?.lifecycle?.state !== "completed") return false;
 		const parent = this.returnWork.at(-1);
-		if (!parent) return false;
+		if (!parent) {
+			// A task continuation has no caller to return to. Following tools may inspect
+			// state, but receive no authority to start work under the completed task.
+			if (this.selected) this.selected.active = false;
+			this.selected = { attachment: selected.attachment, active: true, operation: selected.operation };
+			return true;
+		}
 		const remaining = this.returnWork.slice(0, -1);
 		// selectToolWork validates the exact retained revision and active lifecycle.
 		const restored = await this.selectToolWork(parent);
