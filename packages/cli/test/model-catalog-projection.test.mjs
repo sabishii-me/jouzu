@@ -549,6 +549,60 @@ test("gateway model dispatch sends the catalog bearer and compatibility to the g
 	}
 });
 
+test("a saved Shisa login authenticates projected gateway models without an environment key", async () => {
+	const { resolveCatalogModel } = await import("../dist/model-catalog-projection.js");
+	const root = mkdtempSync(join(tmpdir(), "jouzu-projection-shisa-login-"));
+	const previousShisaApiKey = process.env.SHISA_API_KEY;
+	delete process.env.SHISA_API_KEY;
+	try {
+		const paths = resolveJouzuPaths({ homeOverride: join(root, "jouzu") });
+		mkdirSync(paths.agentDir, { recursive: true });
+		writeFileSync(
+			join(paths.agentDir, "auth.json"),
+			JSON.stringify({
+				shisa: {
+					type: "oauth",
+					access: "saved-shisa-login-key",
+					refresh: "",
+					expires: Number.MAX_SAFE_INTEGER,
+				},
+			}),
+			{ mode: 0o600 },
+		);
+		const runtime = await ModelRuntime.create({
+			modelsPath: join(root, "models.json"),
+			authPath: join(paths.agentDir, "auth.json"),
+		});
+		const registry = new ModelRegistry(runtime);
+		const ctx = { modelRegistry: registry, scopedModels: [] };
+		const pi = {
+			registerProvider: (...args) => registry.registerProvider(...args),
+			unregisterProvider: (id) => registry.unregisterProvider(id),
+		};
+		const catalog = activeCatalog(fixture(), "shisa-api");
+		catalog.source.label = "Shisa API";
+		catalog.source.url = "https://api.shisa.ai/v1/jouzu/model-catalog";
+		catalog.source.auth = { type: "bearer", credentialRef: "env:SHISA_API_KEY" };
+
+		const controller = new CatalogProjectionController({}, paths);
+		controller.sync(pi, ctx, [catalog]);
+		await runtime.refresh({ allowNetwork: false });
+		const reference = { provider: "ai.example.gateway", modelId: "example-model" };
+		const resolved = resolveCatalogModel(ctx, reference, [catalog]);
+		assert.ok(resolved, "the saved login makes the projected offering available");
+		assert.ok(
+			registry.getAvailable().some((model) => model.provider === resolved.provider && model.id === resolved.id),
+			"the projected model is present in Pi's available inventory",
+		);
+		assert.equal((await runtime.prepareRequest(resolved)).options.apiKey, "saved-shisa-login-key");
+		controller.release(pi, ctx);
+	} finally {
+		if (previousShisaApiKey === undefined) delete process.env.SHISA_API_KEY;
+		else process.env.SHISA_API_KEY = previousShisaApiKey;
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
 test("a saved source token serves the gateway when the environment has no value", async () => {
 	const { resolveCatalogModel } = await import("../dist/model-catalog-projection.js");
 	const root = mkdtempSync(join(tmpdir(), "jouzu-projection-saved-token-"));
