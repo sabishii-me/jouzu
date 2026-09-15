@@ -105,9 +105,12 @@ test("status names an active campaign, so pause and stop have a target without a
 	await settle();
 	assert.equal(f.bodies.length, requests, "listing work still sends no request");
 	const listed = notices.map((notice) => notice.text).join("\n");
-	assert.match(listed, /Active work\n- multiloop /, "the campaign is listed with its owner");
-	assert.ok(listed.includes(wait.workId), "and with the identity the controls take");
-	const target = listed.match(/pause with: \/flow pause (\S+)$/m)?.[1];
+	assert.match(listed, /Work eligibility\n- multiloop:/, "the campaign is listed with its owner");
+	assert.match(listed, /\/flow details/, "full controls are discoverable");
+	await f.session.prompt("/flow details");
+	const expanded = notices.at(-1).text;
+	assert.ok(expanded.includes(wait.workId), "details include the identity the controls take");
+	const target = expanded.match(/Pause: \/flow pause (\S+)$/m)?.[1];
 	assert.equal(target, wait.workId, "the printed control names that identity");
 
 	// The printed command is the one that works: copied verbatim, it holds the campaign.
@@ -348,7 +351,7 @@ test("an interrupted turn is listed and resolved from /flow", async (t) => {
 	await f.session.prompt("/flow");
 	await settle();
 	const listed = notices.map((notice) => notice.text).join("\n");
-	assert.match(listed, /Interrupted, outcome unknown\n- interrupted: Host is inactive/);
+	assert.match(listed, /Sent, outcome unknown\n- Host is inactive/);
 	const target = listed.match(/\/flow resolve (\S+) retry$/m)?.[1];
 	assert.equal(target, "interrupted", "the printed command names the interrupted turn");
 	assert.match(listed, /\/flow resolve interrupted discard/);

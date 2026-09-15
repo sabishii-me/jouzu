@@ -636,7 +636,9 @@ export class PiSessionFlowIngress implements Ingress {
 			if (
 				localFlowCommand &&
 				(branch.host.gate().recoveryBlocked ||
-					/^\/flow(?:\s+(?:runtime|reset|clear))?$/.test((captured.args[0] as string).trim()))
+					/^\/flow(?:\s+(?:details(?:\s+[1-9]\d{0,5})?|runtime|reset|clear))?$/.test(
+						(captured.args[0] as string).trim(),
+					))
 			) {
 				await dispatch();
 				return;

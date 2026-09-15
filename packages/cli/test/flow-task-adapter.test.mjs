@@ -8,6 +8,7 @@ import { assistantToolCalls } from "../../../scripts/fixtures/pi-flow-session.mj
 import {
 	afterFlowCleanup,
 	assembledSession,
+	capturedNotices,
 	installedProducerExtensions,
 	installedTaskExtension,
 	replacedSession,
@@ -49,6 +50,36 @@ const messages = (f) =>
 		.getEntries()
 		.filter((entry) => entry.type === "message" && entry.message.role === "toolResult")
 		.map((entry) => entry.message);
+
+test("flow reports installed task titles and unfinished dependencies without changing task state", async (t) => {
+	const f = await assembledSession(t, {
+		...(await setup(t)),
+		script: [
+			call("TaskCreate", { subject: "Validate shard evidence", description: "Check artifacts" }),
+			call("TaskCreate", { subject: "Execute two GPU shards", description: "Wait for validated evidence" }),
+			call("TaskUpdate", { taskId: "2", addBlockedBy: ["1"] }),
+			call("TaskUpdate", { taskId: "1", paused: true }),
+			{ text: "Waiting." },
+		],
+	});
+	await f.session.prompt("Create the task dependencies and pause the first task.");
+	await f.session.waitForIdle();
+	const notices = capturedNotices(f.session);
+	const before = await readFile(f.taskFile ?? join(f.root, "tasks.json"), "utf8");
+	const requests = f.bodies.length;
+	await f.session.prompt("/flow");
+	const text = notices.at(-1).text;
+	assert.match(text, /Task #1: Validate shard evidence/);
+	assert.match(text, /Paused in task settings/);
+	assert.match(text, /Task #2: Execute two GPU shards/);
+	assert.match(text, /Waiting for task #1/);
+	assert.doesNotMatch(text, /Producer state changed|tasks-work:/);
+	await f.session.prompt("/flow details");
+	assert.match(notices.at(-1).text, /tasks-work:/);
+	assert.equal(f.bodies.length, requests);
+	assert.equal(await readFile(join(f.root, "tasks.json"), "utf8"), before);
+	assert.deepEqual(f.errors, []);
+});
 
 test("installed task continuation owns background execution and waits", { timeout: 20000 }, async (t) => {
 	const setupData = await setup(t);

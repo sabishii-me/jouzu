@@ -35,7 +35,8 @@ export async function applyTaskFlow(packageRoot, checkOnly = false) {
 		throw error;
 	});
 	if (installed !== runtime) {
-		if (checkOnly || installed !== undefined) throw new Error("Installed task flow runtime differs.");
+		if (checkOnly || (installed !== undefined && sha(installed) !== lock.previousRuntime))
+			throw new Error("Installed task flow runtime differs.");
 		writes.push([destination, runtime]);
 	}
 	for (const [path, content] of writes) await writeFile(path, content);

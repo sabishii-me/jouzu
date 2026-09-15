@@ -75,6 +75,7 @@ export function createFlowControlRuntime(options: FlowControlRuntimeOptions): Fl
 	const status = createFlowStatusExtension({
 		ingress,
 		runtimeReport: options.runtimeReport,
+		tasks: () => tasks.inventory(),
 		unaccountable: () => [
 			...multiloop
 				.unboundLanes()

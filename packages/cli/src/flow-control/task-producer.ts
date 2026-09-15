@@ -11,6 +11,10 @@ export interface FlowTask {
 	taskId: string;
 	revision: string;
 	state: "active" | "blocked" | "paused" | "completed";
+	subject?: string;
+	status?: string;
+	reason?: string;
+	blockedBy?: string[];
 }
 export interface TaskContinuation {
 	key: string;
@@ -40,7 +44,16 @@ export function captureTasks(input: FlowTask[]): FlowTask[] {
 		new Set(input.map((task) => task.key)).size !== input.length
 	)
 		throw new FlowLedgerError("schema", "Invalid task flow inventory.");
-	return input.map(({ key, taskId, revision, state }) => ({ key, taskId, revision, state }));
+	return input.map(({ key, taskId, revision, state, subject, status, reason, blockedBy }) => ({
+		key,
+		taskId,
+		revision,
+		state,
+		...(typeof subject === "string" ? { subject: subject.slice(0, 1024) } : {}),
+		...(typeof status === "string" ? { status: status.slice(0, 64) } : {}),
+		...(typeof reason === "string" ? { reason: reason.slice(0, 1024) } : {}),
+		...(Array.isArray(blockedBy) ? { blockedBy: blockedBy.filter((id) => typeof id === "string").slice(0, 1024) } : {}),
+	}));
 }
 
 /** Task identity and state come from the loaded store, never from continuation prose. */

@@ -1,8 +1,11 @@
 import type { InlineExtension } from "@earendil-works/pi-coding-agent";
 import { renderFlowMessage } from "./flow-message-renderer.js";
 import { type FlowUnaccountableWork, formatFlowStatus, projectFlowStatus } from "./flow-status.js";
+import { captureFlowStatusContext, flowDisplayText } from "./flow-status-context.js";
+import { nativeHoldHash, nativeHoldPending } from "./native-request-store.js";
 import type { PiSessionFlowIngress } from "./pi-session-ingress.js";
 import { FlowLedgerError } from "./receipt-ledger.js";
+import type { FlowTask } from "./task-producer.js";
 
 export interface FlowStatusOptions {
 	ingress(): PiSessionFlowIngress;
@@ -10,10 +13,12 @@ export interface FlowStatusOptions {
 	unaccountable?(): FlowUnaccountableWork[];
 	now?(): number;
 	runtimeReport?(): string;
+	tasks?(): FlowTask[];
 }
 
 const USAGE = [
 	"/flow shows what session flow control is holding.",
+	"/flow details [page] includes full identifiers and per-item controls.",
 	"/flow runtime shows running and installed builds and startup package paths and hashes.",
 	"/flow retry <request> authorizes one withheld request.",
 	"/flow cancel <token> removes a wait's dependency gate without stopping its job.",
@@ -76,13 +81,73 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 							return;
 						}
 						const ingress = options.ingress();
-						if (verb === undefined) {
-							const inspected = await ingress.inspect();
+						if (
+							verb === undefined ||
+							(verb === "details" && (!target || /^[1-9]\d{0,5}$/.test(target)) && !choice && !rest.length)
+						) {
 							const branch = ingress.branch();
-							const [waits, authority] = await Promise.all([
-								branch.attachment.waits.snapshot(),
-								branch.attachment.waits.authoritySnapshot(),
+							const turnActive = ctx.isIdle?.() === false;
+							const warnings: string[] = [];
+							const read = async <T>(label: string, operation: () => Promise<T>, fallback: T): Promise<T> => {
+								try {
+									return await operation();
+								} catch (error) {
+									warnings.push(`${label}: ${flowDisplayText(error instanceof Error ? error.message : String(error))}`);
+									return fallback;
+								}
+							};
+							const inspected = await read("Input status unavailable", () => ingress.inspect(), {
+								version: 1 as const,
+								scope: branch.scope,
+								submissions: [],
+								uncertain: [],
+							});
+							const [waits, authority, submissions, requests] = await Promise.all([
+								read("Job waits unavailable", () => branch.attachment.waits.snapshot(), []),
+								read("Work status unavailable", () => branch.attachment.waits.authoritySnapshot(), {
+									version: 1 as const,
+									work: [],
+									executions: [],
+									waitTokens: [],
+								}),
+								read("Input descriptions unavailable", () => branch.attachment.submissions.snapshot(), []),
+								read("Request records unavailable", () => branch.attachment.nativeRequests.snapshot(), []),
 							]);
+							const recovery: string[] = [];
+							if (branch.recovery.unresolved)
+								recovery.push(`${branch.recovery.unresolved} saved deliveries have unresolved history.`);
+							if (branch.sourceRecovery.unresolved)
+								recovery.push(
+									`${branch.sourceRecovery.unresolved} submitted inputs could not be matched to session history.`,
+								);
+							if (branch.waitSourceRecovery.missing.length)
+								recovery.push(`Waiting on unavailable job sources: ${branch.waitSourceRecovery.missing.join(", ")}`);
+							if (
+								!turnActive &&
+								requests.some((request) => request.outcome === undefined && !request.reset) &&
+								!inspected.uncertain.length
+							)
+								recovery.push(
+									"A provider request has no recorded outcome. Inspect /flow details before resetting; do not assume it was never sent.",
+								);
+							let tasks: FlowTask[] = [];
+							try {
+								tasks = options.tasks?.() ?? [];
+							} catch (error) {
+								warnings.push(
+									`Task details unavailable: ${flowDisplayText(error instanceof Error ? error.message : String(error))}`,
+								);
+							}
+							let unaccountable: FlowUnaccountableWork[] = [];
+							try {
+								unaccountable = options.unaccountable?.() ?? [];
+							} catch (error) {
+								warnings.push(
+									`Detached work unavailable: ${flowDisplayText(error instanceof Error ? error.message : String(error))}`,
+								);
+							}
+							if (ingress.branch() !== branch)
+								throw new FlowLedgerError("stale", "Flow status changed while it was being read; run /flow again.");
 							notify(
 								formatFlowStatus(
 									projectFlowStatus(
@@ -90,11 +155,17 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 										inspected.submissions,
 										waits,
 										authority.work,
-										options.unaccountable?.() ?? [],
+										unaccountable,
 										inspected.uncertain,
 										ingress.automatedPause(),
+										{ ...captureFlowStatusContext(submissions, requests, tasks, recovery), warnings, turnActive },
 									),
 									now(),
+									{
+										details: verb === "details",
+										page: target ? Number(target) : 1,
+										columns: process.stdout.columns ?? 100,
+									},
 								),
 							);
 							return;
@@ -159,16 +230,17 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 							return;
 						}
 						if (verb === "retry") {
-							const inspected = await ingress.inspect();
-							const status = projectFlowStatus(inspected.scope, inspected.submissions, [], []);
-							const request = status.retryable.find((item) => item.requestId === target);
+							const requests = await ingress.branch().attachment.nativeRequests.snapshot();
+							const request = requests.find(
+								(item) => item.id === target && nativeHoldPending(item) && !item.retryAuthorization?.requestId,
+							);
 							if (!request) {
 								notify(`No withheld request ${target} is waiting for a retry. Run /flow to list them.`, "error");
 								return;
 							}
 							// The hash is the evidence the store requires, so a retry cannot land on changed input.
-							await ingress.retryNativeRequest(request.requestId, request.hash);
-							notify(`Authorized a retry of ${request.requestId}. Its input is admitted again before it is sent.`);
+							await ingress.retryNativeRequest(request.id, nativeHoldHash(request));
+							notify(`Authorized a retry of ${request.id}. Its input is admitted again before it is sent.`);
 							return;
 						}
 						if (verb === "cancel") {
@@ -218,7 +290,10 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 						}
 						notify(USAGE, "error");
 					} catch (error) {
-						notify(`Flow control: ${error instanceof Error ? error.message : String(error)}`, "error");
+						notify(
+							`Flow control: ${flowDisplayText(error instanceof Error ? error.message : String(error), 500)}\nThe operation did not complete. Run /flow runtime for build details.`,
+							"error",
+						);
 					}
 				},
 			});

@@ -7,7 +7,11 @@ import { type FlowTask, TaskFlowProducer, taskWorkBinding } from "./task-produce
 export function createTaskControllerExtension(options: {
 	ingress(): PiSessionFlowIngress;
 	onError(error: unknown): void;
-}): InlineExtension & { consumedAttempt(attempt: FlowAttempt): void; unboundTasks(): FlowTask[] } {
+}): InlineExtension & {
+	consumedAttempt(attempt: FlowAttempt): void;
+	unboundTasks(): FlowTask[];
+	inventory(): FlowTask[];
+} {
 	let producer: TaskFlowProducer | undefined;
 	let closeRegistration: (() => void) | undefined;
 	let unsubscribe: (() => void) | undefined;
@@ -19,6 +23,9 @@ export function createTaskControllerExtension(options: {
 	};
 	return {
 		name: "jouzu-task-controller",
+		inventory() {
+			return producer?.inventory() ?? [];
+		},
 		unboundTasks() {
 			return producer?.unboundTasks() ?? [];
 		},

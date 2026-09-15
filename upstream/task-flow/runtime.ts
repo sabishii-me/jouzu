@@ -5,7 +5,7 @@ interface Task {
 	id: string; createdAt: number; subject: string; description: string; status: string;
 	owner?: string; blockedBy: string[]; metadata: Record<string, unknown>;
 }
-interface Descriptor { key: string; taskId: string; revision: string; state: "active" | "blocked" | "paused" | "completed"; }
+interface Descriptor { key: string; taskId: string; revision: string; state: "active" | "blocked" | "paused" | "completed"; subject: string; status: string; reason?: string; blockedBy: string[]; }
 interface Host {
 	version: 1;
 	ready(): Promise<void>;
@@ -26,7 +26,9 @@ export function installTaskFlow(pi: ExtensionAPI, list: () => Task[], storeIdent
 		const invalid = control !== undefined && (!control || typeof control !== "object" || Array.isArray(control) || (control.waitForUser !== undefined && typeof control.waitForUser !== "boolean") || (control.paused !== undefined && typeof control.paused !== "boolean"));
 		const state = task.status === "completed" ? "completed" : invalid || control?.paused ? "paused" : control?.waitForUser || task.blockedBy.some(id => tasks.find(other => other.id === id)?.status !== "completed") ? "blocked" : "active";
 		const key = hash(["task-work-v1", storeIdentity(), task.id, task.createdAt]);
-		return { key, taskId: task.id, state, revision: hash([key, task.subject, task.description, task.status, task.owner, task.blockedBy, metadata, state]) };
+		const blockedBy = task.blockedBy.filter(id => tasks.find(other => other.id === id)?.status !== "completed");
+		const reason = task.status === "completed" ? undefined : invalid ? "Task has invalid flow-control settings" : control?.paused ? "Paused in task settings" : control?.waitForUser ? "Waiting for your input" : blockedBy.length ? `Waiting for ${blockedBy.map(id => `task #${id}`).join(", ")}` : undefined;
+		return { key, taskId: task.id, state, subject: task.subject, status: task.status, reason, blockedBy, revision: hash([key, task.subject, task.description, task.status, task.owner, task.blockedBy, metadata, state]) };
 	};
 	const currentHost = () => { if (failure) throw failure; return host; };
 	return {

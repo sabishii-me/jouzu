@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,6 +7,31 @@ import { test } from "node:test";
 import { applyInstalledTaskFlow, applyTaskFlow } from "../../../scripts/apply-task-flow.mjs";
 
 const installed = new URL("../node_modules/@lhl/pi-tasks/", import.meta.url);
+
+test("task metadata upgrade replaces only the pinned preceding runtime", async (t) => {
+	const root = await mkdtemp(join(tmpdir(), "jouzu-task-upgrade-"));
+	t.after(() => rm(root, { recursive: true, force: true }));
+	await mkdir(join(root, "src"));
+	for (const path of ["package.json", "src/index.ts"])
+		await writeFile(join(root, path), await readFile(new URL(path, installed)));
+	const runtime = await readFile(new URL("src/jouzu-flow.ts", installed), "utf8");
+	const previous = runtime
+		.replace("; subject: string; status: string; reason?: string; blockedBy: string[]; }", "; }")
+		.split("\n")
+		.filter((line) => !line.startsWith("\t\tconst blockedBy =") && !line.startsWith("\t\tconst reason ="))
+		.join("\n")
+		.replace("state, subject: task.subject, status: task.status, reason, blockedBy, revision:", "state, revision:");
+	const lock = JSON.parse(
+		await readFile(new URL("../../../upstream/task-flow/patch.lock.json", import.meta.url), "utf8"),
+	);
+	assert.equal(createHash("sha256").update(previous).digest("hex"), lock.previousRuntime);
+	await writeFile(join(root, "src/jouzu-flow.ts"), previous);
+	await assert.rejects(applyTaskFlow(root, true), /differs/);
+	assert.equal(await readFile(join(root, "src/jouzu-flow.ts"), "utf8"), previous);
+	assert.equal(await applyTaskFlow(root), 1);
+	assert.equal(await readFile(join(root, "src/jouzu-flow.ts"), "utf8"), runtime);
+	assert.equal(await applyTaskFlow(root, true), 0);
+});
 
 test("installed task adapter is pinned and idempotent", async () => {
 	assert.equal(await applyInstalledTaskFlow(true), 0);

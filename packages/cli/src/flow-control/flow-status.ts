@@ -1,3 +1,5 @@
+import type { FlowStatusContext } from "./flow-status-context.js";
+import { formatFlowReport } from "./flow-status-report.js";
 import type { FlowScope } from "./receipt-ledger.js";
 import type { FlowSubmissionView } from "./submission-view.js";
 import type { FlowAuthorityWork } from "./wait-authority.js";
@@ -27,6 +29,7 @@ export interface FlowBlockedWait {
 	reason: string;
 	expiresAt: number;
 	unmet: number;
+	dependencies?: string[];
 }
 /** Work a producer still names that this session holds no authority for, so it will not run. */
 export interface FlowUnaccountableWork {
@@ -47,6 +50,8 @@ export interface FlowSuspendedWork {
 	owner: string;
 	state: "paused" | "stopped";
 	reason: string;
+	campaign?: string[];
+	producerRevision?: string;
 }
 /**
  * Registered work that can still take automated turns, listed so its identity is the pause and stop
@@ -59,6 +64,7 @@ export interface FlowActiveWork {
 	campaign?: string[];
 	/** Live waits this work owns, so a reader can connect it to the waits listed above. */
 	waits: number;
+	producerRevision?: string;
 }
 export interface FlowStatus {
 	version: 1;
@@ -72,6 +78,7 @@ export interface FlowStatus {
 	active: FlowActiveWork[];
 	suspended: FlowSuspendedWork[];
 	unaccountable: FlowUnaccountableWork[];
+	context?: FlowStatusContext;
 }
 
 /**
@@ -87,16 +94,19 @@ export function projectFlowStatus(
 	unaccountable: FlowUnaccountableWork[] = [],
 	uncertain: FlowUncertainAttempt[] = [],
 	paused?: string,
+	context?: FlowStatusContext,
 ): FlowStatus {
 	const owners = new Map(work.map((record) => [record.id, record.owner]));
 	const held: FlowHeldInput[] = [];
 	const retryable: FlowRetryableRequest[] = [];
+	const seenRequests = new Set<string>();
 	for (const submission of submissions) {
 		if (submission.admission === "held" && submission.reason)
 			held.push({ id: submission.id, revision: submission.revision, reason: submission.reason });
 		for (const request of submission.nativeRequests ?? []) {
 			// A request that already has a retry is not offered again.
-			if (!request.hold || request.retryRequestId) continue;
+			if (!request.hold || request.retryRequestId || seenRequests.has(request.requestId)) continue;
+			seenRequests.add(request.requestId);
 			retryable.push({
 				submissionId: submission.id,
 				requestId: request.requestId,
@@ -104,6 +114,15 @@ export function projectFlowStatus(
 				reason: request.hold.reason,
 			});
 		}
+	}
+	for (const [requestId, request] of Object.entries(context?.requests ?? {})) {
+		if (seenRequests.has(requestId) || !request.hash || !request.reason) continue;
+		retryable.push({
+			submissionId: request.inputIds[0] ?? "",
+			requestId,
+			hash: request.hash,
+			reason: request.reason,
+		});
 	}
 	const waiting = waits
 		.filter((wait) => wait.state === "waiting")
@@ -114,6 +133,7 @@ export function projectFlowStatus(
 			reason: wait.reason,
 			expiresAt: wait.expiresAt,
 			unmet: wait.unmet.length,
+			...(context ? { dependencies: wait.unmet.map((item) => `${item.producer} ${item.handle}: ${item.until}`) } : {}),
 		}));
 	// Work with source submissions is one user turn's identity, not a campaign a user would pause,
 	// and a session accumulates one per turn. Only registered producer work is offered as a target.
@@ -125,6 +145,7 @@ export function projectFlowStatus(
 						owner: record.owner,
 						...(record.binding ? { campaign: [...record.binding.key] } : {}),
 						waits: waiting.filter((wait) => wait.workId === record.id).length,
+						...(context && record.producerRevision ? { producerRevision: record.producerRevision } : {}),
 					},
 				]
 			: [],
@@ -138,6 +159,8 @@ export function projectFlowStatus(
 						owner: record.owner,
 						state: record.lifecycle.state as FlowSuspendedWork["state"],
 						reason: record.lifecycle.reason,
+						...(context && record.binding ? { campaign: [...record.binding.key] } : {}),
+						...(context && record.producerRevision ? { producerRevision: record.producerRevision } : {}),
 					},
 				]
 			: [],
@@ -153,6 +176,7 @@ export function projectFlowStatus(
 		active,
 		suspended,
 		unaccountable: [...unaccountable],
+		...(context ? { context } : {}),
 	};
 }
 
@@ -165,7 +189,12 @@ const duration = (milliseconds: number): string => {
 };
 
 /** Render the status for a terminal. Identifiers stay whole so a retry can be copied from it. */
-export function formatFlowStatus(status: FlowStatus, now: number): string {
+export function formatFlowStatus(
+	status: FlowStatus,
+	now: number,
+	options: { details?: boolean; columns?: number; page?: number } = {},
+): string {
+	if (status.context) return formatFlowReport(status, now, options);
 	const lines: string[] = [];
 	if (status.paused) {
 		lines.push(`Paused: ${status.paused}`);

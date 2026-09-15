@@ -64,6 +64,7 @@ test("/flow reports a withheld request through the recovery gate without retaini
 	);
 	assert.ok(output.includes(withheld.id));
 	await f.session.prompt("/flow runtime");
+	await f.session.prompt("/flow details 2");
 	assert.ok(notices.length >= 2);
 	assert.equal(f.bodies.length, 0);
 	assert.equal(f.ingress.automatedPause(), pause);

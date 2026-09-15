@@ -276,6 +276,50 @@ test("provider omission of payload admission cannot record native success", asyn
 	assert.match(f.session.agent.state.errorMessage, /without payload admission/);
 });
 
+test("provider preparation failure preserves a bounded redacted cause before payload admission", async (t) => {
+	const f = await nativeRequests(t, {
+		native: async () => ({
+			async *[Symbol.asyncIterator]() {},
+			result: async () => ({
+				...assistant(),
+				stopReason: "error",
+				errorMessage: "Invalid endpoint api_key=secret-value \u001b[31mconfiguration",
+			}),
+		}),
+	});
+	await f.session.prompt("Prepare the request");
+	assert.equal((await f.store.snapshot())[0].outcome, "withheld");
+	assert.match(f.session.agent.state.errorMessage, /Provider request failed before payload admission/);
+	assert.match(f.session.agent.state.errorMessage, /Invalid endpoint/);
+	assert.match(f.session.agent.state.errorMessage, /\/flow/);
+	assert.doesNotMatch(f.session.agent.state.errorMessage, /secret-value/);
+	assert.equal(f.session.agent.state.errorMessage.includes("\u001b"), false);
+});
+
+test("compaction preparation errors preserve their cause without claiming a successful receipt", async (t) => {
+	const f = await nativeRequests(t, {
+		native: async () => ({
+			async *[Symbol.asyncIterator]() {},
+			result: async () => ({ ...assistant(), stopReason: "error", errorMessage: "Invalid compaction configuration" }),
+		}),
+	});
+	Object.defineProperty(f.session, "isCompacting", { configurable: true, get: () => true });
+	try {
+		const response = await f.session.agent.streamFunction(
+			f.session.model,
+			{ messages: [], systemPrompt: "Summarize" },
+			{},
+		);
+		await assert.rejects(
+			response.result(),
+			/Compaction provider failed before payload admission: Invalid compaction configuration/,
+		);
+		assert.equal((await f.store.snapshot())[0].outcome, "withheld");
+	} finally {
+		delete f.session.isCompacting;
+	}
+});
+
 test("broken native stream retains uncertain handoff and drains ownership", async (t) => {
 	const f = await nativeRequests(t, {
 		native: async (model, context, options) => {

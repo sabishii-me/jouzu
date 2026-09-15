@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
+import { flowDiagnosticText } from "./diagnostic-text.js";
 import {
 	captureNativeProjections,
 	convertNativeProjections,
@@ -480,7 +481,12 @@ export class PiNativeRequests {
 							const message = await response.result();
 							this.assertActive();
 							if (!handedOff)
-								throw new FlowLedgerError("transition", "Maintenance provider returned without payload admission.");
+								throw new FlowLedgerError(
+									"transition",
+									message.stopReason === "error" && message.errorMessage
+										? `Compaction provider failed before payload admission: ${flowDiagnosticText(message.errorMessage, 300)}`
+										: "Maintenance provider returned without payload admission.",
+								);
 							await store.finish(
 								id,
 								message.stopReason === "error" ? "failure" : message.stopReason === "aborted" ? "aborted" : "success",
@@ -578,7 +584,7 @@ export class PiNativeRequests {
 							if (!admitted)
 								throw new FlowLedgerError(
 									"transition",
-									"Native request withheld because required input was changed or unresolved at conversion.",
+									"Native request withheld because required input was changed or unresolved at conversion. Run /flow to identify the input and recovery options.",
 								);
 							handedOff = true;
 							if (composed) await this.composition?.handedOff(composed, options?.signal);
@@ -599,8 +605,16 @@ export class PiNativeRequests {
 							const message = await response.result();
 							this.assertActive();
 							if (!handedOff && admissionFailure) throw admissionFailure.error;
-							if (!handedOff)
-								throw new FlowLedgerError("transition", "Native provider returned without payload admission.");
+							if (!handedOff) {
+								const error = new FlowLedgerError(
+									"transition",
+									message.stopReason === "error" && message.errorMessage
+										? `Provider request failed before payload admission (${flowDiagnosticText(model.provider)} / ${flowDiagnosticText(model.id)}): ${flowDiagnosticText(message.errorMessage, 300)}. Run /flow for recovery options.`
+										: "Native provider returned without payload admission. Run /flow for recovery options.",
+								);
+								this.turn?.failed?.(error);
+								throw error;
+							}
 							if (!["stop", "length", "toolUse", "error", "aborted"].includes(message.stopReason))
 								throw new FlowLedgerError("transition", "Native provider has no terminal outcome.");
 							await store.finish(
