@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import type { FlowRequestInput } from "@earendil-works/pi-agent-core";
 import { convertToLlm, type SessionManager, sessionEntryToContextMessages } from "@earendil-works/pi-coding-agent";
+import { compactionHistoryEnd } from "./compaction-boundary.js";
 import { inspectPersistedFlowInput } from "./model-input.js";
 import type { FlowAttempt, FlowMember } from "./receipt-ledger.js";
 
@@ -29,7 +30,7 @@ export function compactedFlowMembers(
 		.reverse()
 		.find((entry) => entry.type === "compaction");
 	if (!compaction) return [];
-	const kept = branch.findIndex((entry) => entry.id === compaction.firstKeptEntryId);
+	const kept = compactionHistoryEnd(branch, compaction);
 	if (kept < 0) return [];
 	const context = manager.buildContextEntries();
 	if (!context.some((entry) => entry.id === compaction.id)) return [];

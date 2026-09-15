@@ -480,3 +480,26 @@ test("a registered command cannot enter maintenance during another host turn", a
 	await session.prompt("/repair");
 	assert.deepEqual(results.at(-1), { kind: "idle", value: "repaired" });
 });
+
+for (const variant of ["stop", "error", "aborted", "missing-summary", "changed-summary", "invalid-boundary"])
+	test(`idle settlement after compact-all requires covered assistant history: ${variant}`, async (t) => {
+		const { session, ledger, boundary } = await fixture(t);
+		const manager = session.sessionManager;
+		const last = manager
+			.getBranch()
+			.findLast((entry) => entry.type === "message" && entry.message.role === "assistant");
+		if (["stop", "error", "aborted"].includes(variant)) last.message.stopReason = variant;
+		manager.appendCompaction("Completed work", variant === "invalid-boundary" ? "missing" : "", 1000);
+		const messages = manager.buildSessionContext().messages;
+		if (variant === "changed-summary") messages[0].summary = "Different summary";
+		session.agent.state.messages = variant === "missing-summary" ? [] : messages;
+		if (variant.endsWith("summary") || variant === "invalid-boundary") {
+			await assert.rejects(boundary.reconcile(ledger, "attempt"), /no terminal assistant outcome/);
+		} else {
+			assert.equal((await boundary.reconcile(ledger, "attempt")).value.kind, "settled");
+			assert.equal(
+				(await ledger.snapshot()).attempts[0].outcome,
+				variant === "error" ? "failure" : variant === "aborted" ? "aborted" : "success",
+			);
+		}
+	});

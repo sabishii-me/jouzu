@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
+import { compactionHistoryEnd } from "./compaction-boundary.js";
 import { type NativeSourceClaim, nativeSourceKey } from "./native-request-store.js";
 import type { PiFlowAttachment } from "./pi-attachment.js";
 import type { PiNativeDispatch } from "./pi-native-dispatch.js";
@@ -24,8 +25,7 @@ export async function reconcileNativeSources(
 	// serialized request checkpoint before reconciling the excluded history.
 	await native.recoverSources(true);
 	const projected = new Set(manager.buildContextEntries().map((entry) => entry.id));
-	const cutoff =
-		compaction?.type === "compaction" ? branch.findIndex((entry) => entry.id === compaction.firstKeptEntryId) : -1;
+	const cutoff = compaction ? compactionHistoryEnd(branch, compaction) : -1;
 	if (reason === "compacted" && cutoff < 0)
 		throw new FlowLedgerError("identity", "Compaction has no retained history boundary.");
 	const eligible = new Map((reason === "reset" ? branch : branch.slice(0, cutoff)).map((entry) => [entry.id, entry]));

@@ -1,7 +1,9 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { isDeepStrictEqual } from "node:util";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { ImageContent } from "@earendil-works/pi-ai";
-import type { AgentSession } from "@earendil-works/pi-coding-agent";
+import { type AgentSession, sessionEntryToContextMessages } from "@earendil-works/pi-coding-agent";
+import { compactionHistoryEnd } from "./compaction-boundary.js";
 import { PiHostHooks } from "./pi-host-hooks.js";
 import { FlowLedgerError, type FlowOutcome, type FlowReceiptLedger } from "./receipt-ledger.js";
 
@@ -311,10 +313,35 @@ export class PiHostBoundary {
 				await ledger.settle(attemptId, "failure");
 				return { kind: "settled", attemptId };
 			}
-			const last = this.session.messages
+			let last = this.session.messages
 				.slice()
 				.reverse()
 				.find((message) => message.role === "assistant");
+			if (!last) {
+				// Compaction can remove the final assistant response before idle settlement.
+				// Recover it only from history covered by the active, unchanged summary.
+				const manager = this.session.sessionManager;
+				const branch = manager.getBranch();
+				const compaction = branch
+					.slice()
+					.reverse()
+					.find((entry) => entry.type === "compaction");
+				const cutoff = compaction ? compactionHistoryEnd(branch, compaction) : -1;
+				if (compaction && cutoff >= 0 && manager.buildContextEntries().some((entry) => entry.id === compaction.id)) {
+					const summary = sessionEntryToContextMessages(compaction)[0];
+					const entry = branch
+						.slice()
+						.reverse()
+						.find((item) => item.type === "message" && item.message.role === "assistant");
+					if (
+						this.session.messages.some((message) => isDeepStrictEqual(message, summary)) &&
+						entry?.type === "message" &&
+						entry.message.role === "assistant" &&
+						branch.indexOf(entry) < cutoff
+					)
+						last = entry.message;
+				}
+			}
 			if (!last || !["stop", "length", "toolUse", "error", "aborted"].includes(last.stopReason))
 				throw new FlowLedgerError("transition", "Host has no terminal assistant outcome.");
 			const outcome: FlowOutcome =
