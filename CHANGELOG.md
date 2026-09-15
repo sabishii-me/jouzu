@@ -1,8 +1,10 @@
 # Changelog
 
-## 0.1.11 - 2026-09-15
+## 0.1.11 - 2026-09-16
 
 ### Added
+
+- Check GitHub Releases daily from the Windows working-folder screen and show a download link for newer stable x64 installers.
 
 - List running and paused goals with `/goal`, and pause, stop, or resume one with `/goal pause`, `/goal stop`, or `/goal resume`, optionally followed by a `lane/run-tag`. Without a target, the command selects the attached goal or the only matching goal; `/multiloop` shows all runs.
 - Show the selected working folder in the Windows launcher before it opens a terminal, with an option to remember it for later launches. If the saved folder is unavailable, the launcher asks for another folder instead of opening a different one. The launchers and installer use a transparent JZ icon. See [Windows installer preview](packaging/windows/README.md).
@@ -15,6 +17,8 @@
 
 ### Fixed
 
+- Shorten Windows installer activation by checking startup files and the CLI instead of hashing the entire payload. Show an animated progress bar and the active step after extraction. Keep full diagnostic verification available through `JouzuConsole.exe --verify`, with file-count progress.
+
 - Continue automatic work across mid-run compaction, including compaction that keeps no original transcript tail. Recovery verifies the compaction boundary and earlier delivery instead of replaying input, and settles the terminal response from history when the active summary covers it.
 - Keep the continuation instruction in model context so a requested compaction continuation is admitted instead of rejected.
 - Keep `/flow` inspection and reset usable while work is held: report released holds, retain the original admission error and request receipts across a reset, and defer competing idle dispatches.
@@ -24,7 +28,7 @@
 ### Testing limits
 
 - Flow recovery and compaction changes are covered by assembled-session and unit tests. No live provider session has been resumed against the rebuilt implementation.
-- The Windows launcher screen, JZ icon, and installer build have no native Windows verification, and desktop proxy, certificate-trust, and live model access remain unverified. Building and testing a v0.1.11 installer on Windows 10/11 is required before claiming native qualification; the published v0.1.10 installer does not contain these changes.
+- Native Windows Server 2025 tests cover launcher behavior, update discovery, activation checks, and progress visibility. Clean Windows 10/11 testing, visual scaling, desktop proxy authentication, and live model access remain unverified.
 - Catalog login and failure diagnostics are covered by tests with environment keys unset and by a loopback HTTP fixture; no live gateway or paid model request was made.
 
 ## 0.1.10 - 2026-09-15
