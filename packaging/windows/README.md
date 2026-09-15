@@ -59,13 +59,17 @@ launcher usable and retry after 24 hours. Checks use Windows system proxy and
 certificate settings. The check scans the 300 most recent releases and stores
 its result in `%LOCALAPPDATA%\JouzuDesktop\installer-update.json`.
 
-Run a newer installer to install another version. Activation verifies every
-payload file and probes the bundled CLI before changing `current.json`.
+Run a newer installer to install another version. After extraction, an animated
+progress bar shows the startup-file check, CLI startup test, and activation.
+Activation checks the manifest, required files, and the hashes of Node, the
+bootstrap, and the CLI entry point before changing `current.json`. The startup-file
+check and CLI startup test each have a 30-second limit. A failed check preserves
+the active version.
 The previous version remains available through the Start menu's **Restore
 previous Jouzu version** shortcut or `JouzuConsole.exe --rollback`.
 
-`JouzuConsole.exe --verify` checks the full active payload. Ordinary launches
-check the manifest and startup files. Run the same installer again to repair missing or changed program files. Uninstalling keeps user
+`JouzuConsole.exe --verify` checks every file in the active payload and shows
+file-count progress. Ordinary launches check the manifest and startup files. Run the same installer again to repair missing or changed program files. Uninstalling keeps user
 data and project folders outside the installation directory.
 
 Automatic npm updates are disabled for desktop launches. Checksums in this

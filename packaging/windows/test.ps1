@@ -41,6 +41,11 @@ $watch = [Diagnostics.Stopwatch]::StartNew()
 $p = Start-Process $Installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',('/DIR="' + $install + '"'),('/LOG="' + (Join-Path $TestDirectory 'install.log') + '"')) -Wait -PassThru
 if ($p.ExitCode -ne 0) { throw "Installer exited $($p.ExitCode)" }
 $results.installSeconds = [math]::Round($watch.Elapsed.TotalSeconds,2)
+$installLog = Get-Content -Raw (Join-Path $TestDirectory 'install.log')
+foreach ($phase in @('Checking startup files', 'Testing Jouzu startup', 'Activating Jouzu', 'Jouzu is ready')) {
+    if (-not $installLog.Contains($phase)) { throw "Installer did not report activation phase: $phase" }
+}
+$results.activationPhasesLogged = $true
 $console = Join-Path $install 'JouzuConsole.exe'
 $pointer = Join-Path $install 'current.json'
 $id = (Get-Content -Raw -Encoding UTF8 $pointer | ConvertFrom-Json).current
@@ -106,11 +111,21 @@ $ErrorActionPreference = 'Continue'
 $ErrorActionPreference = 'Stop'
 if ($LASTEXITCODE -eq 0 -or (Get-Content -Raw -Encoding UTF8 $pointer) -ne $before) { throw 'Corrupt activation changed active version' }
 [IO.File]::WriteAllText((Join-Path $fixture 'bootstrap.mjs'),'acceptance fixture')
+# Activation checks startup files; explicit verification checks the whole image.
+[IO.File]::WriteAllText((Join-Path $fixture 'git\bin\bash.exe'),'changed non-startup file')
+$null = Run $console @('--activate',$fixtureId)
+$ErrorActionPreference = 'Continue'
+& $console --verify 2> (Join-Path $TestDirectory 'full-corrupt.stderr') | Out-Null
+$ErrorActionPreference = 'Stop'
+if ($LASTEXITCODE -eq 0) { throw 'Full verification accepted a changed non-startup file' }
+[IO.File]::WriteAllText((Join-Path $fixture 'git\bin\bash.exe'),'acceptance fixture')
 [IO.File]::WriteAllText((Join-Path $fixture 'unexpected.js'),'unlisted')
 $ErrorActionPreference = 'Continue'
-& $console --activate $fixtureId 2> (Join-Path $TestDirectory 'unlisted.stderr') | Out-Null
+& $console --verify 2> (Join-Path $TestDirectory 'unlisted.stderr') | Out-Null
 $ErrorActionPreference = 'Stop'
-if ($LASTEXITCODE -eq 0 -or (Get-Content -Raw -Encoding UTF8 $pointer) -ne $before) { throw 'Unlisted file was accepted' }
+if ($LASTEXITCODE -eq 0) { throw 'Full verification accepted an unlisted file' }
+$null = Run $console @('--rollback')
+if ((Get-Content -Raw -Encoding UTF8 $pointer | ConvertFrom-Json).current -ne $id) { throw 'Rollback did not restore original' }
 $results.rollbackAndCorruption = $true
 $shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'Jouzu\Jouzu.lnk'
 # WScript.Shell's TargetPath getter reads the ANSI target. Use IShellLinkW

@@ -147,8 +147,45 @@ internal static class LauncherTests {
             }
         }
     }
+    static void ActivationLimits() {
+        Check(Jouzu.CompleteWithin(() => "ready", 1000, "timeout") == "ready", "Startup check result lost");
+        bool originalError = false;
+        try { Jouzu.CompleteWithin<string>(() => { throw new IOException("fixture error"); }, 1000, "timeout"); }
+        catch (IOException error) { originalError = error.Message == "fixture error"; }
+        Check(originalError, "Startup check error was hidden");
+        using (var release = new System.Threading.ManualResetEvent(false)) {
+            bool timedOut = false;
+            try { Jouzu.CompleteWithin(() => { release.WaitOne(1000); return true; }, 50, "fixture timeout"); }
+            catch (Exception error) { timedOut = error.Message == "fixture timeout"; }
+            finally { release.Set(); }
+            Check(timedOut, "Startup check did not time out");
+        }
+        string exe = System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName;
+        Jouzu.ProbeRuntime(exe, new [] { "--probe-fixture", "success" }, Path.GetTempPath(), 5000);
+        bool failed = false;
+        try { Jouzu.ProbeRuntime(exe, new [] { "--probe-fixture", "failure" }, Path.GetTempPath(), 5000); }
+        catch (Exception error) { failed = error.Message.Contains("failed its startup check"); }
+        Check(failed, "Failed runtime probe was accepted");
+        string marker = Path.Combine(Path.GetTempPath(), "jouzu-probe-" + Guid.NewGuid().ToString("N"));
+        try {
+            bool timedOut = false;
+            try { Jouzu.ProbeRuntime(exe, new [] { "--probe-fixture", marker }, Path.GetTempPath(), 500); }
+            catch (Exception error) { timedOut = error.Message.Contains("did not start within"); }
+            Check(timedOut && File.Exists(marker), "Runtime probe did not time out after starting");
+            bool running = false;
+            try { using (var child = System.Diagnostics.Process.GetProcessById(Int32.Parse(File.ReadAllText(marker)))) running = !child.HasExited; }
+            catch (ArgumentException) { }
+            Check(!running, "Timed out runtime probe was left running");
+        } finally { if (File.Exists(marker)) File.Delete(marker); }
+    }
     [STAThread]
     static int Main(string[] args) {
+        if (args.Length == 2 && args[0] == "--probe-fixture") {
+            if (args[1] == "success") return 0;
+            if (args[1] == "failure") return 1;
+            File.WriteAllText(args[1], System.Diagnostics.Process.GetCurrentProcess().Id.ToString());
+            System.Threading.Thread.Sleep(30000); return 0;
+        }
         if (args.Length == 2 && args[0] == "--finish-update-check") {
             var form = new System.Windows.Forms.Form();
             var link = new System.Windows.Forms.LinkLabel();
@@ -181,6 +218,7 @@ internal static class LauncherTests {
         FolderPreferences();
         Updates();
         UpdateNotification();
+        ActivationLimits();
         string marker = Path.Combine(Path.GetTempPath(), "jouzu-update-finished-" + Guid.NewGuid().ToString("N"));
         try {
             var info = new System.Diagnostics.ProcessStartInfo(System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName,

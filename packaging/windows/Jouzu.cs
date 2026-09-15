@@ -8,6 +8,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
 
@@ -47,6 +48,8 @@ internal static class Jouzu {
         if (Text(data, "releaseId") != id) throw new Exception("The installed version manifest differs.");
         if (Text(data, "signing") != "unsigned-development") throw new Exception("This preview launcher requires an unsigned development image.");
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        int checkedFiles = 0, totalFiles = ((object[])data["files"]).Length;
+        if (full) Console.Write("Verifying files [                    ] 0/" + totalFiles);
         foreach (Dictionary<string, object> entry in (object[])data["files"]) {
             string relative = Text(entry, "path");
             if (relative.Length == 0 || relative.Contains("\\") || relative.Contains(":") || relative.Split('/').Any(p => p == ".." || p == "." || p.Length == 0) || !seen.Add(relative)) throw new Exception("Invalid program manifest path.");
@@ -54,14 +57,23 @@ internal static class Jouzu {
             if (!full && relative != "node/node.exe" && relative != "bootstrap.mjs" && relative != "app/node_modules/jouzu/dist/cli.js") continue;
             RegularPath(file, checkedPaths);
             if (Digest(file) != Text(entry, "sha256")) throw new Exception("Jouzu needs repair. A program file differs: " + relative);
+            if (full && (++checkedFiles % 128 == 0 || checkedFiles == totalFiles)) {
+                int filled = checkedFiles * 20 / Math.Max(1, totalFiles);
+                Console.Write("\rVerifying files [" + new string('=', filled) + new string(' ', 20 - filled) + "] " + checkedFiles + "/" + totalFiles);
+            }
         }
+        if (full) Console.WriteLine("\nChecking the installed file list…");
         if (full) foreach (string file in PayloadFiles(directory, checkedPaths)) {
             RegularPath(file, checkedPaths);
             string relative = file.Substring(directory.Length + 1).Replace('\\', '/');
             if (relative != "manifest.json" && !seen.Contains(relative)) throw new Exception("Unlisted program file: " + relative);
         }
-        foreach (string required in new [] { "node/node.exe", "bootstrap.mjs", "app/node_modules/jouzu/dist/cli.js", "git/bin/bash.exe", "terminal/WindowsTerminal.exe" })
+        foreach (string required in new [] { "node/node.exe", "bootstrap.mjs", "app/node_modules/jouzu/dist/cli.js", "git/bin/bash.exe", "terminal/WindowsTerminal.exe" }) {
             if (!seen.Contains(required)) throw new Exception("The program manifest is missing " + required);
+            string requiredPath = Path.Combine(directory, required.Replace('/', '\\'));
+            RegularPath(requiredPath, checkedPaths);
+            if (!File.Exists(requiredPath)) throw new Exception("A required program file is missing: " + required);
+        }
         return VersionPath(id);
     }
     internal static string Quote(string value) {
@@ -81,18 +93,38 @@ internal static class Jouzu {
         info.EnvironmentVariables["JOUZU_NO_UPDATE"] = "1";
         return Process.Start(info);
     }
+    internal static T CompleteWithin<T>(Func<T> action, int timeoutMs, string timeoutMessage) {
+        var task = Task.Run(action);
+        if (Task.WhenAny(task, Task.Delay(timeoutMs)).GetAwaiter().GetResult() != task)
+            throw new Exception(timeoutMessage);
+        return task.GetAwaiter().GetResult();
+    }
+    internal static void ProbeRuntime(string exe, IEnumerable<string> args, string directory, int timeoutMs = 30000) {
+        using (var probe = Start(exe, args, directory, true)) {
+            if (!probe.WaitForExit(timeoutMs)) {
+                probe.Kill();
+                probe.WaitForExit(5000);
+                throw new Exception("The new runtime did not start within 30 seconds. The active version was preserved.");
+            }
+            if (probe.ExitCode != 0) throw new Exception("The new runtime failed its startup check. The active version was preserved.");
+        }
+    }
     static void Activate(string id) {
         using (var activationLock = new FileStream(Path.Combine(Root, "activation.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None)) {
-            string directory = Verify(id);
-            using (var probe = Start(Path.Combine(directory, "node", "node.exe"), new [] { Path.Combine(directory, "app", "node_modules", "jouzu", "dist", "cli.js"), "--version" }, directory, true)) {
-                if (!probe.WaitForExit(30000)) { probe.Kill(); throw new Exception("The new runtime did not start. The active version was preserved."); }
-                if (probe.ExitCode != 0) throw new Exception("The new runtime failed verification. The active version was preserved.");
-            }
+            Console.WriteLine("Jouzu setup: Checking startup files…");
+            string directory = CompleteWithin(() => Verify(id, false), 30000,
+                "Startup file checks did not finish within 30 seconds. The active version was preserved.");
+            Console.WriteLine("Jouzu setup: Testing Jouzu startup…");
+            ProbeRuntime(Path.Combine(directory, "node", "node.exe"),
+                new [] { Path.Combine(directory, "app", "node_modules", "jouzu", "dist", "cli.js"), "--version" }, directory);
+            Console.WriteLine("Jouzu setup: Activating Jouzu…");
             string previous = File.Exists(Pointer) ? Text(ReadJson(Pointer), "current") : "";
-            if (previous == id) return;
-            string temporary = Pointer + "." + Guid.NewGuid().ToString("N");
-            File.WriteAllText(temporary, Json.Serialize(new { current = id, previous = previous }), new UTF8Encoding(false));
-            if (File.Exists(Pointer)) File.Replace(temporary, Pointer, null); else File.Move(temporary, Pointer);
+            if (previous != id) {
+                string temporary = Pointer + "." + Guid.NewGuid().ToString("N");
+                File.WriteAllText(temporary, Json.Serialize(new { current = id, previous = previous }), new UTF8Encoding(false));
+                if (File.Exists(Pointer)) File.Replace(temporary, Pointer, null); else File.Move(temporary, Pointer);
+            }
+            Console.WriteLine("Jouzu setup: Jouzu is ready.");
         }
     }
     internal sealed class FolderPreference {

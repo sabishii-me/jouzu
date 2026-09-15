@@ -48,13 +48,40 @@ Type: filesandordirs; Name: "{app}\versions"
 Type: files; Name: "{app}\current.json"
 Type: files; Name: "{app}\activation.lock"
 [Code]
+var
+  ActivationProgress: TOutputMarqueeProgressWizardPage;
+
+procedure InitializeWizard;
+begin
+  ActivationProgress := CreateOutputMarqueeProgressPage(
+    'Preparing Jouzu', 'Checking the installed startup files and testing Jouzu.');
+end;
+
+procedure ActivationOutput(const S: String; const Error, FirstLine: Boolean);
+begin
+  Log(S);
+  if Pos('Jouzu setup: ', S) = 1 then begin
+    ActivationProgress.SetText(Copy(S, 14, MaxInt), 'This step can take up to 30 seconds.');
+    ActivationProgress.Animate;
+  end;
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var ExitCode: Integer;
 begin
   if CurStep = ssPostInstall then begin
-    if not Exec(ExpandConstant('{app}\JouzuConsole.exe'), '--activate {#ReleaseId}', ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, ExitCode) then
-      RaiseException('Jouzu could not verify its installation. Run the installer again to repair it.');
-    if ExitCode <> 0 then
-      RaiseException('Jouzu verification failed. The active version was preserved. Run the installer again to repair it.');
+    ActivationProgress.SetText('Checking startup files…', 'This step can take up to 30 seconds.');
+    ActivationProgress.Show;
+    try
+      ActivationProgress.Animate;
+      if not ExecAndLogOutput(ExpandConstant('{app}\JouzuConsole.exe'),
+          '--activate {#ReleaseId}', ExpandConstant('{app}'), SW_SHOWNORMAL,
+          ewWaitUntilTerminated, ExitCode, @ActivationOutput) then
+        RaiseException('Jouzu could not start its installation checks. Run the installer again to repair it.');
+      if ExitCode <> 0 then
+        RaiseException('Jouzu could not finish its startup checks. Run the installer again to repair it.');
+    finally
+      ActivationProgress.Hide;
+    end;
   end;
 end;
