@@ -5,7 +5,7 @@ import type {
 	ProviderConfig,
 	ProviderModelConfig,
 } from "@earendil-works/pi-coding-agent";
-import { getCatalogSourceToken } from "./catalog-sources.js";
+import { resolveCatalogBearer } from "./catalog-sources.js";
 import { activeContextClamp, clampModelContextWindow, modelsExceedContextClamp } from "./context-clamp.js";
 import {
 	CATALOG_THINKING_LEVELS,
@@ -517,19 +517,17 @@ export class CatalogProjectionController {
 		return activeContextClamp(this.paths);
 	}
 
-	/** Environment value first, then the source's saved token, then the Pi env reference. */
+	/** Use the catalog request's credential precedence, retaining Pi's env reference when none is available. */
 	private gatewayConfig(catalog: ActiveModelCatalog): ProviderConfig {
 		if (catalog.source.auth.type !== "bearer") return {};
 		const name = catalog.source.auth.credentialRef.slice(4);
-		const fromEnv = this.env[name]?.trim();
-		if (fromEnv) return { apiKey: fromEnv, authHeader: true };
-		let saved: string | undefined;
 		try {
-			saved = this.paths ? getCatalogSourceToken(this.paths, catalog.source.id) : undefined;
+			const token = resolveCatalogBearer(catalog.source, this.env, this.paths);
+			if (token) return { apiKey: token, authHeader: true };
 		} catch {
-			saved = undefined;
+			// Keep the provider registered but unavailable until its credential is configured.
 		}
-		return { apiKey: saved || `$${name}`, authHeader: true };
+		return { apiKey: `$${name}`, authHeader: true };
 	}
 
 	registerStartup(pi: ExtensionAPI, catalogs: readonly ActiveModelCatalog[]): void {
