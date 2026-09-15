@@ -10,10 +10,8 @@ import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-w
 export const PI_VCC_COMPACT_MARKER = "__pi_vcc__";
 
 /**
- * Custom message used to resume work after a requested compaction. It carries
- * no content and is removed from the model payload by the `context` handler
- * below, so work continues from the compaction summary with no visible
- * "continue" prompt in the conversation.
+ * Custom message used to resume work after a requested compaction. Its instruction
+ * remains in model context so flow can verify delivery of the continuation.
  */
 export const COMPACTION_CONTINUE_CUSTOM_TYPE = "jouzu-compaction-continue";
 
@@ -114,13 +112,6 @@ export function registerCompactionRequest(
 	pi: ExtensionAPI,
 	controller: CompactionRequestController = new CompactionRequestController(),
 ): CompactionRequestController {
-	pi.on("context", (event) => {
-		const messages = event.messages.filter(
-			(message) => message.role !== "custom" || message.customType !== COMPACTION_CONTINUE_CUSTOM_TYPE,
-		);
-		if (messages.length !== event.messages.length) return { messages };
-	});
-
 	pi.registerTool({
 		name: COMPACTION_TOOL_NAME,
 		label: "Compact Context",
@@ -182,12 +173,17 @@ function notify(ctx: ExtensionContext, message: string, level: "info" | "warning
 	}
 }
 
-/** Resume the agent after a requested compaction, without model-visible text. */
+/** Resume the agent after a requested compaction with an admitted instruction. */
 function resumeAfterCompaction(pi: ExtensionAPI): void {
 	try {
 		void Promise.resolve(
 			pi.sendMessage(
-				{ customType: COMPACTION_CONTINUE_CUSTOM_TYPE, content: [], display: false, details: undefined },
+				{
+					customType: COMPACTION_CONTINUE_CUSTOM_TYPE,
+					content: "Continue the current work from the compaction summary.",
+					display: false,
+					details: undefined,
+				},
 				{ triggerTurn: true, deliverAs: "followUp" },
 			),
 		).catch(() => {});

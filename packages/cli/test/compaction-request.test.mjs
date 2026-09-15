@@ -73,7 +73,7 @@ test("a request is held until the run settles, then dispatched once", async () =
 
 	assert.equal(sent.length, 1);
 	assert.equal(sent[0].message.customType, COMPACTION_CONTINUE_CUSTOM_TYPE);
-	assert.deepEqual(sent[0].message.content, []);
+	assert.equal(sent[0].message.content, "Continue the current work from the compaction summary.");
 	assert.equal(sent[0].message.display, false);
 	assert.equal(sent[0].options.triggerTurn, true);
 	assert.equal(sent[0].options.deliverAs, "followUp");
@@ -166,18 +166,9 @@ test("a requested compaction resumes at most once", async () => {
 	assert.equal(sent.length, 1);
 });
 
-test("the resume message is filtered out of the model payload", () => {
+test("the resume instruction is not removed by a context filter", () => {
 	const { handlers } = installTool();
-	const context = handlers.get("context");
-
-	const carrier = { role: "custom", customType: COMPACTION_CONTINUE_CUSTOM_TYPE, content: [] };
-	const user = { role: "user", content: "hello" };
-	const other = { role: "custom", customType: "something-else", content: [] };
-
-	const filtered = context({ type: "context", messages: [user, carrier, other] });
-	assert.deepEqual(filtered.messages, [user, other]);
-
-	assert.equal(context({ type: "context", messages: [user, other] }), undefined);
+	assert.equal(handlers.has("context"), false);
 });
 
 test("model-facing compaction text carries no usage, budget, or context figures", () => {
