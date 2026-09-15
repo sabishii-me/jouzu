@@ -95,6 +95,82 @@ internal static class Jouzu {
             if (File.Exists(Pointer)) File.Replace(temporary, Pointer, null); else File.Move(temporary, Pointer);
         }
     }
+    internal sealed class FolderPreference {
+        internal string Folder = "";
+        internal string Warning = "";
+        internal bool Remember;
+    }
+    internal static FolderPreference ReadFolderPreference(string path) {
+        var preference = new FolderPreference();
+        if (!File.Exists(path)) return preference;
+        try {
+            if (new FileInfo(path).Length > 16384) throw new Exception("Folder preference is too large.");
+            var data = ReadJson(path);
+            if (Text(data, "schemaVersion") != "1" || !data.ContainsKey("remember") || !(data["remember"] is bool)) throw new Exception("Invalid folder preference.");
+            preference.Remember = (bool)data["remember"];
+            if (preference.Remember) {
+                string folder = Text(data, "folder");
+                if (String.IsNullOrWhiteSpace(folder) || !Path.IsPathRooted(folder) || !String.Equals(Path.GetFullPath(folder), folder, StringComparison.OrdinalIgnoreCase)) throw new Exception("Invalid saved folder.");
+                preference.Folder = Path.GetFullPath(folder);
+                if (!Directory.Exists(preference.Folder)) preference.Warning = "The remembered folder is unavailable. Choose another folder.";
+            }
+        } catch {
+            return new FolderPreference { Warning = "The saved folder preference could not be read. Choose a working folder." };
+        }
+        return preference;
+    }
+    internal static void SaveFolderPreference(string path, string folder, bool remember) {
+        if (!Directory.Exists(folder)) throw new Exception("The working folder is unavailable. Choose another folder.");
+        Directory.CreateDirectory(Path.GetDirectoryName(path));
+        string temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try {
+            File.WriteAllText(temporary, Json.Serialize(new { schemaVersion = 1, remember = remember, folder = remember ? Path.GetFullPath(folder) : "" }), new UTF8Encoding(false));
+            if (File.Exists(path)) File.Replace(temporary, path, null); else File.Move(temporary, path);
+        } finally { if (File.Exists(temporary)) File.Delete(temporary); }
+    }
+#if GUI
+    static string ChooseWorkingFolder() {
+        Application.EnableVisualStyles();
+        string preferencePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "JouzuDesktop", "launcher.json");
+        var preference = ReadFolderPreference(preferencePath);
+        using (var form = new Form { Text = "Jouzu", StartPosition = FormStartPosition.CenterScreen, FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false, MinimizeBox = false, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink })
+        using (var layout = new TableLayoutPanel { ColumnCount = 1, AutoSize = true, Padding = new Padding(16), Dock = DockStyle.Fill }) {
+            var heading = new Label { Text = "Working folder", AutoSize = true };
+            var explanation = new Label { Text = "Choose where Jouzu starts commands and file work.\nSettings and sign-in are stored separately.", AutoSize = true };
+            var folder = new TextBox { Text = preference.Folder, ReadOnly = true, Width = 560, AccessibleName = "Working folder", TabIndex = 0 };
+            var choose = new Button { Text = preference.Folder.Length == 0 ? "Choose folder…" : "Choose another folder…", AutoSize = true, TabIndex = 1 };
+            var remember = new CheckBox { Text = "Remember this folder", Checked = preference.Remember, AutoSize = true, TabIndex = 2 };
+            var warning = new Label { Text = preference.Warning, AutoSize = true, MaximumSize = new System.Drawing.Size(560, 0) };
+            var buttons = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight };
+            var open = new Button { Text = "Open", AutoSize = true, Enabled = Directory.Exists(folder.Text), TabIndex = 3 };
+            var cancel = new Button { Text = "Cancel", AutoSize = true, DialogResult = DialogResult.Cancel, TabIndex = 4 };
+            choose.Click += (sender, e) => {
+                using (var picker = new FolderBrowserDialog { Description = "Choose a working folder for Jouzu", ShowNewFolderButton = true, SelectedPath = Directory.Exists(folder.Text) ? folder.Text : "" }) {
+                    if (picker.ShowDialog(form) != DialogResult.OK) return;
+                    folder.Text = picker.SelectedPath;
+                    choose.Text = "Choose another folder…";
+                    open.Enabled = Directory.Exists(folder.Text);
+                    warning.Text = open.Enabled ? "" : "The working folder is unavailable. Choose another folder.";
+                }
+            };
+            open.Click += (sender, e) => {
+                if (!Directory.Exists(folder.Text)) {
+                    warning.Text = "The working folder is unavailable. Choose another folder.";
+                    open.Enabled = false; return;
+                }
+                try { SaveFolderPreference(preferencePath, folder.Text, remember.Checked); }
+                catch { MessageBox.Show(form, "Jouzu could not save the folder preference. This session will still open in the selected folder.", "Jouzu", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
+                form.DialogResult = DialogResult.OK;
+            };
+            buttons.Controls.Add(open); buttons.Controls.Add(cancel);
+            foreach (Control control in new Control[] { heading, explanation, folder, choose, remember, warning, buttons }) layout.Controls.Add(control);
+            form.Controls.Add(layout); form.AcceptButton = open; form.CancelButton = cancel;
+            form.Icon = System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath);
+            form.Shown += (sender, e) => { if (open.Enabled) open.Focus(); else choose.Focus(); };
+            return form.ShowDialog() == DialogResult.OK ? folder.Text : null;
+        }
+    }
+#endif
     [STAThread]
     static int Main(string[] args) {
         // Windows 10 includes .NET 4.8, but csc defaults to legacy IO behavior.
@@ -117,13 +193,10 @@ internal static class Jouzu {
             string project;
             if (args.Length == 2 && args[0] == "--project") project = Path.GetFullPath(args[1]);
             else if (args.Length == 0) {
-                Application.EnableVisualStyles();
-                using (var picker = new FolderBrowserDialog { Description = "Choose a project folder for Jouzu", ShowNewFolderButton = true }) {
-                    if (picker.ShowDialog() != DialogResult.OK) return 0;
-                    project = picker.SelectedPath;
-                }
-            } else throw new Exception("Use Jouzu.exe --project <folder>, or open Jouzu without arguments to choose a folder.");
-            if (!Directory.Exists(project)) throw new Exception("The project folder does not exist.");
+                project = ChooseWorkingFolder();
+                if (project == null) return 0;
+            } else throw new Exception("Use Jouzu.exe --project <folder>, or open Jouzu without arguments to choose a working folder.");
+            if (!Directory.Exists(project)) throw new Exception("The working folder does not exist.");
             string terminal = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Microsoft", "WindowsApps", "wt.exe");
             if (!File.Exists(terminal)) terminal = Path.Combine(payload, "terminal", "WindowsTerminal.exe");
             // Windows Terminal treats semicolons as command separators. Use the

@@ -93,7 +93,7 @@ foreach ($kind in @('console','gui')) {
     Copy-Item (Join-Path $PSScriptRoot 'Jouzu.config') ($exe + '.config')
     $target = if ($kind -eq 'gui') {'/target:winexe'} else {'/target:exe'}
     $define = if ($kind -eq 'gui') {'/define:GUI'} else {'/define:CONSOLE'}
-    Run $csc @('/nologo','/optimize+','/platform:x64',$target,$define,('/out:' + $exe),'/reference:System.Web.Extensions.dll','/reference:System.Windows.Forms.dll','/reference:System.Security.dll','/reference:System.Core.dll',(Join-Path $PSScriptRoot 'Jouzu.cs'))
+    Run $csc @('/nologo','/optimize+','/platform:x64',$target,$define,('/out:' + $exe),('/win32icon:' + (Join-Path $PSScriptRoot 'jouzu.ico')),'/reference:System.Drawing.dll','/reference:System.Web.Extensions.dll','/reference:System.Windows.Forms.dll','/reference:System.Security.dll','/reference:System.Core.dll',(Join-Path $PSScriptRoot 'Jouzu.cs'))
 }
 Run (Join-Path $stage 'JouzuConsole.exe') @('--activate',$releaseId)
 Run (Join-Path $stage 'JouzuConsole.exe') @('--verify')
@@ -108,7 +108,7 @@ if (-not (Test-Path $inno)) {
     $setup = Start-Process -FilePath $inputs.inno -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER',('/DIR="' + (Join-Path $CacheDirectory 'inno') + '"')) -Wait -PassThru
     if ($setup.ExitCode -ne 0) { throw 'Inno Setup compiler installation failed' }
 }
-$arguments = @('/Qp',('/DPayload=' + $stage),('/DReleaseId=' + $releaseId),('/DProductVersion=' + $package.version),('/DOutput=' + $OutputDirectory))
+$arguments = @('/Qp',('/DSetupIcon=' + (Join-Path $PSScriptRoot 'jouzu.ico')),('/DPayload=' + $stage),('/DReleaseId=' + $releaseId),('/DProductVersion=' + $package.version),('/DOutput=' + $OutputDirectory))
 Run $inno ($arguments + (Join-Path $PSScriptRoot 'Jouzu.iss'))
 $setupFile = Join-Path $OutputDirectory "JouzuSetup-$releaseId-x64-unsigned.exe"
 [ordered]@{ releaseId=$releaseId; version=$package.version; installer=$setupFile; sha256=(Get-FileHash -LiteralPath $setupFile -Algorithm SHA256).Hash.ToLowerInvariant(); signing=$manifest.signing; payloadFiles=$entries.Count; payloadBytes=($entries | ForEach-Object { $_.size } | Measure-Object -Sum).Sum } | ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $OutputDirectory 'build-result.json')

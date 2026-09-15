@@ -26,6 +26,7 @@ SolidCompression=yes
 WizardStyle=modern
 DisableProgramGroupPage=yes
 UninstallDisplayIcon={app}\Jouzu.exe
+SetupIconFile={#SetupIcon}
 AppMutex=Local\JouzuDesktop
 CloseApplications=no
 [Tasks]

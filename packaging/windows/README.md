@@ -11,12 +11,29 @@ Windows may show an unknown-publisher warning. Native acceptance tests passed
 on Windows Server 2025 x64; clean Windows 10/11 testing remains pending.
 Code signing is planned for v0.2.0.
 
+This page describes installers built from this source. The working-folder screen
+and JZ icon described below are not included in the published v0.1.10 installer.
+
 ## Use
 
 1. Run `JouzuSetup-…-x64-unsigned.exe` as your normal Windows user.
 2. Open Jouzu from the desktop or Start menu.
-3. Choose a project folder. Jouzu opens a terminal and presents
-   first-launch setup, including Shisa AI sign-in.
+3. Select **Choose folder…**, choose a **Working folder**, then select **Open**.
+   Jouzu opens a terminal and presents first-launch setup, including Shisa AI sign-in.
+
+The working folder is where commands start and relative file paths are resolved.
+It can be any folder, not only a Git repository. It does not restrict access to
+other files and is separate from Jouzu's settings and credentials.
+
+Select **Remember this folder** to show it on the next launch. The launcher still
+shows the path before you select **Open**; **Choose another folder…** changes it.
+Uncheck **Remember this folder** and select **Open** to forget the saved path.
+Canceling leaves the preference unchanged. If the folder is unavailable, choose
+another one; Jouzu does not silently open a different folder.
+
+The launcher stores this preference in `%LOCALAPPDATA%\JouzuDesktop\launcher.json`,
+independently of `JOUZU_HOME`. `Jouzu.exe --project <folder>` opens an explicit
+working folder without changing the saved preference.
 
 The default installation directory is `%LOCALAPPDATA%\Programs\Jouzu`. Desktop
 settings, credentials, sessions, and caches live in
@@ -43,6 +60,12 @@ data and project folders outside the installation directory.
 
 Automatic npm updates are disabled for desktop launches. Checksums in this
 unsigned preview detect damage; they do not authenticate a publisher.
+
+The launchers and installer use a transparent JZ dot icon. Its colors preserve
+the J and Z positions in the terminal logo's cyan-to-pink gradient. The `.ico`
+contains 16, 20, 24, 32, 40, 48, 64, 128, and 256 pixel images. Regenerate the icon
+and its SVG source with `python3 packaging/windows/generate-icon.py`; use
+`--check` to verify the committed files. Python is not needed to install or run Jouzu.
 
 ## Build
 
@@ -87,8 +110,12 @@ a corrupt version, and checks uninstall data preservation. It writes
 `result.json` and installer/doctor logs. `-KeepInstalled` leaves the test
 installation for manual inspection instead of testing uninstall.
 
-Also open the desktop shortcut, select a folder, and check the first-launch
-screen in the terminal. Clean Windows 10 and Windows 11 testing remains
+Also open the desktop shortcut and check the working-folder screen and first-launch
+screen in the terminal. Check Tab navigation, Enter to open, Escape to cancel,
+remembering and forgetting a folder, and reopening after the saved folder is deleted
+or a removable drive is disconnected. Canceling either dialog must preserve the
+saved preference. Check the icon in Explorer, shortcuts, and the launch window at
+100%, 150%, and 200% display scaling. Clean Windows 10 and Windows 11 testing remains
 pending for the v0.1.10 preview; a Windows Server run alone does not qualify
 those desktop versions. Provider sign-in and microphone access require
 separate interactive checks.
