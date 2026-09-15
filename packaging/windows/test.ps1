@@ -62,6 +62,8 @@ if ($results.bash -ne 'bundled-bash') { throw 'Bash did not run' }
 $results.rg = (Run (Join-Path $payload 'tools\rg.exe') @('--version')).Trim()
 $results.fd = (Run (Join-Path $payload 'tools\fd.exe') @('--version')).Trim()
 $results.piTools = (Run (Join-Path $payload 'node\node.exe') @((Join-Path $PSScriptRoot 'runtime.test.mjs'),$payload,$project)).Trim()
+Write-Host 'Checking local catalog authentication and streamed inference'
+$results.network = (Run (Join-Path $payload 'node\node.exe') @((Join-Path $PSScriptRoot 'network.test.mjs'),$console,$project)).Trim()
 Push-Location $project
 try {
     $doctor = & $console doctor --json 2> (Join-Path $TestDirectory 'doctor.stderr') | Out-String

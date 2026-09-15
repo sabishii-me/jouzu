@@ -11,8 +11,9 @@ Windows may show an unknown-publisher warning. Native acceptance tests passed
 on Windows Server 2025 x64; clean Windows 10/11 testing remains pending.
 Code signing is planned for v0.2.0.
 
-This page describes installers built from this source. The working-folder screen
-and JZ icon described below are not included in the published v0.1.10 installer.
+This page describes installers built from this source. The working-folder screen,
+JZ icon, and expanded catalog diagnostics described below are not included in the
+published v0.1.10 installer.
 
 ## Use
 
@@ -67,6 +68,56 @@ contains 16, 20, 24, 32, 40, 48, 64, 128, and 256 pixel images. Regenerate the i
 and its SVG source with `python3 packaging/windows/generate-icon.py`; use
 `--check` to verify the committed files. Python is not needed to install or run Jouzu.
 
+## Catalog and model connection checks
+
+Desktop launches and the separately installed Windows CLI use different settings
+and credentials by default. The desktop home is `%LOCALAPPDATA%\JouzuDesktop\data`;
+the regular CLI configuration directory is `%APPDATA%\Jouzu`. Sign in inside the
+app you are using, or save a catalog token in its **Settings / Catalogs** screen.
+A token set only in PowerShell is inherited by apps launched from that shell,
+not by apps opened from the desktop shortcut. `JOUZU_HOME` overrides the desktop
+data home.
+
+Use the installed console launcher to diagnose the desktop data home. Adjust the
+path if you chose a different installation directory:
+
+```powershell
+$jouzu = "$env:LOCALAPPDATA\Programs\Jouzu\JouzuConsole.exe"
+& $jouzu --version
+& $jouzu catalog refresh
+& $jouzu catalog status --json
+```
+
+Inspect each source's `lastError`, including sources that have not loaded a catalog
+yet. A successful refresh clears the recorded failure. Catalog access and model
+access are separate checks: after refreshing, open Jouzu in your working folder,
+select a model with `/model`, and send a short prompt. **A live model request may
+incur provider charges.** Record the model-request error separately if it fails.
+
+| Error | Check |
+| --- | --- |
+| Missing credential or HTTP 401 | Sign in again in the desktop app or update that catalog's saved token/environment credential. |
+| HTTP 403 | Ask the service operator whether the account has access to the catalog or selected model. |
+| HTTP 407 | Check proxy authentication with your network administrator. |
+| `ENOTFOUND` or `EAI_AGAIN` | Check the endpoint hostname, DNS resolution, and VPN connection. |
+| Certificate verification failure | Check the system clock and Windows certificate trust, including an organization proxy's certificate. |
+| Connection refused, reset, or timed out | Check connectivity, the endpoint/port, and proxy configuration. |
+| Local filesystem/cache error | Check the Jouzu data folder's permissions and available disk space. |
+
+The launchers set `NODE_USE_SYSTEM_CA=1` and `NODE_USE_ENV_PROXY=1` for bundled
+Node. Proxy routing uses `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` in the launched
+process's environment. Configuring a browser proxy alone does not configure these
+variables. For organization-managed networks, ask your administrator for the
+approved proxy configuration and certificate trust setup. For temporary PowerShell
+settings, run `JouzuConsole.exe` from that same shell. After changing persistent user
+environment variables, sign out of Windows and back in before testing the desktop
+shortcut. Repeat both catalog and model checks.
+
+Do not disable certificate verification, disable security software, or run Jouzu
+as administrator to bypass a connection error. Before sharing diagnostic output,
+remove tokens, account identifiers, private endpoints, proxy credentials, and local
+paths. Share the Jouzu version and the catalog/model errors, not credential files.
+
 ## Build
 
 Build on x64 Windows with Windows PowerShell 5.1. The script uses the Windows
@@ -107,8 +158,25 @@ The test installs to a path containing Japanese characters and spaces,
 hides system Node/Git from PATH, runs the bundled tools and doctor, exercises
 Pi file tools with Windows paths, checks custom settings, activates a test version, restores the original, rejects
 a corrupt version, and checks uninstall data preservation. It writes
-`result.json` and installer/doctor logs. `-KeepInstalled` leaves the test
+`result.json` and installer/doctor logs. It also runs the installed console launcher
+against a local HTTP catalog/model fixture with temporary credentials and a separate
+temporary Jouzu home. This checks a rejected catalog token, first-error persistence,
+recovery, bearer forwarding, streamed inference, and a rejected model request. It
+bypasses environment proxies for loopback and makes no paid model requests. It does
+not qualify external HTTPS, proxy authentication, Windows certificate trust, or live
+provider credentials. `-KeepInstalled` leaves the test
 installation for manual inspection instead of testing uninstall.
+
+The same fixture can be checked on a development host after building the CLI:
+
+```sh
+node packaging/windows/network.test.mjs packages/cli/dist/cli.js /path/to/working-folder
+```
+
+For native networking qualification, run the connection checks in this document
+through `JouzuConsole.exe` on the target Windows machine, both on a direct connection
+and on any proxy-managed network you support. Record the Windows/Jouzu versions,
+network configuration without secrets, catalog result, and model-request result.
 
 Also open the desktop shortcut and check the working-folder screen and first-launch
 screen in the terminal. Check Tab navigation, Enter to open, Escape to cancel,
