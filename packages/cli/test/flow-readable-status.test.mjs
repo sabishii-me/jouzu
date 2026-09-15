@@ -158,6 +158,7 @@ test("input descriptions use the recorded sender and redact bounded terminal pre
 		/abc123|user:pass|sk-123/,
 	);
 	assert.ok(terminalTextWidth(flowDisplayText("日本語".repeat(100), 40)) <= 40);
+	assert.ok(Buffer.byteLength(flowDisplayText("\u0301".repeat(10000), 300)) < 4096);
 });
 
 test("request descriptions identify the failed required source, not unrelated surviving history", () => {

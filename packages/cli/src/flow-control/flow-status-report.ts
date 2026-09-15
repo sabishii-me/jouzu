@@ -71,9 +71,18 @@ export function formatFlowReport(
 			} else lines.push("- Required context (no submitted message is linked)");
 			lines.push(
 				source?.problem === "not-admitted"
-					? "  Request ended before payload admission. No send was recorded; the receipt does not identify the cause."
+					? source.failure
+						? `  Request ended during ${source.stage}; no payload was admitted.`
+						: "  Request ended before payload admission. No send was recorded; the receipt does not identify the cause."
 					: `  Required ${request.reason === "required-input" ? "input" : "context"} was removed or changed${source ? ` during ${source.stage}` : " before sending"}.`,
 			);
+			if (source?.failure) {
+				lines.push(`  Reason: ${flowDisplayText(source.failure.message, 300)}`);
+				if (details)
+					lines.push(
+						`  Failure: ${source.failure.code}, recorded ${new Date(source.failure.recordedAt).toISOString()}`,
+					);
+			}
 			if (source?.provider || source?.model)
 				lines.push(
 					`  Destination: ${flowDisplayText(source.provider ?? "provider")} / ${flowDisplayText(source.model ?? "model")}`,

@@ -10,6 +10,7 @@ import {
 } from "./native-context-projections.js";
 import type {
 	FlowNativeRequestStore,
+	NativeRequestFailure,
 	NativeRequestSource,
 	NativeSourceCapture,
 	NativeSourceClaim,
@@ -30,6 +31,25 @@ export type NativeContextDecorator = (
 
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const attached = new WeakSet<AgentSession>();
+
+function nativeFailure(
+	error: unknown,
+	model: { api: string; provider: string; id: string },
+	stage: NativeRequestFailure["stage"],
+): NativeRequestFailure {
+	return {
+		stage,
+		transmission: "not-admitted",
+		code: error instanceof FlowLedgerError ? error.code : "provider",
+		message:
+			flowDiagnosticText(error instanceof Error ? error.message : String(error), 300) ||
+			"No failure description was returned.",
+		api: flowDiagnosticText(model.api, 128) || "unknown",
+		provider: flowDiagnosticText(model.provider, 128) || "unknown",
+		model: flowDiagnosticText(model.id, 128) || "unknown",
+		recordedAt: Date.now(),
+	};
+}
 
 /** Retain native request lifecycle around Pi's final payload callback, without inferring input membership. */
 export class PiNativeRequests {
@@ -420,14 +440,16 @@ export class PiNativeRequests {
 			this.active++;
 			let handedOff = false;
 			let finished = false;
+			let failure: NativeRequestFailure | undefined;
 			const settle = () => {
 				if (!finished) {
 					finished = true;
 					this.active--;
 				}
 			};
-			const withheld = async () => {
-				if (!handedOff) await store.finish(id, "withheld");
+			const withheld = async (error?: unknown) => {
+				if (error !== undefined) failure ??= nativeFailure(error, model, "compaction-preparation");
+				if (!handedOff) await store.finish(id, "withheld", failure);
 			};
 			try {
 				await store.begin({
@@ -493,7 +515,7 @@ export class PiNativeRequests {
 							);
 							return message;
 						} catch (error) {
-							await withheld();
+							await withheld(error);
 							throw error;
 						} finally {
 							settle();
@@ -508,7 +530,7 @@ export class PiNativeRequests {
 				});
 			} catch (error) {
 				settle();
-				await withheld();
+				await withheld(error);
 				throw error;
 			}
 		};
@@ -524,6 +546,7 @@ export class PiNativeRequests {
 			let handedOff = false;
 			let admitting = false;
 			let admissionFailure: { error: unknown } | undefined;
+			let failure: NativeRequestFailure | undefined;
 			let finished = false;
 			const settle = () => {
 				if (!finished) {
@@ -534,9 +557,11 @@ export class PiNativeRequests {
 			};
 			const composed = this.composed;
 			this.composed = undefined;
-			const withheld = async () => {
+			const withheld = async (error?: unknown) => {
 				if (handedOff) return;
-				await store.finish(id, "withheld");
+				if (error !== undefined)
+					failure ??= nativeFailure(error, model, admissionFailure ? "payload-admission" : "provider-preparation");
+				await store.finish(id, "withheld", failure);
 				if (composed) await this.composition?.withhold(composed);
 			};
 			try {
@@ -606,6 +631,8 @@ export class PiNativeRequests {
 							this.assertActive();
 							if (!handedOff && admissionFailure) throw admissionFailure.error;
 							if (!handedOff) {
+								if (message.stopReason === "error" && message.errorMessage)
+									failure ??= nativeFailure(new Error(message.errorMessage), model, "provider-preparation");
 								const error = new FlowLedgerError(
 									"transition",
 									message.stopReason === "error" && message.errorMessage
@@ -629,7 +656,7 @@ export class PiNativeRequests {
 							// outcome, so the signal is what identifies it. Both routes are reported: a
 							// provider that answers with `aborted` is the same event to the user.
 							if (options?.signal?.aborted) this.turn?.aborted();
-							await withheld();
+							await withheld(error);
 							throw error;
 						} finally {
 							settle();
@@ -660,7 +687,7 @@ export class PiNativeRequests {
 				});
 			} catch (error) {
 				settle();
-				await withheld();
+				await withheld(error);
 				throw error;
 			}
 		});

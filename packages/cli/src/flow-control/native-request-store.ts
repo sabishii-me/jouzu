@@ -1,4 +1,5 @@
 import { BACKGROUND_CONTEXT, deleteValue, type Session, setValue, value } from "@earendil-works/pi-agent-core";
+import { flowDiagnosticText } from "./diagnostic-text.js";
 import { type NativeProjectionCapture, validateNativeProjections } from "./native-context-projections.js";
 import { nativeProjectionDelivered, nativeSourceDelivered } from "./native-inclusion.js";
 import { retirableNativeRequests, supersededNativeRequests } from "./native-request-retention.js";
@@ -6,9 +7,21 @@ import type { FlowOwnership } from "./ownership.js";
 import { FlowLedgerError, type FlowScope } from "./receipt-ledger.js";
 import { retiredIdentityHash } from "./retired-identities.js";
 
+export interface NativeRequestFailure {
+	stage: "provider-preparation" | "payload-admission" | "compaction-preparation";
+	transmission: "not-admitted";
+	code: string;
+	message: string;
+	api: string;
+	provider: string;
+	model: string;
+	recordedAt: number;
+}
+
 export interface NativeRequest {
 	/** Explicit recovery releases the hold without asserting a provider outcome. */
 	reset?: true;
+	failure?: NativeRequestFailure;
 	id: string;
 	ownerId: string;
 	/**
@@ -82,6 +95,7 @@ interface Header {
 	retired?: string[];
 }
 export const MAX_RETIRED_NATIVE_REQUESTS = 16384;
+const MAX_NATIVE_REQUEST_BYTES = 1024 * 1024;
 const sourceIdentity = (source: NativeSourceClaim) => retiredIdentityHash("native-source", nativeSourceKey(source));
 const requestIdentity = (id: string) => retiredIdentityHash("native-request", id);
 const headerAddress = value<Header>("jouzu.flow.native-requests", "v1");
@@ -96,6 +110,30 @@ export const nativeSourceKey = (source: NativeSourceClaim) =>
 	]);
 const identity = (id: unknown) => typeof id === "string" && id.length > 0 && id.length <= 512;
 const hash = (text: unknown) => typeof text === "string" && /^[a-f0-9]{64}$/.test(text);
+function validateFailure(failure: NativeRequestFailure): void {
+	if (
+		!failure ||
+		typeof failure !== "object" ||
+		Array.isArray(failure) ||
+		Object.keys(failure).some(
+			(key) => !["stage", "transmission", "code", "message", "api", "provider", "model", "recordedAt"].includes(key),
+		) ||
+		!["provider-preparation", "payload-admission", "compaction-preparation"].includes(failure.stage) ||
+		failure.transmission !== "not-admitted" ||
+		!Number.isSafeInteger(failure.recordedAt) ||
+		failure.recordedAt < 0 ||
+		!identity(failure.code) ||
+		flowDiagnosticText(failure.code, 64) !== failure.code ||
+		typeof failure.message !== "string" ||
+		!failure.message.length ||
+		Buffer.byteLength(failure.message) > 4096 ||
+		flowDiagnosticText(failure.message, 300) !== failure.message ||
+		[failure.api, failure.provider, failure.model].some(
+			(item) => !identity(item) || flowDiagnosticText(item, 128) !== item,
+		)
+	)
+		throw new FlowLedgerError("schema", "Invalid native failure diagnostic.");
+}
 
 const nativeRequestWithheld = (record: NativeRequest): boolean =>
 	record.outcome === "withheld" && (!!record.requiredSources?.length || !!record.requiredProjections?.length);
@@ -137,9 +175,14 @@ export class FlowNativeRequestStore {
 		return store;
 	}
 	private validate(records: NativeRequest[]): void {
-		if (records.length > 1024 || Buffer.byteLength(JSON.stringify(records)) > 1024 * 1024)
+		if (records.length > 1024 || Buffer.byteLength(JSON.stringify(records)) > MAX_NATIVE_REQUEST_BYTES)
 			throw new FlowLedgerError("capacity", "Native request retention limit reached.");
 		for (const [recordIndex, record] of records.entries()) {
+			if (record.failure !== undefined) {
+				validateFailure(record.failure);
+				if (record.outcome !== "withheld" || record.payload)
+					throw new FlowLedgerError("schema", "Failure diagnostic conflicts with request delivery.");
+			}
 			if (
 				record.retryAuthorization !== undefined &&
 				(!nativeRequestWithheld(record) ||
@@ -608,6 +651,7 @@ export class FlowNativeRequestStore {
 			| "retryAuthorization"
 			| "cancelledSources"
 			| "cancelledProjections"
+			| "failure"
 		>,
 		requireUnreceived = false,
 		consumedClaims?: NativeSourceClaim[],
@@ -734,12 +778,27 @@ export class FlowNativeRequestStore {
 			return true;
 		});
 	}
-	finish(id: string, outcome: NonNullable<NativeRequest["outcome"]>): Promise<void> {
+	async finish(
+		id: string,
+		outcome: NonNullable<NativeRequest["outcome"]>,
+		failure?: NativeRequestFailure,
+	): Promise<void> {
+		const captured = failure === undefined ? undefined : structuredClone(failure);
+		if (captured) {
+			validateFailure(captured);
+			if (outcome !== "withheld")
+				throw new FlowLedgerError("schema", "Failure diagnostic conflicts with request delivery.");
+		}
 		return this.transact((records) => {
 			const record = this.owned(records, id);
 			if (record.outcome && record.outcome !== outcome)
 				throw new FlowLedgerError("transition", "Native request outcome conflicts with retained evidence.");
 			record.outcome = outcome;
+			if (captured && !record.failure) {
+				record.failure = captured;
+				// Optional diagnostics must not consume space needed to retain the terminal disposition.
+				if (Buffer.byteLength(JSON.stringify(records)) > MAX_NATIVE_REQUEST_BYTES) delete record.failure;
+			}
 		});
 	}
 }

@@ -3,7 +3,12 @@ import { flowDiagnosticText as flowDisplayText } from "./diagnostic-text.js";
 export { flowDiagnosticText as flowDisplayText } from "./diagnostic-text.js";
 
 import { nativeProjectionDelivered } from "./native-inclusion.js";
-import { type NativeRequest, nativeHoldHash, nativeHoldPending } from "./native-request-store.js";
+import {
+	type NativeRequest,
+	type NativeRequestFailure,
+	nativeHoldHash,
+	nativeHoldPending,
+} from "./native-request-store.js";
 import type { RetainedSubmission } from "./submission-store.js";
 import type { FlowTask } from "./task-producer.js";
 
@@ -21,6 +26,7 @@ export interface FlowRequestDescription {
 	hash?: string;
 	reason?: "required-input" | "required-context";
 	problem?: "input-changed" | "context-changed" | "not-admitted";
+	failure?: NativeRequestFailure;
 }
 export interface FlowStatusContext {
 	inputs: Record<string, FlowInputDescription>;
@@ -115,7 +121,7 @@ export function captureFlowStatusContext(
 				});
 				const projectionFailure =
 					request.requiredProjections?.some((index) => !nativeProjectionDelivered(request, index)) ?? false;
-				const payload = request.withheldPayload;
+				const payload = request.withheldPayload ?? request.failure;
 				return [
 					request.id,
 					{
@@ -131,11 +137,12 @@ export function captureFlowStatusContext(
 							? "context preparation"
 							: missing.length || projectionFailure
 								? "model conversion"
-								: "request preparation",
+								: (request.failure?.stage.replaceAll("-", " ") ?? "request preparation"),
 						...(payload ? { provider: payload.provider, model: payload.model } : {}),
 						hash: nativeHoldHash(request),
 						reason: projectionFailure ? "required-context" : "required-input",
 						problem: projectionFailure ? "context-changed" : missing.length ? "input-changed" : "not-admitted",
+						...(request.failure ? { failure: structuredClone(request.failure) } : {}),
 					} satisfies FlowRequestDescription,
 				];
 			}),
