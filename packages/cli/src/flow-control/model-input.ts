@@ -214,6 +214,7 @@ export async function prepareFlowModelInput(
 	composition: FlowModelInput,
 	input: FlowRequestInput,
 	containsUserInput: boolean,
+	compactedMembers: Pick<FlowMember, "id" | "revision">[] = [],
 ): Promise<void> {
 	const state = await ledger.snapshot();
 	const attempt = state.attempts.find((candidate) => candidate.id === composition.attemptId);
@@ -245,7 +246,13 @@ export async function prepareFlowModelInput(
 			error instanceof FlowLedgerError ? error : new FlowLedgerError("schema", "Malformed model input was withheld.");
 		inclusion = composition.members.map(({ id, revision }) => ({ id, revision, disposition: "rejected" }));
 	}
-	const admitted = await ledger.prepare(composition.attemptId, input.requestId, inclusion, containsUserInput);
+	const admitted = await ledger.prepare(
+		composition.attemptId,
+		input.requestId,
+		inclusion,
+		containsUserInput,
+		compactedMembers,
+	);
 	if (orderingFailure) throw orderingFailure;
 	if (!admitted) throw new FlowLedgerError("transition", "Composed model input was withheld after transformation.");
 }

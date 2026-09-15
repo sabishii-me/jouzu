@@ -459,9 +459,16 @@ export class FlowReceiptLedger {
 		});
 	}
 
-	prepare(id: string, requestId: string, inclusion: FlowInclusion[], containsUserInput: boolean): Promise<boolean> {
+	prepare(
+		id: string,
+		requestId: string,
+		inclusion: FlowInclusion[],
+		containsUserInput: boolean,
+		compactedMembers: Pick<FlowMember, "id" | "revision">[] = [],
+	): Promise<boolean> {
 		requireIdentity(requestId);
 		const captured = structuredClone(inclusion);
+		const compacted = new Set(compactedMembers.map(memberKey));
 		return this.mutate((state) => {
 			const attempt = this.attempt(state, id, ["claimed", "running"]);
 			if (attempt.reason) throw new FlowLedgerError("transition", "Filtered run must settle before correction.");
@@ -481,17 +488,35 @@ export class FlowReceiptLedger {
 				if (receipt.disposition === "included" && receipt.contentHash !== member?.contentHash)
 					throw new FlowLedgerError("identity", "Included content does not match its membership identity.");
 			}
+			// Compaction may remove delivered input from later requests in the same run.
+			// Keep the omission receipt truthful; never count it as a new delivery.
+			const deliveredBeforeCompaction = (member: FlowMember) =>
+				compacted.has(memberKey(member)) &&
+				captured.find((item) => memberKey(item) === memberKey(member))?.disposition === "omitted" &&
+				attempt.requests.some(
+					(request) =>
+						request.handedOff &&
+						request.outcome === "success" &&
+						request.inclusion.some(
+							(item) =>
+								memberKey(item) === memberKey(member) &&
+								item.disposition === "included" &&
+								item.contentHash === member.contentHash,
+						),
+				);
+			const satisfied = (member: FlowMember) =>
+				captured.find((item) => memberKey(item) === memberKey(member))?.disposition === "included" ||
+				deliveredBeforeCompaction(member);
 			attempt.requests.push({ id: requestId, inclusion: captured, containsUserInput, handedOff: false });
 			const rejected = attempt.members.some(
 				(member) =>
-					(member.required &&
-						captured.find((item) => memberKey(item) === memberKey(member))?.disposition !== "included") ||
+					(member.required && !satisfied(member)) ||
 					(member.inputFrame?.intact &&
 						captured.some(
 							(item) => memberKey(item) === memberKey(member) && ["replaced", "rejected"].includes(item.disposition),
 						)),
 			);
-			const empty = !captured.some((item) => item.disposition === "included");
+			const empty = !attempt.members.some(satisfied);
 			attempt.phase = rejected || empty ? "withheld" : "prepared";
 			// Admission is charged from what model conversion included, which is where this contract
 			// establishes delivery.

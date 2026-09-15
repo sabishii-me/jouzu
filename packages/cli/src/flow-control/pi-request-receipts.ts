@@ -2,6 +2,7 @@ import type { FlowRequestInput } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { type FlowModelInput, prepareFlowModelInput } from "./model-input.js";
+import { compactedFlowMembers } from "./pi-compaction-receipts.js";
 import { FlowLedgerError, type FlowOutcome, type FlowReceiptLedger } from "./receipt-ledger.js";
 
 /** One controller-composed request, bound to the attempt whose composition it carries. */
@@ -47,7 +48,13 @@ export class PiRequestReceipts {
 			throw new FlowLedgerError("transition", "Prior request requires reconciliation before another request.");
 		const composition = this.compositions.get(attempt.id);
 		if (!composition) throw new FlowLedgerError("identity", "Claimed attempt has no registered composition.");
-		await prepareFlowModelInput(this.ledger, composition, input, containsUserInput);
+		await prepareFlowModelInput(
+			this.ledger,
+			composition,
+			input,
+			containsUserInput,
+			compactedFlowMembers(this.session.sessionManager, attempt, input),
+		);
 		const request: FlowCompositionRequest = { composition, id: input.requestId, handedOff: false };
 		try {
 			this.assertActive(signal);

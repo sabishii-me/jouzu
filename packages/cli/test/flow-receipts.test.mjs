@@ -45,6 +45,30 @@ async function claimed(ledger, members = [member()], id = "attempt") {
 	await ledger.claim(id, queue);
 }
 
+for (const outcome of [undefined, "success", "failure", "aborted"])
+	for (const disposition of ["omitted", "replaced", "rejected"])
+		test(`compacted membership requires successful delivery: outcome=${outcome}, disposition=${disposition}`, async (t) => {
+			const { ledger } = await fixture(t);
+			const work = member("work", "work", true);
+			await claimed(ledger, [work]);
+			if (outcome) {
+				await ledger.prepare("attempt", "first", [included(work)], false);
+				await ledger.handoff("attempt", "first");
+				await ledger.requestOutcome("attempt", "first", outcome);
+			}
+			const admitted = await ledger.prepare(
+				"attempt",
+				"next",
+				[{ id: work.id, revision: work.revision, disposition }],
+				false,
+				[work],
+			);
+			assert.equal(admitted, outcome === "success" && disposition === "omitted");
+			const request = (await ledger.snapshot()).attempts[0].requests.at(-1);
+			assert.equal(request.inclusion[0].disposition, disposition, "compaction never fabricates inclusion");
+			assert.equal(request.handedOff, false);
+		});
+
 test("Pi mutation barrier admits one reservation and rolls back the losing update", async (t) => {
 	const { ledger } = await fixture(t);
 	const results = await Promise.allSettled([ledger.select("a", [member()]), ledger.select("b", [member()])]);
