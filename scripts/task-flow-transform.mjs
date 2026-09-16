@@ -59,5 +59,30 @@ export function transformTaskFlow(source) {
 		"    if (!options.explicit) {\n      const queued =",
 		"    if (!options.explicit && !flowManaged) {\n      const queued =",
 	);
-	return source;
+	return reconnectTaskFlowOnTree(source);
+}
+
+/** Upgrade the pinned task adapter without changing its store or tool contracts. */
+export function reconnectTaskFlowOnTree(source) {
+	const anchor = "  // message_start is the delivery-time signal for queued prompts.";
+	if (source.split(anchor).length !== 2) throw new Error("Task tree lifecycle source anchor differs.");
+	return source.replace(
+		anchor,
+		`  // Tree navigation replaces the flow branch without restarting this extension.
+  pi.on("session_tree", async (_event, ctx) => {
+    latestCtx = ctx;
+    widget.setUICtx(ctx.ui as UICtx);
+    initializeStoreForContext(ctx);
+    queuedTaskIds.clear();
+    scheduledTaskPrompts.length = 0;
+    activeScheduledTaskId = undefined;
+    promptExecutionConfig = {};
+    autoPromptAttempts.clear();
+    autoClear.reset();
+    await taskFlow.connect(ctx.sessionManager.getSessionId());
+    widget.update();
+  });
+
+${anchor}`,
+	);
 }

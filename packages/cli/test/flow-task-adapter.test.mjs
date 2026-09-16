@@ -143,6 +143,128 @@ test("installed task continuation owns background execution and waits", { timeou
 	);
 });
 
+for (const reverseExtensions of [false, true])
+	test(`tree navigation reconnects installed task tools (reverse bridges=${reverseExtensions})`, {
+		timeout: 20000,
+	}, async (t) => {
+		const setupData = await setup(t);
+		const hosts = [];
+		setupData.producerExtensions.unshift({
+			name: "capture-task-host",
+			factory(pi) {
+				pi.events.on("jouzu:task-flow", (request) => {
+					const accept = request.accept;
+					request.accept = (host) => {
+						hosts.push(host);
+						accept(host);
+					};
+				});
+			},
+		});
+		const f = await assembledSession(t, {
+			...setupData,
+			reverseExtensions,
+			persist: true,
+			script: [
+				call("TaskCreate", { subject: "Preserved", description: "Keep the saved task" }),
+				call("TaskUpdate", { taskId: "1", paused: true }),
+				{ text: "Paused" },
+				call("TaskList", {}),
+				call("TaskCreateMany", { tasks: [{ subject: "New branch", description: "New work" }] }),
+				call("TaskUpdate", { taskId: "2", status: "completed" }),
+				call("TaskUpdate", { taskId: "1", status: "in_progress", paused: false }),
+				call("TaskUpdate", { taskId: "1", status: "completed" }),
+				{ text: "Completed" },
+			],
+		});
+		await f.session.prompt("Create and pause a task");
+		await f.session.waitForIdle();
+		const saved = await readFile(setupData.taskFile, "utf8");
+		const original = f.ingress.branch();
+		const oldHost = hosts[0];
+		await f.session.navigateTree(f.sessionManager.getLeafId());
+		assert.equal(hosts.length, 1, "no-op navigation keeps the attachment");
+		const user = f.sessionManager
+			.getBranch()
+			.find((entry) => entry.type === "message" && entry.message.role === "user");
+		await f.session.navigateTree(user.id);
+		assert.notEqual(f.ingress.branch(), original);
+		assert.equal(await readFile(setupData.taskFile, "utf8"), saved, "navigation preserves the paused task");
+		await f.session.prompt("List the saved task, create new work, and complete both");
+		await f.session.waitForIdle();
+		assert.ok(
+			messages(f).every((message) => !message.isError),
+			JSON.stringify(messages(f)),
+		);
+		assert.equal(hosts.length, 2, "tree navigation reconnects without a session restart");
+		await assert.rejects(oldHost.ready(), /Task branch attachment changed/);
+		await assert.rejects(
+			oldHost.tool("TaskList", {}, () => assert.fail("stale tool must not execute")),
+			/Task branch attachment changed/,
+		);
+		assert.equal(JSON.parse(saved).tasks[0].subject, "Preserved");
+		assert.deepEqual(
+			JSON.parse(await readFile(setupData.taskFile, "utf8")).tasks.map((task) => task.status),
+			["completed", "completed"],
+		);
+		assert.equal(f.bodies.length, 9);
+		assert.deepEqual(f.errors, []);
+	});
+
+test("tree navigation discards queued TaskExecute context and permits fresh task continuation", {
+	timeout: 20000,
+}, async (t) => {
+	const setupData = await setup(t);
+	const staleContext = "ONLY-FOR-THE-ABANDONED-BRANCH";
+	let f;
+	f = await assembledSession(t, {
+		...setupData,
+		persist: true,
+		script: (_body, index) => {
+			if (index === 0)
+				return call("TaskCreateMany", {
+					tasks: [
+						{ subject: "First", description: "First task" },
+						{ subject: "Second", description: "Second task" },
+					],
+				});
+			if (index === 1) return call("TaskExecute", { task_ids: ["1", "2"], additional_context: staleContext });
+			if (index === 2) {
+				f.ingress.pauseAutomated("Hold the queued task before navigation");
+				return { text: "Queued" };
+			}
+			if (index === 3) return call("TaskUpdate", { taskId: "1", status: "in_progress" });
+			if (index === 5) return call("TaskUpdate", { taskId: "1", status: "completed" });
+			return { text: "Done" };
+		},
+	});
+	await f.session.prompt("Schedule both tasks with branch-specific context");
+	await f.session.waitForIdle();
+	assert.equal(f.bodies.length, 3);
+	const original = f.ingress.branch();
+	assert.ok(original.controller.view().producers.includes("tasks"));
+	const saved = await readFile(setupData.taskFile, "utf8");
+	const user = f.sessionManager.getBranch().find((entry) => entry.type === "message" && entry.message.role === "user");
+	await f.session.navigateTree(user.id);
+	assert.equal(await readFile(setupData.taskFile, "utf8"), saved, "navigation preserves stored tasks");
+	assert.equal(f.bodies.length, 3, "navigation does not start unbound tasks");
+	await f.session.prompt("Start only the first saved task on this branch");
+	await until(f, () => f.bodies.length >= 7);
+	await f.session.waitForIdle();
+	assert.equal(f.bodies.length, 7);
+	assert.ok(f.bodies.slice(3).every((body) => !JSON.stringify(body).includes(staleContext)));
+	const tasks = JSON.parse(await readFile(setupData.taskFile, "utf8")).tasks;
+	assert.deepEqual(
+		tasks.map((task) => task.status),
+		["completed", "pending"],
+	);
+	assert.ok(
+		messages(f).every((message) => !message.isError),
+		JSON.stringify(messages(f)),
+	);
+	assert.deepEqual(f.errors, []);
+});
+
 for (const control of ["waitForUser", "paused"])
 	test(`task ${control} holds automation until explicitly cleared`, { timeout: 20000 }, async (t) => {
 		const setupData = await setup(t);

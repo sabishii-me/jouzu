@@ -33,6 +33,29 @@ test("task metadata upgrade replaces only the pinned preceding runtime", async (
 	assert.equal(await applyTaskFlow(root, true), 0);
 });
 
+test("task navigation upgrade replaces only the pinned preceding source", async (t) => {
+	const root = await mkdtemp(join(tmpdir(), "jouzu-task-navigation-upgrade-"));
+	t.after(() => rm(root, { recursive: true, force: true }));
+	await mkdir(join(root, "src"));
+	for (const path of ["package.json", "src/jouzu-flow.ts"])
+		await writeFile(join(root, path), await readFile(new URL(path, installed)));
+	const source = await readFile(new URL("src/index.ts", installed), "utf8");
+	const start = source.indexOf("  // Tree navigation replaces the flow branch");
+	const end = source.indexOf("  // message_start is the delivery-time signal", start);
+	assert.ok(start >= 0 && end > start);
+	const previous = source.slice(0, start) + source.slice(end);
+	const lock = JSON.parse(
+		await readFile(new URL("../../../upstream/task-flow/patch.lock.json", import.meta.url), "utf8"),
+	);
+	assert.equal(createHash("sha256").update(previous).digest("hex"), lock.previousAfter);
+	await writeFile(join(root, "src/index.ts"), previous);
+	await assert.rejects(applyTaskFlow(root, true), /differs/);
+	assert.equal(await readFile(join(root, "src/index.ts"), "utf8"), previous);
+	assert.equal(await applyTaskFlow(root), 1);
+	assert.equal(await readFile(join(root, "src/index.ts"), "utf8"), source);
+	assert.equal(await applyTaskFlow(root, true), 0);
+});
+
 test("installed task adapter is pinned and idempotent", async () => {
 	assert.equal(await applyInstalledTaskFlow(true), 0);
 	assert.equal(await applyInstalledTaskFlow(), 0);

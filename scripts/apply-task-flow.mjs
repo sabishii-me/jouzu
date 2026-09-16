@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile, realpath, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { transformTaskFlow } from "./task-flow-transform.mjs";
+import { reconnectTaskFlowOnTree, transformTaskFlow } from "./task-flow-transform.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const sha = (value) => createHash("sha256").update(value).digest("hex");
@@ -22,8 +22,10 @@ export async function applyTaskFlow(packageRoot, checkOnly = false) {
 	const original = await readFile(path, "utf8");
 	const writes = [];
 	if (sha(original) !== lock.after) {
-		if (checkOnly || sha(original) !== lock.before) throw new Error("Task flow source hash differs.");
-		const changed = transformTaskFlow(original);
+		const digest = sha(original);
+		if (checkOnly || (digest !== lock.before && digest !== lock.previousAfter))
+			throw new Error("Task flow source hash differs.");
+		const changed = digest === lock.before ? transformTaskFlow(original) : reconnectTaskFlowOnTree(original);
 		if (sha(changed) !== lock.after) throw new Error("Task flow transform differs.");
 		writes.push([path, changed]);
 	}

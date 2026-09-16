@@ -39,7 +39,7 @@
 		},
 		{
 			"path": "upstream/task-flow/patch.lock.json",
-			"sha256": "34c740d1c2b1a353b46077e347757e9a3723f7a1789389134874d5d360b1309e"
+			"sha256": "f48e46b634356be64a5909a942660c5874c37b930dbd57aad60844d2a2f0bd0d"
 		}
 	]
 }
