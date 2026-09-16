@@ -82,20 +82,8 @@ function runtimeStyle(id: string): SessionUiStyleRole {
 	}
 }
 
-export function buildStatusBarSegments(snapshot: SessionStatusSnapshot, multiloopStatus?: string): StatusBarSegment[] {
+export function buildStatusBarSegments(snapshot: SessionStatusSnapshot): StatusBarSegment[] {
 	const segments: StatusBarSegment[] = [];
-	if (multiloopStatus) {
-		segments.push({
-			id: "multiloop",
-			side: "left",
-			order: 5,
-			priority: 950,
-			style: "status.workspace",
-			value: multiloopStatus,
-			compactValue: multiloopStatus.replace(/^multiloop: /, ""),
-			required: true,
-		});
-	}
 	if (snapshot.git.status === "error" || snapshot.runtime.status === "error") {
 		segments.push({
 			id: "health",
@@ -306,13 +294,8 @@ export function renderStatusBarSegments(
 	return `${left}${" ".repeat(width - terminalTextWidth(left) - terminalTextWidth(right))}${right}`;
 }
 
-export function renderStatusBar(
-	snapshot: SessionStatusSnapshot,
-	width: number,
-	styles: SessionUiStyles,
-	multiloopStatus?: string,
-): string {
-	return renderStatusBarSegments(buildStatusBarSegments(snapshot, multiloopStatus), width, styles);
+export function renderStatusBar(snapshot: SessionStatusSnapshot, width: number, styles: SessionUiStyles): string {
+	return renderStatusBarSegments(buildStatusBarSegments(snapshot), width, styles);
 }
 
 export class StatusBarComponent implements Component {
@@ -323,7 +306,6 @@ export class StatusBarComponent implements Component {
 		controller: SessionStatusController,
 		private readonly styles: SessionUiStyles,
 		requestRender: () => void,
-		private readonly getMultiloopStatus: () => string | undefined = () => undefined,
 	) {
 		this.unsubscribe = controller.subscribe((snapshot) => {
 			this.snapshot = snapshot;
@@ -332,7 +314,7 @@ export class StatusBarComponent implements Component {
 	}
 
 	render(width: number): string[] {
-		return [this.snapshot ? renderStatusBar(this.snapshot, width, this.styles, this.getMultiloopStatus()) : ""];
+		return [this.snapshot ? renderStatusBar(this.snapshot, width, this.styles) : ""];
 	}
 
 	invalidate(): void {}

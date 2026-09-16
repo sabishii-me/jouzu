@@ -59,6 +59,20 @@ test("keeps wide and compact Session UI lines stable", () => {
 	);
 });
 
+test("reports autonomous work on the Session Line", () => {
+	assert.equal(
+		renderSessionLine(snapshot, hints, 80, plainStyles, {
+			text: "multiloop: 1 running · 2 subagents",
+			active: true,
+		}),
+		"⠋ multiloop: 1 running · 2 subagents                   Codex gpt-5.6-sol (xhigh)",
+	);
+	assert.equal(
+		renderSessionLine(snapshot, hints, 80, plainStyles, { text: "multiloop: 1 paused", active: false }),
+		"○ multiloop: 1 paused                                  Codex gpt-5.6-sol (xhigh)",
+	);
+});
+
 test("color and no-color lanes carry identical text and display width", () => {
 	for (const width of [24, 48, 80, 120]) {
 		const plainLine = renderSessionLine(snapshot, hints, width, plainStyles);

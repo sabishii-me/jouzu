@@ -41,6 +41,10 @@ test("installs one editor, Session Line, and Status Bar owner and cleans up", as
 		const extension = createSessionUiExtension({
 			colorEnabled: false,
 			getHints: () => [{ id: "palette", text: "/model choose", priority: 10, role: "muted" }],
+			getActivity: ({ extensionStatuses }) => {
+				const loop = extensionStatuses.get("multiloop");
+				return loop ? { text: loop, active: /\brunning\b/.test(loop) } : undefined;
+			},
 			onModelPicker: async (query) => {
 				modelQueries.push(query);
 				return true;
@@ -120,7 +124,7 @@ test("installs one editor, Session Line, and Status Bar owner and cleans up", as
 		let branchChanged;
 		let branchUnsubscribed = false;
 		const statuses = new Map();
-		const footer = calls.footers[0](tui, theme, {
+		const footer = calls.footers.at(-1)(tui, theme, {
 			getExtensionStatuses: () => statuses,
 			onBranchChange(handler) {
 				branchChanged = handler;
@@ -130,13 +134,21 @@ test("installs one editor, Session Line, and Status Bar owner and cleans up", as
 			},
 		});
 		assert.equal(terminalTextWidth(footer.render(80)[0]), 80);
-		for (const state of ["running", "paused", "running", "stopped"]) {
+		for (const [state, marker] of [
+			["running", "⠋"],
+			["paused", "○"],
+			["stopped", "○"],
+		]) {
 			statuses.set("multiloop", `multiloop: 1 ${state}`);
-			assert.match(footer.render(48)[0], new RegExp(`1 ${state}`));
-			assert.equal(terminalTextWidth(footer.render(48)[0]), 48);
+			const line = lineComponent.render(64)[0];
+			assert.match(line, new RegExp(`^${marker} multiloop: 1 ${state}`));
+			assert.equal(terminalTextWidth(line), 64);
+			assert.doesNotMatch(line, /\/model choose/);
+			assert.doesNotMatch(footer.render(48)[0], /multiloop/);
 		}
 		statuses.delete("multiloop");
-		assert.doesNotMatch(footer.render(48)[0], /multiloop|stopped/);
+		assert.doesNotMatch(lineComponent.render(64)[0], /multiloop|stopped/);
+		assert.match(lineComponent.render(64)[0], /\/model choose/);
 		branchChanged();
 		await Promise.resolve();
 		footer.dispose();

@@ -70,6 +70,7 @@ import { detectBannerColorMode, renderBrandGradient } from "./presentation.js";
 import type { SessionUiStyles } from "./session-ui/index.js";
 import { onShisaAuthChange } from "./shisa-link/credentials.js";
 import { createWorkflowIntegration } from "./subagents/integration.js";
+import { isActiveRun } from "./subagents/manager.js";
 import {
 	fitTerminalText,
 	padTerminalText,
@@ -715,6 +716,8 @@ export interface JouzuModelPickerIntegration {
 	openSettings(): Promise<boolean>;
 	cycleFavorite(direction: FavoriteCycleDirection): Promise<boolean>;
 	handleScopedModelsCommand(): Promise<boolean>;
+	/** Child runs this session has queued, starting, or running. */
+	activeAgentCount(): number;
 	/** Re-read activated catalog revisions after an external refresh. */
 	reloadCatalogs(): void;
 }
@@ -1533,6 +1536,7 @@ export function createJouzuModelPicker(
 		openSettings,
 		cycleFavorite,
 		handleScopedModelsCommand,
+		activeAgentCount: () => workflow.service.runs().filter(isActiveRun).length,
 		reloadCatalogs,
 	};
 }

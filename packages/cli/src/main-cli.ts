@@ -49,6 +49,7 @@ import {
 import { configurePiProcess, type ProfileSelection, resolveProfileSelection } from "./runtime.js";
 import { createRuntimeDiagnostics } from "./runtime-diagnostics.js";
 import { withJouzuOutput } from "./runtime-output.js";
+import { sessionActivity } from "./session-activity.js";
 import { createShisaExtension } from "./shisa-link/extension.js";
 import { offerShisaOnboarding } from "./shisa-link/onboarding.js";
 import { ensureQuietStartupDefault, suppressPiReleaseNotes } from "./startup-settings.js";
@@ -341,6 +342,15 @@ export async function runMainCli(args: string[]): Promise<void> {
 				role: "muted",
 			},
 		],
+		// Loop counts arrive as an extension status and child agents through the workflow service, so
+		// both read on the Session Line while the status bar keeps workspace, branch, and context.
+		getActivity: ({ extensionStatuses }) => {
+			const loopStatus = extensionStatuses.get("multiloop");
+			return sessionActivity({
+				...(loopStatus ? { loopStatus } : {}),
+				activeAgents: modelPicker.activeAgentCount(),
+			});
+		},
 		onModelPicker: (query) =>
 			modelPicker.open({ source: query ? "command" : "action", ...(query ? { initialSearchInput: query } : {}) }),
 		onModelCycle: (direction) => modelPicker.cycleFavorite(direction),

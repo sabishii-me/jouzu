@@ -1,5 +1,5 @@
 import type { InlineExtension } from "@earendil-works/pi-coding-agent";
-import type { SessionUiHint } from "./contracts.js";
+import type { SessionUiActivity, SessionUiActivityContext, SessionUiHint } from "./contracts.js";
 import { SessionStatusController } from "./controller.js";
 import { SESSION_UI_RUNTIME_IDS } from "./identity.js";
 import { type ModelCycleDirection, SessionPromptEditor } from "./prompt-frame.js";
@@ -10,6 +10,12 @@ import { createSessionUiStyles, type SessionUiStyleOptions, type SessionUiStyleS
 
 export interface SessionUiExtensionOptions {
 	getHints?: (snapshot: SessionStatusSnapshot | undefined) => readonly SessionUiHint[];
+	/**
+	 * Activity shown on the Session Line in place of the hint. The getter is read on each render and
+	 * on every animation step, so a source that can change without a render, such as a child agent
+	 * finishing, stays current only while `active` is true.
+	 */
+	getActivity?: (context: SessionUiActivityContext) => SessionUiActivity | undefined;
 	onModelPicker?: (query?: string) => Promise<boolean>;
 	onModelCycle?: (direction: ModelCycleDirection) => Promise<boolean>;
 	onScopedModelsCommand?: () => Promise<boolean>;
@@ -49,6 +55,9 @@ export function createSessionUiExtension(options: SessionUiExtensionOptions = {}
 				});
 				controller.sync(ctx);
 				const activeController = controller;
+				// Pi exposes extension statuses only through the footer factory, so the footer publishes
+				// the live map for the Session Line to read.
+				let extensionStatuses: ReadonlyMap<string, string> = new Map();
 				ctx.ui.setWidget(
 					SESSION_UI_RUNTIME_IDS.sessionLineWidget,
 					(tui, theme) =>
@@ -57,16 +66,13 @@ export function createSessionUiExtension(options: SessionUiExtensionOptions = {}
 							stylesFor(theme),
 							() => options.getHints?.(activeController.getSnapshot()) ?? [],
 							() => tui.requestRender(),
+							() => options.getActivity?.({ extensionStatuses }),
 						),
 					{ placement: "aboveEditor" },
 				);
 				ctx.ui.setFooter((tui, theme, footerData) => {
-					const statusBar = new StatusBarComponent(
-						activeController,
-						stylesFor(theme),
-						() => tui.requestRender(),
-						() => footerData.getExtensionStatuses().get("multiloop"),
-					);
+					extensionStatuses = footerData.getExtensionStatuses();
+					const statusBar = new StatusBarComponent(activeController, stylesFor(theme), () => tui.requestRender());
 					const unsubscribeBranch = footerData.onBranchChange(() => {
 						void activeController.refreshGit(ctx);
 					});

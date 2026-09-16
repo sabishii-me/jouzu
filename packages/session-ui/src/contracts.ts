@@ -11,6 +11,20 @@ export interface SessionUiHintSource {
 	getHint(): SessionUiHint | undefined;
 }
 
+/** Status text other extensions published through `ctx.ui.setStatus`, keyed by extension. */
+export interface SessionUiActivityContext {
+	extensionStatuses: ReadonlyMap<string, string>;
+}
+
+/**
+ * Work the Session Line reports instead of the shortcut hint: a running loop, active child
+ * agents, or loop state that outlives the turn. `active` animates the marker while work moves.
+ */
+export interface SessionUiActivity {
+	text: string;
+	active: boolean;
+}
+
 export interface SessionUiClock {
 	now(): number;
 }

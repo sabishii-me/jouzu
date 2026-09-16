@@ -10,6 +10,8 @@ export type SessionUiStyleRole =
 	| "session.hint.success"
 	| "session.hint.warning"
 	| "session.hint.error"
+	| "session.activity"
+	| "session.activity.idle"
 	| "session.provider"
 	| "session.model"
 	| "status.text"
@@ -94,6 +96,8 @@ export const DEFAULT_SESSION_UI_STYLE_SCHEME: SessionUiStyleScheme = Object.free
 	"session.hint.success": theme("success"),
 	"session.hint.warning": theme("warning"),
 	"session.hint.error": theme("error"),
+	"session.activity": theme("accent"),
+	"session.activity.idle": theme("dim"),
 	"session.provider": theme("dim"),
 	"session.model": theme("mdCode"),
 	"status.text": theme("text"),
