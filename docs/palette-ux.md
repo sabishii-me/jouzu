@@ -187,12 +187,13 @@ Run the focused interaction tests while iterating, then run `npm run check` and 
 
 ## Workflow
 
-Workflow uses one top-level tab and a visible **View: ‹ Agents ›** / **View: ‹ Runs ›** choice. The choice uses `←`/`→`; `Tab` remains reserved for Models / Workflow / Settings. Opening `/workflow` shows definitions. Run updates request a redraw without changing the selected view.
+Workflow uses one top-level tab and a visible **View: ‹ Agents ›** / **View: ‹ Runs ›** choice. The choice uses `←`/`→`; `Tab` remains reserved for Models / Workflow / Settings. Opening `/workflow` shows definitions. A **Subagents: ‹ On › / ‹ Off ›** row controls child execution for this session with `Enter`, `Space`, or `←`/`→`. Disabling asks for confirmation if children are queued or running, then stops them without undoing file changes. Definition editing and result inspection remain available. `/workflow on`, `/workflow off`, and `/workflow toggle` provide command shortcuts; off/toggle apply directly. Run updates request a redraw without changing the selected view.
 
 ```text
 ╭ Workflow ─────────────────────────────────────╮
 │ Models  [Workflow]  Settings                   │
 │ → View: ‹ Agents ›                            │
+│   Subagents: ‹ On › · this session             │
 │   orchestrator · provider/planner-model        │
 │   coder · provider/coder-model                 │
 │   reviewer · provider/review-model             │

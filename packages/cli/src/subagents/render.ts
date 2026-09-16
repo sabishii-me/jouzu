@@ -122,8 +122,11 @@ export function subagentComponent(value: unknown, theme: Pick<Theme, "fg">, expa
 					add(muted(`${runs.length - (expanded ? 20 : 5)} more runs; expand or use list`));
 				if (!runs.length) add(muted("No child runs."));
 				if (number(root.nextOffset) !== undefined) add(muted(`Next offset: ${root.nextOffset}`));
-			} else if (Array.isArray(value)) {
-				for (const raw of value.slice(0, expanded ? 64 : 5)) {
+			} else if (Array.isArray(value) || Array.isArray(root.roles)) {
+				const roles = (Array.isArray(value) ? value : root.roles) as unknown[];
+				if (typeof root.enabled === "boolean") add(accent(`Subagents ${root.enabled ? "on" : "off"}`));
+				detail("", root.reason, 5);
+				for (const raw of roles.slice(0, expanded ? 64 : 5)) {
 					const role = object(raw);
 					add(accent(`${text(role.id, 100)} · ${text(role.model, 200)}`));
 					detail("", role.description, 2);
@@ -132,7 +135,7 @@ export function subagentComponent(value: unknown, theme: Pick<Theme, "fg">, expa
 						detail("Tools: ", Array.isArray(role.tools) ? role.tools.join(", ") : "");
 					}
 				}
-				if (value.length > 5 && !expanded) add(muted(`${value.length - 5} more roles; expand to view`));
+				if (roles.length > 5 && !expanded) add(muted(`${roles.length - 5} more roles; expand to view`));
 			} else if (operation === "steer") {
 				add(accent("Message accepted by controller"));
 				add(muted("Delivery to the child is not yet confirmed."));

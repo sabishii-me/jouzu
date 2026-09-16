@@ -37,6 +37,7 @@ function fixture(realWorker = false, options = {}) {
 	let tool;
 	let messageRenderer;
 	let command;
+	let commandDefinition;
 	let selected;
 	integration.register(
 		{
@@ -45,8 +46,9 @@ function fixture(realWorker = false, options = {}) {
 				assert.equal(name, "jouzu-subagent-result");
 				messageRenderer = renderer;
 			},
-			registerCommand: (name) => {
+			registerCommand: (name, definition) => {
 				command = name;
+				commandDefinition = definition;
 			},
 			registerTool: (value) => {
 				tool = value;
@@ -75,7 +77,15 @@ function fixture(realWorker = false, options = {}) {
 		cwd: root,
 		isIdle: () => true,
 		hasPendingMessages: () => false,
-		sessionManager: { getBranch: () => branch, getSessionId: () => "parent", getLeafId: () => "entry" },
+		sessionManager: {
+			getEntries: () => [
+				...branch,
+				...entries.map((entry) => ({ type: "custom", customType: entry.type, data: entry.data })),
+			],
+			getBranch: () => branch,
+			getSessionId: () => "parent",
+			getLeafId: () => "entry",
+		},
 		modelRegistry: {
 			getAvailable: () => models,
 			getRegisteredProviderConfig: () => undefined,
@@ -98,6 +108,9 @@ function fixture(realWorker = false, options = {}) {
 		get command() {
 			return command;
 		},
+		get commandDefinition() {
+			return commandDefinition;
+		},
 		get selected() {
 			return selected;
 		},
@@ -111,13 +124,133 @@ function fixture(realWorker = false, options = {}) {
 		shutdown: () => handlers.get("session_shutdown")(),
 	};
 }
+test("optional placeholders and irrelevant launch fields do not block discovery or launch defaults", async () => {
+	const f = fixture();
+	try {
+		await f.handlers.get("session_start")({}, f.ctx);
+		for (const extra of [
+			{ workspace: "", model: "" },
+			{ workspace: " \t", model: " \n" },
+			{ workspace: "/unused", model: "unused" },
+		]) {
+			const result = await f.invoke({ op: "roles", ...extra });
+			assert.equal(result.enabled, true);
+			assert.equal(result.roles.length, 3);
+		}
+		const run = await f.invoke({ op: "launch", role: "reviewer", task: "Inspect", workspace: "", model: " " });
+		assert.equal(run.workspace, f.root);
+		assert.equal(run.model.id, "gpt-6-astra");
+		const childSession = join(f.workers[0].launch.directory, "session.jsonl");
+		writeFileSync(childSession, "{}\n");
+		f.workers[0].emit({ type: "ready", sessionFile: childSession, sessionId: "child" });
+		f.workers[0].emit({ type: "result", status: "completed", text: "Done" });
+		f.workers[0].exit(true);
+		const resumed = await f.invoke({ op: "resume", id: run.id, task: "Continue", workspace: "", model: "" });
+		assert.equal(resumed.workspace, run.workspace);
+		assert.deepEqual(resumed.model, run.model);
+	} finally {
+		await f.shutdown();
+	}
+});
+
+test("session toggle stops children and queued work, reports live availability and restores on reload", async () => {
+	const f = fixture();
+	try {
+		await f.handlers.get("session_start")({}, f.ctx);
+		const a = await f.invoke({ op: "launch", role: "coder", task: "First" });
+		await f.invoke({ op: "launch", role: "coder", task: "Queued" });
+		assert.equal(f.workers.length, 1);
+		await f.integration.service.setSubagentsEnabled(false);
+		assert.equal(f.workers.length, 1, "disabling never starts queued work");
+		assert.ok(f.integration.service.runs().every((run) => run.status === "cancelled"));
+		for (const op of ["launch", "resume", "steer"]) {
+			await assert.rejects(f.invoke({ op, role: "coder", id: a.id, task: "Do work" }), /Subagents are off/);
+		}
+		await assert.rejects(f.integration.service.launch("coder", "Direct service"), /Subagents are off/);
+		await assert.rejects(f.integration.service.resume(a.id, "Direct service"), /Subagents are off/);
+		assert.throws(() => f.integration.service.steer(a.id, "Direct service"), /Subagents are off/);
+		const roles = await f.invoke({ op: "roles" });
+		assert.equal(roles.enabled, false);
+		assert.match(roles.reason, /disabled by the user/);
+		assert.equal((await f.invoke({ op: "list" })).runs.length, 2);
+		assert.ok((await f.invoke({ op: "read", id: a.id })).text);
+		await f.invoke({ op: "stop", id: a.id });
+		assert.match(f.handlers.get("before_agent_start")({ systemPrompt: "Base" }, f.ctx).systemPrompt, /Work directly/);
+		await f.handlers.get("session_start")({}, f.ctx);
+		assert.equal(f.integration.service.subagentsEnabled(), false);
+		await f.commandDefinition.handler("on", f.ctx);
+		assert.equal(f.integration.service.subagentsEnabled(), true);
+		assert.match(f.handlers.get("before_agent_start")({ systemPrompt: "Base" }, f.ctx).systemPrompt, /op:roles/);
+		const snapshot = f.integration.service.roles();
+		snapshot.config.roles = snapshot.config.roles.filter((role) => role.id !== "reviewer");
+		f.integration.service.save(snapshot);
+		assert.equal((await f.invoke({ op: "roles" })).roles.length, 2);
+		await assert.rejects(f.invoke({ op: "launch", role: "reviewer", task: "Inspect" }), /not found/);
+		await f.invoke({ op: "launch", role: "coder", task: "Allowed again" });
+		await f.commandDefinition.handler("toggle", f.ctx);
+		assert.equal(f.integration.service.subagentsEnabled(), false);
+		await f.commandDefinition.handler("bad", f.ctx);
+		assert.equal(f.notifications.at(-1)[1], "error");
+		f.branch.length = 0;
+		f.entries.length = 0;
+		await f.handlers.get("session_start")(
+			{},
+			{ ...f.ctx, sessionManager: { ...f.ctx.sessionManager, getSessionId: () => "new-parent" } },
+		);
+		assert.equal(f.integration.service.subagentsEnabled(), true, "new sessions default to enabled");
+	} finally {
+		await f.shutdown();
+	}
+});
+
+test("failed child shutdown remains visible and retryable while subagents stay disabled", async () => {
+	const f = fixture();
+	try {
+		await f.handlers.get("session_start")({}, f.ctx);
+		await f.invoke({ op: "launch", role: "coder", task: "First" });
+		const worker = f.workers[0];
+		const stop = worker.stop;
+		worker.stop = async () => {
+			throw new Error("stop failed");
+		};
+		await assert.rejects(f.integration.service.setSubagentsEnabled(false), /could not be stopped/);
+		assert.equal(f.integration.service.subagentsEnabled(), false);
+		assert.equal(f.integration.service.runs()[0].status, "starting");
+		worker.stop = stop;
+		await f.integration.service.setSubagentsEnabled(false);
+		assert.equal(f.integration.service.runs()[0].status, "cancelled");
+	} finally {
+		await f.shutdown();
+	}
+});
+
+test("disabling while authentication is pending prevents late dispatch even after re-enabling", async () => {
+	const f = fixture();
+	try {
+		await f.handlers.get("session_start")({}, f.ctx);
+		let finish;
+		f.ctx.modelRegistry.getApiKeyAndHeaders = () =>
+			new Promise((resolve) => {
+				finish = resolve;
+			});
+		const launching = f.invoke({ op: "launch", role: "coder", task: "Late dispatch" });
+		await f.integration.service.setSubagentsEnabled(false);
+		await f.integration.service.setSubagentsEnabled(true);
+		finish({ ok: true, apiKey: "secret" });
+		await assert.rejects(launching, /setting changed/);
+		assert.equal(f.workers.length, 0);
+	} finally {
+		await f.shutdown();
+	}
+});
+
 test("launch accepts a model override and resolves same against the session model", async () => {
 	const f = fixture();
 	try {
 		await f.handlers.get("session_start")({}, f.ctx);
 		assert.ok(f.tool.parameters.properties.model, "the subagent tool exposes a launch model override");
 		assert.match(f.tool.parameters.properties.model.description, /same/u);
-		await assert.rejects(f.invoke({ op: "list", model: "fixture/gpt-6-astra" }), /launch-only/u);
+		assert.deepEqual((await f.invoke({ op: "list", model: "fixture/gpt-6-astra", workspace: "unused" })).runs, []);
 		await f.invoke({ op: "launch", role: "reviewer", task: "Review", model: "glm-5.3-flash" });
 		assert.equal(f.workers[0].launch.model.id, "glm-5.3-flash");
 		await assert.rejects(
@@ -177,13 +310,26 @@ test("explicit workspace and file scanning carry into child launch and resume", 
 		assert.equal(result.details.presentation.task, "Review target and sibling reference");
 		assert.equal(parsed.task, undefined);
 		assert.equal(typeof f.tool.renderResult, "function");
-		await assert.rejects(f.invoke({ op: "resume", id: parsed.id, workspace: target }), /launch-only/);
+		await assert.rejects(
+			f.invoke({ op: "resume", id: parsed.id, workspace: f.root }),
+			/Resume keeps the original workspace/,
+		);
+		await assert.rejects(
+			f.invoke({ op: "resume", id: parsed.id, model: "glm-5.3-flash" }),
+			/Resume keeps the original model/,
+		);
 		const childSession = join(f.workers[0].launch.directory, "session.jsonl");
 		writeFileSync(childSession, "{}\n");
 		f.workers[0].emit({ type: "ready", sessionFile: childSession, sessionId: "child" });
 		f.workers[0].emit({ type: "result", status: "completed", text: "Scope inspected" });
 		f.workers[0].exit(true);
-		const resumed = await f.invoke({ op: "resume", id: parsed.id, task: "Follow up" });
+		const resumed = await f.invoke({
+			op: "resume",
+			id: parsed.id,
+			task: "Follow up",
+			workspace: target,
+			model: "fixture/gpt-6-astra",
+		});
 		assert.equal(resumed.workspace, target);
 		assert.equal(f.workers[1].launch.cwd, target);
 		assert.equal(f.workers[1].launch.textguardFiles, true);
@@ -251,8 +397,9 @@ test("Workflow registers a tool and command, applies main instructions, and coal
 		const prompt = f.handlers.get("before_agent_start")({ systemPrompt: "Base" }, f.ctx);
 		assert.match(prompt.systemPrompt, /orchestrator/);
 		const roles = await f.invoke({ op: "roles" });
-		assert.equal(roles.length, 3);
-		assert.equal(roles[0].instructions, undefined);
+		assert.equal(roles.enabled, true);
+		assert.equal(roles.roles.length, 3);
+		assert.equal(roles.roles[0].instructions, undefined);
 		const a = await f.invoke({ op: "launch", role: "reviewer", task: "Inspect requirements A" });
 		const b = await f.invoke({ op: "launch", role: "reviewer", task: "Inspect requirements B" });
 		assert.equal(a.task, undefined);

@@ -25,6 +25,8 @@ import {
 import { resolveWorkspace } from "./workspace.js";
 
 export interface WorkflowService {
+	subagentsEnabled(): boolean;
+	setSubagentsEnabled(enabled: boolean): Promise<void>;
 	roles(): RoleSnapshot;
 	save(snapshot: RoleSnapshot): void;
 	models(): AgentModel[];
@@ -49,6 +51,9 @@ export function createWorkflowIntegration(
 	let api: ExtensionAPI | undefined;
 	let manager: SubagentManager | undefined;
 	let mainRole: AgentRole | undefined;
+	let subagentsEnabled = true;
+	let settingChange: Promise<void> | undefined;
+	let enableRevision = 0;
 	const listeners = new Set<() => void>();
 	let unsubscribe: (() => void) | undefined;
 
@@ -100,6 +105,10 @@ export function createWorkflowIntegration(
 		if (!role) throw new Error("Agent definition was not found.");
 		return role;
 	};
+	const requireSubagents = () => {
+		if (!subagentsEnabled)
+			throw new Error("Subagents are off for this session. The user can enable them in Workflow or with /workflow on.");
+	};
 	const dispatch = async (
 		role: AgentRole,
 		task: string,
@@ -107,6 +116,8 @@ export function createWorkflowIntegration(
 		modelSelector?: string,
 		workspace?: string,
 	) => {
+		requireSubagents();
+		const revision = enableRevision;
 		const active = context();
 		const generation = sessionGeneration;
 		const targetManager = controller();
@@ -120,6 +131,8 @@ export function createWorkflowIntegration(
 		const auth = await active.modelRegistry.getApiKeyAndHeaders(model);
 		if (sessionGeneration !== generation || manager !== targetManager)
 			throw new Error("Session changed before the agent could start. Retry in this session.");
+		requireSubagents();
+		if (revision !== enableRevision) throw new Error("Subagent setting changed before launch. Retry the assignment.");
 		if (!auth.ok) throw new Error("Authentication: sign in to the selected agent provider and retry.");
 		if (auth.env && Object.keys(auth.env).length)
 			throw new Error("Authentication: choose an API-key or token provider for child agents.");
@@ -142,6 +155,25 @@ export function createWorkflowIntegration(
 		);
 	};
 	const service: WorkflowService = {
+		subagentsEnabled: () => subagentsEnabled,
+		async setSubagentsEnabled(enabled) {
+			context();
+			if (settingChange) throw new Error("Wait for the subagent setting change to finish.");
+			if (enabled === subagentsEnabled && (enabled || !service.runs().some(isActiveRun))) return;
+			api?.appendEntry("jouzu-subagents-enabled", { enabled });
+			subagentsEnabled = enabled;
+			enableRevision++;
+			notify();
+			if (!enabled) {
+				settingChange = controller().stopAll("Subagents disabled. Changes already made remain.");
+				try {
+					await settingChange;
+				} finally {
+					settingChange = undefined;
+					notify();
+				}
+			}
+		},
 		roles,
 		save(snapshot) {
 			store.save(snapshot.config, snapshot.revision);
@@ -150,13 +182,20 @@ export function createWorkflowIntegration(
 		models: availableModels,
 		runs: () => manager?.list() ?? [],
 		read: (id, offset) => controller().read(id, offset),
-		launch: (id, task, options) => dispatch(roleById(id), task, undefined, options?.model, options?.workspace),
-		resume(id, task) {
+		async launch(id, task, options) {
+			requireSubagents();
+			return dispatch(roleById(id), task, undefined, options?.model, options?.workspace);
+		},
+		async resume(id, task) {
+			requireSubagents();
 			const previous = controller().get(id);
 			// The saved role revision and provider are immutable across a resumed run.
 			return dispatch(previous.role, task, id, `${previous.model.provider}/${previous.model.id}`);
 		},
-		steer: (id, text) => controller().steer(id, text),
+		steer: (id, text) => {
+			requireSubagents();
+			return controller().steer(id, text);
+		},
 		stop: (id) => controller().stop(id),
 		async activate(id) {
 			const active = context();
@@ -203,11 +242,33 @@ export function createWorkflowIntegration(
 				return subagentComponent(details?.presentation ?? (details?.runs ? details : message.content), theme, expanded);
 			});
 			pi.registerCommand("workflow", {
-				description: "Open agent definitions and child runs",
-				handler: async (_args, active) => {
+				description: "Open agents and runs; on/off/toggle controls subagents for this session",
+				getArgumentCompletions: (prefix) =>
+					["on", "off", "toggle"].filter((value) => value.startsWith(prefix)).map((value) => ({ value, label: value })),
+				handler: async (args, active) => {
+					const action = args.trim();
+					if (action) {
+						if (!["on", "off", "toggle"].includes(action)) {
+							active.ui.notify("Use /workflow, /workflow on, /workflow off, or /workflow toggle.", "error");
+							return;
+						}
+						try {
+							await service.setSubagentsEnabled(action === "toggle" ? !subagentsEnabled : action === "on");
+							active.ui.notify(
+								subagentsEnabled
+									? "Subagents on for this session."
+									: "Subagents off for this session. Queued and running children stopped; existing changes remain.",
+								"info",
+							);
+						} catch (error) {
+							active.ui.notify(error instanceof Error ? error.message : "Could not change subagent setting.", "error");
+						}
+						return;
+					}
 					if (active.mode !== "tui") {
 						active.ui.notify(
 							JSON.stringify({
+								subagentsEnabled,
 								agents: roles().config.roles.map(({ id, model, placement }) => ({ id, model, placement })),
 								runs: service.runs(),
 							}),
@@ -227,6 +288,13 @@ export function createWorkflowIntegration(
 				if (generation !== sessionGeneration) return;
 				ctx = active;
 				mainRole = undefined;
+				subagentsEnabled = true;
+				for (const entry of active.sessionManager.getEntries()) {
+					if (entry.type === "custom" && entry.customType === "jouzu-subagents-enabled") {
+						const saved = entry.data as { enabled?: unknown } | undefined;
+						if (typeof saved?.enabled === "boolean") subagentsEnabled = saved.enabled;
+					}
+				}
 				for (const entry of active.sessionManager.getBranch())
 					if (entry.type === "custom" && entry.customType === "jouzu-main-role") {
 						const saved = entry.data as { role?: AgentRole; revision?: string };
@@ -259,8 +327,15 @@ export function createWorkflowIntegration(
 			});
 			pi.on("before_agent_start", (event, active) => {
 				ctx = active;
-				if (!mainRole) return;
-				return { systemPrompt: `${event.systemPrompt}\n\nAgent role: ${mainRole.id}\n${mainRole.instructions}` };
+				let systemPrompt = event.systemPrompt;
+				if (mainRole) systemPrompt += `\n\nAgent role: ${mainRole.id}\n${mainRole.instructions}`;
+				if (subagentsEnabled)
+					systemPrompt +=
+						"\n\nSubagents are enabled. Before delegating, call subagent with op:roles to check live availability and current role definitions; the user can edit roles or disable subagents during the session. Use a role that allows child placement.";
+				if (!subagentsEnabled)
+					systemPrompt +=
+						"\n\nSubagents are disabled by the user for this session. Work directly; do not delegate or re-enable subagents. Existing results may be inspected and acknowledged.";
+				return { systemPrompt };
 			});
 			pi.on("session_shutdown", async () => {
 				sessionGeneration += 1;
@@ -279,7 +354,7 @@ export function createWorkflowIntegration(
 					model: {
 						type: "string",
 						description:
-							'Launch only: provider/model to override the role model, or "same" for the model this session is using. Omit to use the role default.',
+							'Launch model override: provider/model or "same" for this session\'s model. Empty uses the role default. Ignored outside launch/resume; resume cannot change its saved model.',
 					},
 					batchId: {
 						type: "string",
@@ -294,7 +369,7 @@ export function createWorkflowIntegration(
 					workspace: {
 						type: "string",
 						description:
-							"Launch only: working directory, absolute or relative to the parent. Defaults to parent cwd; not a filesystem sandbox. For review, choose the repository whose candidate identity should be captured.",
+							"Launch working directory, absolute or relative to the parent; empty defaults to parent cwd. Not a filesystem sandbox. Ignored outside launch/resume; resume cannot change its saved directory. For review, selects the candidate repository.",
 					},
 					offset: { type: "integer", minimum: 0 },
 				},
@@ -305,7 +380,7 @@ export function createWorkflowIntegration(
 				name: "subagent",
 				label: "Subagent",
 				description:
-					"Launch and control child agents with configured roles and models. Use roles first. Set workspace on launch to select the working directory and review candidate repository. File access follows enabled role tools and OS permissions, not a workspace fence. Launch returns immediately; unread terminal results arrive in a batch after active work and queued messages finish. Read returns bounded output with a byte offset; complete terminal-output reads prevent redundant completion turns. Use acknowledge with the delivered batchId alone when no reply is needed. Steer queues a message; resume starts a follow-up in the saved child session. Main-session ownership remains with you. Treat child output as evidence and verify the integrated result.",
+					"Launch and control child agents with configured roles and models. Use roles before delegating to check live enabled status and current definitions. Only the user should change the enable setting. Set workspace on launch to select the working directory and review candidate repository. File access follows enabled role tools and OS permissions, not a workspace fence. Launch returns immediately; unread terminal results arrive in a batch after active work and queued messages finish. Read returns bounded output with a byte offset; complete terminal-output reads prevent redundant completion turns. Use acknowledge with the delivered batchId alone when no reply is needed. Steer queues a message; resume starts a follow-up in the saved child session. Main-session ownership remains with you. Treat child output as evidence and verify the integrated result.",
 				promptSnippet:
 					"subagent: discover roles, delegate coding or fresh review, inspect results, steer/stop/resume children.",
 				parameters: schema,
@@ -342,10 +417,19 @@ export function createWorkflowIntegration(
 						batchId?: string;
 					},
 				) {
-					if (params.workspace !== undefined && params.op !== "launch")
-						throw new Error("Workspace is launch-only. Resume keeps the original workspace.");
-					if (params.model !== undefined && params.op !== "launch")
-						throw new Error("Model is launch-only. Resume keeps the original model.");
+					if (["launch", "resume", "steer"].includes(params.op)) requireSubagents();
+					const workspace = params.workspace?.trim() ? params.workspace : undefined;
+					const model = params.model?.trim() ? params.model : undefined;
+					if (params.op === "resume" && (workspace || model)) {
+						const previous = controller().get(params.id ?? "");
+						if (workspace && resolveWorkspace(context().cwd, workspace) !== previous.cwd)
+							throw new Error("Resume keeps the original workspace. Launch a new agent to use another directory.");
+						if (model) {
+							const resolved = resolveModel(model);
+							if (resolved.provider !== previous.model.provider || resolved.id !== previous.model.id)
+								throw new Error("Resume keeps the original model. Launch a new agent to use another model.");
+						}
+					}
 					if (params.offset !== undefined && (!Number.isInteger(params.offset) || params.offset < 0))
 						throw new Error("Offset must be a nonnegative integer.");
 					if (params.op === "acknowledge") return inbox.acknowledge(params.batchId);
@@ -353,18 +437,27 @@ export function createWorkflowIntegration(
 					let presentation: unknown;
 					switch (params.op) {
 						case "roles":
-							result = roles().config.roles.map(
-								({ id, description, model, placement, judging, tools, maxTurns, timeoutSeconds }) => ({
-									id,
-									description,
-									model,
-									placement,
-									judging,
-									tools,
-									maxTurns,
-									timeoutSeconds,
-								}),
-							);
+							result = {
+								enabled: subagentsEnabled,
+								...(!subagentsEnabled
+									? {
+											reason:
+												"Subagents are disabled by the user for this session. Work directly; only the user should re-enable them.",
+										}
+									: {}),
+								roles: roles().config.roles.map(
+									({ id, description, model, placement, judging, tools, maxTurns, timeoutSeconds }) => ({
+										id,
+										description,
+										model,
+										placement,
+										judging,
+										tools,
+										maxTurns,
+										timeoutSeconds,
+									}),
+								),
+							};
 							break;
 						case "list":
 							result = {
@@ -377,8 +470,8 @@ export function createWorkflowIntegration(
 							break;
 						case "launch": {
 							const run = await service.launch(params.role ?? "", params.task ?? "", {
-								workspace: params.workspace,
-								model: params.model,
+								workspace,
+								model,
 							});
 							result = summary(run);
 							presentation = runPresentation(run);

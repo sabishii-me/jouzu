@@ -267,7 +267,28 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 		this.message = title;
 		this.messageLevel = "info";
 	}
+	private toggleSubagents(): void {
+		const enabled = !this.service.subagentsEnabled();
+		const apply = () => {
+			void this.perform(enabled ? "Enabling subagents" : "Disabling subagents", async () => {
+				await this.service.setSubagentsEnabled(enabled);
+				this.setMode("browse");
+				this.selected = 1;
+			});
+		};
+		if (!enabled && this.service.runs().some(isActiveRun)) {
+			this.confirmation = {
+				label:
+					"Disable subagents and stop all queued and running children in this session? Changes already made remain.",
+				back: "browse",
+				action: apply,
+			};
+			this.setMode("confirm");
+		} else apply();
+	}
 	private startTask(action: "launch" | "steer" | "resume", role?: AgentRole): void {
+		if (!this.service.subagentsEnabled())
+			throw new Error("Subagents are off. Enable them in Workflow before assigning work.");
 		if (role) this.draft = role;
 		this.task = "";
 		this.taskAction = action;
@@ -292,6 +313,13 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 					run: () => {
 						this.section = this.section === "agents" ? "runs" : "agents";
 					},
+				},
+				{
+					label: "Subagents",
+					labelWidth: 9,
+					value: paletteChoice(this.service.subagentsEnabled() ? "On" : "Off"),
+					meta: "this session",
+					choice: () => this.toggleSubagents(),
 				},
 			];
 			if (this.section === "agents") {
@@ -395,6 +423,7 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 				if (role.placement !== "main")
 					rows.push({
 						label: "Launch agent…",
+						...(!this.service.subagentsEnabled() ? { value: "Unavailable: subagents off" } : {}),
 						run: () => {
 							this.requireSaved();
 							this.startTask(
@@ -540,7 +569,13 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 								},
 							},
 						]
-					: [{ label: "Resume with a task…", run: () => this.startTask("resume") }]),
+					: [
+							{
+								label: "Resume with a task…",
+								...(!this.service.subagentsEnabled() ? { value: "Unavailable: subagents off" } : {}),
+								run: () => this.startTask("resume"),
+							},
+						]),
 				{
 					label: "Back to runs",
 					run: () => {
@@ -619,6 +654,7 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 				this.modelSearch.handleInput(data);
 				this.selected = 0;
 			} else if (rows[this.selected]?.input) rows[this.selected].input?.handleInput(data);
+			else if (this.mode === "browse" && this.selected === 1 && matchesKey(data, "space")) this.toggleSubagents();
 			else if (matchesKey(data, "left")) rows[this.selected]?.choice?.(-1);
 			else if (matchesKey(data, "right")) rows[this.selected]?.choice?.(1);
 			else if (matchesKey(data, "home")) this.selected = 0;
@@ -668,6 +704,7 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 			{ key: move, label: "move" },
 		];
 		if (selected?.choice) hints.push({ key: "←→", label: "change" });
+		if (this.mode === "browse" && this.selected === 1) hints.push({ key: "Space", label: "toggle" });
 		if (this.mode === "browse") hints.push({ key: "Tab", label: "section" });
 		hints.push({ key: cancel, label: this.mode === "browse" ? "close" : "cancel" });
 		return hints;
@@ -816,7 +853,7 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 						),
 					);
 				}
-				if (!rows.length || (this.mode === "browse" && this.section === "runs" && rows.length === 1))
+				if (!rows.length || (this.mode === "browse" && this.section === "runs" && rows.length === 2))
 					lines.push(
 						row(
 							styles.apply(

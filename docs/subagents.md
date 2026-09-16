@@ -4,6 +4,14 @@ Open `/workflow`, or choose **Workflow** in the Palette. The **Agents** view lis
 
 Jouzu supplies editable `orchestrator`, `coder`, and `reviewer` presets. Their model selectors are `gpt-6-astra`, `glm-5.3-flash`, and `gpt-6-astra`. Choose models available through your configured providers before using these definitions. A bare model ID must match exactly one provider; the model picker saves an exact `provider/model` selection. Jouzu reports missing or ambiguous models without substituting another model.
 
+## Enable or disable subagents
+
+The **Subagents** row controls child execution for this session. Select it and press `Enter`, `Space`, or `←`/`→` to switch **On** or **Off**. The choice survives reload and session resume; new sessions default to On. Other parent sessions are unaffected.
+
+Command shortcuts are `/workflow on`, `/workflow off`, and `/workflow toggle`. Turning subagents off blocks launch, resume, and steering, cancels queued work, and stops running children. The Palette asks for confirmation when children are active; `/workflow off` and `/workflow toggle` apply the requested change directly. Files already written remain. Turning subagents back on does not restart stopped work.
+
+Definitions, main-session roles, run history, output reading, Stop, and completion acknowledgements remain available while subagents are off. The main agent receives the enabled state in its system prompt and is instructed to work directly when disabled. A disabled assignment call reports the setting rather than starting a child. Only the user should re-enable subagents.
+
 ## Definitions
 
 **Save** writes the definition. **Cancel** or `Esc` discards the form. Model selection and instruction editing change the draft; save the form to retain them. In the multiline editor, `Enter` inserts a newline and `Esc` returns the text to the form. Cancelling the enclosing form discards that text too. Applying, launching, or deleting a definition requires saving or cancelling pending edits first.
@@ -43,6 +51,8 @@ The main model receives the `subagent` tool:
 {"op":"resume","id":"<run-id>","task":"Address the reported failure and rerun the check."}
 ```
 
+Before delegating, the main agent calls `roles` to check live availability and current definitions. It returns `{ "enabled": true, "roles": [...] }`, or `enabled: false` with a reason and the configured roles. Definitions can change during a session; choose a role with `child` or `both` placement. Launch checks the current definition and enable setting again. Resume uses its saved definition rather than edits to that role.
+
 Launch returns immediately with a run ID. Unread terminal summaries arrive in a batch after active work and queued messages finish, including successful completion, limit exhaustion, timeout, cancellation, and crashes. Each batch includes status counts and a bounded sample; omitted results remain available through `list` and `read`. A notification reports completion, not acceptance of the work.
 
 `list` returns up to 20 runs; pass its `nextOffset` to continue. `read` pages event output and returns a UTF-8-safe byte `nextOffset`, plus terminal status and a short outcome when the run has ended. When the agent reads all terminal-output pages, that result does not cause another completion turn. Running reads, incomplete page coverage, UI reads, and results removed by a content policy do not dismiss a pending notification. Run summaries include the saved child session path for reading complete messages when event previews are truncated.
@@ -53,7 +63,7 @@ Pending notification records survive reload. Delivery is confirmed from conversa
 
 A steering receipt records acceptance into the controller and then whether the child queued or rejected the message; queuing does not prove model consumption.
 
-Set `workspace` on launch to choose the child's working directory and the repository used for candidate identity. Paths may be absolute, relative to the parent directory, or start with `~`. It defaults to the parent's working directory. Resume keeps the original directory; changing it requires a new launch. This directory does not restrict file access.
+Set `workspace` on launch to choose the child's working directory and the repository used for candidate identity. Paths may be absolute, relative to the parent directory, or start with `~`. It defaults to the parent's working directory. Empty or whitespace-only `workspace` and `model` values use launch defaults. Discovery and run-management operations ignore these launch fields. Resume accepts omitted, empty, or matching values; changing its directory or model requires a new launch. This directory does not restrict file access.
 
 Tool results and completion messages show a themed summary of role, model, status, assignment, short run ID, workspace, and available outcome. Expand tool output for the full ID, token/cost details, and candidate identity metadata. Zero token counts are omitted; unknown cost is labelled unknown. Terminal elapsed time includes queue time. Status labels carry the same meaning with color disabled. A completed status records process completion, not acceptance.
 

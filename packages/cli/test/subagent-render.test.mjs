@@ -103,6 +103,22 @@ test("rendering bounds malformed, legacy, list and hostile terminal content", ()
 	assert.deepEqual(parseSubagentResult([{ type: "text", text: '{"status":"cancelled"}' }]), { status: "cancelled" });
 });
 
+test("role discovery renders live availability while retaining legacy results", () => {
+	const roles = [{ id: "coder", model: "local/test", description: "Implement 日本語", placement: "child" }];
+	for (const enabled of [true, false]) {
+		const value = {
+			enabled,
+			roles,
+			...(!enabled ? { reason: "Subagents are disabled by the user. Work directly." } : {}),
+		};
+		const output = subagentComponent(value, plain).render(48);
+		assert.match(output.join("\n"), enabled ? /Subagents on/ : /Subagents off/);
+		assert.match(output.join("\n"), /coder/);
+		assert.ok(output.every((line) => visibleWidth(line) <= 48));
+	}
+	assert.match(subagentComponent(roles, plain).render(48).join("\n"), /coder/);
+});
+
 test("presentation is a bounded snapshot and never mutates the run", () => {
 	const source = { ...run, role: { id: "coder" }, task: "x".repeat(3000), result: "y".repeat(5000) };
 	const snapshot = runPresentation(source);

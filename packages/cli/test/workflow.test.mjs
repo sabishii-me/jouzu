@@ -8,6 +8,7 @@ import { WorkflowComponent } from "../dist/workflow.js";
 function fixture() {
 	let config = defaultAgentConfig();
 	let writes = 0;
+	let enabled = true;
 	let closes = 0;
 	const context = {
 		tui: { requestRender() {}, terminal: { rows: 32, columns: 90 } },
@@ -19,6 +20,10 @@ function fixture() {
 		},
 	};
 	const service = {
+		subagentsEnabled: () => enabled,
+		setSubagentsEnabled: async (value) => {
+			enabled = value;
+		},
 		roles: () => ({ config: structuredClone(config), revision: digest(config) }),
 		save: (snapshot) => {
 			writes++;
@@ -56,6 +61,58 @@ const down = (view, n = 1) => {
 const enter = (view) => view.handleInput("\r");
 const cancel = (view) => view.handleInput("\x1b");
 
+test("subagents toggle supports Enter, arrows and Space without leaking into edits", async () => {
+	const f = fixture();
+	assert.match(f.text(), /Subagents.*On/);
+	down(f.view);
+	assert.match(f.text(80), /Space.*toggle/);
+	enter(f.view);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(f.service.subagentsEnabled(), false);
+	assert.match(f.text(), /Subagents.*Off/);
+	f.view.handleInput("\x1b[C");
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(f.service.subagentsEnabled(), true);
+	f.view.handleInput(" ");
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(f.service.subagentsEnabled(), false);
+	for (const width of [24, 48, 80, 120])
+		for (const line of f.view.render(width)) assert.ok(visibleWidth(line) <= width);
+	down(f.view);
+	enter(f.view);
+	f.view.handleInput(" ");
+	assert.equal(f.service.subagentsEnabled(), false);
+	assert.doesNotMatch(f.text(80), /Space.*toggle/);
+	cancel(f.view);
+	assert.equal(f.writes, 0);
+});
+
+test("disabling active children requires confirmation and handles failure and busy state", async () => {
+	const f = fixture();
+	f.service.runs = () => [{ status: "running" }];
+	down(f.view);
+	enter(f.view);
+	assert.match(f.text(80), /stop all queued and running/);
+	cancel(f.view);
+	assert.equal(f.service.subagentsEnabled(), true);
+	down(f.view);
+	enter(f.view);
+	let finish;
+	f.service.setSubagentsEnabled = () =>
+		new Promise((_resolve, reject) => {
+			finish = reject;
+		});
+	enter(f.view);
+	assert.match(f.text(80), /Busy/);
+	cancel(f.view);
+	assert.equal(f.closes, 0);
+	finish(new Error("Could not stop child"));
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.match(f.text(80), /Could not stop child/);
+	assert.equal(f.service.subagentsEnabled(), true);
+	cancel(f.view);
+});
+
 test("Workflow shows definitions, navigates the view choice, and renders empty Runs", () => {
 	const f = fixture();
 	assert.match(f.text(), /Workflow/);
@@ -69,7 +126,7 @@ test("Workflow shows definitions, navigates the view choice, and renders empty R
 });
 test("definition edits cancel without saving and text arrows belong to the input", () => {
 	const f = fixture();
-	down(f.view);
+	down(f.view, 2);
 	enter(f.view);
 	assert.match(f.text(), /Edit agent/);
 	f.view.handleInput("x");
@@ -82,7 +139,7 @@ test("definition edits cancel without saving and text arrows belong to the input
 });
 test("model choice searches Japanese text and Escape preserves the definition draft", () => {
 	const f = fixture();
-	down(f.view);
+	down(f.view, 2);
 	enter(f.view);
 	down(f.view, 2);
 	enter(f.view);
@@ -99,7 +156,7 @@ test("model choice searches Japanese text and Escape preserves the definition dr
 });
 test("the model picker offers the same-as-session selector and saves its literal value", () => {
 	const f = fixture();
-	down(f.view);
+	down(f.view, 2);
 	enter(f.view);
 	down(f.view, 2);
 	enter(f.view);
@@ -116,7 +173,7 @@ test("all rendered rows fit narrow and wide terminals including model search and
 	const f = fixture();
 	for (const stage of [0, 1, 2]) {
 		if (stage === 1) {
-			down(f.view);
+			down(f.view, 2);
 			enter(f.view);
 		}
 		if (stage === 2) {
@@ -138,7 +195,7 @@ test("external routing and Tab cannot discard an active definition edit", () => 
 			models: () => ({ render: () => ["model view"], invalidate() {}, route() {} }),
 		},
 	});
-	down(f.view);
+	down(f.view, 2);
 	enter(f.view);
 	router.handleInput("\t");
 	assert.match(router.render(48).join("\n"), /Edit agent/);
@@ -162,7 +219,7 @@ test("hints use rebound primary and cancel keys", () => {
 
 test("unsaved definitions cannot launch or apply, and Save keeps its receipt", () => {
 	const f = fixture();
-	down(f.view);
+	down(f.view, 2);
 	enter(f.view);
 	f.view.handleInput("x");
 	down(f.view, 11);
@@ -177,7 +234,7 @@ test("unsaved definitions cannot launch or apply, and Save keeps its receipt", (
 test("multiline instructions stay in the enclosing draft and fit a short terminal", () => {
 	const f = fixture();
 	f.context.tui.terminal.rows = 16;
-	down(f.view, 2);
+	down(f.view, 3);
 	enter(f.view);
 	down(f.view, 9);
 	enter(f.view);
@@ -194,7 +251,7 @@ test("multiline instructions stay in the enclosing draft and fit a short termina
 
 test("model search receives the hardware cursor marker while focused", () => {
 	const f = fixture();
-	down(f.view);
+	down(f.view, 2);
 	enter(f.view);
 	down(f.view, 2);
 	enter(f.view);
@@ -270,7 +327,7 @@ test("Runs opens output, requires Stop confirmation, and exposes Resume after ca
 		run.status = "cancelled";
 	};
 	f.view.handleInput("\x1b[C");
-	down(f.view);
+	down(f.view, 2);
 	enter(f.view);
 	assert.match(f.text(80), /Read output/);
 	enter(f.view);

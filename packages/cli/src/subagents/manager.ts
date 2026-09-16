@@ -576,15 +576,37 @@ export class SubagentManager {
 		const run = this.runs.get(id);
 		if (!run) throw new Error("Agent run not found.");
 		if (!isActiveRun(run)) return;
+		const previousStatus = run.status;
+		const previousResult = run.result;
 		run.status = status;
 		run.result = reason;
 		this.pending.delete(id);
 		const worker = this.workers.get(id);
 		if (worker) {
-			await worker.stop();
+			try {
+				await worker.stop();
+			} catch (error) {
+				// Keep a failed stop visible and retryable if the child has not exited.
+				if (this.workers.has(id)) {
+					run.status = previousStatus;
+					run.result = previousResult;
+					this.persist(run);
+					this.changed();
+				}
+				throw error;
+			}
 		} else {
 			this.finalize(run);
 		}
+	}
+	async stopAll(reason: string): Promise<void> {
+		// Clear the entire queue before stopping any worker: completion pumps pending work.
+		const pending = [...this.pending.keys()];
+		this.pending.clear();
+		const ids = [...pending, ...this.workers.keys()];
+		const results = await Promise.allSettled(ids.map((id) => this.stop(id, reason)));
+		if (results.some((result) => result.status === "rejected"))
+			throw new Error("Some subagents could not be stopped. Inspect Runs and retry Stop for each active child.");
 	}
 	async dispose(): Promise<void> {
 		if (this.disposed) return;
