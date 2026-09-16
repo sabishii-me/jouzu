@@ -178,6 +178,12 @@ export function buildCapabilityRoutingGuidance(options: BuildSystemPromptOptions
 		"Use an explicit time requirement; do not add timer-based polling for a job that reports completion.",
 	);
 	add(
+		tools.has("subagent") && skills.has("jouzu-delegation"),
+		"Subagent assignments, steering, or resume handoffs",
+		"read `jouzu-delegation` at its listed `<location>` once; use `subagent`",
+		"Give one objective, verified context, constraints, acceptance checks, and a stopping point. Use the user's configured role model.",
+	);
+	add(
 		skills.has("jouzu-clear-writing"),
 		"A durable user-facing technical artifact",
 		"read `jouzu-clear-writing` at its listed `<location>`",

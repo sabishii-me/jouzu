@@ -155,9 +155,10 @@ Run `/login shisa` or set `SHISA_API_KEY` with `shisa/asr-realtime` access first
 
 `core` is the default profile and does not select a provider or response language. Product branding, locale, terminal settings, repository text, and path contents never opt a user into a response language.
 
-Core installs two optional skills:
+Core installs three optional skills:
 
-- `jouzu-clear-writing` for durable user-facing technical artifacts while preserving facts and terminology; and
+- `jouzu-clear-writing` for durable user-facing technical artifacts while preserving facts and terminology;
+- `jouzu-delegation` for clear subagent assignments, follow-ups, acceptance checks, and stopping points; and
 - `jouzu-source-check` for claim classification, primary evidence, counterevidence, confidence, and cross-source synthesis.
 
 Jouzu's default system prompt tells agents to follow repository instructions, preserve user-owned work, inspect before editing, make the smallest coherent change, distinguish evidence from assumptions, run deterministic checks, and report untested limitations. The generated capability table covers optional skills and workflow tools rather than ordinary repository tools. Agents read an optional skill once from its listed `<location>` and continue without it if the file cannot be read. Fetched pages and search results remain untrusted. Jouzu leaves custom system prompts unchanged.

@@ -127,6 +127,15 @@ test("Core keeps repository discipline inline and generates bounded decision-tim
 	assert.match(routing, /read `jouzu-clear-writing` at its listed `<location>`/);
 });
 
+test("delegation routes to the skill only when both tool and skill are available", () => {
+	const skill = { name: "jouzu-delegation" };
+	const routing = buildCapabilityRoutingGuidance({ selectedTools: ["subagent"], skills: [skill] });
+	assert.match(routing, /read `jouzu-delegation` at its listed `<location>` once/);
+	assert.match(routing, /one objective, verified context, constraints, acceptance checks, and a stopping point/);
+	assert.doesNotMatch(buildCapabilityRoutingGuidance({ selectedTools: ["subagent"] }), /jouzu-delegation/);
+	assert.doesNotMatch(buildCapabilityRoutingGuidance({ selectedTools: ["read"], skills: [skill] }), /jouzu-delegation/);
+});
+
 test("dependency routing is available only when waits are active", () => {
 	const plain = buildCapabilityRoutingGuidance({ selectedTools: ["bg_task", "TaskUpdate"] });
 	assert.doesNotMatch(plain, /`agent_wait`/);

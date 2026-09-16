@@ -45,7 +45,12 @@ test("bundled Core and JA profiles resolve exact ordered assets", () => {
 	const ja = loadBundledProfile("ja");
 	assert.deepEqual(
 		core.assets.map((asset) => asset.target),
-		["prompts/jouzu-review.md", "skills/jouzu-clear-writing/SKILL.md", "skills/jouzu-source-check/SKILL.md"],
+		[
+			"prompts/jouzu-review.md",
+			"skills/jouzu-clear-writing/SKILL.md",
+			"skills/jouzu-delegation/SKILL.md",
+			"skills/jouzu-source-check/SKILL.md",
+		],
 	);
 	assert.deepEqual(
 		ja.assets.map((asset) => asset.target),
@@ -53,11 +58,12 @@ test("bundled Core and JA profiles resolve exact ordered assets", () => {
 			"APPEND_SYSTEM.md",
 			"prompts/jouzu-review.md",
 			"skills/jouzu-clear-writing/SKILL.md",
+			"skills/jouzu-delegation/SKILL.md",
 			"skills/jouzu-source-check/SKILL.md",
 		],
 	);
-	assert.equal(core.manifestSha256, "a4fae582e63123fcf33091ef21f29ed40e5482019f496f4344051d3611b4ae73");
-	assert.equal(ja.manifestSha256, "4550f8318f4966d6090701d6bab396567884439531f09ffc2c5824bf525cb9b8");
+	assert.equal(core.manifestSha256, "4957139e71393a97aaf6be714fef9765adc3486c18c3713876a916992474ff22");
+	assert.equal(ja.manifestSha256, "36f4115706dd28a2e8b2c36967c8ebf888b1235abb72c093a737bb818fe185fd");
 });
 
 test("bundled skills declare bounded public workflows", () => {
@@ -91,6 +97,23 @@ test("bundled skills declare bounded public workflows", () => {
 	assert.match(sourceCheck ?? "", /Repeated summaries of the same source are not independent\./);
 	assert.match(sourceCheck ?? "", /instead of inventing balance/);
 	assert.doesNotMatch(sourceCheck ?? "", /dialectical|REALITYCHECK_DATA|rc-db|LanceDB/);
+});
+
+test("delegation skill supplies handoffs and failure guidance in both profiles", () => {
+	for (const id of ["core", "ja"]) {
+		const skill = loadBundledProfile(id).assets.find((asset) => asset.target === "skills/jouzu-delegation/SKILL.md");
+		assert.ok(skill);
+		const text = skill.bytes.toString("utf8");
+		assert.match(text, /^---\nname: jouzu-delegation\n/);
+		for (const heading of ["Objective", "Context", "Constraints", "Acceptance", "Stop and report"])
+			assert.ok(text.includes(`**${heading}:**`));
+		assert.match(text, /Write complete sentences with normal spaces/);
+		assert.match(text, /A fresh child does not receive your conversation/);
+		assert.match(text, /HTTP 503/);
+		assert.match(text, /Do not substitute another model/);
+		assert.match(text, /do not mechanically enforce scope or guarantee model performance/);
+		assert.equal(digest(skill.bytes), skill.sha256);
+	}
 });
 
 test("manifest validation fails closed for schema, path, inheritance, and digest errors", () => {

@@ -378,7 +378,7 @@ export function createWorkflowIntegration(
 				if (mainRole) systemPrompt += `\n\nAgent role: ${mainRole.id}\n${mainRole.instructions}`;
 				if (subagentsEnabled)
 					systemPrompt +=
-						"\n\nSubagents are enabled. Before delegating, call subagent with op:roles to check live availability and current role definitions; the user can edit roles or disable subagents during the session. Use a role that allows child placement. Only the user can change role models in Workflow; do not override them or edit agent configuration to select another model.";
+						"\n\nSubagents are enabled. Before delegating, call subagent with op:roles to check live availability and current role definitions; the user can edit roles or disable subagents during the session. Use a role that allows child placement. Only the user can change role models in Workflow; do not override them or edit agent configuration to select another model. Write each assignment in complete sentences with normal spacing. Give one objective, verified context and file paths, constraints, acceptance checks, and an explicit stopping point and report. Separate dependent stages. For follow-ups, state what changed and what remains authorized. Diagnose provider, tool, and instruction failures before judging implementation quality; do not substitute another model.";
 				if (!subagentsEnabled)
 					systemPrompt +=
 						"\n\nSubagents are disabled by the user for this session. Work directly; do not delegate or re-enable subagents. Existing results may be inspected and acknowledged.";
@@ -405,7 +405,7 @@ export function createWorkflowIntegration(
 					task: {
 						type: "string",
 						description:
-							"Bounded assignment. For review include requirements, candidate identity, scope, and check evidence, without the coder's reasoning.",
+							"Assignment or follow-up in plain sentences: one objective, verified context/files, constraints, acceptance checks, and a stopping point/report. For review, name the candidate and provide requirements and check evidence without the implementer's reasoning.",
 					},
 					id: { type: "string", description: "Run ID returned by launch or list." },
 					workspace: {

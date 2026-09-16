@@ -71,6 +71,12 @@ Tool results and completion messages show a themed summary of role, model, statu
 
 **Runs** provides output reading, messaging, Stop, and Resume. Stop requests tool cancellation, then forces process cleanup after a grace period. Files already written remain. Resume starts another run using the original role revision, exact provider/model, workspace, and saved child conversation. Use a new launch for a fresh context or changed definition.
 
+## Assignment guidance
+
+Core and JA include the `jouzu-delegation` skill for writing launch assignments, steering messages, and resume handoffs. The default prompt routes the parent to it when both the skill and `subagent` tool are available. You can also load it with `/skill:jouzu-delegation`.
+
+While subagents are enabled, every parent model receives a short checklist: write complete sentences with normal spacing; provide one objective, verified context and file paths, constraints, acceptance checks, and an explicit stopping point and report. Follow-ups should state what changed and what remains authorized. The skill adds examples, review-specific requirements, and guidance for distinguishing provider, tool, instruction, and implementation failures. It does not enforce assignment quality or establish that one model performs better than another.
+
 ## Review evidence
 
 A review-only child receives the assignment, role instructions, and its own tools. It does not receive the parent's transcript, extensions, skills, or automatically loaded project instructions. Include requirements, scope, and check evidence in the assignment. The reviewer can read repository instructions as source material; it cannot execute repository tests with its read-only tool set.

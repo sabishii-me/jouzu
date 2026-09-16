@@ -1,8 +1,13 @@
 {
   "schemaVersion": 1,
   "id": "core",
-  "version": 9,
+  "version": 10,
   "assets": [
+    {
+      "source": "assets/jouzu-delegation-skill.md",
+      "target": "skills/jouzu-delegation/SKILL.md",
+      "sha256": "32a30bb5a261b90acabecbd2d24af626be0e8bc06b513a4512960c681f4fe985"
+    },
     {
       "source": "assets/jouzu-clear-writing-skill.md",
       "target": "skills/jouzu-clear-writing/SKILL.md",

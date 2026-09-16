@@ -185,6 +185,7 @@ function assertPackedSurfaces(installedCli, probe, cwd, env, profile) {
 		"pi-vcc",
 		"schedule-prompt",
 		"skill:jouzu-clear-writing",
+		"skill:jouzu-delegation",
 		"skill:jouzu-source-check",
 		"skill:multiloop",
 		"status",

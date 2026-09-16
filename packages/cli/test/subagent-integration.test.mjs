@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { notificationHash } from "../dist/notifications/inbox.js";
 import { createWorkflowIntegration } from "../dist/subagents/integration.js";
-import { defaultAgentConfig, digest } from "../dist/subagents/roles.js";
+import { digest } from "../dist/subagents/roles.js";
 
 function fixture(realWorker = false, options = {}) {
 	const root = realpathSync(mkdtempSync(join(tmpdir(), "jouzu-agent-integration-")));
@@ -174,6 +174,29 @@ test("optional workspace placeholders do not block discovery or launch defaults"
 		const resumed = await f.invoke({ op: "resume", id: run.id, task: "Continue", workspace: "" });
 		assert.equal(resumed.workspace, run.workspace);
 		assert.deepEqual(resumed.model, run.model);
+	} finally {
+		await f.shutdown();
+	}
+});
+
+test("delegation checklist reaches every parent model without requiring a skill", async () => {
+	const f = fixture();
+	try {
+		await f.handlers.get("session_start")({}, f.ctx);
+		for (const id of ["gpt-6-astra", "glm-5.3-flash", "other-model"]) {
+			const active = { ...f.ctx, model: { provider: "fixture", id } };
+			const prompt = f.handlers.get("before_agent_start")({ systemPrompt: "Base" }, active).systemPrompt;
+			assert.match(prompt, /complete sentences with normal spacing/);
+			assert.match(prompt, /one objective, verified context and file paths, constraints, acceptance checks/);
+			assert.match(prompt, /explicit stopping point and report/);
+			assert.match(prompt, /state what changed and what remains authorized/);
+			assert.match(prompt, /Diagnose provider, tool, and instruction failures/);
+			assert.match(f.tool.parameters.properties.task.description, /stopping point\/report/);
+		}
+		await f.integration.service.setSubagentsEnabled(false);
+		const prompt = f.handlers.get("before_agent_start")({ systemPrompt: "Base" }, f.ctx).systemPrompt;
+		assert.doesNotMatch(prompt, /Write each assignment/);
+		assert.match(prompt, /Work directly/);
 	} finally {
 		await f.shutdown();
 	}
