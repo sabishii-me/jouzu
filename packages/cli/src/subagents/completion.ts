@@ -1,4 +1,5 @@
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
+import { SUBAGENT_READ_RECEIPT, type SubagentReadReceipt } from "../flow-control/subagent-observation-extension.js";
 import { type NotificationRecord, notificationHash } from "../notifications/inbox.js";
 import { sanitizeTerminalText } from "../terminal-layout.js";
 import { type AgentRun, isActiveRun } from "./manager.js";
@@ -32,7 +33,18 @@ export function terminalReadObservation(
 }
 
 /** Only complete, successful model-visible terminal output coverage withdraws a wake. */
-export function observedSubagentResults(runs: AgentRun[], entries: SessionEntry[]): Set<string> {
+export function observedSubagentResults(
+	runs: AgentRun[],
+	entries: SessionEntry[],
+	requireReceipt = false,
+): Set<string> {
+	const receipts = new Set(
+		entries.flatMap((entry) => {
+			if (entry.type !== "custom" || entry.customType !== SUBAGENT_READ_RECEIPT) return [];
+			const receipt = entry.data as SubagentReadReceipt;
+			return [JSON.stringify([receipt?.toolCallId, receipt?.contentHash, receipt?.markerHash])];
+		}),
+	);
 	const observed = new Set<string>();
 	for (const run of runs) {
 		if (!run.completion || run.completion.handled || isActiveRun(run)) continue;
@@ -52,6 +64,8 @@ export function observedSubagentResults(runs: AgentRun[], entries: SessionEntry[
 				marker.sessionId !== run.parentSessionId ||
 				marker.revision !== run.completion.revision ||
 				marker.contentHash !== notificationHash(entry.message.content) ||
+				(requireReceipt &&
+					!receipts.has(JSON.stringify([entry.message.toolCallId, marker.contentHash, notificationHash(marker)]))) ||
 				![marker.start, marker.end, marker.total].every(Number.isSafeInteger) ||
 				marker.start < 0 ||
 				marker.end <= marker.start ||

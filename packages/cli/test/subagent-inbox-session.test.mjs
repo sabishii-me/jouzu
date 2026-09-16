@@ -14,7 +14,7 @@ import {
 import { createWorkflowIntegration } from "../dist/subagents/integration.js";
 
 for (const scenario of [
-	"observed",
+	"history-only",
 	"redacted-read",
 	"redacted-metadata",
 	"acknowledge",
@@ -101,11 +101,11 @@ for (const scenario of [
 				}
 				// Busy longer than the preceding debounce: completions must remain retractable.
 				await new Promise((resolve) => setTimeout(resolve, 150));
-				return ["observed", "redacted-read"].includes(scenario)
+				return ["history-only", "redacted-read"].includes(scenario)
 					? integration.service.runs().map((run, i) => tool("subagent", { op: "read", id: run.id }, `read-${i}`))
 					: [text("Initial work finished.")];
 			}
-			if (["observed", "redacted-read"].includes(scenario)) return [text("Read tools finished.")];
+			if (["history-only", "redacted-read"].includes(scenario)) return [text("Read tools finished.")];
 			if (scenario === "redacted-metadata" && requests === 3) {
 				return [tool("subagent", { op: "launch", role: "coder", task: "Later result" }, "later")];
 			}
@@ -238,12 +238,16 @@ for (const scenario of [
 			assert.deepEqual(errors, []);
 			assert.equal(
 				requests,
-				scenario === "redacted-metadata" ? 5 : ["mixed", "stale", "queued", "redacted-read"].includes(scenario) ? 4 : 3,
+				scenario === "redacted-metadata"
+					? 5
+					: ["mixed", "stale", "queued", "redacted-read", "history-only"].includes(scenario)
+						? 4
+						: 3,
 			);
 			const batches = session.sessionManager
 				.getBranch()
 				.filter((entry) => entry.type === "custom_message" && entry.customType === "jouzu-subagent-result");
-			assert.equal(batches.length, scenario === "observed" ? 0 : scenario === "redacted-metadata" ? 2 : 1);
+			assert.equal(batches.length, scenario === "redacted-metadata" ? 2 : 1);
 			if (scenario === "redacted-metadata") {
 				assert.deepEqual(batches[0].details, {});
 				assert.equal(integration.service.runs().filter((run) => !run.completion.handled).length, 3);

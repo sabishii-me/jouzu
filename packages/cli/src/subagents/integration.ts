@@ -1,4 +1,11 @@
 import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { FlowLedgerError } from "../flow-control/receipt-ledger.js";
+import {
+	SUBAGENT_READ_RECEIPT,
+	SUBAGENT_READ_RECEIPTS,
+	type SubagentReadReceipt,
+	subagentReadReceiptKey,
+} from "../flow-control/subagent-observation-extension.js";
 import { preferCatalogModels } from "../model-catalog-projection.js";
 import { createNotificationInbox } from "../notifications/inbox.js";
 import type { JouzuPaths } from "../paths.js";
@@ -228,7 +235,46 @@ export function createWorkflowIntegration(
 				customType: SUBAGENT_RESULT,
 				records: () => service.runs().flatMap((run) => (run.completion ? [{ id: run.id, ...run.completion }] : [])),
 				save: (id, change) => controller().saveNotification(id, change),
-				observed: (entries) => observedSubagentResults(service.runs(), entries),
+				beforeReconcile: async () => {
+					const active = context();
+					const generation = sessionGeneration;
+					let pending: Promise<SubagentReadReceipt[]> | undefined;
+					let assertActive: (() => void) | undefined;
+					pi.events?.emit(SUBAGENT_READ_RECEIPTS, {
+						sessionId: active.sessionManager.getSessionId(),
+						accept(receipts: Promise<SubagentReadReceipt[]>, check: () => void) {
+							pending = receipts;
+							assertActive = check;
+						},
+					});
+					// Without final-input evidence, retain the completion notification.
+					if (!pending || !assertActive) return;
+					let receipts: SubagentReadReceipt[];
+					try {
+						receipts = await pending;
+						if (generation !== sessionGeneration) return;
+						assertActive();
+					} catch (error) {
+						if (error instanceof FlowLedgerError && (error.code === "stale" || error.code === "scope")) return;
+						throw error;
+					}
+					const saved = new Set(
+						active.sessionManager
+							.getBranch()
+							.flatMap((entry) =>
+								entry.type === "custom" && entry.customType === SUBAGENT_READ_RECEIPT
+									? [subagentReadReceiptKey(entry.data as SubagentReadReceipt)]
+									: [],
+							),
+					);
+					for (const receipt of receipts) {
+						const key = subagentReadReceiptKey(receipt);
+						if (saved.has(key)) continue;
+						pi.appendEntry(SUBAGENT_READ_RECEIPT, receipt);
+						saved.add(key);
+					}
+				},
+				observed: (entries) => observedSubagentResults(service.runs(), entries, true),
 				build: (batchId, records) =>
 					subagentCompletionBatch(context().sessionManager.getSessionId(), batchId, records, service.runs()),
 				reportError: () =>

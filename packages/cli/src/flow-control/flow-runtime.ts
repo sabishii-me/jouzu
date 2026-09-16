@@ -6,6 +6,7 @@ import { createFlowNoReplyExtension } from "./no-reply-tool.js";
 import type { PiFlowAttachment } from "./pi-attachment.js";
 import { PiSessionFlowIngress } from "./pi-session-ingress.js";
 import { FlowLedgerError } from "./receipt-ledger.js";
+import { createSubagentObservationExtension } from "./subagent-observation-extension.js";
 import { createTaskControllerExtension } from "./task-extension.js";
 import { createFlowWaitExtension } from "./wait-tools.js";
 
@@ -87,7 +88,15 @@ export function createFlowControlRuntime(options: FlowControlRuntimeOptions): Fl
 		],
 	});
 	return {
-		extensions: [tasks, multiloop, background, waitTools, noReply, status],
+		extensions: [
+			tasks,
+			multiloop,
+			background,
+			createSubagentObservationExtension({ ingress }),
+			waitTools,
+			noReply,
+			status,
+		],
 		ingress,
 		async flowIngressFactory({ sessionManager }) {
 			// The host replaces the session for resume, fork, rewind, and session switching, and calls

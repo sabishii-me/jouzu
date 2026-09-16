@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } fro
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { notificationHash } from "../dist/notifications/inbox.js";
 import { createWorkflowIntegration } from "../dist/subagents/integration.js";
 import { defaultAgentConfig, digest } from "../dist/subagents/roles.js";
 
@@ -577,9 +578,21 @@ test("terminal reads withdraw pending results only after complete model-visible 
 		let offset = 0;
 		while (offset !== null) {
 			const result = await f.tool.execute("read", { op: "read", id: run.id, offset });
-			f.branch.push({ type: "message", message: { role: "toolResult", toolName: "subagent", ...result } });
+			const toolCallId = `read-${offset}`;
+			f.branch.push({ type: "message", message: { role: "toolResult", toolCallId, toolName: "subagent", ...result } });
+			await f.handlers.get("turn_end")({}, f.ctx);
+			assert.equal(f.integration.service.runs()[0].completion.handled, false, "history alone is not observation");
+			f.branch.push({
+				type: "custom",
+				customType: "jouzu-subagent-read-receipt",
+				data: {
+					toolCallId,
+					contentHash: notificationHash(result.content),
+					markerHash: notificationHash(result.details.terminalRead),
+				},
+			});
 			offset = JSON.parse(result.content[0].text).nextOffset;
-			f.handlers.get("turn_end")({}, f.ctx);
+			await f.handlers.get("turn_end")({}, f.ctx);
 			assert.equal(f.integration.service.runs()[0].completion.handled, offset === null);
 		}
 		f.ctx.isIdle = () => true;

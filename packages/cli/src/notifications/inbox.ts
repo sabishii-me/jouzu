@@ -15,6 +15,7 @@ interface InboxDeps {
 	customType: string;
 	records(): NotificationRecord[];
 	save(id: string, change: Partial<NotificationRecord>): void;
+	beforeReconcile?(): Promise<void>;
 	observed(entries: SessionEntry[]): Set<string>;
 	build(
 		batchId: string,
@@ -26,6 +27,7 @@ interface InboxDeps {
 /** One producer adapter; cross-plugin session coordination is not provided here. */
 export function createNotificationInbox(deps: InboxDeps) {
 	let ctx: ExtensionContext | undefined;
+	let generation = 0;
 	let sessionId: string | undefined;
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	let inFlight: string | undefined;
@@ -122,6 +124,7 @@ export function createNotificationInbox(deps: InboxDeps) {
 		timer.unref?.();
 	}
 	function shutdown() {
+		generation++;
 		clearTimeout(timer);
 		timer = undefined;
 		ctx = undefined;
@@ -203,25 +206,37 @@ export function createNotificationInbox(deps: InboxDeps) {
 		}
 		startedBatch = undefined;
 	}
-	deps.pi.on("turn_end", (_event, active) => {
+	deps.pi.on("turn_end", async (_event, active) => {
 		if (!owns(active)) return;
+		const currentGeneration = generation;
 		ctx = active;
 		try {
+			if (deps.beforeReconcile) await deps.beforeReconcile();
+			if (!owns(active) || currentGeneration !== generation) return;
 			finishDelivery();
 		} catch (error) {
 			deps.reportError(error);
 		}
 	});
-	deps.pi.on("agent_settled", (_event, active) => {
+	deps.pi.on("agent_settled", async (_event, active) => {
 		if (!owns(active)) return;
+		const currentGeneration = generation;
 		ctx = active;
 		optionalReply = undefined;
 		try {
+			if (deps.beforeReconcile) await deps.beforeReconcile();
+			if (!owns(active) || currentGeneration !== generation) return;
 			finishDelivery();
 		} catch (error) {
 			deps.reportError(error);
 		}
 		request();
+	});
+	deps.pi.on("session_tree", (_event, active) => {
+		if (!owns(active)) return;
+		// Runs belong to the session. A replaced branch must not keep waiting for
+		// an abandoned send: reconcile retained receipts and re-offer unread results.
+		start(active);
 	});
 	deps.pi.on("session_compact", () => {
 		request();
