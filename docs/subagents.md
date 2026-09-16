@@ -2,7 +2,7 @@
 
 Open `/workflow`, or choose **Workflow** in the Palette. The **Agents** view lists definitions. Select one with `↑`/`↓` and press `Enter` to edit its model, instructions, and execution settings. Use the **View** row's `←`/`→` choice to switch to **Runs**.
 
-Jouzu supplies editable `orchestrator`, `coder`, and `reviewer` presets. Their model selectors are `gpt-6-astra`, `glm-5.3-flash`, and `gpt-6-astra`. Choose models available through your configured providers before using these definitions. A bare model ID must match exactly one provider; the model picker saves an exact `provider/model` selection. Jouzu reports missing or ambiguous models without substituting another model.
+Jouzu supplies editable `orchestrator`, `coder`, and `reviewer` presets. Their model selectors are `gpt-6-astra`, `glm-5.3-flash`, and `gpt-6-astra`. Choose models available through your configured providers before using these definitions. A bare model ID must match exactly one provider; the model picker saves an exact `provider/model` selection. Jouzu reports missing or ambiguous models without substituting another model. Workflow and subagent summaries show the provider or catalog's friendly model name. The picker also shows the provider and catalog source; saved selections retain exact identifiers. Expand role or run output to inspect those identifiers.
 
 ## Enable or disable subagents
 
@@ -56,6 +56,8 @@ Before delegating, the main agent calls `roles` to check live availability and c
 Launch returns immediately with a run ID. Unread terminal summaries arrive in a batch after active work and queued messages finish, including successful completion, limit exhaustion, timeout, cancellation, and crashes. Each batch includes status counts and a bounded sample; omitted results remain available through `list` and `read`. A notification reports completion, not acceptance of the work.
 
 `list` returns up to 20 runs; pass its `nextOffset` to continue. `read` pages event output and returns a UTF-8-safe byte `nextOffset`, plus terminal status and a short outcome when the run has ended. When flow control verifies that all terminal-output pages reached the model in successful requests, that result does not cause another completion turn. Running reads, incomplete page coverage, UI reads, and results removed by a content policy do not dismiss a pending notification. If final-input receipts are unavailable, the completion notification is retained. Run summaries include the saved child session path for reading complete messages when event previews are truncated.
+
+The terminal preview for `read` shows tool counts for that page and a short assistant message or result. Expand it for readable events and the next byte offset. Records split across pages are omitted from the preview; the agent still receives the original page content and pagination fields.
 
 For a batch that needs no user-facing reply, the agent can call `subagent` with `op: "acknowledge"` and the delivered `batchId` as its only tool call. The visible result says **No reply needed** and ends that notification response without an extra model request. The ID must belong to a batch received in the current run. This action does not hide assistant text or discard queued user work.
 

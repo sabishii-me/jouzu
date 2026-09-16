@@ -125,6 +125,35 @@ function fixture(realWorker = false, options = {}) {
 		shutdown: () => handlers.get("session_shutdown")(),
 	};
 }
+test("role and run displays use catalog names without changing selectors or read content", async () => {
+	const f = fixture();
+	await f.handlers.get("session_start")({}, f.ctx);
+	try {
+		const provider = "catalog:office:local:8f5c5bb9e126e978";
+		f.ctx.modelRegistry.getAvailable = () => [
+			{ provider, id: "glm-5.3-flash", name: "Friendly Flash", api: "openai-completions" },
+		];
+		const roles = await f.invoke({ op: "roles" });
+		assert.equal(roles.roles[1].model, "glm-5.3-flash");
+		assert.equal(roles.roles[1].modelLabel, "Friendly Flash");
+		const run = await f.invoke({ op: "launch", role: "coder", task: "Inspect" });
+		assert.equal(run.model.provider, provider);
+		assert.equal(run.model.name, "Friendly Flash");
+		f.workers[0].emit({ type: "activity", tool: "read" });
+		const result = await f.tool.execute("read", { op: "read", id: run.id });
+		const original = result.content[0].text;
+		const lines = f.tool
+			.renderResult(result, { expanded: false }, { fg: (_role, value) => value }, { args: { op: "read" } })
+			.render(80);
+		assert.match(lines.join("\n"), /read × 1/);
+		assert.doesNotMatch(lines.join("\n"), /\{"/);
+		assert.equal(result.content[0].text, original);
+		assert.match(JSON.parse(original).text, /"type":"activity"/);
+	} finally {
+		await f.shutdown();
+	}
+});
+
 test("optional placeholders and irrelevant launch fields do not block discovery or launch defaults", async () => {
 	const f = fixture();
 	try {

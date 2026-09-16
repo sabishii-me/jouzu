@@ -18,6 +18,7 @@ import { detectBannerColorMode, renderBrandGradient } from "./presentation.js";
 import type { SessionUiStyleRole } from "./session-ui/index.js";
 import type { WorkflowService } from "./subagents/integration.js";
 import { type AgentRun, isActiveRun } from "./subagents/manager.js";
+import { agentModelDisplay, agentModelSelectorLabel } from "./subagents/model-display.js";
 import {
 	type AgentRole,
 	defaultAgentConfig,
@@ -328,7 +329,7 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 					...roles.map((role, index) => ({
 						label: role.id,
 						labelRole: "palette.identity" as const,
-						value: role.model,
+						value: agentModelSelectorLabel(role.model, this.service.models()),
 						...(this.service.activeRole() === role.id ? { meta: "in session" } : {}),
 						...(index === 0 ? { heading: "Agents", headingMeta: `${roles.length} defined` } : {}),
 						run: () => this.edit(role),
@@ -362,7 +363,7 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 				{ label: "Description", input: this.fields.get("description") },
 				{
 					label: "Model",
-					value: role.model,
+					value: agentModelSelectorLabel(role.model, this.service.models()),
 					meta: "›",
 					run: () => {
 						this.modelSearch.setValue("");
@@ -490,9 +491,9 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 					.models()
 					.filter((model) => `${model.provider}/${model.id} ${model.name}`.toLowerCase().includes(query))
 					.map((model, index) => ({
-						label: `${model.provider}/${model.id}`,
+						label: agentModelDisplay(model).name,
 						labelRole: "palette.identity" as const,
-						value: model.name,
+						value: agentModelDisplay(model).source,
 						...(index === 0 && rows.length === 0 ? { heading: "Models" } : {}),
 						run: () => choose(`${model.provider}/${model.id}`),
 					})),
@@ -805,7 +806,8 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 						);
 					lines.push(heading("Run", sanitizeTerminalText(run.status)));
 					lines.push(detail("Agent", sanitizeTerminalText(run.role.id)));
-					lines.push(detail("Model", `${run.model.provider}/${run.model.id}`));
+					lines.push(detail("Model", agentModelDisplay(run.model).label));
+					lines.push(detail("Model ID", `${run.model.provider}/${run.model.id}`));
 					lines.push(
 						detail(
 							"Usage",

@@ -29,7 +29,7 @@ export interface AgentRun {
 	previousRunId?: string;
 	role: AgentRole;
 	roleRevision: string;
-	model: { provider: string; id: string };
+	model: { provider: string; id: string; name?: string };
 	review?: { candidate: ReviewCandidate; status: "pending" | "unchanged" | "changed" | "unverified" };
 	cwd: string;
 	task: string;
@@ -365,7 +365,7 @@ export class SubagentManager {
 			previousRunId,
 			role: structuredClone(launch.role),
 			roleRevision: digest(launch.role),
-			model: { provider: launch.model.provider, id: launch.model.id },
+			model: { provider: launch.model.provider, id: launch.model.id, name: launch.model.name },
 			cwd: realpathSync(launch.cwd),
 			task: launch.task,
 			status: "queued",

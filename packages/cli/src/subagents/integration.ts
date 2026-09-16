@@ -17,6 +17,7 @@ import {
 	terminalReadObservation,
 } from "./completion.js";
 import { type AgentRun, isActiveRun, SubagentManager, type WorkerFactory } from "./manager.js";
+import { agentModelSelectorLabel } from "./model-display.js";
 import { parseSubagentResult, runPresentation, subagentComponent } from "./render.js";
 import {
 	type AgentModel,
@@ -496,6 +497,7 @@ export function createWorkflowIntegration(
 										id,
 										description,
 										model,
+										modelLabel: agentModelSelectorLabel(model, availableModels()),
 										placement,
 										judging,
 										tools,

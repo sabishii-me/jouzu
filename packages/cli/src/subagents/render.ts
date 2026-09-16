@@ -3,6 +3,7 @@ import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { createSessionUiStyles } from "../session-ui/index.js";
 import { fitTerminalText, sanitizeTerminalText } from "../terminal-layout.js";
 import type { AgentRun } from "./manager.js";
+import { agentModelDisplay, agentModelSelectorLabel } from "./model-display.js";
 
 export function runPresentation(run: AgentRun) {
 	return {
@@ -24,7 +25,7 @@ function object(value: unknown): Record<string, unknown> {
 	return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 const text = (value: unknown, max = 2000) =>
-	typeof value === "string" ? sanitizeTerminalText(value.slice(0, max)) : "";
+	typeof value === "string" ? sanitizeTerminalText(value.slice(0, max).replace(/[\r\n\t]+/g, " ")) : "";
 const number = (value: unknown) =>
 	typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 const labels: Record<string, string> = {
@@ -68,11 +69,9 @@ export function subagentComponent(value: unknown, theme: Pick<Theme, "fg">, expa
 									? "status.success"
 									: "status.accent";
 					const model = object(run.model);
-					const provider = text(model.provider, 100);
+					const provider = text(model.provider, 1000);
 					const modelId = text(model.id, 200);
-					const modelLabel = modelId.startsWith(`${provider}/`)
-						? modelId
-						: [provider, modelId].filter(Boolean).join("/");
+					const modelLabel = agentModelDisplay({ provider, id: modelId, name: text(model.name, 200) }).label;
 					add(
 						`${styles.apply(color, labels[status] ?? (status || "Unknown"))} · ${accent(text(run.role, 100) || "Agent")}`,
 					);
@@ -97,6 +96,7 @@ export function subagentComponent(value: unknown, theme: Pick<Theme, "fg">, expa
 					detail("", run.reviewWarning, 8);
 					detail("", run.outcome, expanded ? 12 : 3);
 					if (expanded) {
+						detail("Model ID: ", `${text(model.provider, 500)}/${text(model.id, 500)}`);
 						const usage = object(run.usage);
 						const tokens = ["input", "output", "cacheRead", "cacheWrite"].flatMap((key) =>
 							number(usage[key]) !== undefined && Number(usage[key]) > 0 ? [`${key}: ${usage[key]}`] : [],
@@ -128,14 +128,83 @@ export function subagentComponent(value: unknown, theme: Pick<Theme, "fg">, expa
 				detail("", root.reason, 5);
 				for (const raw of roles.slice(0, expanded ? 64 : 5)) {
 					const role = object(raw);
-					add(accent(`${text(role.id, 100)} · ${text(role.model, 200)}`));
+					const modelLabel = text(role.modelLabel, 200) || agentModelSelectorLabel(text(role.model, 500), []);
+					add(accent(`${text(role.id, 100)} · ${modelLabel}`));
 					detail("", role.description, 2);
 					if (expanded) {
+						detail("Model ID: ", role.model);
 						detail("Placement: ", role.placement);
 						detail("Tools: ", Array.isArray(role.tools) ? role.tools.join(", ") : "");
 					}
 				}
 				if (roles.length > 5 && !expanded) add(muted(`${roles.length - 5} more roles; expand to view`));
+			} else if (operation === "read" && typeof root.text === "string") {
+				const records = root.text.split("\n").filter((line) => line.trim());
+				const events = records.flatMap((line) => {
+					try {
+						const event = object(JSON.parse(line));
+						return typeof event.type === "string" ? [event] : [];
+					} catch {
+						return [];
+					}
+				});
+				const tools = new Map<string, number>();
+				for (const event of events) {
+					if (event.type === "activity" && typeof event.tool === "string")
+						tools.set(event.tool, (tools.get(event.tool) ?? 0) + 1);
+				}
+				const terminal = object(root.terminal);
+				const terminalStatus = text(terminal.status, 40);
+				const heading = labels[terminalStatus] ?? "Output page";
+				add(
+					accent(
+						events.length
+							? `${heading} · ${events.length} event${events.length === 1 ? "" : "s"} on this page`
+							: heading,
+					),
+				);
+				if (terminal.summary) detail("Result: ", terminal.summary, expanded ? 6 : 3);
+				if (tools.size) detail("Tools: ", [...tools].map(([tool, count]) => `${tool} × ${count}`).join(" · "), 2);
+				const messages = events.filter(
+					(event) =>
+						(event.type === "result" || (event.type === "message" && event.role === "assistant")) && text(event.text),
+				);
+				if (expanded) {
+					const visible = events.filter(
+						(event) => event.type !== "usage" && !(event.type === "message" && !text(event.text)),
+					);
+					for (const event of visible.slice(-12)) {
+						if (event.type === "message") {
+							if (event.role === "assistant") detail("Assistant: ", event.text, 3);
+							else add(muted(`${text(event.role, 100) || "Message"} · output received`));
+						} else if (event.type === "result") {
+							add(accent(labels[text(event.status)] ?? "Result"));
+							detail("", event.text, 4);
+						} else if (event.type === "activity") add(muted(`Tool: ${text(event.tool, 100)}`));
+						else if (event.type === "ready") add(muted("Child session ready"));
+						else if (event.type === "control") add(muted(`Message: ${text(event.status, 100)}`));
+						else if (event.type === "terminal") add(muted(labels[text(event.status)] ?? "Run ended"));
+						else if (event.type === "task") detail("Assignment: ", event.text, 2);
+						else if (event.type === "steer") add(muted(`Message: ${text(event.status, 100)}`));
+						else add(muted(`Event: ${text(event.type, 100)}`));
+					}
+					if (visible.length > 12) add(muted(`${visible.length - 12} earlier events on this page`));
+				} else {
+					const latest = messages.at(-1);
+					if (latest && !terminal.summary)
+						detail(
+							latest.type === "result" ? `${labels[text(latest.status)] ?? "Result"}: ` : "Assistant: ",
+							latest.text,
+							3,
+						);
+				}
+				if (records.length > events.length) {
+					add(muted(root.totalBytes === 0 ? "No output yet." : "Partial records omitted from preview."));
+				}
+				if (number(root.nextOffset) !== undefined) {
+					add(muted("More output available."));
+					if (expanded) add(muted(`Next byte offset: ${root.nextOffset}`));
+				} else add(muted("End of available output."));
 			} else if (operation === "steer") {
 				add(accent("Message accepted by controller"));
 				add(muted("Delivery to the child is not yet confirmed."));
@@ -157,7 +226,7 @@ export function parseSubagentResult(content: unknown): unknown {
 	if (!Array.isArray(content)) return "No result";
 	const body = content
 		.filter((part) => object(part).type === "text")
-		.map((part) => text(object(part).text, 64_000))
+		.map((part) => (typeof object(part).text === "string" ? (object(part).text as string).slice(0, 64_000) : ""))
 		.join("\n");
 	try {
 		return JSON.parse(body);

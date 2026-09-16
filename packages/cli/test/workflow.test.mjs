@@ -145,7 +145,7 @@ test("model choice searches Japanese text and Escape preserves the definition dr
 	enter(f.view);
 	assert.match(f.text(), /Search/);
 	f.view.handleInput("日本");
-	assert.match(f.text(), /日本語/);
+	assert.match(f.text(), /Test/);
 	enter(f.view);
 	assert.match(f.text(), /Edit agent/);
 	assert.equal(f.writes, 0);
@@ -154,6 +154,27 @@ test("model choice searches Japanese text and Escape preserves the definition dr
 	assert.equal(f.writes, 1);
 	assert.equal(f.config.roles[0].model, "test/日本語-model");
 });
+test("catalog model names lead selection while saved selectors remain exact", () => {
+	const f = fixture();
+	const provider = "catalog:office:local:8f5c5bb9e126e978";
+	f.service.models = () => [{ provider, id: "deepseek-flash", name: "DeepSeek Flash 日本語" }];
+	down(f.view, 2);
+	enter(f.view);
+	down(f.view, 2);
+	enter(f.view);
+	f.view.handleInput("DeepSeek");
+	assert.match(f.text(80), /DeepSeek Flash 日本語/);
+	assert.doesNotMatch(f.text(80), /catalog:|8f5c/);
+	for (const width of [24, 48, 80, 120]) assert.ok(f.view.render(width).every((line) => visibleWidth(line) <= width));
+	enter(f.view);
+	assert.match(f.text(80), /DeepSeek Flash 日本語/);
+	assert.equal(f.writes, 0);
+	down(f.view, 8);
+	enter(f.view);
+	assert.equal(f.config.roles[0].model, `${provider}/deepseek-flash`);
+	assert.match(f.text(80), /DeepSeek Flash 日本語/);
+});
+
 test("the model picker offers the same-as-session selector and saves its literal value", () => {
 	const f = fixture();
 	down(f.view, 2);
