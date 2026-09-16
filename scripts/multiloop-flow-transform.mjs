@@ -56,7 +56,7 @@ export function transformMultiloopFlow(source) {
 		"  function updateStatus(ctx: ExtensionContext | ExtensionCommandContext) {",
 		"  function updateStatus(ctx: ExtensionContext | ExtensionCommandContext) {\n    multiloopFlow(ctx.sessionManager.getSessionId())?.changed(runningStates().map((state) => ({ lane: state.lane, runTag: state.runTag })));",
 	);
-	return transformGoalResume(transformMultiloopLifecycle(source));
+	return transformMultiloopStatus(transformGoalResume(transformMultiloopLifecycle(source)));
 }
 
 export function transformMultiloopLifecycle(source) {
@@ -215,5 +215,55 @@ function transformGoalResume(source) {
 		'"Without a target, use the attached goal or the only matching goal.",',
 		'"Resume selects the only goal or asks the agent to find it. Pause and stop use the attached goal or the only matching goal.",',
 	);
+	return source;
+}
+
+function transformMultiloopStatus(source) {
+	source = replace(
+		source,
+		"  let pausedQuickGoal: LoopState | null = null;",
+		"  const statusStates = new Map<string, LoopState>();\n  let pausedQuickGoal: LoopState | null = null;",
+	);
+	source = replace(
+		source,
+		"    updateStatus(ctx);\n    announceResumableLoops(pi, ctx);",
+		"    statusStates.clear();\n    updateStatus(ctx);\n    announceResumableLoops(pi, ctx);",
+	);
+	for (const name of ["startLoop", "resumeLoop", "pauseLoop", "stopLoop", "completeGoal"]) {
+		const start = source.indexOf(`  async function ${name}(`);
+		const end = source.indexOf("\n  }", start);
+		if (start < 0 || end < 0) throw new Error(`Multiloop status function differs: ${name}`);
+		const body = source.slice(start, end);
+		source =
+			source.slice(0, start) +
+			replace(body, "    updateStatus(ctx);", "    updateStatus(ctx, state);") +
+			source.slice(end);
+	}
+	source = replace(
+		source,
+		"  function updateStatus(ctx: ExtensionContext | ExtensionCommandContext) {",
+		"  function updateStatus(ctx: ExtensionContext | ExtensionCommandContext, changedState?: LoopState) {\n    if (changedState) statusStates.set(stateKey(changedState), changedState);\n    for (const state of activeStates.values()) statusStates.set(stateKey(state), state);",
+	);
+	source = replace(
+		source,
+		`    if (activeStates.size > 0) {
+      const summaries = Array.from(activeStates.values()).map(
+        (s) => \`\${s.lane}#\${s.iteration}\`
+      );`,
+		`    if (statusStates.size > 0) {
+      const summaries = ["running", "paused", "stopped", "completed"].flatMap((status) => {
+        const count = Array.from(statusStates.values()).filter((state) => state.status === status).length;
+        return count ? [\`\${count} \${status}\`] : [];
+      });`,
+	);
+	for (const anchor of [
+		"    archiveLaneDirs(ctx.cwd, id);",
+		"          archiveLaneDirs(ctx.cwd, id);",
+		"        deleteLaneDirs(ctx.cwd, id);",
+		"          pausedQuickGoal = null;\n          updateStatus(ctx);",
+	]) {
+		const indent = anchor.match(/^ */)[0];
+		source = replace(source, `\n${anchor}`, `\n${indent}statusStates.delete(stateKey(id));\n${anchor}`);
+	}
 	return source;
 }

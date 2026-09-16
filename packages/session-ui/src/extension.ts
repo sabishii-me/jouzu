@@ -61,7 +61,12 @@ export function createSessionUiExtension(options: SessionUiExtensionOptions = {}
 					{ placement: "aboveEditor" },
 				);
 				ctx.ui.setFooter((tui, theme, footerData) => {
-					const statusBar = new StatusBarComponent(activeController, stylesFor(theme), () => tui.requestRender());
+					const statusBar = new StatusBarComponent(
+						activeController,
+						stylesFor(theme),
+						() => tui.requestRender(),
+						() => footerData.getExtensionStatuses().get("multiloop"),
+					);
 					const unsubscribeBranch = footerData.onBranchChange(() => {
 						void activeController.refreshGit(ctx);
 					});

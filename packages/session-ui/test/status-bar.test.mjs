@@ -169,3 +169,23 @@ test("exposes reusable status segments with deterministic compaction", () => {
 	);
 	assert.equal(custom, "low  req");
 });
+
+test("keeps multiloop lifecycle visible at narrow widths and sanitizes its text", () => {
+	for (const value of [
+		"multiloop: 1 running",
+		"multiloop: 1 paused",
+		"multiloop: 1 stopped",
+		"multiloop: 1 completed",
+		"multiloop: 1 running, 1 paused, 1 stopped",
+	]) {
+		const line = renderStatusBar(snapshot(), 48, styles, value);
+		assert.equal(terminalTextWidth(line), 48);
+		assert.ok(line.includes(value.replace("multiloop: ", "")));
+	}
+	for (let width = 1; width <= 120; width++) {
+		const line = renderStatusBar(snapshot(), width, styles, "multiloop: 1 running 日本語\n\x1b[31m");
+		assert.equal(terminalTextWidth(line), width);
+		assert.equal(line.includes("\n"), false);
+		assert.equal(line.includes("\x1b"), false);
+	}
+});

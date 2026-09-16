@@ -119,7 +119,9 @@ test("installs one editor, Session Line, and Status Bar owner and cleans up", as
 		assert.match(lineComponent.render(60)[0], /Anthropic claude-new \(low\)/);
 		let branchChanged;
 		let branchUnsubscribed = false;
+		const statuses = new Map();
 		const footer = calls.footers[0](tui, theme, {
+			getExtensionStatuses: () => statuses,
 			onBranchChange(handler) {
 				branchChanged = handler;
 				return () => {
@@ -128,6 +130,13 @@ test("installs one editor, Session Line, and Status Bar owner and cleans up", as
 			},
 		});
 		assert.equal(terminalTextWidth(footer.render(80)[0]), 80);
+		for (const state of ["running", "paused", "running", "stopped"]) {
+			statuses.set("multiloop", `multiloop: 1 ${state}`);
+			assert.match(footer.render(48)[0], new RegExp(`1 ${state}`));
+			assert.equal(terminalTextWidth(footer.render(48)[0]), 48);
+		}
+		statuses.delete("multiloop");
+		assert.doesNotMatch(footer.render(48)[0], /multiloop|stopped/);
 		branchChanged();
 		await Promise.resolve();
 		footer.dispose();

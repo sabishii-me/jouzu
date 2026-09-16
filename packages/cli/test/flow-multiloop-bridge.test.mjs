@@ -36,8 +36,10 @@ async function fixture(t) {
 		handlers = new Map(),
 		commands = new Map(),
 		sends = [],
-		notifications = [];
+		notifications = [],
+		statuses = new Map();
 	const pi = {
+		events: { emit() {} },
 		on(name, handler) {
 			const list = handlers.get(name) ?? [];
 			list.push(handler);
@@ -62,7 +64,10 @@ async function fixture(t) {
 		hasPendingMessages: () => false,
 		sessionManager: { getSessionId: () => "session", getEntries: () => [], getBranch: () => [] },
 		ui: {
-			setStatus() {},
+			setStatus(key, value) {
+				if (value === undefined) statuses.delete(key);
+				else statuses.set(key, value);
+			},
 			setWidget() {},
 			notify(text) {
 				notifications.push(text);
@@ -74,6 +79,7 @@ async function fixture(t) {
 	};
 	const execute = (name, args) => tools.get(name).execute("tool", args, undefined, undefined, ctx);
 	return {
+		statuses,
 		...module,
 		ctx,
 		emit,
@@ -213,4 +219,31 @@ test("installed commands await campaign transitions and route explicit resumes t
 	await f.command("multiloop", `rm ${lane.lane}/${lane.runTag}`);
 	assert.equal(transitions.at(-1).status, "stopped");
 	assert.deepEqual(f.sends, []);
+});
+
+test("goal and measured loop lifecycle immediately update footer status", async (t) => {
+	const f = await fixture(t);
+	await f.command("goal", "Finish the status test");
+	assert.equal(f.statuses.get("multiloop"), "multiloop: 1 running");
+	await f.command("goal", "pause");
+	assert.equal(f.statuses.get("multiloop"), "multiloop: 1 paused");
+	await f.command("goal", "resume");
+	assert.equal(f.statuses.get("multiloop"), "multiloop: 1 running");
+	await f.command("goal", "stop");
+	assert.equal(f.statuses.get("multiloop"), "multiloop: 1 stopped");
+	await f.execute("multiloop_start", { lane: "measured", runTag: "run", mode: "research", goal: "Check the status" });
+	assert.equal(f.statuses.get("multiloop"), "multiloop: 1 running, 1 stopped");
+	await f.command("multiloop", "pause measured/run");
+	assert.equal(f.statuses.get("multiloop"), "multiloop: 1 paused, 1 stopped");
+	await f.command("multiloop", "resume measured/run");
+	assert.equal(f.statuses.get("multiloop"), "multiloop: 1 running, 1 stopped");
+	await f.command("multiloop", "stop measured/run");
+	assert.equal(f.statuses.get("multiloop"), "multiloop: 2 stopped");
+	await f.command("multiloop", "archive measured/run");
+	assert.equal(f.statuses.get("multiloop"), "multiloop: 1 stopped");
+	await f.command("goal", "resume");
+	await f.execute("update_goal", { status: "complete" });
+	assert.equal(f.statuses.get("multiloop"), "multiloop: 1 completed");
+	await f.emit("session_start");
+	assert.equal(f.statuses.get("multiloop"), undefined);
 });
