@@ -40,7 +40,7 @@ export interface WorkflowService {
 	models(): AgentModel[];
 	runs(): AgentRun[];
 	read(id: string, offset?: number): { text: string; nextOffset: number | null; totalBytes: number };
-	launch(roleId: string, task: string, options?: { workspace?: string; model?: string }): Promise<AgentRun>;
+	launch(roleId: string, task: string, options?: { workspace?: string }): Promise<AgentRun>;
 	resume(id: string, task: string): Promise<AgentRun>;
 	steer(id: string, text: string): string;
 	stop(id: string): Promise<void>;
@@ -95,7 +95,7 @@ export function createWorkflowIntegration(
 	};
 	const roles = () => store.load();
 	/**
-	 * Resolve a role or launch model selector for this session. `same` means the model the
+	 * Resolve a saved model selector for this session. `same` means the model the
 	 * session is already using, and goes through the same validation as an explicit selector
 	 * so catalog preference and the unavailable-model error still apply.
 	 */
@@ -192,7 +192,7 @@ export function createWorkflowIntegration(
 		read: (id, offset) => controller().read(id, offset),
 		async launch(id, task, options) {
 			requireSubagents();
-			return dispatch(roleById(id), task, undefined, options?.model, options?.workspace);
+			return dispatch(roleById(id), task, undefined, undefined, options?.workspace);
 		},
 		async resume(id, task) {
 			requireSubagents();
@@ -378,7 +378,7 @@ export function createWorkflowIntegration(
 				if (mainRole) systemPrompt += `\n\nAgent role: ${mainRole.id}\n${mainRole.instructions}`;
 				if (subagentsEnabled)
 					systemPrompt +=
-						"\n\nSubagents are enabled. Before delegating, call subagent with op:roles to check live availability and current role definitions; the user can edit roles or disable subagents during the session. Use a role that allows child placement.";
+						"\n\nSubagents are enabled. Before delegating, call subagent with op:roles to check live availability and current role definitions; the user can edit roles or disable subagents during the session. Use a role that allows child placement. Only the user can change role models in Workflow; do not override them or edit agent configuration to select another model.";
 				if (!subagentsEnabled)
 					systemPrompt +=
 						"\n\nSubagents are disabled by the user for this session. Work directly; do not delegate or re-enable subagents. Existing results may be inspected and acknowledged.";
@@ -398,11 +398,6 @@ export function createWorkflowIntegration(
 				properties: {
 					op: { type: "string", enum: ["roles", "launch", "list", "read", "steer", "stop", "resume", "acknowledge"] },
 					role: { type: "string", description: "Role ID from op:roles." },
-					model: {
-						type: "string",
-						description:
-							'Launch model override: provider/model or "same" for this session\'s model. Empty uses the role default. Ignored outside launch/resume; resume cannot change its saved model.',
-					},
 					batchId: {
 						type: "string",
 						description: "Current-run completion batch ID for op:acknowledge. Call alone when no reply is needed.",
@@ -427,7 +422,7 @@ export function createWorkflowIntegration(
 				name: "subagent",
 				label: "Subagent",
 				description:
-					"Launch and control child agents with configured roles and models. Use roles before delegating to check live enabled status and current definitions. Only the user should change the enable setting. Set workspace on launch to select the working directory and review candidate repository. File access follows enabled role tools and OS permissions, not a workspace fence. Launch returns immediately; unread terminal results arrive in a batch after active work and queued messages finish. Read returns bounded output with a byte offset; complete terminal-output reads prevent redundant completion turns. Use acknowledge with the delivered batchId alone when no reply is needed. Steer queues a message; resume starts a follow-up in the saved child session. Main-session ownership remains with you. Treat child output as evidence and verify the integrated result.",
+					"Launch and control child agents with configured roles and models. Use roles before delegating to check live enabled status and current definitions. Only the user can change role models or the enable setting. Launch uses the configured role model; resume keeps its saved model. Set workspace on launch to select the working directory and review candidate repository. File access follows enabled role tools and OS permissions, not a workspace fence. Launch returns immediately; unread terminal results arrive in a batch after active work and queued messages finish. Read returns bounded output with a byte offset; complete terminal-output reads prevent redundant completion turns. Use acknowledge with the delivered batchId alone when no reply is needed. Steer queues a message; resume starts a follow-up in the saved child session. Main-session ownership remains with you. Treat child output as evidence and verify the integrated result.",
 				promptSnippet:
 					"subagent: discover roles, delegate coding or fresh review, inspect results, steer/stop/resume children.",
 				parameters: schema,
@@ -456,7 +451,6 @@ export function createWorkflowIntegration(
 					params: {
 						op: string;
 						role?: string;
-						model?: string;
 						task?: string;
 						id?: string;
 						offset?: number;
@@ -464,18 +458,14 @@ export function createWorkflowIntegration(
 						batchId?: string;
 					},
 				) {
+					if ("model" in params)
+						throw new Error("Only the user can change subagent models in Workflow. Omit the model argument.");
 					if (["launch", "resume", "steer"].includes(params.op)) requireSubagents();
 					const workspace = params.workspace?.trim() ? params.workspace : undefined;
-					const model = params.model?.trim() ? params.model : undefined;
-					if (params.op === "resume" && (workspace || model)) {
+					if (params.op === "resume" && workspace) {
 						const previous = controller().get(params.id ?? "");
-						if (workspace && resolveWorkspace(context().cwd, workspace) !== previous.cwd)
+						if (resolveWorkspace(context().cwd, workspace) !== previous.cwd)
 							throw new Error("Resume keeps the original workspace. Launch a new agent to use another directory.");
-						if (model) {
-							const resolved = resolveModel(model);
-							if (resolved.provider !== previous.model.provider || resolved.id !== previous.model.id)
-								throw new Error("Resume keeps the original model. Launch a new agent to use another model.");
-						}
 					}
 					if (params.offset !== undefined && (!Number.isInteger(params.offset) || params.offset < 0))
 						throw new Error("Offset must be a nonnegative integer.");
@@ -519,7 +509,6 @@ export function createWorkflowIntegration(
 						case "launch": {
 							const run = await service.launch(params.role ?? "", params.task ?? "", {
 								workspace,
-								model,
 							});
 							result = summary(run);
 							presentation = runPresentation(run);

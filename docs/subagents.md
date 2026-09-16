@@ -51,7 +51,7 @@ The main model receives the `subagent` tool:
 {"op":"resume","id":"<run-id>","task":"Address the reported failure and rerun the check."}
 ```
 
-Before delegating, the main agent calls `roles` to check live availability and current definitions. It returns `{ "enabled": true, "roles": [...] }`, or `enabled: false` with a reason and the configured roles. Definitions can change during a session; choose a role with `child` or `both` placement. Launch checks the current definition and enable setting again. Resume uses its saved definition rather than edits to that role.
+Before delegating, the main agent calls `roles` to check live availability and current definitions. It returns `{ "enabled": true, "roles": [...] }`, or `enabled: false` with a reason and the configured roles. Definitions can change during a session; choose a role with `child` or `both` placement. Launch checks the current definition and enable setting again. Only you can change a role's model through Workflow. The tool rejects model overrides, and the agent is instructed not to edit agent configuration to select another model. New launches use the role's configured model; resume keeps the exact model and definition saved with that run. A role configured as `same` uses the main session's model at launch.
 
 Launch returns immediately with a run ID. Unread terminal summaries arrive in a batch after active work and queued messages finish, including successful completion, limit exhaustion, timeout, cancellation, and crashes. Each batch includes status counts and a bounded sample; omitted results remain available through `list` and `read`. A notification reports completion, not acceptance of the work.
 
@@ -65,7 +65,7 @@ Pending notification records survive reload. Delivery is confirmed from conversa
 
 A steering receipt records acceptance into the controller and then whether the child queued or rejected the message; queuing does not prove model consumption.
 
-Set `workspace` on launch to choose the child's working directory and the repository used for candidate identity. Paths may be absolute, relative to the parent directory, or start with `~`. It defaults to the parent's working directory. Empty or whitespace-only `workspace` and `model` values use launch defaults. Discovery and run-management operations ignore these launch fields. Resume accepts omitted, empty, or matching values; changing its directory or model requires a new launch. This directory does not restrict file access.
+Set `workspace` on launch to choose the child's working directory and the repository used for candidate identity. Paths may be absolute, relative to the parent directory, or start with `~`. It defaults to the parent's working directory. Empty or whitespace-only `workspace` values use that default. Discovery and run-management operations ignore this launch field. Resume accepts an omitted, empty, or matching workspace; changing its directory requires a new launch. This directory does not restrict file access.
 
 Tool results and completion messages show a themed summary of role, model, status, assignment, short run ID, workspace, and available outcome. Expand tool output for the full ID, token/cost details, and candidate identity metadata. Zero token counts are omitted; unknown cost is labelled unknown. Terminal elapsed time includes queue time. Status labels carry the same meaning with color disabled. A completed status records process completion, not acceptance.
 

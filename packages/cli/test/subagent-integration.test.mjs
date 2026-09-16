@@ -154,20 +154,16 @@ test("role and run displays use catalog names without changing selectors or read
 	}
 });
 
-test("optional placeholders and irrelevant launch fields do not block discovery or launch defaults", async () => {
+test("optional workspace placeholders do not block discovery or launch defaults", async () => {
 	const f = fixture();
 	try {
 		await f.handlers.get("session_start")({}, f.ctx);
-		for (const extra of [
-			{ workspace: "", model: "" },
-			{ workspace: " \t", model: " \n" },
-			{ workspace: "/unused", model: "unused" },
-		]) {
+		for (const extra of [{ workspace: "" }, { workspace: " \t" }, { workspace: "/unused" }]) {
 			const result = await f.invoke({ op: "roles", ...extra });
 			assert.equal(result.enabled, true);
 			assert.equal(result.roles.length, 3);
 		}
-		const run = await f.invoke({ op: "launch", role: "reviewer", task: "Inspect", workspace: "", model: " " });
+		const run = await f.invoke({ op: "launch", role: "reviewer", task: "Inspect", workspace: "" });
 		assert.equal(run.workspace, f.root);
 		assert.equal(run.model.id, "gpt-6-astra");
 		const childSession = join(f.workers[0].launch.directory, "session.jsonl");
@@ -175,7 +171,7 @@ test("optional placeholders and irrelevant launch fields do not block discovery 
 		f.workers[0].emit({ type: "ready", sessionFile: childSession, sessionId: "child" });
 		f.workers[0].emit({ type: "result", status: "completed", text: "Done" });
 		f.workers[0].exit(true);
-		const resumed = await f.invoke({ op: "resume", id: run.id, task: "Continue", workspace: "", model: "" });
+		const resumed = await f.invoke({ op: "resume", id: run.id, task: "Continue", workspace: "" });
 		assert.equal(resumed.workspace, run.workspace);
 		assert.deepEqual(resumed.model, run.model);
 	} finally {
@@ -274,30 +270,73 @@ test("disabling while authentication is pending prevents late dispatch even afte
 	}
 });
 
-test("launch accepts a model override and resolves same against the session model", async () => {
+test("agent calls cannot override configured models, including through stale tool arguments", async () => {
 	const f = fixture();
 	try {
 		await f.handlers.get("session_start")({}, f.ctx);
-		assert.ok(f.tool.parameters.properties.model, "the subagent tool exposes a launch model override");
-		assert.match(f.tool.parameters.properties.model.description, /same/u);
-		assert.deepEqual((await f.invoke({ op: "list", model: "fixture/gpt-6-astra", workspace: "unused" })).runs, []);
-		await f.invoke({ op: "launch", role: "reviewer", task: "Review", model: "glm-5.3-flash" });
-		assert.equal(f.workers[0].launch.model.id, "glm-5.3-flash");
-		await assert.rejects(
-			f.invoke({ op: "launch", role: "reviewer", task: "Review", model: "same" }),
-			/no model selected/u,
-		);
-		f.ctx.model = { id: "gpt-6-astra", provider: "fixture", name: "gpt-6-astra", api: "openai-completions" };
-		await f.invoke({ op: "launch", role: "reviewer", task: "Review", model: "same" });
-		assert.equal(f.workers[1].launch.model.id, "gpt-6-astra");
-		// A role may store "same" as its model, so the launch has to resolve it the same way.
-		const config = defaultAgentConfig();
-		config.roles[2].model = "same";
-		mkdirSync(f.paths.configDir, { recursive: true });
-		writeFileSync(join(f.paths.configDir, "agents.json"), `${JSON.stringify(config, null, 2)}\n`);
+		f.ctx.model = { id: "gpt-6-astra", provider: "fixture", name: "Astra", api: "openai-completions" };
+		assert.equal(f.tool.parameters.properties.model, undefined);
+		assert.equal(f.tool.parameters.additionalProperties, false);
+		let authentications = 0;
+		f.ctx.modelRegistry.getApiKeyAndHeaders = async () => {
+			authentications++;
+			return { ok: true, apiKey: "secret" };
+		};
+		for (const op of f.tool.parameters.properties.op.enum) {
+			for (const model of ["same", "fixture/gpt-6-astra", "glm-5.3-flash", "", " \n", null, 42]) {
+				await assert.rejects(
+					f.invoke({ op, role: "coder", id: "unused", task: "Inspect", model }),
+					/Only the user can change subagent models in Workflow/,
+				);
+			}
+		}
+		assert.equal(authentications, 0);
+		assert.equal(f.workers.length, 0);
+		assert.equal(f.integration.service.runs().length, 0);
+		const run = await f.invoke({ op: "launch", role: "coder", task: "Inspect" });
+		assert.equal(run.model.id, "glm-5.3-flash", "launch uses the configured role, not the parent model");
+		assert.equal(authentications, 1);
+		const prompt = f.handlers.get("before_agent_start")({ systemPrompt: "Base" }, f.ctx).systemPrompt;
+		assert.match(prompt, /Only the user can change role models/);
+	} finally {
+		await f.shutdown();
+	}
+});
+
+test("user-saved role models affect new launches while resumes retain the saved model", async () => {
+	const f = fixture();
+	try {
 		await f.handlers.get("session_start")({}, f.ctx);
-		await f.invoke({ op: "launch", role: "reviewer", task: "Review" });
-		assert.equal(f.workers[2].launch.model.id, "gpt-6-astra");
+		const run = await f.invoke({ op: "launch", role: "coder", task: "First" });
+		const childSession = join(f.workers[0].launch.directory, "session.jsonl");
+		writeFileSync(childSession, "{}\n");
+		f.workers[0].emit({ type: "ready", sessionFile: childSession, sessionId: "child" });
+		f.workers[0].emit({ type: "result", status: "completed", text: "Done" });
+		f.workers[0].exit(true);
+		const snapshot = f.integration.service.roles();
+		snapshot.config.roles.find((role) => role.id === "coder").model = "fixture/gpt-6-astra";
+		f.integration.service.save(snapshot);
+		const resumed = await f.invoke({ op: "resume", id: run.id, task: "Continue" });
+		assert.equal(resumed.model.id, "glm-5.3-flash");
+		await f.invoke({ op: "stop", id: resumed.id });
+		const fresh = await f.invoke({ op: "launch", role: "coder", task: "New assignment" });
+		assert.equal(fresh.model.id, "gpt-6-astra");
+	} finally {
+		await f.shutdown();
+	}
+});
+
+test("same resolves against the session model only when saved in the role", async () => {
+	const f = fixture();
+	try {
+		await f.handlers.get("session_start")({}, f.ctx);
+		const snapshot = f.integration.service.roles();
+		snapshot.config.roles.find((role) => role.id === "reviewer").model = "same";
+		f.integration.service.save(snapshot);
+		await assert.rejects(f.invoke({ op: "launch", role: "reviewer", task: "Review" }), /no model selected/);
+		f.ctx.model = { id: "gpt-6-astra", provider: "fixture", name: "Astra", api: "openai-completions" };
+		const run = await f.invoke({ op: "launch", role: "reviewer", task: "Review" });
+		assert.equal(run.model.id, "gpt-6-astra");
 	} finally {
 		await f.shutdown();
 	}
@@ -346,7 +385,7 @@ test("explicit workspace and file scanning carry into child launch and resume", 
 		);
 		await assert.rejects(
 			f.invoke({ op: "resume", id: parsed.id, model: "glm-5.3-flash" }),
-			/Resume keeps the original model/,
+			/Only the user can change subagent models in Workflow/,
 		);
 		const childSession = join(f.workers[0].launch.directory, "session.jsonl");
 		writeFileSync(childSession, "{}\n");
@@ -358,7 +397,6 @@ test("explicit workspace and file scanning carry into child launch and resume", 
 			id: parsed.id,
 			task: "Follow up",
 			workspace: target,
-			model: "fixture/gpt-6-astra",
 		});
 		assert.equal(resumed.workspace, target);
 		assert.equal(f.workers[1].launch.cwd, target);
