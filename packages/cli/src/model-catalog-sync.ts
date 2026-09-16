@@ -311,6 +311,21 @@ function readAccountState(
 	return parseAccountState(readRegularJson(accountStatePath(paths, endpoint, accountRefHash)));
 }
 
+/**
+ * True when the source has an activated revision the picker can load. A stale
+ * revision still counts: cached models keep serving while a refresh retries.
+ * An unreadable cache cannot serve a model, so it counts as absent.
+ */
+function hasActiveRevision(paths: JouzuPaths, source: CatalogSource): boolean {
+	try {
+		const origin = readOriginState(paths, source.url);
+		if (!origin?.activeAccountRefHash) return false;
+		return readAccountState(paths, source.url, origin.activeAccountRefHash)?.active !== undefined;
+	} catch {
+		return false;
+	}
+}
+
 function writeJson(path: string, value: unknown, root: string): void {
 	writeFilePrivateAtomic(path, `${JSON.stringify(value, null, 2)}\n`, root);
 }
@@ -780,6 +795,32 @@ export async function refreshAllModelCatalogs(
 }
 
 /**
+ * Sources that are enabled, hold an available bearer credential, and have no
+ * activated revision. These have nothing cached to serve Pi's initial model
+ * selection, so interactive startup refreshes them before the model picker
+ * snapshots catalogs. A source with an activated revision, stale included, keeps
+ * serving and refreshes in the background instead.
+ */
+export function pendingStartupCatalogSources(paths: JouzuPaths, env: NodeJS.ProcessEnv = process.env): CatalogSource[] {
+	return resolveCatalogSources(paths, env).filter(
+		(source) => catalogSourceCredentialAvailable(source, env, paths) && !hasActiveRevision(paths, source),
+	);
+}
+
+/**
+ * Refreshes exactly the given sources. Returns undefined for an empty list, so a
+ * caller can tell "nothing to do" from a refresh that ran.
+ */
+export async function refreshModelCatalogSources(
+	paths: JouzuPaths,
+	sources: CatalogSource[],
+	options: Omit<RefreshCatalogOptions, "sourceId"> = {},
+): Promise<CatalogRefreshAllResult | undefined> {
+	if (sources.length === 0) return undefined;
+	return refreshSources(paths, sources, options);
+}
+
+/**
  * Best-effort catalog refresh for interactive startup. Only sources whose
  * bearer credential is available are contacted, so an unset environment
  * variable produces no request and no error. Returns undefined when no
@@ -790,11 +831,11 @@ export async function refreshAvailableModelCatalogs(
 	options: Omit<RefreshCatalogOptions, "sourceId"> = {},
 ): Promise<CatalogRefreshAllResult | undefined> {
 	const env = options.env ?? process.env;
-	const sources = resolveCatalogSources(paths, env).filter((source) =>
-		catalogSourceCredentialAvailable(source, env, paths),
+	return refreshModelCatalogSources(
+		paths,
+		resolveCatalogSources(paths, env).filter((source) => catalogSourceCredentialAvailable(source, env, paths)),
+		options,
 	);
-	if (sources.length === 0) return undefined;
-	return refreshSources(paths, sources, options);
 }
 
 async function refreshSources(

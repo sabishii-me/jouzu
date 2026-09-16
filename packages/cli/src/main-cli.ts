@@ -19,9 +19,11 @@ import { catalogRegistrationGaps, catalogThinkingLevelGaps } from "./model-catal
 import {
 	acceptQuarantinedCatalog,
 	loadActiveModelCatalogs,
+	pendingStartupCatalogSources,
 	refreshAllModelCatalogs,
 	refreshAvailableModelCatalogs,
 	refreshModelCatalog,
+	refreshModelCatalogSources,
 } from "./model-catalog-sync.js";
 import { projectDefaultAppliesAtStartup } from "./model-picker-state.js";
 import { resolveJouzuPaths } from "./paths.js";
@@ -51,6 +53,8 @@ import { createShisaExtension } from "./shisa-link/extension.js";
 import { offerShisaOnboarding } from "./shisa-link/onboarding.js";
 import { ensureQuietStartupDefault, suppressPiReleaseNotes } from "./startup-settings.js";
 import { JouzuUpdater } from "./updater.js";
+
+export const STARTUP_CATALOG_TIMEOUT_MS = 8_000;
 
 async function loadPiRuntime(): Promise<typeof import("@earendil-works/pi-coding-agent")> {
 	return import("@earendil-works/pi-coding-agent");
@@ -287,6 +291,23 @@ export async function runMainCli(args: string[]): Promise<void> {
 			import("./session-ui/index.js"),
 		]);
 	presentation.clearInteractiveStartup(parsed.args);
+	// A source with no activated revision has nothing cached to serve Pi's initial
+	// model selection, so it refreshes before the picker snapshots catalogs. Sources
+	// that already have a revision keep serving and refresh in the background below.
+	// The budget is shorter than /reload's: a catalog that needs longer is treated as
+	// unreachable, and the session starts from cached and local configuration.
+	const pendingCatalogs = interactiveStartup ? pendingStartupCatalogSources(paths, process.env) : [];
+	if (pendingCatalogs.length > 0) {
+		presentation.writeStartupNotice(presentation.CATALOG_STARTUP_NOTICE);
+		try {
+			await refreshModelCatalogSources(paths, pendingCatalogs, { timeoutMs: STARTUP_CATALOG_TIMEOUT_MS });
+		} catch {
+			// A failed startup refresh must not stop the session; the picker reports the
+			// recorded error from cached state.
+		} finally {
+			presentation.clearStartupNotice();
+		}
+	}
 	const modelPicker = createJouzuModelPicker(paths, {
 		textguardFiles: parsed.options.textguardFiles,
 		// Read at launch time: a child inherits whatever mode the session is in.

@@ -3,6 +3,8 @@ import { test } from "node:test";
 import {
 	brandDefaultSystemPrompt,
 	buildCapabilityRoutingGuidance,
+	CATALOG_STARTUP_NOTICE,
+	clearStartupNotice,
 	createJouzuPresentationExtension,
 	detectBannerColorMode,
 	isInteractivePiStartup,
@@ -12,6 +14,7 @@ import {
 	renderBannerLines,
 	renderBrandGradient,
 	shouldClearInteractiveStartup,
+	writeStartupNotice,
 } from "../dist/presentation.js";
 
 const metadata = {
@@ -191,6 +194,22 @@ test("clears only real interactive TTY launches", () => {
 	assert.equal(shouldClearInteractiveStartup([], { ...tty, env: { TERM: "dumb" } }), false);
 	assert.equal(shouldClearInteractiveStartup([], { ...tty, env: { TERM: "xterm", JOUZU_NO_CLEAR: "1" } }), false);
 	assert.equal(isInteractivePiStartup([], { ...tty, env: { TERM: "xterm", JOUZU_NO_CLEAR: "1" } }), true);
+});
+
+test("startup notices are written, then erased in place", () => {
+	const written = [];
+	const original = process.stdout.write;
+	process.stdout.write = (chunk) => {
+		written.push(typeof chunk === "string" ? chunk : "");
+		return true;
+	};
+	try {
+		writeStartupNotice(CATALOG_STARTUP_NOTICE);
+		clearStartupNotice();
+	} finally {
+		process.stdout.write = original;
+	}
+	assert.deepEqual(written, ["Fetching model catalog…", "\r\u001b[2K"]);
 });
 
 test("installs a compact width-safe Jouzu header and working indicator", async () => {

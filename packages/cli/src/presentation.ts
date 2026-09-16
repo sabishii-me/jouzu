@@ -10,6 +10,8 @@ import { detectTerminalColorMode, fitTerminalText, type TerminalColorMode } from
 export { isInteractivePiStartup } from "./interactive-startup.js";
 
 export const CLEAR_SCREEN_SEQUENCE = "\u001b[2J\u001b[H";
+export const CLEAR_CURRENT_LINE_SEQUENCE = "\r\u001b[2K";
+export const CATALOG_STARTUP_NOTICE = "Fetching model catalog…";
 
 export type BannerColorMode = TerminalColorMode;
 
@@ -51,6 +53,18 @@ export function clearInteractiveStartup(args: string[], context: InteractiveStar
 	if (!shouldClearInteractiveStartup(args, context)) return false;
 	process.stdout.write(CLEAR_SCREEN_SEQUENCE);
 	return true;
+}
+
+/**
+ * Writes a transient startup line that `clearStartupNotice` erases, so the TUI
+ * begins on a clean screen. Callers run only on interactive startup.
+ */
+export function writeStartupNotice(text: string): void {
+	process.stdout.write(text);
+}
+
+export function clearStartupNotice(): void {
+	process.stdout.write(CLEAR_CURRENT_LINE_SEQUENCE);
 }
 
 const BRAILLE_MARK = ["⠈⢹ ⡎⢱ ⡇⢸ ⢉⠝ ⡇⢸", "⠣⠜ ⠣⠜ ⠣⠜ ⠮⠤ ⠣⠜"] as const;

@@ -10,9 +10,11 @@ import {
 	acceptQuarantinedCatalog,
 	getCatalogStatuses,
 	loadActiveModelCatalogs,
+	pendingStartupCatalogSources,
 	refreshAllModelCatalogs,
 	refreshAvailableModelCatalogs,
 	refreshModelCatalog,
+	refreshModelCatalogSources,
 } from "../dist/model-catalog-sync.js";
 import { resolveJouzuPaths } from "../dist/paths.js";
 import { acquireStateLock } from "../dist/state-lock.js";
@@ -600,6 +602,108 @@ test("a disabled built-in override produces no startup request", async () => {
 		});
 		assert.equal(result, undefined);
 		assert.equal(calls, 0);
+	} finally {
+		rmSync(temporary, { recursive: true, force: true });
+	}
+});
+
+test("the startup gate lists only credentialed sources with no activated revision", async () => {
+	const temporary = mkdtempSync(join(tmpdir(), "jouzu-catalog-startup-gate-"));
+	try {
+		const jouzuPaths = paths(temporary);
+		const keyed = { SHISA_API_KEY: "sk-fixture" };
+		const ids = (environment) => pendingStartupCatalogSources(jouzuPaths, environment).map((source) => source.id);
+
+		// Without a credential there is nothing to fetch, so nothing may block startup.
+		assert.deepEqual(ids({}), []);
+		// With one and no revision, the picker has nothing cached to serve.
+		assert.deepEqual(ids(keyed), ["shisa-api"]);
+
+		await refreshModelCatalog(jouzuPaths, {
+			env: keyed,
+			fetch: async () => response(snapshot(1)),
+			now: new Date("2026-09-02T00:00:00Z"),
+		});
+		assert.deepEqual(ids(keyed), [], "an activated revision serves the initial selection");
+
+		// A later failure keeps the revision, so startup stays off the blocking path.
+		await refreshModelCatalog(jouzuPaths, {
+			env: keyed,
+			fetch: async () => {
+				throw new TypeError("fetch failed");
+			},
+		});
+		const stale = getCatalogStatuses(jouzuPaths, keyed).sources[0];
+		assert.equal(stale.status, "stale");
+		assert.ok(stale.lastError);
+		assert.deepEqual(ids(keyed), []);
+	} finally {
+		rmSync(temporary, { recursive: true, force: true });
+	}
+});
+
+test("a failed first refresh leaves its source pending for the next startup", async () => {
+	const temporary = mkdtempSync(join(tmpdir(), "jouzu-catalog-startup-pending-"));
+	try {
+		const jouzuPaths = paths(temporary);
+		const keyed = { SHISA_API_KEY: "sk-fixture" };
+		await refreshModelCatalog(jouzuPaths, {
+			env: keyed,
+			fetch: async () => {
+				throw new TypeError("fetch failed");
+			},
+		});
+		const status = getCatalogStatuses(jouzuPaths, keyed).sources[0];
+		assert.equal(status.status, "empty");
+		assert.ok(status.lastError);
+		assert.deepEqual(
+			pendingStartupCatalogSources(jouzuPaths, keyed).map((source) => source.id),
+			["shisa-api"],
+		);
+	} finally {
+		rmSync(temporary, { recursive: true, force: true });
+	}
+});
+
+test("a targeted startup refresh contacts only sources without an activated revision", async () => {
+	const temporary = mkdtempSync(join(tmpdir(), "jouzu-catalog-startup-target-"));
+	try {
+		const jouzuPaths = paths(temporary);
+		const environment = { SHISA_API_KEY: "sk-fixture", PRIVATE_TOKEN: "fixture-token" };
+		new CatalogSourceStore(jouzuPaths, { env: environment }).add({
+			label: "Private pool",
+			url: "https://private.example/v1/jouzu/model-catalog",
+			auth: { type: "bearer", credentialRef: "env:PRIVATE_TOKEN" },
+		});
+		const requests = [];
+		const fetch = async (url) => {
+			requests.push(String(url));
+			return response(snapshot(1));
+		};
+		const privatePool = pendingStartupCatalogSources(jouzuPaths, environment).filter(
+			(source) => source.id === "private-pool",
+		);
+		assert.equal(
+			(await refreshModelCatalogSources(jouzuPaths, privatePool, { env: environment, fetch })).status,
+			"complete",
+		);
+		assert.deepEqual(requests, ["https://private.example/v1/jouzu/model-catalog"]);
+
+		// The activated source drops out, so only the still-empty built-in source remains.
+		const pending = pendingStartupCatalogSources(jouzuPaths, environment);
+		assert.deepEqual(
+			pending.map((source) => source.id),
+			["shisa-api"],
+		);
+		requests.length = 0;
+		const result = await refreshModelCatalogSources(jouzuPaths, pending, { env: environment, fetch });
+		assert.deepEqual(requests, ["https://api.shisa.ai/v1/jouzu/model-catalog"]);
+		assert.deepEqual(
+			result.results.map(({ source }) => source.id),
+			["shisa-api"],
+		);
+		// An empty list means "nothing to do", not a refresh that ran.
+		assert.equal(await refreshModelCatalogSources(jouzuPaths, [], { env: environment, fetch }), undefined);
 	} finally {
 		rmSync(temporary, { recursive: true, force: true });
 	}
