@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { AssistantMessage } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { flowDiagnosticText } from "./diagnostic-text.js";
 import {
@@ -22,6 +22,7 @@ import { preparePiProviderRoute } from "./pi-provider-route.js";
 import type { FlowCompositionRequest, PiRequestReceipts } from "./pi-request-receipts.js";
 import { FlowLedgerError } from "./receipt-ledger.js";
 import { flowRunContainsUserInput } from "./run-input.js";
+import { prepareSummaryToolHistory, prepareToolHistory } from "./tool-history.js";
 
 export type NativeContextDecorator = (
 	messages: AgentMessage[],
@@ -228,7 +229,9 @@ export class PiNativeRequests {
 						throw new FlowLedgerError("stale", "Native context changed before model conversion.");
 					this.converting = [...messages];
 					this.conversion = undefined;
-					const result = await convert(messages);
+					// Repair the model projection before admission and position capture, not
+					// the persisted branch. Original converted objects retain their identity.
+					const result = prepareToolHistory(await convert(messages));
 					this.assertActive();
 					const positions = new Map<AgentMessage, number[]>();
 					for (const [index, message] of result.entries()) {
@@ -268,6 +271,19 @@ export class PiNativeRequests {
 				} finally {
 					this.converting = undefined;
 					this.conversion = undefined;
+					this.active--;
+				}
+			});
+		} else {
+			const convert = session.agent.convertToLlm;
+			this.hooks.set(session.agent, "convertToLlm", async (messages) => {
+				this.assertActive();
+				this.active++;
+				try {
+					const result = prepareToolHistory(await convert(messages));
+					this.assertActive();
+					return result;
+				} finally {
 					this.active--;
 				}
 			});
@@ -436,6 +452,9 @@ export class PiNativeRequests {
 			if (!session.isCompacting)
 				throw new FlowLedgerError("identity", "Native provider call has no request checkpoint.");
 			const id = randomUUID();
+			const sourceHash = hash(context.messages);
+			// Compaction and branch summaries bypass conversational conversion.
+			context = { ...context, messages: prepareToolHistory(context.messages) };
 			const modelHash = hash(context.messages);
 			this.active++;
 			let handedOff = false;
@@ -455,7 +474,7 @@ export class PiNativeRequests {
 				await store.begin({
 					id,
 					kind: "maintenance",
-					sourceHash: modelHash,
+					sourceHash,
 					transformedHash: modelHash,
 					modelHash,
 					systemHash: hash(context.systemPrompt),
@@ -691,6 +710,18 @@ export class PiNativeRequests {
 				throw error;
 			}
 		});
+		// Pi invokes this hook while history is still structured, before summary
+		// serialization. The transport guard below covers the resulting request.
+		this.hooks.set(
+			session.agent.streamFunction as typeof native & {
+				flowPrepareSummaryMessages?: (messages: Message[]) => Message[];
+			},
+			"flowPrepareSummaryMessages",
+			(messages) => {
+				this.assertActive();
+				return prepareSummaryToolHistory(messages);
+			},
+		);
 		this.guardTransport = trustedStream !== undefined;
 		if (trustedStream) this.guardedStream = session.agent.streamFunction;
 	}

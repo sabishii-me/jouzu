@@ -215,6 +215,44 @@ export function transform(path, source) {
 		change("            return converted;", "            return finish(converted);");
 		change("        return converted.map((msg) => {", "        return finish(converted.map((msg) => {");
 		change("            return msg;\n        });\n    };", "            return msg;\n        }));\n    };");
+	} else if (path === "dist/core/compaction/compaction.js" || path === "dist/core/compaction/branch-summarization.js") {
+		// Summary requests serialize history before reaching the session transport.
+		// Let the host prepare the structured projection, without editing entries or
+		// trying to recover tool ancestry from the resulting user-message text.
+		change(
+			"    const conversationText = serializeConversation(llmMessages);",
+			"    const conversationText = serializeConversation(streamFn?.flowPrepareSummaryMessages?.(llmMessages) ?? llmMessages);",
+			path === "dist/core/compaction/compaction.js" ? 2 : 1,
+		);
+		if (path === "dist/core/compaction/branch-summarization.js") {
+			change(
+				"function getMessageFromEntry(entry) {",
+				"function getMessageFromEntry(entry, includeToolResults = false) {",
+			);
+			change(
+				'            if (entry.message.role === "toolResult")',
+				'            if (!includeToolResults && entry.message.role === "toolResult")',
+			);
+			change(
+				"export function prepareBranchEntries(entries, tokenBudget = 0) {",
+				"export function prepareBranchEntries(entries, tokenBudget = 0, includeToolResults = false) {",
+			);
+			change(
+				"        const message = getMessageFromEntry(entry);",
+				"        const message = getMessageFromEntry(entry, includeToolResults);",
+			);
+			change(
+				"    const { messages, fileOps } = prepareBranchEntries(entries, tokenBudget);",
+				"    // A host summary projection needs retained results as evidence. A budget or\n" +
+					"    // branch boundary may leave leading results; the hook owns excerpt handling.\n" +
+					"    const { messages, fileOps } = prepareBranchEntries(entries, tokenBudget, !!streamFn?.flowPrepareSummaryMessages);",
+			);
+		}
+	} else if (path === "dist/core/compaction/branch-summarization.d.ts") {
+		change(
+			"export declare function prepareBranchEntries(entries: SessionEntry[], tokenBudget?: number): BranchPreparation;",
+			"export declare function prepareBranchEntries(entries: SessionEntry[], tokenBudget?: number, includeToolResults?: boolean): BranchPreparation;",
+		);
 	} else if (path === "dist/core/messages.js") {
 		change("export function convertToLlm(messages) {", "export function convertToLlm(messages, onConverted) {");
 		change(
@@ -1085,6 +1123,9 @@ export const paths = [
 	"dist/core/sdk.d.ts",
 	"dist/core/messages.js",
 	"dist/core/messages.d.ts",
+	"dist/core/compaction/compaction.js",
+	"dist/core/compaction/branch-summarization.js",
+	"dist/core/compaction/branch-summarization.d.ts",
 	"dist/core/agent-session.js",
 	"dist/core/agent-session.d.ts",
 	"dist/core/agent-session-services.js",

@@ -107,6 +107,8 @@ Run `/flow` to see held work, why it is held, and its recovery commands. The rep
 
 If the session stays stuck after an interrupt, run `/flow reset` while idle. It releases the blocked turn without stopping background jobs or deleting execution records. When Jouzu cannot tell whether a provider answered a request, `/flow resolve <attempt> retry|discard` records your decision; retrying may repeat a turn the provider already answered.
 
+With flow control enabled, forking, rewinding, or reopening a session can leave a tool call without its result on the selected branch. Before sending history to the model, Jouzu fills that gap with an explicit “outcome unknown” result. This does not rerun the tool, copy results from another branch, or change the saved conversation. The same preparation applies to automatic turns and built-in model-generated summaries. Failed or aborted assistant responses and their associated results are excluded from model replay; ambiguous or mismatched tool identities still block the request. Rewinding conversation history does not undo file changes or other tool side effects.
+
 Set `JOUZU_FLOW_CONTROL=0` before starting Jouzu to disable flow control for that process. See [v0.1.9 release notes](https://github.com/shisa-ai/jouzu/blob/main/docs/releases/v0.1.9.md) for the command list and [Testing](https://github.com/shisa-ai/jouzu/blob/main/docs/testing.md) for validation limits.
 
 ## Included extension tools

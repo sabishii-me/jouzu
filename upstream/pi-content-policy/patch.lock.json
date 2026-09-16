@@ -87,6 +87,18 @@
 			"before": "fdd51b8371984b68f2631f9f64f1259ac77f2d5153068ce75d6158bca27e7a66",
 			"after": "b3746474d2b20b87e8c169bc7d9960ac38298b8c82529b68e2aae0d2914bf37c"
 		},
+		"dist/core/compaction/compaction.js": {
+			"before": "3d5f1f2a3e801c965214717b6abad1839239b4a030517bffdf0c8eff25df5c2a",
+			"after": "30320c6f2227f87fed19df82d428b8de1cb6dd78b86f3fe50c7556d77a2efc22"
+		},
+		"dist/core/compaction/branch-summarization.js": {
+			"before": "6aa05f0a777da2928da42ac6f407d8b9c237c01015e542a227e907d3af134d34",
+			"after": "1f3314872638b50baa6db42333fcd19eb5e234723a17f44bcbd459546e2085ae"
+		},
+		"dist/core/compaction/branch-summarization.d.ts": {
+			"before": "36376989db49c19167a1478947968158b4ef8184e493cf392e7deaaeaec55943",
+			"after": "60f2fb4da663af46c5aa734145aa85e3fbbed80ca701e6bf702a30fdefa1c56f"
+		},
 		"dist/core/model-runtime.js": {
 			"before": "32cd50599d9e6e001229090e3d0554b60e4addb8ab7b3165635a574feb660b74",
 			"after": "fdbc1458daa60fe4012a9b84213a717c00541eb13328a804e59e0ce9a9f5d388"
