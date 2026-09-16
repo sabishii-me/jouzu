@@ -9,7 +9,7 @@
 	"extension": {
 		"path": "extensions/pi-multiloop/index.ts",
 		"before": "4ba012f1f2385b6deb099669a74f83e0ace426c16aa5ca45ca31b3c54c1946f8",
-		"after": "4ecdbb1effe3dffd4d0dff055eaec4443380651745f199b21be695c2778e5fe5"
+		"after": "c874ed288650ff86420abd6880bfb365131bdc9b065380c0b55291e3b01d2382"
 	},
 	"runtime": "30ceb2d8f97f714f953bbb88d07b90b14b17a9cdf1475256c57a7063f04b8c6e"
 }

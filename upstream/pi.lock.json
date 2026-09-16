@@ -35,7 +35,7 @@
 		},
 		{
 			"path": "upstream/multiloop-wait-skill/patch.lock.json",
-			"sha256": "d706ad06fa5dfd796b3f3d0889475d199a2ef68ca694246908bcf237d07fc0c2"
+			"sha256": "6ec8921ce612393568986b03796cbb52753f4e19329a49e9297753ad94c2f4f3"
 		},
 		{
 			"path": "upstream/task-flow/patch.lock.json",

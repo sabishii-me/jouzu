@@ -56,7 +56,7 @@ export function transformMultiloopFlow(source) {
 		"  function updateStatus(ctx: ExtensionContext | ExtensionCommandContext) {",
 		"  function updateStatus(ctx: ExtensionContext | ExtensionCommandContext) {\n    multiloopFlow(ctx.sessionManager.getSessionId())?.changed(runningStates().map((state) => ({ lane: state.lane, runTag: state.runTag })));",
 	);
-	return transformMultiloopLifecycle(source);
+	return transformGoalResume(transformMultiloopLifecycle(source));
 }
 
 export function transformMultiloopLifecycle(source) {
@@ -171,6 +171,49 @@ export function transformMultiloopLifecycle(source) {
 		source,
 		'        pi.sendUserMessage(buildAutoContinuePrompt([resumed], taskSnapshotFor(ctx)), { deliverAs: "followUp" });',
 		'        queueExplicitFlow(pi, ctx, resumed, "goal-resume", () => buildAutoContinuePrompt([resumed], taskSnapshotFor(ctx)));',
+	);
+	return source;
+}
+
+function transformGoalResume(source) {
+	source = replace(
+		source,
+		"const implicit = (attached && eligible.find((loop) => stateKey(loop) === stateKey(attached)))",
+		'const implicit = (operation !== "resume" && attached && eligible.find((loop) => stateKey(loop) === stateKey(attached)))',
+	);
+	source = replace(
+		source,
+		'        if (resolution.status !== "resolved") {\n          ctx.ui.notify([',
+		`        if (resolution.status !== "resolved") {
+          if (operation === "resume") {
+            ctx.ui.notify("Finding the goal to resume…", "info");
+            pi.sendUserMessage([
+              "Resume the user's saved goal. Resolve the target from the conversation and the saved goals below.",
+              "Only resume a goal from this list. If the intended goal is still unclear, ask the user which goal to resume. Do not create a new goal.",
+              ...eligible.map((loop) => formatGoalStatus(activeStates.get(stateKey(loop)) ?? loadState(ctx.cwd, loop)!)),
+              buildTargetDisambiguationPrompt("resume", target, resolution, eligible),
+            ].join("\\n"), { deliverAs: "followUp" });
+            return;
+          }
+          ctx.ui.notify([`,
+	);
+	source = source.replaceAll(
+		"() => buildAutoContinuePrompt([resumed], taskSnapshotFor(ctx))",
+		'() => "Resume the selected goal.\\n\\n" + buildAutoContinuePrompt([resumed], taskSnapshotFor(ctx))',
+	);
+	source = replace(
+		source,
+		'      markLoopTurn("tool-resume");',
+		`      if (isQuickGoal(state)) {
+        queueExplicitFlow(pi, ctx, state, "goal-resume", () => "Resume the selected goal.\\n\\n" + buildAutoContinuePrompt([state], taskSnapshotFor(ctx)));
+        return textResult("Resumed goal " + formatLaneId(resolution.id) + ".\\n\\n" + buildAutoContinuePrompt([state], taskSnapshotFor(ctx)));
+      }
+      markLoopTurn("tool-resume");`,
+	);
+	source = replace(
+		source,
+		'"Without a target, use the attached goal or the only matching goal.",',
+		'"Resume selects the only goal or asks the agent to find it. Pause and stop use the attached goal or the only matching goal.",',
 	);
 	return source;
 }
