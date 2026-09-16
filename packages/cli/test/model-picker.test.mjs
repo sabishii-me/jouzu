@@ -2081,6 +2081,95 @@ test("Models search selects and remembers the gateway offering over a conflictin
 	}
 });
 
+test("session startup restores a saved catalog model over the initial local model", async () => {
+	const { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } = await import(
+		"@earendil-works/pi-coding-agent"
+	);
+	const root = mkdtempSync(join(tmpdir(), "jouzu-picker-catalog-restore-"));
+	let session;
+	try {
+		const paths = resolveJouzuPaths({ homeOverride: join(root, "home") });
+		const document = JSON.parse(
+			readFileSync(join(import.meta.dirname, "..", "catalog", "fixtures", "account-snapshot-v1.json"), "utf8"),
+		);
+		const env = { PICKER_GATEWAY_TOKEN: "fixture-key" };
+		const source = new CatalogSourceStore(paths).add({
+			label: "Office pool",
+			url: "https://pool.example.test/v1/jouzu/model-catalog",
+			auth: { type: "bearer", credentialRef: "env:PICKER_GATEWAY_TOKEN" },
+		});
+		const reference = catalogModelReference("ai.example.gateway", "example-model", document);
+		new ModelPickerStore(paths).recordDispatch(reference, deriveProjectKey(root));
+		assert.equal(
+			(
+				await refreshCatalogSource(paths, source, {
+					env,
+					fetch: async () =>
+						new Response(JSON.stringify(document), {
+							headers: { "content-type": MODEL_CATALOG_MEDIA_TYPE },
+						}),
+				})
+			).status,
+			"activated",
+		);
+		const runtime = await ModelRuntime.create({
+			modelsPath: null,
+			modelsStorePath: join(root, "models.json"),
+			refreshOnCreate: false,
+			allowModelNetwork: false,
+			credentials: {
+				read: async () => undefined,
+				list: async () => [],
+				modify: async () => undefined,
+				delete: async () => {},
+			},
+		});
+		runtime.registerProvider("local-fixture", {
+			api: "openai-completions",
+			baseUrl: "http://127.0.0.1:1",
+			apiKey: "local-fixture-key",
+			models: [{ id: "fallback", name: "Local fallback", input: ["text"], contextWindow: 32000, maxTokens: 1000 }],
+		});
+		const integration = createJouzuModelPicker(paths, { restoreLastModelAtStartup: true, palette: { env } });
+		const loader = new DefaultResourceLoader({
+			cwd: root,
+			agentDir: paths.agentDir,
+			noExtensions: true,
+			noSkills: true,
+			noPromptTemplates: true,
+			noContextFiles: true,
+			extensionFactories: [integration.extension.factory],
+		});
+		await loader.reload();
+		({ session } = await createAgentSession({
+			cwd: root,
+			agentDir: paths.agentDir,
+			modelRuntime: runtime,
+			model: runtime.getModel("local-fixture", "fallback"),
+			resourceLoader: loader,
+			sessionManager: SessionManager.inMemory(root),
+			tools: [],
+			settingsManager: SettingsManager.inMemory(),
+		}));
+		assert.equal(session.model.provider, "local-fixture");
+		const errors = [];
+		const notifications = [];
+		await session.bindExtensions({
+			mode: "tui",
+			onError: (error) => errors.push(error),
+			uiContext: { notify: (message) => notifications.push(message) },
+		});
+		assert.equal(session.model.id, reference.modelId);
+		assert.equal(session.model.baseUrl, "https://pool.example.test/v1");
+		assert.equal((await runtime.prepareRequest(session.model)).options.apiKey, "fixture-key");
+		assert.deepEqual(errors, []);
+		assert.deepEqual(notifications, []);
+	} finally {
+		session?.dispose();
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
 test("selecting the active Models row preserves live and saved thinking with the Pi session setter", {
 	timeout: 15000,
 }, async () => {

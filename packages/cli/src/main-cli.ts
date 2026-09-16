@@ -296,16 +296,20 @@ export async function runMainCli(args: string[]): Promise<void> {
 	// that already have a revision keep serving and refresh in the background below.
 	// The budget is shorter than /reload's: a catalog that needs longer is treated as
 	// unreachable, and the session starts from cached and local configuration.
-	const pendingCatalogs = interactiveStartup ? pendingStartupCatalogSources(paths, process.env) : [];
-	if (pendingCatalogs.length > 0) {
-		presentation.writeStartupNotice(presentation.CATALOG_STARTUP_NOTICE);
+	if (interactiveStartup) {
 		try {
-			await refreshModelCatalogSources(paths, pendingCatalogs, { timeoutMs: STARTUP_CATALOG_TIMEOUT_MS });
+			const pendingCatalogs = pendingStartupCatalogSources(paths, process.env);
+			if (pendingCatalogs.length > 0) {
+				presentation.writeStartupNotice(presentation.CATALOG_STARTUP_NOTICE);
+				try {
+					await refreshModelCatalogSources(paths, pendingCatalogs, { timeoutMs: STARTUP_CATALOG_TIMEOUT_MS });
+				} finally {
+					presentation.clearStartupNotice();
+				}
+			}
 		} catch {
-			// A failed startup refresh must not stop the session; the picker reports the
-			// recorded error from cached state.
-		} finally {
-			presentation.clearStartupNotice();
+			// Discovery and refresh are best-effort. The picker handles unreadable
+			// catalog configuration and continues with local models.
 		}
 	}
 	const modelPicker = createJouzuModelPicker(paths, {

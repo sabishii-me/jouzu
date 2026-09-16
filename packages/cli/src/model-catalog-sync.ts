@@ -312,9 +312,9 @@ function readAccountState(
 }
 
 /**
- * True when the source has an activated revision the picker can load. A stale
- * revision still counts: cached models keep serving while a refresh retries.
- * An unreadable cache cannot serve a model, so it counts as absent.
+ * Checks activation metadata only; it does not validate the referenced document.
+ * A stale revision still counts. Missing or unreadable state counts as absent;
+ * document loading and its error reporting remain the picker's responsibility.
  */
 function hasActiveRevision(paths: JouzuPaths, source: CatalogSource): boolean {
 	try {

@@ -91,6 +91,16 @@ test("a refresh that exceeds the startup budget is treated as unreachable", () =
 	assert.notEqual(observed.model?.provider, catalogProvider, "no catalog model is available to select");
 });
 
+for (const invalidConfig of ["catalogs.json", "catalog-overrides.json"]) {
+	test(`invalid ${invalidConfig} does not prevent interactive startup`, () => {
+		const observed = startup({ credential: true, invalidConfig });
+		assert.match(observed.catalogLoadError, /expected an object key/);
+		assert.deepEqual(observed.activeRevisions, []);
+		assert.deepEqual(observed.requests, []);
+		assert.equal(observed.noticeShown, false);
+	});
+}
+
 test("a source without an available credential adds no request and no notice", () => {
 	const observed = startup({});
 	assert.deepEqual(observed.requests, []);

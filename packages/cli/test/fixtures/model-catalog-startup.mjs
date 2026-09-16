@@ -22,6 +22,7 @@ const response = (body) =>
 // scenario does not depend on login or environment state.
 for (const path of [paths.agentDir, paths.stateDir]) mkdirSync(path, { recursive: true, mode: 0o700 });
 if (scenario.credential) setCatalogSourceToken(paths, "shisa-api", "fixture-key");
+if (scenario.invalidConfig) writeFileSync(join(paths.configDir, scenario.invalidConfig), "{ broken");
 if (scenario.cache) {
 	const seeded = await refreshModelCatalog(paths, {
 		fetch: async () => response(document),
@@ -68,17 +69,25 @@ Object.defineProperty(process.stdout, "isTTY", { value: true });
 configurePiProcess(paths);
 const { InteractiveMode } = await import("@earendil-works/pi-coding-agent");
 let observed;
-// Replace only the terminal loop: the first runtime is inspected before session_start can
-// change the selection that Pi resolved at construction.
+// Inspect constructor-time selection without initializing the terminal or emitting session_start.
+// Saved-model restoration is covered separately with a real session in model-picker.test.mjs.
 InteractiveMode.prototype.run = async function () {
 	const model = this.session.model;
+	let activeRevisions = [];
+	let catalogLoadError;
+	try {
+		activeRevisions = loadActiveModelCatalogs(paths).map(({ document }) => document.revision);
+	} catch (error) {
+		catalogLoadError = error.message;
+	}
 	observed = {
 		observedAt: performance.now(),
 		model: model ? { provider: model.provider, id: model.id, name: model.name } : undefined,
 		requests,
 		noticeShown: writes.some((chunk) => chunk.includes("Fetching model catalog")),
 		startupTimeoutMs: STARTUP_CATALOG_TIMEOUT_MS,
-		activeRevisions: loadActiveModelCatalogs(paths).map(({ document }) => document.revision),
+		activeRevisions,
+		catalogLoadError,
 	};
 	await this.runtimeHost.dispose();
 };
