@@ -80,6 +80,7 @@ async function fixture(t) {
 	const execute = (name, args) => tools.get(name).execute("tool", args, undefined, undefined, ctx);
 	return {
 		statuses,
+		handlers,
 		...module,
 		ctx,
 		emit,
@@ -90,6 +91,11 @@ async function fixture(t) {
 	};
 }
 
+test("installed multiloop reconnects its host on tree navigation", async (t) => {
+	const f = await fixture(t);
+	assert.equal(f.handlers.has("session_tree"), true);
+	await f.emit("session_tree");
+});
 test("installed multiloop submits lazy per-lane continuations and preserves live waits on status turns", async (t) => {
 	const f = await fixture(t),
 		intents = new Map(),

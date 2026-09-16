@@ -3,6 +3,28 @@ function replace(source, from, to) {
 	if (source.split(from).length !== 2) throw new Error("Multiloop flow source anchor differs.");
 	return source.replace(from, to);
 }
+export function reconnectMultiloopOnTree(source) {
+	const anchor = '  pi.on("session_start", async (_event, ctx) => {';
+	if (source.split(anchor).length !== 2) throw new Error("Multiloop tree lifecycle source anchor differs.");
+	const marker = `  pi.on("session_start", async (_event, ctx) => {
+    detachFlow?.();
+    detachFlow = connectMultiloopFlow(pi.events, ctx.sessionManager.getSessionId());
+    statusStates.clear();
+    updateStatus(ctx);
+    announceResumableLoops(pi, ctx);
+  });`;
+	if (source.split(marker).length !== 2) throw new Error("Multiloop tree lifecycle marker differs.");
+	return source.replace(
+		marker,
+		`${marker}
+  pi.on("session_tree", async (_event, ctx) => {
+    detachFlow?.();
+    detachFlow = connectMultiloopFlow(pi.events, ctx.sessionManager.getSessionId());
+    updateStatus(ctx);
+  });`,
+	);
+}
+
 export function transformMultiloopFlow(source) {
 	source = replace(
 		source,
@@ -11,8 +33,8 @@ export function transformMultiloopFlow(source) {
 	);
 	source = replace(
 		source,
-		'  pi.on("session_start", async (_event, ctx) => {\n    announceResumableLoops(pi, ctx);',
-		'  let detachFlow: (() => void) | undefined;\n  pi.on("session_shutdown", async () => { detachFlow?.(); detachFlow = undefined; });\n  pi.on("session_start", async (_event, ctx) => {\n    detachFlow?.();\n    detachFlow = connectMultiloopFlow(pi.events, ctx.sessionManager.getSessionId());\n    updateStatus(ctx);\n    announceResumableLoops(pi, ctx);',
+		'  pi.on("session_start", async (_event, ctx) => {\n    announceResumableLoops(pi, ctx);\n  });',
+		'  let detachFlow: (() => void) | undefined;\n  pi.on("session_shutdown", async () => { detachFlow?.(); detachFlow = undefined; });\n  pi.on("session_start", async (_event, ctx) => {\n    detachFlow?.();\n    detachFlow = connectMultiloopFlow(pi.events, ctx.sessionManager.getSessionId());\n    updateStatus(ctx);\n    announceResumableLoops(pi, ctx);\n  });\n  pi.on("session_tree", async (_event, ctx) => {\n    detachFlow?.();\n    detachFlow = connectMultiloopFlow(pi.events, ctx.sessionManager.getSessionId());\n    updateStatus(ctx);\n  });',
 	);
 	for (const [name, parameters, reason, build, accounting] of [
 		[
