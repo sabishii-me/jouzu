@@ -403,7 +403,7 @@ export class PiNativeDispatch {
 		this.assertActive();
 		this.active++;
 		try {
-			const record = (await this.store.snapshot()).find((record) => record.id === id && record.revision === revision);
+			const record = (await this.store.forIds([id])).find((record) => record.revision === revision);
 			this.assertActive();
 			if (!record?.dispatch) throw new FlowLedgerError("stale", "Deferred cancellation has no matching submission.");
 			if (record.dispatch.contextCancellations?.some((item) => item.inputIndex === inputIndex && item.removed)) return;

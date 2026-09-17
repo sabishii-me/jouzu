@@ -502,12 +502,18 @@ test("submission operation queries validate only selected archived bodies", asyn
 	assert.deepEqual(await store.forOperations([]), []);
 	assert.deepEqual(await store.forOperations(["unknown"]), []);
 	await assert.rejects(store.forOperations([""]), { code: "identity" });
+	assert.deepEqual(await store.forIds(["active", "first", "first"]), [before[0], before[2]]);
+	assert.deepEqual(await store.forIds([]), []);
+	assert.deepEqual(await store.forIds(["unknown"]), []);
+	await assert.rejects(store.forIds([""]), { code: "identity" });
 	await session.mutate(async (mutation, ctx) => {
 		const address = value("jouzu.flow.submission", "second");
 		const record = (await mutation.getValue(address, ctx)).value;
 		return mutation.commit([setValue(address, { ...record, acceptedAt: record.acceptedAt + 1 })], ctx);
 	}, context);
 	assert.deepEqual(await store.forOperations(["operation-first"]), [before[0]]);
+	assert.deepEqual(await store.forIds(["first"]), [before[0]]);
+	await assert.rejects(store.forIds(["second"]), { code: "identity" });
 	assert.deepEqual(await store.forOperations([]), []);
 	await assert.rejects(store.forOperations(["operation-second"]), { code: "identity" });
 	await assert.rejects(store.snapshot(), { code: "identity" });

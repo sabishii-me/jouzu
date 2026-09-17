@@ -644,7 +644,7 @@ export class PiSessionFlowIngress implements Ingress {
 				await dispatch();
 				return;
 			}
-			const previous = (await branch.attachment.submissions.snapshot()).find((record) => record.id === captured.id);
+			const [previous] = await branch.attachment.submissions.forIds([captured.id]);
 			if (previous) {
 				if (!isDeepStrictEqual(previous.submission, captured))
 					throw new FlowLedgerError("identity", "Submission identity was reused with different content.");

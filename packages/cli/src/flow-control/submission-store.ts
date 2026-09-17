@@ -567,7 +567,7 @@ export class FlowSubmissionStore {
 			archived: RecordData[],
 			history: SubmissionHistory,
 		) => { result: T; changed: boolean } | Promise<{ result: T; changed: boolean }>,
-		includeArchived: boolean | ReadonlySet<string> = false,
+		includeArchived: boolean | { kind: "id" | "operation"; ids: ReadonlySet<string> } = false,
 		assertCurrent?: () => void,
 	): Promise<T> {
 		return this.ownership.run(() =>
@@ -702,8 +702,8 @@ export class FlowSubmissionStore {
 						archived.push(await load(entry));
 					}
 				} else if (includeArchived) {
-					for (const operation of includeArchived) {
-						const entry = await history.byOperation(operation);
+					for (const id of includeArchived.ids) {
+						const entry = await lookup(includeArchived.kind, id);
 						if (entry) archived.push(await load(entry));
 					}
 				}
@@ -797,10 +797,18 @@ export class FlowSubmissionStore {
 	forOperations(operationIds: readonly string[]): Promise<RetainedSubmission[]> {
 		if (!Array.isArray(operationIds) || operationIds.some((id) => !identity(id)))
 			return Promise.reject(new FlowLedgerError("identity", "Invalid submission operation query."));
-		return this.readRecords(new Set(operationIds));
+		return this.readRecords({ kind: "operation", ids: new Set(operationIds) });
 	}
 
-	private readRecords(includeArchived: boolean | ReadonlySet<string>): Promise<RetainedSubmission[]> {
+	forIds(ids: readonly string[]): Promise<RetainedSubmission[]> {
+		if (!Array.isArray(ids) || ids.some((id) => !identity(id)))
+			return Promise.reject(new FlowLedgerError("identity", "Invalid submission identity query."));
+		return this.readRecords({ kind: "id", ids: new Set(ids) });
+	}
+
+	private readRecords(
+		includeArchived: boolean | { kind: "id" | "operation"; ids: ReadonlySet<string> },
+	): Promise<RetainedSubmission[]> {
 		return this.transact(
 			(state, archived, history) => ({
 				changed: false,
@@ -808,7 +816,9 @@ export class FlowSubmissionStore {
 					.filter(
 						(record) =>
 							typeof includeArchived === "boolean" ||
-							(!!record.dispatch && includeArchived.has(record.dispatch.operationId)),
+							(includeArchived.kind === "id"
+								? includeArchived.ids.has(record.id)
+								: !!record.dispatch && includeArchived.ids.has(record.dispatch.operationId)),
 					)
 					.sort((a, b) => historyPosition(history.positions, a.id) - historyPosition(history.positions, b.id))
 					.map(({ payload, digest: _digest, dispatch, ...record }) => ({
