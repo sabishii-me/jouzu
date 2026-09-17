@@ -89,6 +89,57 @@ test("150 distinct-input turns retire history, preserve live receipts, and remai
 	}
 });
 
+test("archived user submissions do not pin request history across compaction", async (t) => {
+	const producerExtensions = await installedProducerExtensions();
+	const settings = { compaction: { enabled: false, keepRecentTokens: 1 } };
+	const f = await assembledSession(t, {
+		persist: true,
+		producerExtensions,
+		settings,
+		script: () => ({ text: "ack" }),
+	});
+	for (let turn = 0; turn < 80; turn++) {
+		await f.session.prompt(`Distinct user input ${turn}`);
+		await f.session.compact();
+		await maintain(f);
+	}
+	const attachment = f.ingress.branch().attachment;
+	const history = await attachment.submissions.snapshot();
+	const active = await attachment.submissions.snapshot(false);
+	assert.ok(history.length >= 80, "completed submissions remain inspectable");
+	assert.equal(active.length, 0, "completed user submissions have actually archived");
+	const requests = await attachment.nativeRequests.snapshot();
+	assert.ok(requests.length <= 64, `archived operations do not pin active requests: ${requests.length}`);
+	await f.session.prompt("Keep my live request receipt");
+	await f.ingress.retireRequestHistory();
+	const live = await attachment.submissions.snapshot(false);
+	assert.equal(live.length, 1);
+	const operation = live[0].dispatch.operationId;
+	assert.ok(
+		(await attachment.nativeRequests.snapshot()).some((request) =>
+			request.sourceCapture?.members.some((source) => source.operationId === operation),
+		),
+		"active submissions keep their source request receipts",
+	);
+	const sessionFile = f.sessionManager.getSessionFile();
+	await f.shutdown("resume", sessionFile);
+	const reopened = await assembledSession(t, {
+		root: f.root,
+		persist: true,
+		producerExtensions,
+		settings,
+		sessionManager: SessionManager.open(sessionFile),
+	});
+	try {
+		await reopened.session.prompt("Continue after archived user turns");
+		assert.equal(reopened.bodies.length, 1);
+		assert.deepEqual(f.errors, []);
+		assert.deepEqual(reopened.errors, []);
+	} finally {
+		await reopened.shutdown();
+	}
+});
+
 test("result batches cross the manifest quota with transcript references and reopen intact", async (t) => {
 	const producerExtensions = await installedProducerExtensions();
 	const f = await assembledSession(t, { persist: true, producerExtensions, script: () => ({ text: "ack" }) });
