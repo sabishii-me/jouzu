@@ -30,8 +30,8 @@ export interface FlowSessionRegistryState {
 	revision: number;
 	activeBranchId: string;
 	branches: FlowBranchRecord[];
-	/** Ancestry dropped by retirement. Its presence is what still proves this session navigated. */
-	retired?: { count: number; through: string };
+	/** Ancestry dropped by retirement; `through` lists dropped parents retained records still cite. */
+	retired?: { count: number; through: string[] };
 	transition?: FlowBranchTransition;
 }
 
@@ -100,31 +100,47 @@ export class PiFlowSessionRegistry {
 		const retired = state.retired;
 		if (
 			retired !== undefined &&
-			(!retired || !Number.isSafeInteger(retired.count) || retired.count < 1 || !identity(retired.through))
+			(!retired ||
+				!Number.isSafeInteger(retired.count) ||
+				retired.count < 1 ||
+				!Array.isArray(retired.through) ||
+				!retired.through.length ||
+				retired.through.some((id) => !identity(id)) ||
+				new Set(retired.through).size !== retired.through.length)
 		)
 			throw new FlowLedgerError("schema", "Invalid retired branch ancestry.");
 		const ids = new Set<string>(),
-			transitions = new Set<string>();
+			transitions = new Set<string>(),
+			positions = new Set<string>();
 		for (const [index, branch] of state.branches.entries()) {
 			if (
 				!branch ||
 				!identity(branch.id) ||
 				ids.has(branch.id) ||
 				!leaf(branch.enteredAtLeafId) ||
-				(branch.position !== undefined && !validPosition(branch.position)) ||
-				(index === 0
-					? retired
-						? branch.fromBranchId !== retired.through || !identity(branch.transitionId)
-						: branch.fromBranchId !== undefined || branch.transitionId !== undefined
-					: branch.fromBranchId !== state.branches[index - 1].id ||
-						!identity(branch.transitionId) ||
-						transitions.has(branch.transitionId))
+				(branch.position !== undefined && (!validPosition(branch.position) || positions.has(branch.position.entryId)))
 			)
 				throw new FlowLedgerError("schema", "Invalid session branch ancestry.");
+			const parent = branch.fromBranchId;
+			if (parent === undefined) {
+				// Only the first branch of an un-retained session has no parent and no transition.
+				if (index !== 0 || retired || branch.transitionId !== undefined)
+					throw new FlowLedgerError("schema", "Invalid session branch ancestry.");
+			} else {
+				// A parent is either an earlier retained record or a retired ancestor.
+				if (
+					!identity(parent) ||
+					(!ids.has(parent) && !(retired && retired.through.includes(parent))) ||
+					branch.transitionId === undefined ||
+					transitions.has(branch.transitionId)
+				)
+					throw new FlowLedgerError("schema", "Invalid session branch ancestry.");
+				transitions.add(branch.transitionId);
+			}
 			ids.add(branch.id);
-			if (branch.transitionId) transitions.add(branch.transitionId);
+			if (branch.position) positions.add(branch.position.entryId);
 		}
-		if (state.activeBranchId !== state.branches.at(-1)?.id)
+		if (!ids.has(state.activeBranchId))
 			throw new FlowLedgerError("schema", "Session registry has an inconsistent active branch.");
 		const pending = state.transition;
 		if (
@@ -158,6 +174,12 @@ export class PiFlowSessionRegistry {
 						branches: [{ id: initialId, enteredAtLeafId: initialLeafId }],
 					},
 				);
+				// Earlier revisions recorded one retired parent; normalize before validation.
+				if (state.retired && !Array.isArray(state.retired.through))
+					state.retired = {
+						count: state.retired.count,
+						through: [state.retired.through as unknown as string],
+					};
 				this.validate(state);
 				const { result, changed } = update(state);
 				if (changed) state.revision++;
@@ -208,15 +230,38 @@ export class PiFlowSessionRegistry {
 			return Promise.reject(new FlowLedgerError("capacity", "Invalid branch retention size."));
 		return this.transact((state) => {
 			if (state.transition) throw new FlowLedgerError("busy", "Branch retirement requires a settled navigation.");
-			const excess = state.branches.length - keep;
+			const activeIndex = state.branches.findIndex((branch) => branch.id === state.activeBranchId);
+			const excess = Math.min(state.branches.length - keep, activeIndex);
 			if (excess < 1) return { result: 0, changed: false };
 			const dropped = state.branches.splice(0, excess);
-			const head = state.branches[0];
-			const through = head?.fromBranchId;
-			if (!head?.transitionId || through === undefined || through !== dropped.at(-1)?.id)
+			// A dropped parent stays cited only while a retained record references it.
+			const droppedIds = new Set([...dropped.map((record) => record.id), ...(state.retired?.through ?? [])]);
+			const through = [
+				...new Set(
+					state.branches
+						.flatMap((record) => (record.fromBranchId ? [record.fromBranchId] : []))
+						.filter((id) => droppedIds.has(id)),
+				),
+			];
+			if (!through.length)
 				throw new FlowLedgerError("identity", "Retained branch ancestry does not follow the retired records.");
 			state.retired = { count: (state.retired?.count ?? 0) + dropped.length, through };
 			return { result: dropped.length, changed: true };
+		});
+	}
+
+	/** Reattach an existing retained branch after verified transcript evidence. Creates no new branch. */
+	reactivateNavigation(transitionId: string, branchId: string): Promise<FlowScope> {
+		if (!identity(transitionId) || !identity(branchId))
+			return Promise.reject(new FlowLedgerError("identity", "Invalid branch reactivation identity."));
+		return this.transact((state) => {
+			if (!state.transition || state.transition.id !== transitionId)
+				throw new FlowLedgerError("stale", "Branch transition changed before reactivation.");
+			if (!state.branches.some((record) => record.id === branchId))
+				throw new FlowLedgerError("stale", "Branch reactivation target is not retained.");
+			state.activeBranchId = branchId;
+			delete state.transition;
+			return { result: { sessionId: state.sessionId, branchId }, changed: true };
 		});
 	}
 

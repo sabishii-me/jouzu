@@ -224,7 +224,7 @@ test("branch retirement keeps the active branch, its ancestry link, and the navi
 	assert.equal(after.branches.length, 2, "the newest records are kept");
 	assert.equal(after.activeBranchId, before.activeBranchId, "the active branch is never retired");
 	assert.deepEqual(after.branches, before.branches.slice(-2), "and the kept records are unchanged");
-	assert.deepEqual(after.retired, { count: 4, through: before.branches.at(-2).fromBranchId });
+	assert.deepEqual(after.retired, { count: 4, through: [before.branches.at(-2).fromBranchId] });
 	// The retained head still links to the newest retired record, so ancestry stays auditable.
 	assert.equal(after.branches[0].fromBranchId, before.branches[3].id);
 
@@ -232,7 +232,7 @@ test("branch retirement keeps the active branch, its ancestry link, and the navi
 	assert.equal(await registry.retireBranchHistory(1), 1);
 	const collapsed = await registry.snapshot();
 	assert.equal(collapsed.branches.length, 1);
-	assert.deepEqual(collapsed.retired, { count: 5, through: collapsed.branches[0].fromBranchId });
+	assert.deepEqual(collapsed.retired, { count: 5, through: [collapsed.branches[0].fromBranchId] });
 	await assert.rejects(registry.bindInitialPosition(collapsed.revision, { entryId: "e", entryHash: "a".repeat(64) }), {
 		code: "stale",
 	});
@@ -269,4 +269,97 @@ test("a retired ancestry survives reopen and keeps its records valid", async (t)
 	assert.equal(grown.branches.length, 3);
 	assert.equal(grown.activeBranchId, scope.branchId);
 	assert.deepEqual(grown.retired, before.retired, "navigation after retirement does not change the retired record");
+});
+
+test("reactivation restores an earlier retained branch and later forks from it", async (t) => {
+	const { open } = await fixture(t);
+	const registry = await open();
+	const initial = await navigate(registry, 2);
+	const original = initial.branches[0];
+	const state = await registry.snapshot();
+	const transition = await registry.beginNavigation(state.revision, "back-leaf");
+	const scope = await registry.reactivateNavigation(transition.id, original.id);
+	assert.deepEqual(scope, { sessionId: state.sessionId, branchId: original.id });
+	const reactivated = await registry.snapshot();
+	assert.equal(reactivated.activeBranchId, original.id);
+	assert.equal(reactivated.branches.length, initial.branches.length, "reactivation creates no record");
+	assert.equal(reactivated.transition, undefined);
+	// A fork from the reactivated branch cites it as a tree parent, not the previous array record.
+	const next = await registry.beginNavigation(reactivated.revision, "fork-leaf");
+	const forked = await registry.finishNavigation(next.id, "forked-leaf");
+	const tree = await registry.snapshot();
+	assert.equal(tree.branches.at(-1).fromBranchId, original.id);
+	assert.equal(tree.activeBranchId, forked.branchId);
+	// Staying on the same branch is the no-op move: the transition resolves without a new record.
+	const stay = await registry.beginNavigation(tree.revision, "same-branch");
+	assert.deepEqual(await registry.reactivateNavigation(stay.id, forked.branchId), forked);
+	const settled = await registry.snapshot();
+	assert.equal(settled.branches.length, tree.branches.length);
+	assert.equal(settled.activeBranchId, forked.branchId);
+	await assert.rejects(registry.reactivateNavigation("foreign", original.id), { code: "stale" });
+	const pending = await registry.beginNavigation(settled.revision, "target");
+	await assert.rejects(registry.reactivateNavigation(pending.id, "unknown-branch"), { code: "stale" });
+	await registry.reactivateNavigation(pending.id, original.id);
+});
+
+test("retirement never drops a reactivated active branch or a retained parent", async (t) => {
+	const { open } = await fixture(t);
+	const registry = await open();
+	await navigate(registry, 2);
+	const state = await registry.snapshot();
+	const earliest = state.branches[0];
+	const back = await registry.beginNavigation(state.revision, "back-leaf");
+	await registry.reactivateNavigation(back.id, earliest.id);
+	// The active branch sits at the front, so nothing can be retired.
+	assert.equal(await registry.retireBranchHistory(1), 0);
+	const fork = await registry.beginNavigation((await registry.snapshot()).revision, "fork-leaf");
+	await registry.finishNavigation(fork.id, "forked-leaf");
+	const before = await registry.snapshot();
+	// Reactivate the middle branch: the active index bounds what a prefix drop may remove.
+	const middle = before.branches[1];
+	const again = await registry.beginNavigation(before.revision, "middle-leaf");
+	await registry.reactivateNavigation(again.id, middle.id);
+	assert.equal((await registry.snapshot()).activeBranchId, middle.id);
+	assert.equal(await registry.retireBranchHistory(1), 1);
+	const after = await registry.snapshot();
+	assert.equal(after.branches[0].id, middle.id, "the active record is never dropped");
+	assert.deepEqual(after.retired, { count: 1, through: [earliest.id] });
+	assert.equal(after.branches.length, before.branches.length - 1);
+});
+
+test("legacy single-parent retirement normalizes on read and validates as an array", async (t) => {
+	const { root, cleanup } = await fixture(t);
+	const repo = new MemorySessionRepo();
+	const session = await repo.create({}, BACKGROUND_CONTEXT);
+	cleanup(() => repo.close(BACKGROUND_CONTEXT));
+	const registry = await PiFlowSessionRegistry.open(root, "parent", null, async () => session);
+	cleanup(() => registry.close());
+	const state = await registry.snapshot();
+	const legacy = {
+		...state,
+		branches: [
+			{
+				id: "kept",
+				fromBranchId: "dropped",
+				transitionId: "move",
+				enteredAtLeafId: null,
+			},
+		],
+		activeBranchId: "kept",
+		retired: { count: 1, through: "dropped" },
+	};
+	await session.mutate(
+		(m) => m.commit([setValue(value("jouzu.flow.session", "v1"), legacy)], BACKGROUND_CONTEXT),
+		BACKGROUND_CONTEXT,
+	);
+	const normalized = await registry.snapshot();
+	assert.deepEqual(normalized.retired, { count: 1, through: ["dropped"] });
+	assert.deepEqual(await registry.currentScope(), { sessionId: state.sessionId, branchId: "kept" });
+	// A retained record citing a parent outside both retained ids and retired links is invalid.
+	const broken = { ...normalized, branches: [{ ...normalized.branches[0], fromBranchId: "elsewhere" }] };
+	await session.mutate(
+		(m) => m.commit([setValue(value("jouzu.flow.session", "v1"), broken)], BACKGROUND_CONTEXT),
+		BACKGROUND_CONTEXT,
+	);
+	await assert.rejects(registry.currentScope(), { code: "schema" });
 });
