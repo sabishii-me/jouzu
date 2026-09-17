@@ -7,11 +7,19 @@ import {
 	value,
 	type Write,
 } from "@earendil-works/pi-agent-core";
-import { type FlowAttempt, FlowLedgerError, type FlowLedgerState, type FlowLedgerStore } from "./receipt-ledger.js";
+import {
+	type FlowAttempt,
+	FlowLedgerError,
+	type FlowLedgerState,
+	type FlowLedgerStore,
+	type FlowRequest,
+} from "./receipt-ledger.js";
 
 type Header = Omit<FlowLedgerState, "attempts"> & { attemptIds: string[] };
 const headerAddress = value<Header>("jouzu.flow.receipts", "v1");
 const attemptAddress = (id: string) => value<FlowAttempt>("jouzu.flow.attempt", id);
+const requestHistoryAddress = (id: string) =>
+	value<{ attemptId: string; request: FlowRequest }>("jouzu.flow.request-history", id);
 
 async function read(reader: SessionReader): Promise<FlowLedgerState | undefined> {
 	const header = (await reader.getValue(headerAddress, BACKGROUND_CONTEXT))?.value;
@@ -39,6 +47,7 @@ async function read(reader: SessionReader): Promise<FlowLedgerState | undefined>
 /** The caller owns the writable Pi Session and its process lock for this adapter's lifetime. */
 export function createPiLedgerStore(session: Session): FlowLedgerStore {
 	return {
+		archivesRequests: true,
 		read: () => session.mutate((mutation) => read(mutation), BACKGROUND_CONTEXT),
 		transact(update) {
 			return session.mutate(async (mutation, context) => {
@@ -49,6 +58,22 @@ export function createPiLedgerStore(session: Session): FlowLedgerStore {
 					setValue(headerAddress, { ...header, attemptIds: attempts.map((attempt) => attempt.id) }),
 				];
 				const prior = new Map(previous?.attempts.map((attempt) => [attempt.id, attempt]));
+				const previousRequests = new Set(
+					previous?.attempts.flatMap((attempt) => attempt.requests.map((request) => request.id)),
+				);
+				const retainedRequests = new Set(attempts.flatMap((attempt) => attempt.requests.map((request) => request.id)));
+				// Archived requests fence duplicate identities without growing the operational snapshot.
+				for (const id of retainedRequests) {
+					if (!previousRequests.has(id) && (await mutation.getValue(requestHistoryAddress(id), context)))
+						throw new FlowLedgerError("identity", "Request ID was already used.");
+				}
+				// The archive and compact summary share one commit, including migration on attachment.
+				for (const attempt of previous?.attempts ?? []) {
+					for (const request of attempt.requests) {
+						if (!retainedRequests.has(request.id))
+							writes.push(setValue(requestHistoryAddress(request.id), { attemptId: attempt.id, request }));
+					}
+				}
 				for (const attempt of attempts) {
 					if (JSON.stringify(prior.get(attempt.id)) !== JSON.stringify(attempt))
 						writes.push(setValue(attemptAddress(attempt.id), structuredClone(attempt)));

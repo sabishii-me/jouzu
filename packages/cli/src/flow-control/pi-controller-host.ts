@@ -9,6 +9,7 @@ import { PiHostHooks } from "./pi-host-hooks.js";
 import { PiQueueReceipts } from "./pi-queue-receipts.js";
 import { PiRequestReceipts } from "./pi-request-receipts.js";
 import { FlowLedgerError, type FlowLedgerState, type FlowReceiptLedger } from "./receipt-ledger.js";
+import { flowMemberIncluded } from "./request-retention.js";
 import type { FlowResultReference } from "./result-types.js";
 
 export interface PiControllerHostOptions {
@@ -40,16 +41,7 @@ function quarantine(messages: AgentMessage[], state: FlowLedgerState): AgentMess
 		if (!Array.isArray(content)) return [message];
 		const frames = new Map<string, number>();
 		for (const attempt of inactive) {
-			const members = attempt.members.filter(
-				(member) =>
-					!attempt.requests.some(
-						(request) =>
-							request.outcome === "success" &&
-							request.inclusion.some(
-								(item) => item.id === member.id && item.revision === member.revision && item.disposition === "included",
-							),
-					),
-			);
+			const members = attempt.members.filter((member) => !flowMemberIncluded(attempt, member));
 			const receipts = inspectPersistedFlowInput(attempt.id, members, content);
 			for (let i = 0; i < members.length; i++) {
 				if (receipts[i].disposition === "omitted") continue;

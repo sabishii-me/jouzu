@@ -12,6 +12,13 @@ import {
 	retirableAttempts,
 	validateRetiredAttempts,
 } from "./attempt-retention.js";
+import {
+	consolidateFlowRequests,
+	type FlowRequestSummary,
+	flowMemberIncluded,
+	hasFlowHandoff,
+	validateFlowRequestSummary,
+} from "./request-retention.js";
 
 export interface FlowScope {
 	sessionId: string;
@@ -68,6 +75,7 @@ export interface FlowAttempt {
 	queue?: { id: string; revision: number };
 	history: { id: string; revision: string; entryId: string; entryHash?: string }[];
 	requests: FlowRequest[];
+	requestSummary?: FlowRequestSummary;
 	outcome?: FlowOutcome;
 	reason?: string;
 }
@@ -86,6 +94,8 @@ export interface FlowLedgerState {
 
 /** Transactions must serialize read/modify/write and commit before resolving. */
 export interface FlowLedgerStore {
+	/** Opt in only when transactions atomically archive removed requests and reject reused archived IDs. */
+	readonly archivesRequests?: true;
 	read(): Promise<FlowLedgerState | undefined>;
 	transact<T>(update: (state: FlowLedgerState | undefined) => { state: FlowLedgerState; result: T }): Promise<T>;
 }
@@ -192,13 +202,14 @@ export class FlowReceiptLedger {
 				revision: 0,
 				attempts: [],
 			};
-			FlowReceiptLedger.validate(state, captured, limits);
+			FlowReceiptLedger.validate(state, captured, limits, false);
+			if (store.archivesRequests) for (const attempt of state.attempts) consolidateFlowRequests(attempt);
 			state.admission ??= initialFlowAdmission();
 			state.generation++;
 			state.revision++;
 			for (const attempt of state.attempts) {
 				if (terminal.has(attempt.phase)) continue;
-				attempt.phase = attempt.requests.some((request) => request.handedOff) ? "uncertain" : "cancelled";
+				attempt.phase = hasFlowHandoff(attempt) ? "uncertain" : "cancelled";
 				attempt.reason =
 					attempt.phase === "uncertain"
 						? "Request outcome unknown after attachment loss."
@@ -211,7 +222,12 @@ export class FlowReceiptLedger {
 		return new FlowReceiptLedger(store, captured, generation, { ...limits });
 	}
 
-	private static validate(state: FlowLedgerState, scope: FlowScope, limits: { maxAttempts: number; maxBytes: number }) {
+	private static validate(
+		state: FlowLedgerState,
+		scope: FlowScope,
+		limits: { maxAttempts: number; maxBytes: number },
+		enforceCapacity = true,
+	) {
 		if (state.admission !== undefined) validateFlowAdmission(state.admission);
 		if (state.schemaVersion !== 1) throw new FlowLedgerError("schema", "Unsupported flow ledger schema.");
 		if (!state.scope || !sameScope(state.scope, scope))
@@ -318,9 +334,15 @@ export class FlowReceiptLedger {
 			}
 			if (attempt.consumed !== undefined && typeof attempt.consumed !== "boolean")
 				throw new FlowLedgerError("schema", "Invalid native consumption fact.");
+			try {
+				validateFlowRequestSummary(attempt);
+			} catch (error) {
+				throw new FlowLedgerError("schema", error instanceof Error ? error.message : "Invalid request summary.");
+			}
 			if (
 				attempt.consumed === false &&
-				(attempt.history.length ||
+				(attempt.requestSummary ||
+					attempt.history.length ||
 					attempt.requests.length ||
 					["claimed", "prepared", "handed-off", "running", "settled"].includes(attempt.phase))
 			)
@@ -340,8 +362,9 @@ export class FlowReceiptLedger {
 				throw new FlowLedgerError("schema", error instanceof Error ? error.message : "Invalid retired attempts.");
 			}
 		if (
-			state.attempts.length > limits.maxAttempts ||
-			new TextEncoder().encode(JSON.stringify(state)).length > limits.maxBytes
+			enforceCapacity &&
+			(state.attempts.length > limits.maxAttempts ||
+				new TextEncoder().encode(JSON.stringify(state)).length > limits.maxBytes)
 		)
 			throw new FlowLedgerError("capacity", "Flow receipt retention limit reached; work remains held.");
 	}
@@ -368,6 +391,7 @@ export class FlowReceiptLedger {
 			if (state.generation !== this.generation)
 				throw new FlowLedgerError("stale", "Flow attachment has been replaced.");
 			const result = update(state);
+			if (this.store.archivesRequests) for (const attempt of state.attempts) consolidateFlowRequests(attempt);
 			state.revision++;
 			FlowReceiptLedger.validate(state, this.scope, this.limits);
 			return { state, result };
@@ -493,17 +517,7 @@ export class FlowReceiptLedger {
 			const deliveredBeforeCompaction = (member: FlowMember) =>
 				compacted.has(memberKey(member)) &&
 				captured.find((item) => memberKey(item) === memberKey(member))?.disposition === "omitted" &&
-				attempt.requests.some(
-					(request) =>
-						request.handedOff &&
-						request.outcome === "success" &&
-						request.inclusion.some(
-							(item) =>
-								memberKey(item) === memberKey(member) &&
-								item.disposition === "included" &&
-								item.contentHash === member.contentHash,
-						),
-				);
+				flowMemberIncluded(attempt, member);
 			const satisfied = (member: FlowMember) =>
 				captured.find((item) => memberKey(item) === memberKey(member))?.disposition === "included" ||
 				deliveredBeforeCompaction(member);
@@ -540,7 +554,7 @@ export class FlowReceiptLedger {
 				attempt.reason = rejected
 					? "Required input or intact aggregate metadata was filtered."
 					: "No composed input survived filtering.";
-				if (attempt.requests.some((request) => request.handedOff)) attempt.phase = "running";
+				if (hasFlowHandoff(attempt)) attempt.phase = "running";
 				else delete state.activeAttemptId;
 			}
 			return attempt.phase === "prepared";
@@ -556,7 +570,7 @@ export class FlowReceiptLedger {
 			if (!request || request.id !== requestId || request.handedOff)
 				throw new FlowLedgerError("identity", "Unknown unsent request.");
 			attempt.reason = reason;
-			attempt.phase = attempt.requests.some((item) => item.handedOff) ? "running" : "withheld";
+			attempt.phase = hasFlowHandoff(attempt) ? "running" : "withheld";
 			if (attempt.phase === "withheld") delete state.activeAttemptId;
 		});
 	}
@@ -636,7 +650,7 @@ export class FlowReceiptLedger {
 			const attempt = this.attempt(state, id, ["selected", "queued", "claimed", "prepared", "handed-off", "running"]);
 			if (state.activeAttemptId !== id)
 				throw new FlowLedgerError("identity", "The flow attempt is not the active reservation.");
-			const started = attempt.requests.some((request) => request.handedOff);
+			const started = hasFlowHandoff(attempt);
 			if (!started) {
 				attempt.phase = "cancelled";
 				attempt.reason = reason;
@@ -685,7 +699,7 @@ export class FlowReceiptLedger {
 		requireIdentity(reason);
 		return this.mutate((state) => {
 			const attempt = this.attempt(state, id, ["selected", "queued", "claimed", "prepared", "cancelled"]);
-			if (attempt.requests.some((request) => request.handedOff))
+			if (hasFlowHandoff(attempt))
 				throw new FlowLedgerError("transition", "Started runs require host settlement before cancellation.");
 			attempt.phase = "cancelled";
 			attempt.reason = reason;

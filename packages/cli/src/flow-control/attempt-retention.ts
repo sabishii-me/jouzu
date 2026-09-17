@@ -1,4 +1,5 @@
 import type { FlowAttempt, FlowLedgerState } from "./receipt-ledger.js";
+import { flowMemberIncluded } from "./request-retention.js";
 import { orderFlowResultProducers } from "./result-order.js";
 import { MAX_RETIRED_FLOW_IDENTITIES, retiredIdentityHash, validRetiredIdentityHash } from "./retired-identities.js";
 
@@ -81,21 +82,7 @@ export function retirableAttempts(state: FlowLedgerState, keep: number): FlowAtt
 			!(
 				attempt.admission &&
 				attempt.consumed !== false &&
-				attempt.members.some(
-					(member) =>
-						!attempt.requests.some(
-							(request) =>
-								request.handedOff &&
-								request.outcome === "success" &&
-								request.inclusion.some(
-									(item) =>
-										item.id === member.id &&
-										item.revision === member.revision &&
-										item.disposition === "included" &&
-										item.contentHash === member.contentHash,
-								),
-						),
-				)
+				attempt.members.some((member) => !flowMemberIncluded(attempt, member))
 			),
 	);
 	// Retire oldest first and keep the most recent settled attempts addressable for inspection.

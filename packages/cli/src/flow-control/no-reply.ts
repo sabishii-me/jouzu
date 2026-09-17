@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { FlowLedgerState, FlowMember } from "./receipt-ledger.js";
+import { hasFlowUserInput } from "./request-retention.js";
 
 /**
  * Permission for the model to end a turn without replying.
@@ -56,8 +57,7 @@ export function checkFlowNoReply(
 	if (token !== flowNoReplyToken(attempt.id)) return { allowed: false, reason: "stale-run" };
 	// Any request of the run, not only the newest: a user message that joined mid-run stays behind
 	// the assistant turns that followed it, so the newest request alone can no longer see it.
-	if (attempt.requests.some((joined) => joined.containsUserInput))
-		return { allowed: false, reason: "carries-user-input" };
+	if (hasFlowUserInput(attempt)) return { allowed: false, reason: "carries-user-input" };
 	if (!attempt.members.length) return { allowed: false, reason: "empty-run" };
 	if (!attempt.members.every((member) => NO_REPLY_MEMBER_KINDS.has(member.kind)))
 		return { allowed: false, reason: "carries-requested-work" };

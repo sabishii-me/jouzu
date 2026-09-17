@@ -20,6 +20,27 @@ const set = (seq, key, data) => ({ kind: "value", op: "set", seq, namespace: "pr
 const del = (seq, key) => ({ kind: "value", op: "delete", seq, namespace: "probe", key });
 const encode = (rows) => `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`;
 
+test("live history above the threshold does not checkpoint on every append", async (t) => {
+	const { root, path, header } = await fixture(t);
+	const payload = "x".repeat(1024 * 1024);
+	await writeFile(path, encode([header, ...Array.from({ length: 34 }, (_, i) => set(i + 1, `archive-${i}`, payload))]));
+	const session = await openLocalFlowSession(root);
+	try {
+		const baseline = (await readFile(path, "utf8")).split("\n", 1)[0];
+		assert.ok((await stat(path)).size > 32 * 1024 * 1024);
+		for (let i = 0; i < 10; i++)
+			await session.mutate(
+				(mutation) => mutation.commit([setValue(value("probe", "input"), i)], BACKGROUND_CONTEXT),
+				BACKGROUND_CONTEXT,
+			);
+		// A checkpoint replaces the header's sequence floor. Appends must leave it alone here.
+		assert.equal((await readFile(path, "utf8")).split("\n", 1)[0], baseline);
+		assert.equal((await session.getValue(value("probe", "input"), BACKGROUND_CONTEXT)).value, 9);
+	} finally {
+		await session.close(BACKGROUND_CONTEXT);
+	}
+});
+
 test("checkpoint preserves live values, deletes, sequence high water and subsequent Pi commits", async (t) => {
 	const { root, path, header } = await fixture(t);
 	await writeFile(

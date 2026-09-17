@@ -2,6 +2,7 @@ import { completedWithoutNativeInput } from "./native-admission.js";
 import type { NativeRequest } from "./native-request-store.js";
 import { type NativeSubmissionRequestView, projectNativeSubmissionRequests } from "./native-submission-view.js";
 import { type FlowAttempt, FlowLedgerError, type FlowLedgerState } from "./receipt-ledger.js";
+import { flowMemberIncluded } from "./request-retention.js";
 import type { RetainedSubmission } from "./submission-store.js";
 
 export const UNAVAILABLE_INPUT_REASON = "Input was not dispatched before the session ended. Submit it again to run it.";
@@ -115,15 +116,7 @@ export function projectFlowSubmissions(
 			const members = attempt.members.filter((member) => member.sourceSubmission?.id === record.id);
 			const matches = (item: { id: string; revision: string }) =>
 				members.some((member) => member.id === item.id && member.revision === item.revision);
-			const includedMembers = members.filter((member) =>
-				attempt.requests.some(
-					(request) =>
-						request.outcome === "success" &&
-						request.inclusion.some(
-							(item) => item.id === member.id && item.revision === member.revision && item.disposition === "included",
-						),
-				),
-			);
+			const includedMembers = members.filter((member) => flowMemberIncluded(attempt, member));
 			const included = includedMembers.length === members.length;
 			const partial = includedMembers.length > 0;
 			const history = attempt.history.some(matches);

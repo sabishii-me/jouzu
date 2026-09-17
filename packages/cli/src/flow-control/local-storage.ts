@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { BACKGROUND_CONTEXT, JsonlSessionRepo, type Session } from "@earendil-works/pi-agent-core";
 import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
 import { ensurePrivateDirectory } from "../private-fs.js";
-import { checkpointFlowJournal } from "./journal-checkpoint.js";
+import { checkpointFlowJournal, FLOW_JOURNAL_CHECKPOINT_BYTES } from "./journal-checkpoint.js";
 import { FlowOwnershipError } from "./ownership.js";
 
 /**
@@ -48,8 +48,14 @@ export async function reconcileFlowStateVersion(directory: string): Promise<stri
 }
 
 class FlowExecutionEnv extends NodeExecutionEnv {
+	private checkpointBytes = FLOW_JOURNAL_CHECKPOINT_BYTES;
+	async checkpoint(path: string): Promise<void> {
+		const size = await checkpointFlowJournal(path, this.checkpointBytes);
+		// Live history cannot be compacted away. Wait for proportional growth before scanning it again.
+		if (size !== undefined) this.checkpointBytes = Math.max(FLOW_JOURNAL_CHECKPOINT_BYTES, size * 2);
+	}
 	override async appendFile(...args: Parameters<NodeExecutionEnv["appendFile"]>) {
-		await checkpointFlowJournal(args[0]);
+		await this.checkpoint(args[0]);
 		return super.appendFile(...args);
 	}
 }
@@ -70,8 +76,9 @@ export async function openLocalFlowSession(directory: string): Promise<Session> 
 			if (files.length > 1) throw new FlowOwnershipError("storage", "Flow branch storage contains multiple sessions.");
 		}
 	}
-	for (const path of files) await checkpointFlowJournal(path);
-	const repo = new JsonlSessionRepo({ fileSystem: new FlowExecutionEnv({ cwd: directory }), sessionsRoot: root });
+	const fileSystem = new FlowExecutionEnv({ cwd: directory });
+	for (const path of files) await fileSystem.checkpoint(path);
+	const repo = new JsonlSessionRepo({ fileSystem, sessionsRoot: root });
 	try {
 		const metadata = await repo.list(undefined, BACKGROUND_CONTEXT);
 		if (

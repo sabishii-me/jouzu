@@ -6,6 +6,7 @@ import { type AgentSession, sessionEntryToContextMessages } from "@earendil-work
 import { compactionHistoryEnd } from "./compaction-boundary.js";
 import { PiHostHooks } from "./pi-host-hooks.js";
 import { FlowLedgerError, type FlowOutcome, type FlowReceiptLedger } from "./receipt-ledger.js";
+import { hasFlowHandoff } from "./request-retention.js";
 
 interface Frame {
 	kind: "operation" | "command" | "navigation" | "boundary";
@@ -285,7 +286,7 @@ export class PiHostBoundary {
 			const attempt = state.attempts.find((item) => item.id === attemptId);
 			if (!attempt) throw new FlowLedgerError("identity", "Settlement attempt is missing.");
 			if (attempt.phase === "selected" || attempt.phase === "queued") return { kind: "waiting", attemptId };
-			const started = attempt.requests.some((request) => request.handedOff);
+			const started = hasFlowHandoff(attempt);
 			if (attempt.phase === "claimed" || (attempt.phase === "prepared" && !started)) {
 				await ledger.cancel(attemptId, "Host became idle before transport handoff.");
 				return { kind: "cancelled", attemptId };

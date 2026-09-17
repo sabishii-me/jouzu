@@ -1,5 +1,6 @@
 import type { FlowIntent } from "./admission.js";
 import type { FlowLedgerState } from "./receipt-ledger.js";
+import { flowMemberIncluded } from "./request-retention.js";
 
 /** Replay producer rounds from final inclusion, never from builds or queued attempts. */
 export function orderFlowResultProducers(intents: FlowIntent[], state: FlowLedgerState): string[] {
@@ -24,15 +25,7 @@ export function orderFlowResultProducers(intents: FlowIntent[], state: FlowLedge
 					item.id === (samples ? member.id : (member.inputFrame?.id ?? member.id)) &&
 					item.revision === (samples ? member.revision : (member.inputFrame?.revision ?? member.revision)),
 			)?.producer;
-			if (
-				producer &&
-				attempt.requests.some((request) =>
-					request.inclusion.some(
-						(item) => item.id === member.id && item.revision === member.revision && item.disposition === "included",
-					),
-				)
-			)
-				served.add(producer);
+			if (producer && flowMemberIncluded(attempt, member, false)) served.add(producer);
 		}
 		round = round.filter((producer) => !served.has(producer));
 	}

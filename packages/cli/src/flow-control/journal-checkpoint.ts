@@ -6,7 +6,10 @@ import { dirname, join } from "node:path";
 export const FLOW_JOURNAL_CHECKPOINT_BYTES = 32 * 1024 * 1024;
 
 /** Flow stores scalar snapshots only. Run under its writer lease, before opening or appending. */
-export async function checkpointFlowJournal(path: string, threshold = FLOW_JOURNAL_CHECKPOINT_BYTES): Promise<void> {
+export async function checkpointFlowJournal(
+	path: string,
+	threshold = FLOW_JOURNAL_CHECKPOINT_BYTES,
+): Promise<number | undefined> {
 	if ((await stat(path)).size < threshold) return;
 	const values = new Map<string, { seq: number; line: string }>();
 	let header: Record<string, unknown> | undefined;
@@ -69,6 +72,7 @@ export async function checkpointFlowJournal(path: string, threshold = FLOW_JOURN
 			await output.close();
 		}
 		await rename(temporary, path);
+		return (await stat(path)).size;
 	} finally {
 		await unlink(temporary).catch((error) => {
 			if (error.code !== "ENOENT") throw error;

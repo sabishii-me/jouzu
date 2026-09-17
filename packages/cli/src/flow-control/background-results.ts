@@ -4,6 +4,7 @@ import { nativeProjectionDelivered } from "./native-inclusion.js";
 import { type FlowObservation, flowObservationOf } from "./observation.js";
 import type { PiFlowAttachment } from "./pi-attachment.js";
 import { FlowLedgerError, type FlowScope } from "./receipt-ledger.js";
+import { flowMemberIncluded } from "./request-retention.js";
 import { type FlowResultReference, normalizeFlowResults } from "./result-types.js";
 
 export interface BackgroundReadReceipt {
@@ -89,22 +90,7 @@ export class BackgroundResultProducer implements FlowProducer {
 				const member = attempt.members.find(
 					(member) => member.kind === "result" && member.id === value.id && member.revision === value.revision,
 				);
-				return (
-					member &&
-					attempt.requests.some(
-						(request) =>
-							request.handedOff &&
-							request.outcome === "success" &&
-							// Inclusion recorded at model conversion, which is where the contract establishes it.
-							request.inclusion.some(
-								(included) =>
-									included.id === member.id &&
-									included.revision === member.revision &&
-									included.disposition === "included" &&
-									included.contentHash === member.contentHash,
-							),
-					)
-				);
+				return member && flowMemberIncluded(attempt, member);
 			});
 			if (delivered) {
 				this.api.acknowledgeResult(value.id, value.revision);

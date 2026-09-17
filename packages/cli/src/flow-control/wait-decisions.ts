@@ -6,6 +6,7 @@ import { FlowModelInput } from "./model-input.js";
 import { nativeProjectionDelivered, nativeSourceDelivered } from "./native-inclusion.js";
 import type { FlowNativeRequestStore } from "./native-request-store.js";
 import { FlowLedgerError, type FlowLedgerState } from "./receipt-ledger.js";
+import { flowMemberIncluded } from "./request-retention.js";
 import type { FlowSubmissionStore } from "./submission-store.js";
 import type { FlowWaitState } from "./wait-state.js";
 import type { FlowWaitStore } from "./wait-store.js";
@@ -148,19 +149,7 @@ function deliveredComposedDecision(wait: FlowWaitState, ledger: FlowLedgerState)
 				format,
 			).members[0];
 			return (
-				attempt.members.some((member) => isDeepStrictEqual(member, expected)) &&
-				attempt.requests.some(
-					(request) =>
-						request.handedOff &&
-						request.outcome === "success" &&
-						request.inclusion.some(
-							(item) =>
-								item.id === expected.id &&
-								item.revision === expected.revision &&
-								item.disposition === "included" &&
-								item.contentHash === expected.contentHash,
-						),
-				)
+				attempt.members.some((member) => isDeepStrictEqual(member, expected)) && flowMemberIncluded(attempt, expected)
 			);
 		});
 	});
