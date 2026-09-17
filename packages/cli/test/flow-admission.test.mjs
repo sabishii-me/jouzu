@@ -20,6 +20,23 @@ const intent = (id, rank = 4, producer = id, sequence = 0) => ({
 });
 const choose = (state, items, overrides = {}) => chooseFlowIntent(state, items, { ...gates, ...overrides });
 
+test("retirement membership queries only candidates beyond the former gate array limit", () => {
+	const retired = new Set(Array.from({ length: 20000 }, (_, index) => `retired-${index}`));
+	const queried = [];
+	const isWorkRetired = (id) => {
+		queried.push(id);
+		return retired.has(id);
+	};
+	const selected = choose(initialFlowAdmission(), [intent("retired-19999"), intent("fresh", 5)], { isWorkRetired });
+	assert.equal(selected.intent.id, "fresh");
+	assert.deepEqual(queried, ["retired-19999", "fresh"]);
+	assert.throws(
+		() => choose(initialFlowAdmission(), [intent("work")], { isWorkRetired: [] }),
+		/Invalid admission gates/,
+	);
+	assert.equal(choose(initialFlowAdmission(), [intent("retired-19999", 2)], { isWorkRetired }).intent.rank, 2);
+});
+
 test("user input, busy host, and recovery gates withhold automatic selection", () => {
 	const state = initialFlowAdmission();
 	for (const overrides of [{ userPending: true }, { hostReady: false }, { recoveryBlocked: true }])

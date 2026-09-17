@@ -12,7 +12,6 @@ import { type NativeContextDecorator, PiNativeRequests } from "./pi-native-reque
 import { PiFlowSessionRegistry } from "./pi-session-registry.js";
 import { PiWorkTools } from "./pi-work-tools.js";
 import { FlowLedgerError, type FlowScope } from "./receipt-ledger.js";
-import { retiredIdentityHash } from "./retired-identities.js";
 import type { FlowNativeInput, RetainedSubmission } from "./submission-store.js";
 import { captureUserWorkParticipants, consumedUserWork, userWorkId } from "./user-work.js";
 import { finishedUserWork } from "./user-work-retention.js";
@@ -186,7 +185,7 @@ export class PiFlowSessionService {
 						...policy,
 						waitingWorkIds: [...new Set([...policy.waitingWorkIds, ...waits.waitingWorkIds])],
 						inactiveWorkIds: [...new Set([...(policy.inactiveWorkIds ?? []), ...waits.inactiveWorkIds])],
-						retiredWorkHashes: [...new Set([...(policy.retiredWorkHashes ?? []), ...(waits.retiredWorkHashes ?? [])])],
+						isWorkRetired: (id) => !!policy.isWorkRetired?.(id) || waits.isWorkRetired(id),
 						recoveryBlocked:
 							waits.updating ||
 							attachment.waitProducers.updating ||
@@ -355,11 +354,10 @@ export class PiFlowSessionService {
 				const attachment = branch.attachment;
 				if ((await attachment.ledger.snapshot()).activeAttemptId || attachment.nativeRequests.recoveryBlocked)
 					throw new FlowLedgerError("busy", "Submission archival requires settled requests.");
-				const retired = new Set(attachment.waits.gate().retiredWorkHashes ?? []);
+				const { isWorkRetired } = attachment.waits.gate();
 				const selected = (await attachment.submissions.snapshot(false)).filter(
 					(record) =>
-						isNativeUserInput(record.submission) &&
-						retired.has(retiredIdentityHash(userWorkId(branch.scope, record.id, record.revision))),
+						isNativeUserInput(record.submission) && isWorkRetired(userWorkId(branch.scope, record.id, record.revision)),
 				);
 				return attachment.submissions.archiveHandled(
 					selected.map(({ id, revision }) => ({ id, revision })),

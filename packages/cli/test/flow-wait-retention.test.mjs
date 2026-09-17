@@ -143,7 +143,8 @@ test("retiring completed work frees the 257th slot and fences replay after resta
 	await assert.rejects(f.store.registerWork("work-0", "bg", 4), { code: "stale" });
 	assert.deepEqual(await f.store.retire({ ...empty(), work }), { work: 0, executions: 0, waits: 0 });
 	assert.equal((await f.store.authoritySnapshot()).work.length, 1);
-	assert.equal(f.store.gate().retiredWorkHashes.length, 256);
+	assert.ok(work.every((item) => f.store.gate().isWorkRetired(item.id)));
+	assert.equal(f.store.gate().isWorkRetired("new"), false);
 	const intent = {
 		id: "again",
 		revision: "2",
@@ -164,6 +165,20 @@ test("retiring completed work frees the 257th slot and fences replay after resta
 		}),
 		undefined,
 	);
+});
+
+test("retirement gates keep their committed membership across later retirement and reset", async (t) => {
+	const f = await fixture(t);
+	const work = await completed(f.store);
+	const before = f.store.gate();
+	await f.store.retire({ ...empty(), work: [work] });
+	const retired = f.store.gate();
+	assert.equal(before.isWorkRetired(work.id), false);
+	assert.equal(retired.isWorkRetired(work.id), true);
+	assert.equal(Object.hasOwn(retired, "retiredWorkHashes"), false);
+	await f.store.reset();
+	assert.equal(retired.isWorkRetired(work.id), true);
+	assert.equal(f.store.gate().isWorkRetired(work.id), false);
 });
 
 test("retirement atomically frees waits, execution evidence, tool receipts, and stopped work", async (t) => {
@@ -209,7 +224,7 @@ test("live waits, active work, and pending execution evidence cannot be retired"
 	])
 		await assert.rejects(f.store.retire(request), { code: "busy" });
 	assert.deepEqual(await f.store.snapshot(), [d.wait]);
-	assert.equal(f.store.gate().retiredWorkHashes, undefined);
+	assert.equal(f.store.gate().isWorkRetired(d.work.id), false);
 	const cancelled = await f.store.cancelOwned("bg", d.work.revision, d.wait.token, "Cancel gate", 4);
 	await f.store.retire({ ...empty(), waits: [cancelled] });
 	await assert.rejects(f.store.retire({ ...empty(), executions: [d.execution] }), { code: "busy" });
@@ -224,7 +239,7 @@ test("stale or duplicate retirement selections commit nothing", async (t) => {
 	});
 	await assert.rejects(f.store.retire({ ...empty(), work: [work, work] }), { code: "identity" });
 	assert.deepEqual((await f.store.authoritySnapshot()).work, [work]);
-	assert.equal(f.store.gate().retiredWorkHashes, undefined);
+	assert.equal(f.store.gate().isWorkRetired(work.id), false);
 });
 
 test("wait and execution slots can be reused past both live-record limits", async (t) => {
@@ -297,7 +312,8 @@ test("replay-fence capacity holds retirement atomically while existing records r
 		second = await completed(f.store, "second");
 	await assert.rejects(f.store.retire({ ...empty(), work: [first, second] }), { code: "capacity" });
 	assert.equal((await f.store.authoritySnapshot()).work.length, 2);
-	assert.equal(f.store.gate().retiredWorkHashes.length, MAX_RETIRED_FLOW_IDENTITIES - 1);
+	assert.equal(f.store.gate().isWorkRetired("first"), false);
+	assert.equal(f.store.gate().isWorkRetired("second"), false);
 	await f.store.retire({ ...empty(), work: [first] });
 	await f.reopen();
 	await assert.rejects(f.store.retire({ ...empty(), work: [second] }), { code: "capacity" });

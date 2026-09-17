@@ -105,7 +105,7 @@ export class FlowWaitStore {
 	private initialized = false;
 	private waitingWorkIds: string[] = [];
 	private inactiveWorkIds: string[] = [];
-	private retiredWorkHashes: string[] = [];
+	private retiredWorkHashes = new Set<string>();
 	private work: FlowAuthorityWork[] = [];
 	private mutations = 0;
 	private readonly listeners = new Set<{ changed(): void; onError(error: unknown): void }>();
@@ -132,12 +132,18 @@ export class FlowWaitStore {
 	}
 
 	/** Synchronous admission view, published only after a successful durable commit. */
-	gate(): { waitingWorkIds: string[]; inactiveWorkIds: string[]; retiredWorkHashes?: string[]; updating: boolean } {
+	gate(): {
+		waitingWorkIds: string[];
+		inactiveWorkIds: string[];
+		isWorkRetired: (id: string) => boolean;
+		updating: boolean;
+	} {
 		this.ownership.assertActive();
+		const retired = this.retiredWorkHashes;
 		return {
 			waitingWorkIds: [...this.waitingWorkIds],
 			inactiveWorkIds: [...this.inactiveWorkIds],
-			...(this.retiredWorkHashes.length ? { retiredWorkHashes: [...this.retiredWorkHashes] } : {}),
+			isWorkRetired: (id) => retired.has(retiredIdentityHash(id)),
 			updating: !this.initialized || this.mutations > 0,
 		};
 	}
@@ -305,7 +311,7 @@ export class FlowWaitStore {
 					this.validate(state);
 					if (changed || !this.initialized) await mutation.commit([setValue(address, state)], context);
 					this.work = structuredClone(state.authority?.work ?? []);
-					this.retiredWorkHashes = [...(state.retired?.work ?? [])];
+					this.retiredWorkHashes = new Set(state.retired?.work ?? []);
 					this.inactiveWorkIds = this.work
 						.filter((work) => (work.lifecycle?.state ?? "active") !== "active")
 						.map((work) => work.id);

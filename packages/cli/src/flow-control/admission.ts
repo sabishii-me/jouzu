@@ -1,4 +1,3 @@
-import { MAX_RETIRED_FLOW_IDENTITIES, retiredIdentityHash, validRetiredIdentityHash } from "./retired-identities.js";
 export type FlowRank = 2 | 3 | 4 | 5 | 6;
 export interface FlowAdmissionState {
 	version: 1;
@@ -36,7 +35,7 @@ export interface FlowAdmissionGates {
 	automatedPaused?: boolean;
 	/** Explicitly paused, stopped, or completed work cannot request another turn. */
 	inactiveWorkIds?: string[];
-	retiredWorkHashes?: string[];
+	isWorkRetired?: (id: string) => boolean;
 }
 export interface FlowAdmissionChoice {
 	revision: number;
@@ -164,10 +163,7 @@ export function chooseFlowIntent(
 		typeof gates.recoveryBlocked !== "boolean" ||
 		!Array.isArray(gates.waitingWorkIds) ||
 		gates.waitingWorkIds.some((id) => !identity(id)) ||
-		(gates.retiredWorkHashes !== undefined &&
-			(!Array.isArray(gates.retiredWorkHashes) ||
-				gates.retiredWorkHashes.length > MAX_RETIRED_FLOW_IDENTITIES ||
-				gates.retiredWorkHashes.some((hash) => !validRetiredIdentityHash(hash)))) ||
+		(gates.isWorkRetired !== undefined && typeof gates.isWorkRetired !== "function") ||
 		(gates.inactiveWorkIds !== undefined &&
 			(!Array.isArray(gates.inactiveWorkIds) || gates.inactiveWorkIds.some((id) => !identity(id)))) ||
 		(gates.automatedPaused !== undefined && typeof gates.automatedPaused !== "boolean")
@@ -176,7 +172,6 @@ export function chooseFlowIntent(
 	if (!gates.hostReady || gates.userPending || gates.recoveryBlocked || gates.automatedPaused) return undefined;
 	const waits = new Set(gates.waitingWorkIds);
 	const inactive = new Set(gates.inactiveWorkIds);
-	const retired = new Set(gates.retiredWorkHashes);
 	const eligible = intents
 		.filter((intent) => {
 			if (!intent.runnable) return false;
@@ -184,7 +179,7 @@ export function chooseFlowIntent(
 			if (intent.rank === 6) return waits.size === 0;
 			return (
 				!inactive.has(intent.workId ?? "") &&
-				!retired.has(retiredIdentityHash(intent.workId ?? "")) &&
+				!gates.isWorkRetired?.(intent.workId ?? "") &&
 				!waits.has(intent.workId ?? "") &&
 				(waits.size === 0 || intent.independent)
 			);
