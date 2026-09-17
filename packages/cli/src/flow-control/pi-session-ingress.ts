@@ -125,7 +125,9 @@ export class PiSessionFlowIngress implements Ingress {
 					const unchanged = () => (observedTools.length ? { messages, projections: observedTools } : messages);
 					// Queue receipts identify consumed user input; text and delivery lanes do not.
 					if (messages.at(-1)?.role !== "user" || !sources.some((source) => source.queue)) return unchanged();
-					const records = await branch.attachment.submissions.snapshot();
+					const records = await branch.attachment.submissions.forOperations([
+						...new Set(sources.filter((source) => source.queue).map((source) => source.operationId)),
+					]);
 					const user = sources.some((source) => {
 						if (!source.queue || source.index !== messages.length - 1) return false;
 						const record = records.find((record) => record.dispatch?.operationId === source.operationId);
@@ -264,7 +266,7 @@ export class PiSessionFlowIngress implements Ingress {
 	}
 
 	private async refreshUserInput(): Promise<void> {
-		const records = await this.branch().attachment.submissions.snapshot();
+		const records = await this.branch().attachment.submissions.snapshot(false);
 		const liveQueue = this.liveQueueIds();
 		this.retainedUserInput = new Set(
 			records
@@ -384,7 +386,7 @@ export class PiSessionFlowIngress implements Ingress {
 
 	/** Read persisted admission reasons; inspection cannot reconstruct an executable send. */
 	async heldInputs(): Promise<{ id: string; reason: string }[]> {
-		const records = await this.branch().attachment.submissions.snapshot();
+		const records = await this.branch().attachment.submissions.snapshot(false);
 		return records.flatMap((record) =>
 			record.unavailable && record.status !== "cancelled"
 				? [{ id: record.id, reason: UNAVAILABLE_INPUT_REASON }]
