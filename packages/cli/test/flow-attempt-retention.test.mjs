@@ -8,6 +8,7 @@ import { BACKGROUND_CONTEXT as context, MemorySessionRepo, setValue, value } fro
 import { initialFlowAdmission } from "../dist/flow-control/admission.js";
 import { emptyRetiredAttempts, retiredMemberHash, retiredWorkHash } from "../dist/flow-control/attempt-retention.js";
 import { retainedByReceipt } from "../dist/flow-control/controller.js";
+import { openLocalFlowSession } from "../dist/flow-control/local-storage.js";
 import { PiFlowAttachment } from "../dist/flow-control/pi-attachment.js";
 import { createPiLedgerStore } from "../dist/flow-control/pi-ledger-store.js";
 import { FlowReceiptLedger } from "../dist/flow-control/receipt-ledger.js";
@@ -111,6 +112,97 @@ async function settledAttempt(ledger, attemptId, intentId, resultProducer, outco
 	await ledger.settle(attemptId, outcome);
 	return items;
 }
+
+for (const storage of ["memory", "disk"])
+	test(`legacy archived result snapshots backfill trigger indexes once per generation: ${storage}`, async (t) => {
+		const root = await mkdtemp(join(tmpdir(), "flow-trigger-migration-"));
+		const repo = new MemorySessionRepo();
+		let session = storage === "disk" ? await openLocalFlowSession(root) : await repo.create({}, context);
+		t.after(async () => {
+			await session.close(context);
+			await repo.close(context);
+			await rm(root, { recursive: true, force: true });
+		});
+		const ledger = await FlowReceiptLedger.attach(createPiLedgerStore(session), scope);
+		await settledAttempt(ledger, "legacy", "loop", "alpha");
+		const state = await ledger.snapshot();
+		const { attempts, ...header } = state;
+		await session.mutate(
+			(mutation, ctx) =>
+				mutation.commit(
+					[
+						setValue(value("jouzu.flow.receipts", "v1"), {
+							...header,
+							attemptIds: [],
+							retiredAttempts: emptyRetiredAttempts(),
+						}),
+						setValue(value("jouzu.flow.attempt-history", JSON.stringify([0, "legacy"])), attempts[0]),
+						setValue(value("jouzu.flow.attempt-history", JSON.stringify([1, "other"])), {
+							...attempts[0],
+							id: "other",
+							admission: {
+								...attempts[0].admission,
+								choice: {
+									...attempts[0].admission.choice,
+									resultSnapshot: [{ id: "other-result", revision: "r1", producer: "beta" }],
+								},
+							},
+						}),
+					],
+					ctx,
+				),
+			context,
+		);
+		let scans = 0;
+		let rejectMigration = true;
+		const wrapped = {
+			mutate: (operation, ctx) =>
+				session.mutate(
+					(mutation, inner) =>
+						operation(
+							{
+								getValue: (...args) => mutation.getValue(...args),
+								scanValues: (...args) => {
+									scans++;
+									return mutation.scanValues(...args);
+								},
+								commit: (...args) => {
+									if (rejectMigration) throw new Error("migration commit rejected");
+									return mutation.commit(...args);
+								},
+							},
+							inner,
+						),
+					ctx,
+				),
+		};
+		const triggers = attempts[0].admission.choice.resultSnapshot.map(({ id, revision }) =>
+			retiredMemberHash(id, revision),
+		);
+		const other = retiredMemberHash("other-result", "r1");
+		const query = { triggers: [...triggers, other] };
+		await assert.rejects(createPiLedgerStore(wrapped).retired(query), /migration commit rejected/);
+		assert.equal(
+			(await session.getValue(value("jouzu.flow.receipts", "v1"), context)).value.triggerIndexVersion,
+			undefined,
+		);
+		assert.equal(
+			await session.getValue(value("jouzu.flow.retired-triggers", JSON.stringify([0, triggers[0]])), context),
+			undefined,
+		);
+		rejectMigration = false;
+		assert.deepEqual((await createPiLedgerStore(wrapped).retired(query)).triggers, triggers);
+		assert.equal(scans, 2);
+		if (storage === "disk") {
+			await session.close(context);
+			session = await openLocalFlowSession(root);
+		}
+		assert.deepEqual((await createPiLedgerStore(wrapped).retired(query)).triggers, triggers);
+		assert.equal(scans, 2, "a reopened adapter uses the durable migration marker");
+		await (await FlowReceiptLedger.attach(createPiLedgerStore(session), scope)).reset();
+		assert.deepEqual((await createPiLedgerStore(wrapped).retired(query)).triggers, []);
+		assert.equal(scans, 2, "reset does not import another generation's history");
+	});
 
 test("retirement rechecks authorization after asynchronous archive reads", async (t) => {
 	const repo = new MemorySessionRepo();

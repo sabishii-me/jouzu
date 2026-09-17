@@ -7,7 +7,7 @@ import {
 	value,
 	type Write,
 } from "@earendil-works/pi-agent-core";
-import { emptyRetiredAttempts } from "./attempt-retention.js";
+import { emptyRetiredAttempts, retiredMemberHash } from "./attempt-retention.js";
 import {
 	type FlowAttempt,
 	FlowLedgerError,
@@ -17,7 +17,11 @@ import {
 } from "./receipt-ledger.js";
 import { indexRetiredAttempts, projectRetiredAttempts } from "./retired-attempt-index.js";
 
-type Header = Omit<FlowLedgerState, "attempts"> & { attemptIds: string[]; retirementEpoch?: number };
+type Header = Omit<FlowLedgerState, "attempts"> & {
+	attemptIds: string[];
+	retirementEpoch?: number;
+	triggerIndexVersion?: 1;
+};
 const headerAddress = value<Header>("jouzu.flow.receipts", "v1");
 const attemptAddress = (id: string) => value<FlowAttempt>("jouzu.flow.attempt", id);
 const attemptHistoryAddress = (epoch: number, id: string) =>
@@ -34,7 +38,7 @@ async function read(reader: SessionReader): Promise<FlowLedgerState | undefined>
 		new Set(header.attemptIds).size !== header.attemptIds.length
 	)
 		throw new FlowLedgerError("schema", "Invalid flow receipt manifest.");
-	const { attemptIds, retirementEpoch = 0, ...state } = header;
+	const { attemptIds, retirementEpoch = 0, triggerIndexVersion: _triggerIndexVersion, ...state } = header;
 	if (!Number.isSafeInteger(retirementEpoch) || retirementEpoch < 0)
 		throw new FlowLedgerError("schema", "Invalid flow retirement generation.");
 	const attempts = await Promise.all(
@@ -78,6 +82,42 @@ export function createPiLedgerStore(
 		retired: (query) =>
 			session.mutate(async (mutation) => {
 				const header = (await mutation.getValue(headerAddress, BACKGROUND_CONTEXT))?.value;
+				if (header && query.triggers?.length && header.triggerIndexVersion !== 1) {
+					const epoch = header.retirementEpoch ?? 0;
+					const triggers = new Set<string>();
+					for (const stored of await mutation.scanValues(
+						value<FlowAttempt>("jouzu.flow.attempt-history"),
+						BACKGROUND_CONTEXT,
+					)) {
+						let key: unknown;
+						try {
+							key = JSON.parse(stored.address.key);
+						} catch {
+							throw new FlowLedgerError("schema", "Invalid archived attempt identity.");
+						}
+						if (
+							!Array.isArray(key) ||
+							key.length !== 2 ||
+							!Number.isSafeInteger(key[0]) ||
+							key[0] < 0 ||
+							typeof key[1] !== "string"
+						)
+							throw new FlowLedgerError("schema", "Invalid archived attempt identity.");
+						if (key[0] !== epoch) continue;
+						const attempt = stored.value;
+						if (!attempt || attempt.id !== key[1])
+							throw new FlowLedgerError("schema", "Invalid archived attempt identity.");
+						if (attempt.consumed === false) continue;
+						for (const sample of attempt.admission?.choice.resultSnapshot ?? [])
+							triggers.add(retiredMemberHash(sample.id, sample.revision));
+					}
+					const writes = await indexRetiredAttempts(mutation, epoch, {
+						...emptyRetiredAttempts(),
+						triggers: [...triggers],
+					});
+					writes.push(setValue(headerAddress, { ...header, triggerIndexVersion: 1 }));
+					await mutation.commit(writes, BACKGROUND_CONTEXT);
+				}
 				return projectRetiredAttempts(mutation, header?.retirementEpoch ?? 0, query, header?.retiredAttempts);
 			}, BACKGROUND_CONTEXT),
 		transact(update) {
@@ -103,6 +143,10 @@ export function createPiLedgerStore(
 							? { ...emptyRetiredAttempts(), round: state.retiredAttempts.round }
 							: undefined,
 						retirementEpoch,
+						triggerIndexVersion:
+							!priorHeader || retirementEpoch !== (priorHeader.retirementEpoch ?? 0)
+								? 1
+								: priorHeader.triggerIndexVersion,
 						attemptIds: attempts.map((attempt) => attempt.id),
 					}),
 				);
