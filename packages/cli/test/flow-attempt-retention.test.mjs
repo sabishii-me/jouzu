@@ -76,7 +76,7 @@ const intent = (id, overrides = {}) => ({
 });
 
 /** Drive one attempt from selection to a settled successful outcome. */
-async function settledAttempt(ledger, attemptId, intentId, resultProducer) {
+async function settledAttempt(ledger, attemptId, intentId, resultProducer, outcome = "success") {
 	// One member must carry the selected intent's identity for the ledger to accept the choice.
 	const work = { ...member(intentId), id: intentId, revision: "r1" };
 	const items = [work];
@@ -92,7 +92,11 @@ async function settledAttempt(ledger, attemptId, intentId, resultProducer) {
 			? {
 					resultSnapshot: [
 						{ id: items[1].id, revision: "r1", producer: resultProducer },
-						{ id: "pending-beta", revision: "r1", producer: "beta" },
+						{
+							id: `pending-${resultProducer === "beta" ? "alpha" : "beta"}`,
+							revision: "r1",
+							producer: resultProducer === "beta" ? "alpha" : "beta",
+						},
 					],
 				}
 			: {}),
@@ -103,8 +107,8 @@ async function settledAttempt(ledger, attemptId, intentId, resultProducer) {
 	await ledger.claim(attemptId, queue);
 	await ledger.prepare(attemptId, `request-${attemptId}`, items.map(included), false);
 	await ledger.handoff(attemptId, `request-${attemptId}`);
-	await ledger.requestOutcome(attemptId, `request-${attemptId}`, "success");
-	await ledger.settle(attemptId, "success");
+	await ledger.requestOutcome(attemptId, `request-${attemptId}`, outcome);
+	await ledger.settle(attemptId, outcome);
 	return items;
 }
 
@@ -191,6 +195,60 @@ test("the producer round carries past retirement so fairness does not restart", 
 	assert.deepEqual(after.retiredAttempts.round, ["beta"]);
 	assert.deepEqual(orderFlowResultProducers(eligible, after), served, "ordering is unchanged by retirement");
 });
+
+for (const reason of ["protected", "quarantined"])
+	test(`nonprefix retirement preserves producer order across reopen: ${reason}`, async (t) => {
+		const repo = new MemorySessionRepo();
+		const session = await repo.create({}, context);
+		t.after(() => repo.close(context));
+		const durable = createPiLedgerStore(session);
+		let failCommit = false;
+		const store = {
+			...durable,
+			transact: (update) =>
+				durable.transact((state) => {
+					const next = update(state);
+					if (failCommit) throw new Error("injected retirement failure");
+					return next;
+				}),
+		};
+		let ledger = await FlowReceiptLedger.attach(store, scope);
+		const eligible = [
+			intent("beta", { producer: "beta", sequence: 0 }),
+			intent("alpha", { producer: "alpha", sequence: 1 }),
+		];
+		const outcome = reason === "quarantined" ? "failure" : "success";
+		await settledAttempt(ledger, "first", "first-work", "beta", outcome);
+		await settledAttempt(ledger, "second", "second-work", "alpha", outcome);
+		await settledAttempt(ledger, "third", "third-work", "beta");
+		const protectedMembers = new Set(reason === "protected" ? ["first-work", "second-work"] : []);
+		const before = orderFlowResultProducers(eligible, await ledger.snapshot());
+		assert.deepEqual(before, ["alpha", "beta"]);
+		const checkpoint = await ledger.snapshot();
+		failCommit = true;
+		await assert.rejects(ledger.retire(0, protectedMembers), /injected retirement failure/);
+		failCommit = false;
+		assert.deepEqual(await ledger.snapshot(), checkpoint);
+		assert.equal(await ledger.retire(0, protectedMembers), 1);
+		assert.deepEqual(orderFlowResultProducers(eligible, await ledger.snapshot()), before);
+		ledger = await FlowReceiptLedger.attach(store, scope);
+		assert.deepEqual(orderFlowResultProducers(eligible, await ledger.snapshot()), before);
+		const retired = await ledger.retired({
+			settled: ["first-work", "second-work", "third-work"],
+			members: [retiredMemberHash("third-work", "r1")],
+		});
+		assert.deepEqual(retired.settled, [{ id: "third-work", count: 1 }]);
+		assert.deepEqual(retired.members, [retiredMemberHash("third-work", "r1")]);
+		await settledAttempt(ledger, "fourth", "fourth-work", "alpha");
+		const next = orderFlowResultProducers(eligible, await ledger.snapshot());
+		assert.deepEqual(next, ["beta", "alpha"]);
+		assert.equal(await ledger.retire(0, protectedMembers), 1);
+		assert.deepEqual(orderFlowResultProducers(eligible, await ledger.snapshot()), next);
+		if (reason === "protected") {
+			assert.equal(await ledger.retire(0), 2);
+			assert.deepEqual(orderFlowResultProducers(eligible, await ledger.snapshot()), next);
+		}
+	});
 
 test("an active attempt is never retired", async (t) => {
 	const ledger = await fixture(t);

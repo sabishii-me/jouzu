@@ -20,6 +20,7 @@ import {
 	hasFlowHandoff,
 	validateFlowRequestSummary,
 } from "./request-retention.js";
+import { replayFlowResultRound } from "./result-order.js";
 
 export interface FlowScope {
 	sessionId: string;
@@ -77,6 +78,8 @@ export interface FlowAttempt {
 	history: { id: string; revision: string; entryId: string; entryHash?: string }[];
 	requests: FlowRequest[];
 	requestSummary?: FlowRequestSummary;
+	/** Producer sampling already included in the carried round, even if this attempt remains addressable. */
+	resultRoundFolded?: true;
 	outcome?: FlowOutcome;
 	reason?: string;
 }
@@ -259,6 +262,8 @@ export class FlowReceiptLedger {
 				!Number.isSafeInteger(attempt.generation) ||
 				attempt.generation < 1 ||
 				attempt.generation > state.generation ||
+				(attempt.resultRoundFolded !== undefined &&
+					(attempt.resultRoundFolded !== true || !terminal.has(attempt.phase) || !state.retiredAttempts)) ||
 				![
 					"selected",
 					"queued",
@@ -710,7 +715,15 @@ export class FlowReceiptLedger {
 			assertCurrent();
 			if (!retiring.length) return 0;
 			const ids = new Set(retiring.map((attempt) => attempt.id));
-			state.retiredAttempts = foldRetiredAttempts(state.retiredAttempts ?? emptyRetiredAttempts(), state, retiring);
+			let last = state.attempts.length - 1;
+			while (last >= 0 && !ids.has(state.attempts[last].id)) last--;
+			const prefix = state.attempts.slice(0, last + 1);
+			if (prefix.some((attempt) => !terminal.has(attempt.phase)))
+				throw new FlowLedgerError("busy", "Producer round retirement requires a terminal history prefix.");
+			// Preserve chronological sampling even when protected or quarantined attempts remain.
+			const round = replayFlowResultRound({ ...state, attempts: prefix });
+			state.retiredAttempts = foldRetiredAttempts(state.retiredAttempts ?? emptyRetiredAttempts(), retiring, round);
+			for (const attempt of prefix) attempt.resultRoundFolded = true;
 			state.attempts = state.attempts.filter((attempt) => !ids.has(attempt.id));
 			return retiring.length;
 		});

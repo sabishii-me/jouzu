@@ -7,6 +7,7 @@ export function replayFlowResultRound(state: FlowLedgerState): string[] {
 	// Seed from the round carried past retirement so pruning cannot restart a producer's turn.
 	let round: string[] = [...(state.retiredAttempts?.round ?? [])];
 	for (const attempt of state.attempts) {
+		if (attempt.resultRoundFolded) continue;
 		const snapshot = attempt.admission?.choice.resultSnapshot;
 		if (!snapshot || attempt.consumed === false) continue;
 		const producers = new Set(snapshot.flatMap((item) => (item.producer ? [item.producer] : [])));

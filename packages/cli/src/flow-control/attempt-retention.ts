@@ -1,6 +1,5 @@
 import type { FlowAttempt, FlowLedgerState } from "./receipt-ledger.js";
 import { flowMemberIncluded } from "./request-retention.js";
-import { replayFlowResultRound } from "./result-order.js";
 import { MAX_RETIRED_FLOW_IDENTITIES, retiredIdentityHash, validRetiredIdentityHash } from "./retired-identities.js";
 
 /**
@@ -98,14 +97,12 @@ export function retirableAttempts(state: FlowLedgerState, keep: number): FlowAtt
 /** Fold retiring attempts into the summary; the caller removes them in the same transaction. */
 export function foldRetiredAttempts(
 	retired: FlowRetiredAttempts,
-	state: FlowLedgerState,
 	retiring: readonly FlowAttempt[],
+	round: string[],
 ): FlowRetiredAttempts {
 	const members = new Set(retired.members);
 	const work = new Set(retired.work);
 	const settled = new Map(retired.settled.map((entry) => [entry.id, entry.count]));
-	// Fairness is replayed over the attempts being retired, seeded by the existing carried round.
-	const round = replayFlowResultRound({ ...state, attempts: [...retiring], retiredAttempts: retired });
 	for (const attempt of retiring) {
 		const selected = attempt.admission?.choice.intent;
 		if (attempt.phase === "cancelled" && attempt.consumed === false) continue;
