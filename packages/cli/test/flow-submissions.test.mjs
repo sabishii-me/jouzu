@@ -793,6 +793,90 @@ test("exact history queries treat a deleted index copy as absent while full insp
 	await assert.rejects(store.retain(submission("fault-first")), { code: "stale" });
 });
 
+test("terminal cancellations retire into indexed history and free admission capacity", async (t) => {
+	const root = await rootFor(t);
+	const owner = FlowOwnership.acquire(root, scope);
+	const repo = new MemorySessionRepo();
+	const session = await repo.create({}, context);
+	afterCleanup(t, async () => {
+		await owner.close(() => session.close(context));
+		await repo.close(context);
+	});
+	let store = await FlowSubmissionStore.attach(session, owner, { maxRecords: 2, maxBytes: 8192 });
+	for (let index = 0; index < 6; index++) {
+		await store.retain(submission(`cancelled-${index}`));
+		assert.equal((await store.cancelPending(`cancelled-${index}`, 1)).kind, "cancelled");
+		assert.equal(await store.archiveCompleted(), 1);
+	}
+	assert.deepEqual(await store.snapshot(false), []);
+	assert.equal((await store.snapshot()).length, 6);
+	const cancelledThird = (await store.snapshot()).find((record) => record.id === "cancelled-3");
+	assert.equal(cancelledThird.dispatch, undefined);
+	assert.deepEqual(await store.forIds(["cancelled-3"]), [cancelledThird]);
+	await assert.rejects(store.retain(submission("cancelled-3")), { code: "stale" });
+	// An admission hold does not keep a cancelled submission in the active window.
+	await store.retain(submission("held-cancel"));
+	assert.equal(await store.recordAdmission("held-cancel", 1, { phase: "submission" }, "held by policy"), true);
+	assert.equal((await store.cancelPending("held-cancel", 1)).kind, "cancelled");
+	assert.equal(await store.archiveCompleted(), 1);
+	// A cancelled dispatch with an unsettled input keeps its evidence active.
+	await store.retain(submission("failed"));
+	await assert.rejects(
+		store.dispatch("failed", 1, "operation-failed", async (observer) => {
+			await observer.observe({ kind: "prompt", args: ["failed"] });
+			await store.cancel("failed", 1);
+			throw new Error("native failed after an effect");
+		}),
+		/native failed after an effect/,
+	);
+	const failed = (await store.snapshot(false))[0];
+	assert.equal(failed.status, "cancelled");
+	assert.equal(failed.dispatch.phase, "failed");
+	assert.equal(await store.archiveCompleted(), 0);
+	await assert.rejects(store.archiveHandled([{ id: "failed", revision: 2 }]), { code: "busy" });
+	// A retained dispatch whose queue input is cancellation-confirmed retires with its receipts.
+	await store.retain(submission("queued"));
+	await store.dispatch("queued", 1, "operation-queued", async (observer) => {
+		await observer.observe({ kind: "followUp", args: ["queued"], queue: { id: "queue-1", revision: 1 } });
+		await store.cancelQueue("operation-queued", { id: "queue-1", revision: 1 });
+		await store.recordQueueClaim("operation-queued", { id: "queue-1", revision: 1 }, false);
+	});
+	assert.equal(await store.archiveCompleted(), 1);
+	const queued = (await store.snapshot()).find((record) => record.id === "queued");
+	assert.deepEqual(queued.dispatch.queueCancellations, [{ id: "queue-1", revision: 1 }]);
+	assert.deepEqual(queued.dispatch.queueClaims, [{ id: "queue-1", revision: 1, consumed: false }]);
+	await assert.rejects(store.retain(submission("queued")), { code: "stale" });
+	// An unconsumed queue claim without its cancellation receipt keeps the record active.
+	await store.retain(submission("queued-held"));
+	await store.dispatch("queued-held", 1, "operation-queued-held", async (observer) => {
+		await observer.observe({ kind: "followUp", args: ["held"], queue: { id: "queue-2", revision: 1 } });
+		await store.recordQueueClaim("operation-queued-held", { id: "queue-2", revision: 1 }, false);
+	});
+	assert.equal(await store.archiveCompleted(), 0);
+	await store.cancelQueue("operation-queued-held", { id: "queue-2", revision: 1 });
+	assert.equal(await store.archiveCompleted(), 1);
+	const queuedHeld = (await store.snapshot()).find((record) => record.id === "queued-held");
+	assert.deepEqual(queuedHeld.dispatch.queueCancellations, [{ id: "queue-2", revision: 1 }]);
+	// A confirmed context cancellation settles its input the same way.
+	await store.retain({
+		...submission("context"),
+		api: "sendCustomMessage",
+		args: [[{ type: "text", text: "context" }], { deliverAs: "nextTurn" }],
+	});
+	await store.dispatch("context", 1, "operation-context", async (observer) => {
+		await observer.observe({ kind: "context", args: ["context"] });
+		await store.cancelContext("operation-context", 0);
+		await store.confirmContextCancellation("operation-context", 0);
+	});
+	assert.equal(await store.archiveCompleted(), 1);
+	store = await FlowSubmissionStore.attach(session, owner, { maxRecords: 2, maxBytes: 8192 });
+	assert.deepEqual(
+		(await store.snapshot(false)).map((record) => record.id),
+		["failed"],
+	);
+	assert.equal((await store.snapshot()).length, 11);
+});
+
 test("indexed submission receipts survive disk reopen and rejected retirement guards", async (t) => {
 	const root = await rootFor(t);
 	let attachment = await PiFlowAttachment.open(root, scope);

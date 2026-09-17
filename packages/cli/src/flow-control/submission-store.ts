@@ -69,7 +69,8 @@ export const MAX_ARCHIVED_SUBMISSION_BYTES = 64 * 1024 * 1024;
 interface ArchivedSubmission {
 	id: string;
 	revision: number;
-	operationId: string;
+	/** Absent only for submissions archived before any dispatch; such entries stay addressable by id and position. */
+	operationId?: string;
 	bytes: number;
 	contentHash: string;
 }
@@ -102,28 +103,57 @@ export interface RetainedSubmission {
 	submission: Submission;
 	dispatch?: FlowSubmissionDispatch;
 }
+/** One observed input is settled when its consumption is claimed or its cancellation is receipt-confirmed. */
+function settledInput(dispatch: FlowSubmissionDispatch, input: FlowNativeInput, inputIndex: number): boolean {
+	if (input.queue) {
+		const claim = (consumed: boolean) =>
+			dispatch.queueClaims?.some(
+				(item) => item.id === input.queue?.id && item.revision === input.queue.revision && item.consumed === consumed,
+			);
+		return (
+			!!claim(true) ||
+			(!!claim(false) &&
+				!!dispatch.queueCancellations?.some(
+					(cancelled) => cancelled.id === input.queue?.id && cancelled.revision === input.queue.revision,
+				))
+		);
+	}
+	const count = Array.isArray(input.args[0]) ? input.args[0].length : 1;
+	if (
+		!Array.from({ length: count }, (_, messageIndex) => messageIndex).some(
+			(messageIndex) =>
+				!dispatch.promptClaims?.some((claim) => claim.inputIndex === inputIndex && claim.messageIndex === messageIndex),
+		)
+	)
+		return true;
+	return (
+		input.kind === "context" &&
+		!!dispatch.contextCancellations?.some((item) => item.inputIndex === inputIndex && item.removed)
+	);
+}
+interface SubmissionSettlement {
+	status: RetainedSubmission["status"];
+	holds?: FlowAdmissionHold[];
+	dispatch?: FlowSubmissionDispatch;
+}
 /** Archival changes the quota, not the retained source or delivery evidence. */
-export function fullyConsumedSubmission(record: RetainedSubmission): boolean {
+export function fullyConsumedSubmission(record: SubmissionSettlement): boolean {
 	const dispatch = record.dispatch;
 	return (
 		record.status === "retained" &&
 		!record.holds?.length &&
 		dispatch?.phase === "returned" &&
 		!!(dispatch.noInput || dispatch.inputs?.length) &&
-		!(dispatch.inputs ?? []).some((input, inputIndex) => {
-			if (input.queue)
-				return !dispatch.queueClaims?.some(
-					(claim) => claim.id === input.queue?.id && claim.revision === input.queue.revision && claim.consumed,
-				);
-			const count = Array.isArray(input.args[0]) ? input.args[0].length : 1;
-			return Array.from({ length: count }, (_, messageIndex) => messageIndex).some(
-				(messageIndex) =>
-					!dispatch.promptClaims?.some(
-						(claim) => claim.inputIndex === inputIndex && claim.messageIndex === messageIndex,
-					),
-			);
-		})
+		!(dispatch.inputs ?? []).some((input, inputIndex) => !settledInput(dispatch, input, inputIndex))
 	);
+}
+/** A terminal cancellation frees admission capacity once every observed input is settled. */
+export function cancellationSettledSubmission(record: SubmissionSettlement): boolean {
+	if (record.status !== "cancelled") return false;
+	const dispatch = record.dispatch;
+	if (!dispatch) return true;
+	if (dispatch.phase === "started") return false;
+	return !(dispatch.inputs ?? []).some((input, inputIndex) => !settledInput(dispatch, input, inputIndex));
 }
 
 type Header = Omit<State, "records"> & { recordIds: string[] };
@@ -621,15 +651,14 @@ export class FlowSubmissionStore {
 				};
 				const staged = new Map<string, IndexedSubmission>();
 				const stage = (entry: IndexedSubmission) => {
-					for (const [kind, key] of [
-						["id", entry.id],
-						["operation", entry.operationId],
-						["position", entry.position],
-					] as const) {
+					const stageKey = (kind: "id" | "operation" | "position", key: string | number) => {
 						const address = historyAddress(entry.generation, kind, key);
 						staged.set(JSON.stringify([kind, key]), entry);
 						writes.push(setValue(address, entry));
-					}
+					};
+					stageKey("id", entry.id);
+					if (entry.operationId !== undefined) stageKey("operation", entry.operationId);
+					stageKey("position", entry.position);
 				};
 				const migrating = !state.history;
 				if (!state.history) {
@@ -658,7 +687,7 @@ export class FlowSubmissionStore {
 					if (
 						entry.generation !== generation ||
 						!identity(entry.id) ||
-						!identity(entry.operationId) ||
+						(entry.operationId !== undefined && !identity(entry.operationId)) ||
 						!Number.isSafeInteger(entry.position) ||
 						entry.position < 0 ||
 						entry.position >= next ||
@@ -679,12 +708,12 @@ export class FlowSubmissionStore {
 					byId: (id) => lookup("id", id),
 					byOperation: (id) => lookup("operation", id),
 					archive: (record) => {
-						if (!record.dispatch || !positions.has(record.id))
+						if (!positions.has(record.id))
 							throw new FlowLedgerError("identity", "Archived submission has no dispatch or order identity.");
 						stage({
 							id: record.id,
 							revision: record.revision,
-							operationId: record.dispatch.operationId,
+							...(record.dispatch ? { operationId: record.dispatch.operationId } : {}),
 							bytes: Buffer.byteLength(JSON.stringify(record)),
 							contentHash: recordHash(record),
 							generation,
@@ -872,9 +901,11 @@ export class FlowSubmissionStore {
 		});
 	}
 
-	/** Free admission capacity after complete consumption, including extension-origin sends. */
+	/** Free admission capacity after settlement, including extension-origin sends. */
 	async archiveCompleted(): Promise<number> {
-		const selected = (await this.snapshot(false)).filter(fullyConsumedSubmission);
+		const selected = (await this.snapshot(false)).filter(
+			(record) => fullyConsumedSubmission(record) || cancellationSettledSubmission(record),
+		);
 		return this.archiveHandled(selected.map(({ id, revision }) => ({ id, revision })));
 	}
 
@@ -903,28 +934,24 @@ export class FlowSubmissionStore {
 					if (prior.get(item.id)?.revision === item.revision) return [];
 					const record = state.records.find((record) => record.id === item.id && record.revision === item.revision);
 					const dispatch = record?.dispatch;
+					const settlement: SubmissionSettlement | undefined = record
+						? {
+								status: record.status,
+								holds: record.holds,
+								dispatch: dispatch
+									? {
+											...dispatch,
+											inputs: dispatch.inputs?.map((entry) => decode(entry.payload) as FlowNativeInput),
+										}
+									: undefined,
+							}
+						: undefined;
 					if (
 						!record ||
-						record.status !== "retained" ||
-						record.holds?.length ||
-						dispatch?.phase !== "returned" ||
-						(!dispatch.noInput && !dispatch.inputs?.length) ||
-						dispatch.inputs?.some((entry, inputIndex) => {
-							const input = decode(entry.payload) as FlowNativeInput;
-							if (input.queue)
-								return !dispatch.queueClaims?.some(
-									(claim) => claim.id === input.queue?.id && claim.revision === input.queue.revision && claim.consumed,
-								);
-							const count = Array.isArray(input.args[0]) ? input.args[0].length : 1;
-							return Array.from({ length: count }, (_, messageIndex) => messageIndex).some(
-								(messageIndex) =>
-									!dispatch.promptClaims?.some(
-										(claim) => claim.inputIndex === inputIndex && claim.messageIndex === messageIndex,
-									),
-							);
-						})
+						!settlement ||
+						(!fullyConsumedSubmission(settlement) && !cancellationSettledSubmission(settlement))
 					)
-						throw new FlowLedgerError("busy", "Only fully consumed, returned submissions can be archived.");
+						throw new FlowLedgerError("busy", "Only settled submissions can be archived.");
 					return [record];
 				});
 				if (!records.length) return { changed: false, result: 0 };
