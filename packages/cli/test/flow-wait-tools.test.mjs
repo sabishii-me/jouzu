@@ -6,7 +6,9 @@ import { test } from "node:test";
 import {
 	applyInstalledMultiloopWaitSkill,
 	applyMultiloopWaitSkill,
+	lanesPath,
 	skillPath,
+	transformMultiloopArchive,
 } from "../../../scripts/apply-multiloop-wait-skill.mjs";
 import { assistant, createFlowSession, deferred } from "../../../scripts/fixtures/pi-flow-session.mjs";
 import { PiFlowAttachment } from "../dist/flow-control/pi-attachment.js";
@@ -288,6 +290,39 @@ test("multiloop wait skill patch is pinned, idempotent, and rejects changed sour
 	await writeFile(join(directory, skillPath), `${content}\nchanged`);
 	await assert.rejects(applyMultiloopWaitSkill(directory), /hash differs/);
 	assert.equal(await readFile(join(directory, skillPath), "utf8"), `${content}\nchanged`);
+});
+
+test("multiloop archive patch verifies original and installed lanes before writing", async (t) => {
+	const root = resolve(import.meta.dirname, "../../..");
+	const installed = join(root, "packages/cli/node_modules/pi-multiloop");
+	const directory = await mkdtemp(join(tmpdir(), "jouzu-archive-patch-"));
+	t.after(() => rm(directory, { recursive: true, force: true }));
+	for (const path of [
+		"package.json",
+		skillPath,
+		lanesPath,
+		"extensions/pi-multiloop/index.ts",
+		"extensions/pi-multiloop/jouzu-flow.ts",
+	]) {
+		await mkdir(join(directory, path, ".."), { recursive: true });
+		await writeFile(join(directory, path), await readFile(join(installed, path)));
+	}
+	const patched = await readFile(join(directory, lanesPath), "utf8");
+	const original = patched.replace(
+		"  mkdirSync(base, { recursive: true });\n  renameSync(src, dest);",
+		"  mkdirSync(dest, { recursive: true });\n  renameSync(src, dest);",
+	);
+	assert.notEqual(original, patched);
+	assert.equal(transformMultiloopArchive(original), patched);
+	assert.throws(() => transformMultiloopArchive(patched), /anchor differs/);
+	await writeFile(join(directory, lanesPath), original);
+	await assert.rejects(applyMultiloopWaitSkill(directory, true), /lanes source hash differs/);
+	assert.equal(await applyMultiloopWaitSkill(directory), 1);
+	assert.equal(await applyMultiloopWaitSkill(directory), 0);
+	assert.equal(await readFile(join(directory, lanesPath), "utf8"), patched);
+	await writeFile(join(directory, lanesPath), `${patched}\nchanged`);
+	await assert.rejects(applyMultiloopWaitSkill(directory), /lanes source hash differs/);
+	assert.equal(await readFile(join(directory, lanesPath), "utf8"), `${patched}\nchanged`);
 });
 
 test("a declared policy is accepted, reported per dependency, and bounds its expected check", async (t) => {

@@ -16,6 +16,7 @@
 
 ### Fixed
 
+- Fix archiving multiloops on Windows by creating only the archive parent directory before moving the run.
 - Reconnect tasks and multiloops after conversation-tree navigation, preserving saved tasks while discarding abandoned scheduling state.
 - Reconcile unread child completions after tree navigation. Require successful model-input receipts before complete terminal reads suppress a completion notification.
 - Prepare missing tool results as explicit unknown outcomes before ordinary and automatic model requests and built-in summaries. Preserve saved transcripts and tool side effects; reject ambiguous or mismatched tool results.

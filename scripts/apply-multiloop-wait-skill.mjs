@@ -7,6 +7,12 @@ import { extensionPath, reconnectMultiloopOnTree, transformMultiloopFlow } from 
 const root = resolve(import.meta.dirname, "..");
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 export const skillPath = "skills/multiloop/SKILL.md";
+export const lanesPath = "extensions/pi-multiloop/lanes.ts";
+export function transformMultiloopArchive(source) {
+	const needle = "  mkdirSync(dest, { recursive: true });\n  renameSync(src, dest);";
+	if (source.split(needle).length !== 2) throw new Error("Multiloop archive source anchor differs.");
+	return source.replace(needle, "  mkdirSync(base, { recursive: true });\n  renameSync(src, dest);");
+}
 export function transformMultiloopWaitSkill(source) {
 	const needle = "## Work accounting\n";
 	if (source.split(needle).length !== 2) throw new Error("Multiloop wait skill source anchor differs.");
@@ -48,6 +54,14 @@ export async function applyMultiloopWaitSkill(packageRoot, checkOnly = false) {
 				: reconnectMultiloopOnTree(extension);
 		if (sha(changed) !== lock.extension.after) throw new Error("Multiloop extension transform differs.");
 		writes.push([join(packageRoot, extensionPath), changed]);
+	}
+	const lanes = await readFile(join(packageRoot, lanesPath), "utf8");
+	if (lock.lanes.path !== lanesPath) throw new Error("Multiloop lanes path differs.");
+	if (sha(lanes) !== lock.lanes.after) {
+		if (checkOnly || sha(lanes) !== lock.lanes.before) throw new Error("Multiloop lanes source hash differs.");
+		const changed = transformMultiloopArchive(lanes);
+		if (sha(changed) !== lock.lanes.after) throw new Error("Multiloop archive transform differs.");
+		writes.push([join(packageRoot, lanesPath), changed]);
 	}
 	const runtime = await readFile(join(root, "upstream/multiloop-wait-skill/runtime.ts"), "utf8");
 	if (sha(runtime) !== lock.runtime) throw new Error("Multiloop flow runtime hash differs.");
