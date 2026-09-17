@@ -61,12 +61,12 @@ const successful = (id, operations) => {
 	const record = input(id, operations);
 	return { ...record, ownerId: "owner", outcome: "success", payload: payload(record) };
 };
-async function fixture(t, retiredCount = 0) {
+async function fixture(t, retiredCount = 0, reconciledCount = 0) {
 	const root = await mkdtemp(join(tmpdir(), "jouzu-request-retention-"));
 	let storage;
 	let attachment = await PiFlowAttachment.open(root, scope, async (directory) => {
 		storage = await openLocalFlowSession(directory);
-		if (retiredCount)
+		if (retiredCount || reconciledCount)
 			await storage.mutate(
 				(writer, context) =>
 					writer.commit(
@@ -78,6 +78,10 @@ async function fixture(t, retiredCount = 0) {
 								retired: Array.from({ length: retiredCount }, (_, i) =>
 									retiredIdentityHash("native-request", `old-${i}`),
 								),
+								reconciled: Array.from({ length: reconciledCount }, (_, i) => ({
+									key: retiredIdentityHash("native-source", JSON.stringify([`source-${i}`, 0, 0, null, null])),
+									reason: "compacted",
+								})),
 							}),
 						],
 						context,
@@ -99,7 +103,10 @@ async function fixture(t, retiredCount = 0) {
 		},
 		async reopen() {
 			await attachment.close();
-			attachment = await PiFlowAttachment.open(root, scope);
+			attachment = await PiFlowAttachment.open(root, scope, async (directory) => {
+				storage = await openLocalFlowSession(directory);
+				return storage;
+			});
 		},
 	};
 }
@@ -204,6 +211,7 @@ test("retirement removes old values atomically and keeps request IDs reserved af
 	const f = await fixture(t);
 	await complete(f.store, "first");
 	await complete(f.store, "second");
+	const original = (await f.store.snapshot())[0];
 	assert.equal(await f.store.retireSuperseded(), 1);
 	assert.deepEqual(
 		(await f.store.snapshot()).map((item) => item.id),
@@ -213,8 +221,16 @@ test("retirement removes old values atomically and keeps request IDs reserved af
 		(await f.storage.getValue(value("jouzu.flow.native-request", "first"), BACKGROUND_CONTEXT))?.value,
 		undefined,
 	);
+	assert.equal(
+		(await f.storage.getValue(value("jouzu.flow.native-request-history", "first"), BACKGROUND_CONTEXT))?.value.id,
+		"first",
+	);
 	assert.equal(await f.store.retireSuperseded(), 0);
 	await f.reopen();
+	assert.deepEqual(
+		(await f.storage.getValue(value("jouzu.flow.native-request-history", "first"), BACKGROUND_CONTEXT))?.value,
+		original,
+	);
 	await assert.rejects(f.store.begin(input("first")), { code: "stale" });
 	await complete(f.store, "third");
 	assert.equal(await f.store.retireSuperseded(), 1);
@@ -234,18 +250,190 @@ test("over 1024 repeated continuations retain one successful receipt and replay 
 	assert.equal(await f.store.retireSuperseded(), 1);
 });
 
-test("active requests and exhausted retirement quota preserve all receipts", async (t) => {
+test("legacy retirement at its former quota migrates and continues while active requests stay protected", async (t) => {
 	const f = await fixture(t, MAX_RETIRED_NATIVE_REQUESTS);
 	await complete(f.store, "first");
 	await complete(f.store, "second");
-	const before = await f.store.snapshot();
-	await assert.rejects(f.store.retireSuperseded(), { code: "capacity" });
-	assert.deepEqual(await f.store.snapshot(), before);
+	assert.equal(await f.store.retireSuperseded(), 1);
+	const header = (await f.storage.getValue(value("jouzu.flow.native-requests", "v1"), BACKGROUND_CONTEXT)).value;
+	assert.equal(header.retired, undefined);
+	assert.ok(JSON.stringify(header).length < 512);
+	await assert.rejects(f.store.begin(input("old-0")), { code: "stale" });
 	await f.store.begin(input("active"));
 	await assert.rejects(f.store.retireSuperseded(), { code: "busy" });
 	await f.store.finish("active", "withheld");
 	await f.reopen();
-	assert.equal((await f.store.snapshot()).length, 3);
+	assert.equal((await f.store.snapshot()).length, 2);
+	await assert.rejects(f.store.begin(input("first")), { code: "stale" });
+	await assert.rejects(f.store.begin(input(`old-${MAX_RETIRED_NATIVE_REQUESTS - 1}`)), { code: "stale" });
+});
+
+test("source reconciliation crosses the lifetime quota and admits compacted input after reopen", async (t) => {
+	const f = await fixture(t, 0, MAX_RETIRED_NATIVE_REQUESTS);
+	const source = (operationId) => ({ operationId, prompt: { inputIndex: 0, messageIndex: 0 } });
+	assert.equal(await f.store.reconcileSources([source("added")], "compacted"), 1);
+	assert.equal(await f.store.reconcileSources([source("added")], "reset"), 0);
+	assert.equal(await f.store.sourceReconciled(source("source-0")), true);
+	assert.equal(await f.store.sourceReconciled(source("missing")), false);
+	const header = (await f.storage.getValue(value("jouzu.flow.native-requests", "v1"), BACKGROUND_CONTEXT)).value;
+	assert.equal(header.reconciled, undefined);
+	assert.ok(JSON.stringify(header).length < 512);
+	await f.reopen();
+	assert.equal(await f.store.sourceReconciled(source("added")), true);
+	assert.equal((await f.store.reconciledSources()).size, MAX_RETIRED_NATIVE_REQUESTS + 1);
+	await f.store.begin(input("after", ["fresh"]), true, [source("fresh"), source("added"), source("source-0")]);
+	await f.store.finish("after", "withheld");
+});
+
+test("failed native retirement commits preserve active receipts and publish no archive", async (t) => {
+	const f = await fixture(t);
+	await complete(f.store, "first");
+	await complete(f.store, "second");
+	const before = await f.store.snapshot();
+	const mutate = f.storage.mutate.bind(f.storage);
+	f.storage.mutate = (update, context) =>
+		mutate(
+			(mutation, ctx) =>
+				update(
+					new Proxy(mutation, {
+						get(target, key) {
+							if (key === "commit")
+								return () => {
+									throw new Error("injected native commit failure");
+								};
+							const field = Reflect.get(target, key);
+							return typeof field === "function" ? field.bind(target) : field;
+						},
+					}),
+					ctx,
+				),
+			context,
+		);
+	await assert.rejects(f.store.retireSuperseded(), /injected native commit failure/);
+	f.storage.mutate = mutate;
+	assert.deepEqual(await f.store.snapshot(), before);
+	assert.equal(
+		await f.storage.getValue(value("jouzu.flow.native-request-history", "first"), BACKGROUND_CONTEXT),
+		undefined,
+	);
+	assert.equal(
+		await f.storage.getValue(
+			value("jouzu.flow.native-request-retired", retiredIdentityHash("native-request", "first")),
+			BACKGROUND_CONTEXT,
+		),
+		undefined,
+	);
+	assert.equal(await f.store.retireSuperseded(), 1);
+	await f.reopen();
+	await assert.rejects(f.store.begin(input("first")), { code: "stale" });
+});
+
+test("failed legacy native migration preserves both arrays and retries after reopen", async (t) => {
+	const f = await fixture(t);
+	const source = { operationId: "compacted", prompt: { inputIndex: 0, messageIndex: 0 } };
+	const requestKey = retiredIdentityHash("native-request", "old");
+	const sourceKey = retiredIdentityHash("native-source", JSON.stringify(["compacted", 0, 0, null, null]));
+	const headerAddress = value("jouzu.flow.native-requests", "v1");
+	const legacy = {
+		version: 1,
+		scope,
+		ids: [],
+		retired: [requestKey],
+		reconciled: [{ key: sourceKey, reason: "compacted" }],
+	};
+	await f.storage.mutate(
+		(writer, context) => writer.commit([setValue(headerAddress, legacy)], context),
+		BACKGROUND_CONTEXT,
+	);
+	const mutate = f.storage.mutate.bind(f.storage);
+	f.storage.mutate = (update, context) =>
+		mutate(
+			(mutation, ctx) =>
+				update(
+					new Proxy(mutation, {
+						get(target, key) {
+							if (key === "commit")
+								return () => {
+									throw new Error("injected migration failure");
+								};
+							const field = Reflect.get(target, key);
+							return typeof field === "function" ? field.bind(target) : field;
+						},
+					}),
+					ctx,
+				),
+			context,
+		);
+	await assert.rejects(f.store.snapshot(), /injected migration failure/);
+	f.storage.mutate = mutate;
+	assert.deepEqual((await f.storage.getValue(headerAddress, BACKGROUND_CONTEXT)).value, legacy);
+	assert.equal(
+		await f.storage.getValue(value("jouzu.flow.native-request-retired", requestKey), BACKGROUND_CONTEXT),
+		undefined,
+	);
+	assert.equal(
+		await f.storage.getValue(value("jouzu.flow.native-source-reconciled", sourceKey), BACKGROUND_CONTEXT),
+		undefined,
+	);
+	await f.reopen();
+	await assert.rejects(f.store.begin(input("old")), { code: "stale" });
+	assert.equal(await f.store.sourceReconciled(source), true);
+	const header = (await f.storage.getValue(headerAddress, BACKGROUND_CONTEXT)).value;
+	assert.equal(header.retired, undefined);
+	assert.equal(header.reconciled, undefined);
+});
+
+test("native admission and source checks query exact history without scans or rewrites", async (t) => {
+	const f = await fixture(t, 8, 8);
+	const source = { operationId: "source-0", prompt: { inputIndex: 0, messageIndex: 0 } };
+	const fresh = { operationId: "fresh", prompt: { inputIndex: 0, messageIndex: 0 } };
+	const seen = new Set();
+	const mutate = f.storage.mutate.bind(f.storage);
+	f.storage.mutate = (update, context) =>
+		mutate(
+			(mutation, ctx) =>
+				update(
+					new Proxy(mutation, {
+						get(target, key) {
+							if (key === "scanValues")
+								return () => {
+									throw new Error("unexpected history scan");
+								};
+							if (key === "getValue")
+								return (address, context) => {
+									if (address.namespace === "jouzu.flow.native-source-reconciled") seen.add(address.key);
+									return target.getValue(address, context);
+								};
+							if (key === "commit")
+								return (writes, context) => {
+									assert.ok(
+										writes.every(
+											(write) =>
+												!["jouzu.flow.native-source-reconciled", "jouzu.flow.native-request-retired"].includes(
+													write.namespace,
+												),
+										),
+										"read-only history queries must not rewrite indexes",
+									);
+									return target.commit(writes, context);
+								};
+							const field = Reflect.get(target, key);
+							return typeof field === "function" ? field.bind(target) : field;
+						},
+					}),
+					ctx,
+				),
+			context,
+		);
+	assert.equal(await f.store.sourceReconciled(source), true);
+	await f.store.begin(input("fresh-request", ["fresh"]), true, [fresh, source]);
+	await f.store.finish("fresh-request", "withheld");
+	assert.deepEqual(
+		[...seen].sort(),
+		["source-0", "fresh"]
+			.map((operationId) => retiredIdentityHash("native-source", JSON.stringify([operationId, 0, 0, null, null])))
+			.sort(),
+	);
 });
 
 test("settled failures are retired by age like successes", async (t) => {
@@ -286,6 +474,15 @@ test("a failure that a retry is built on is kept with its partner", async (t) =>
 		remaining.some((record) => record.id === "held"),
 		"a request awaiting its authorized retry is never retired",
 	);
+	const retry = input("linked-retry", ["held-op"]);
+	await f.store.begin(retry, true, [{ operationId: "held-op", prompt: { inputIndex: 0, messageIndex: 0 } }]);
+	await f.store.handoff(retry.id, payload(retry));
+	await f.store.finish(retry.id, "success");
+	await f.store.retireHistory(1);
+	await f.reopen();
+	const linked = await f.store.snapshot();
+	assert.equal(linked.find((record) => record.id === "held").retryAuthorization.requestId, retry.id);
+	assert.equal(linked.find((record) => record.id === retry.id).retryOf, "held");
 });
 
 test("required content is judged at model conversion, not at the wire", async (t) => {

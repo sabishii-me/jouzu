@@ -100,6 +100,12 @@ const sourceIdentity = (source: NativeSourceClaim) => retiredIdentityHash("nativ
 const requestIdentity = (id: string) => retiredIdentityHash("native-request", id);
 const headerAddress = value<Header>("jouzu.flow.native-requests", "v1");
 const address = (id: string) => value<NativeRequest>("jouzu.flow.native-request", id);
+const historyAddress = (id: string) => value<NativeRequest>("jouzu.flow.native-request-history", id);
+const retiredAddress = (key: string) => value<true>("jouzu.flow.native-request-retired", key);
+const reconciledAddress = (key?: string) =>
+	key === undefined
+		? value<SourceReconciliation>("jouzu.flow.native-source-reconciled")
+		: value<SourceReconciliation>("jouzu.flow.native-source-reconciled", key);
 export const nativeSourceKey = (source: NativeSourceClaim) =>
 	JSON.stringify([
 		source.operationId,
@@ -402,6 +408,7 @@ export class FlowNativeRequestStore {
 	}
 	private transact<T>(
 		update: (records: NativeRequest[], retired: string[], reconciled: SourceReconciliation[]) => T,
+		query: { requests?: string[]; sources?: string[]; allSources?: boolean } = {},
 	): Promise<T> {
 		return this.ownership.run(() =>
 			this.session.mutate(async (mutation, context) => {
@@ -433,6 +440,43 @@ export class FlowNativeRequestStore {
 					header.ids.some((id) => retiredIds.has(requestIdentity(id)))
 				)
 					throw new FlowLedgerError("schema", "Invalid native request manifest.");
+				const indexedRetired = new Set<string>();
+				for (const id of new Set([...header.ids, ...(query.requests ?? [])])) {
+					const key = requestIdentity(id);
+					const stored = await mutation.getValue(retiredAddress(key), context);
+					if (!stored) continue;
+					if (stored.value !== true) throw new FlowLedgerError("schema", "Invalid retired native request identity.");
+					indexedRetired.add(key);
+					if (!retiredIds.has(key)) {
+						retired.push(key);
+						retiredIds.add(key);
+					}
+				}
+				if (header.ids.some((id) => retiredIds.has(requestIdentity(id))))
+					throw new FlowLedgerError("identity", "Retired native request is still active.");
+				const indexedSources = new Set<string>();
+				const sourceKeys = new Set(reconciled.map((item) => item.key));
+				const storedSources = query.allSources
+					? await mutation.scanValues(reconciledAddress(), context)
+					: await Promise.all(
+							[...new Set(query.sources ?? [])].map((key) => mutation.getValue(reconciledAddress(key), context)),
+						);
+				for (const stored of storedSources) {
+					if (!stored) continue;
+					const item = stored.value;
+					if (
+						!item ||
+						item.key !== stored.address.key ||
+						!hash(item.key) ||
+						!["compacted", "reset"].includes(item.reason)
+					)
+						throw new FlowLedgerError("schema", "Invalid native source reconciliation.");
+					indexedSources.add(item.key);
+					if (!sourceKeys.has(item.key)) {
+						reconciled.push(item);
+						sourceKeys.add(item.key);
+					}
+				}
 				const records = await Promise.all(
 					header.ids.map(async (id) => {
 						const item = (await mutation.getValue(address(id), context))?.value;
@@ -446,13 +490,21 @@ export class FlowNativeRequestStore {
 				const result = update(records, retired, reconciled);
 				this.validate(records);
 				const changed = records.filter((record) => previous.get(record.id) !== JSON.stringify(record));
-				const removed = [...previous.keys()].filter((id) => !records.some((record) => record.id === id));
+				const removed = [...previous.entries()].filter(([id]) => !records.some((record) => record.id === id));
+				const retirementWrites = retired
+					.filter((key) => !indexedRetired.has(key))
+					.map((key) => setValue(retiredAddress(key), true));
+				const reconciliationWrites = reconciled
+					.filter((item) => !indexedSources.has(item.key))
+					.map((item) => setValue(reconciledAddress(item.key), item));
 				if (
 					!saved ||
 					changed.length ||
 					removed.length ||
-					retired.length !== (header.retired?.length ?? 0) ||
-					reconciled.length !== (header.reconciled?.length ?? 0)
+					header.retired !== undefined ||
+					header.reconciled !== undefined ||
+					retirementWrites.length ||
+					reconciliationWrites.length
 				)
 					await mutation.commit(
 						[
@@ -460,11 +512,14 @@ export class FlowNativeRequestStore {
 								version: 1,
 								scope: this.scope,
 								ids: records.map((record) => record.id),
-								...(retired.length ? { retired } : {}),
-								...(reconciled.length ? { reconciled } : {}),
 							}),
+							...retirementWrites,
+							...reconciliationWrites,
 							...changed.map((record) => setValue(address(record.id), record)),
-							...removed.map((id) => deleteValue(address(id))),
+							...removed.flatMap(([id, record]) => [
+								setValue(historyAddress(id), JSON.parse(record)),
+								deleteValue(address(id)),
+							]),
 						],
 						context,
 					);
@@ -546,8 +601,6 @@ export class FlowNativeRequestStore {
 			if (this.requiresRecovery(records) || records.some((record) => record.outcome === undefined && !record.reset))
 				throw new FlowLedgerError("busy", "Request history retirement requires settled requests.");
 			const selected = new Set(supersededNativeRequests(records));
-			if (retired.length + selected.size > MAX_RETIRED_NATIVE_REQUESTS)
-				throw new FlowLedgerError("capacity", "Retired request history is full; no receipts were removed.");
 			retired.push(...[...selected].map(requestIdentity));
 			const remaining = records.filter((record) => !selected.has(record.id));
 			records.splice(0, records.length, ...remaining);
@@ -572,8 +625,6 @@ export class FlowNativeRequestStore {
 			const selected = new Set(retirableNativeRequests(records, keep, liveOperations, protectedRequestIds));
 			if (!selected.size) return 0;
 			assertCurrent();
-			if (retired.length + selected.size > MAX_RETIRED_NATIVE_REQUESTS)
-				throw new FlowLedgerError("capacity", "Retired request history is full; no receipts were removed.");
 			retired.push(...[...selected].map(requestIdentity));
 			const remaining = records.filter((record) => !selected.has(record.id));
 			records.splice(0, records.length, ...remaining);
@@ -622,20 +673,26 @@ export class FlowNativeRequestStore {
 		)
 			return Promise.reject(new FlowLedgerError("identity", "Invalid source reconciliation identity."));
 		const keys = claims.map(sourceIdentity);
-		return this.transact((_records, _retired, reconciled) => {
-			const previous = new Set(reconciled.map((item) => item.key));
-			const added = [...new Set(keys)].filter((key) => !previous.has(key));
-			if (reconciled.length + added.length > MAX_RETIRED_NATIVE_REQUESTS)
-				throw new FlowLedgerError("capacity", "Native source reconciliation history is full.");
-			reconciled.push(...added.map((key) => ({ key, reason })));
-			return added.length;
-		});
+		return this.transact(
+			(_records, _retired, reconciled) => {
+				const previous = new Set(reconciled.map((item) => item.key));
+				const added = [...new Set(keys)].filter((key) => !previous.has(key));
+				reconciled.push(...added.map((key) => ({ key, reason })));
+				return added.length;
+			},
+			{ sources: keys },
+		);
 	}
 	reconciledSources(): Promise<ReadonlySet<string>> {
-		return this.transact((_records, _retired, reconciled) => new Set(reconciled.map((item) => item.key)));
+		return this.transact((_records, _retired, reconciled) => new Set(reconciled.map((item) => item.key)), {
+			allSources: true,
+		});
 	}
 	async sourceReconciled(source: NativeSourceClaim): Promise<boolean> {
-		return (await this.reconciledSources()).has(sourceIdentity(source));
+		const key = sourceIdentity(source);
+		return this.transact((_records, _retired, reconciled) => reconciled.some((item) => item.key === key), {
+			sources: [key],
+		});
 	}
 
 	begin(
@@ -668,83 +725,86 @@ export class FlowNativeRequestStore {
 			...(input.projectionCapture !== undefined ? { projectionCapture: structuredClone(input.projectionCapture) } : {}),
 			...(input.waitTokens?.length ? { waitTokens: [...new Set(input.waitTokens)] } : {}),
 		};
-		return this.transact((records, retired, reconciled) => {
-			if (retired.includes(requestIdentity(captured.id)))
-				throw new FlowLedgerError("stale", "Native request identity has been retired.");
-			if (records.some((record) => record.id === captured.id))
-				throw new FlowLedgerError("identity", "Native request ID is already retained.");
-			if (this.requiresRecovery(records))
-				throw new FlowLedgerError("busy", "Native request requires reconciliation before another request.");
-			const cancelled = new Set(nativeCancelledSources(records).map(nativeSourceKey));
-			const received = new Set(
-				records.flatMap((request) =>
-					(request.sourceCapture?.members ?? [])
-						.filter((source) => nativeSourceDelivered(request, source.index))
-						.map(nativeSourceKey),
-				),
-			);
-			if (requireUnreceived) {
-				if (!claims || !captured.sourceCapture)
-					throw new FlowLedgerError("identity", "Required native input has no consumption inventory.");
-				{
-					const capturedKeys = new Set(captured.sourceCapture.members.map(nativeSourceKey));
-					const claimKeys = new Set(claims.map(nativeSourceKey));
+		return this.transact(
+			(records, retired, reconciled) => {
+				if (retired.includes(requestIdentity(captured.id)))
+					throw new FlowLedgerError("stale", "Native request identity has been retired.");
+				if (records.some((record) => record.id === captured.id))
+					throw new FlowLedgerError("identity", "Native request ID is already retained.");
+				if (this.requiresRecovery(records))
+					throw new FlowLedgerError("busy", "Native request requires reconciliation before another request.");
+				const cancelled = new Set(nativeCancelledSources(records).map(nativeSourceKey));
+				const received = new Set(
+					records.flatMap((request) =>
+						(request.sourceCapture?.members ?? [])
+							.filter((source) => nativeSourceDelivered(request, source.index))
+							.map(nativeSourceKey),
+					),
+				);
+				if (requireUnreceived) {
+					if (!claims || !captured.sourceCapture)
+						throw new FlowLedgerError("identity", "Required native input has no consumption inventory.");
+					{
+						const capturedKeys = new Set(captured.sourceCapture.members.map(nativeSourceKey));
+						const claimKeys = new Set(claims.map(nativeSourceKey));
+						if (
+							captured.sourceCapture.members.some((source) => !claimKeys.has(nativeSourceKey(source))) ||
+							claims.some(
+								(claim) =>
+									!reconciled.some((item) => item.key === sourceIdentity(claim)) &&
+									!received.has(nativeSourceKey(claim)) &&
+									!cancelled.has(nativeSourceKey(claim)) &&
+									!capturedKeys.has(nativeSourceKey(claim)),
+							)
+						)
+							throw new FlowLedgerError(
+								"identity",
+								"Consumed native input requires source reconciliation. Run /flow reset, then retry your message.",
+							);
+					}
+				}
+				const requiredSources = requireUnreceived
+					? (captured.sourceCapture?.members
+							.filter((source) => !received.has(nativeSourceKey(source)) && !cancelled.has(nativeSourceKey(source)))
+							.map((source) => source.index) ?? [])
+					: undefined;
+				const retry = records.find(
+					(record) =>
+						nativeHoldPending(record) &&
+						!record.retryAuthorization?.requestId &&
+						record.retryAuthorization?.ownerId === this.ownership.token,
+				);
+				if (retry && !requireUnreceived)
+					throw new FlowLedgerError("identity", "Native retry requires input admission checks.");
+				if (retry) {
+					const capturedKeys = new Set(captured.sourceCapture?.members.map(nativeSourceKey));
 					if (
-						captured.sourceCapture.members.some((source) => !claimKeys.has(nativeSourceKey(source))) ||
-						claims.some(
-							(claim) =>
-								!reconciled.some((item) => item.key === sourceIdentity(claim)) &&
-								!received.has(nativeSourceKey(claim)) &&
-								!cancelled.has(nativeSourceKey(claim)) &&
-								!capturedKeys.has(nativeSourceKey(claim)),
+						retry.sourceCapture?.members.some(
+							(source) =>
+								retry.requiredSources?.includes(source.index) &&
+								!cancelled.has(nativeSourceKey(source)) &&
+								!capturedKeys.has(nativeSourceKey(source)),
 						)
 					)
-						throw new FlowLedgerError(
-							"identity",
-							"Consumed native input requires source reconciliation. Run /flow reset, then retry your message.",
-						);
+						throw new FlowLedgerError("identity", "Native retry is missing held input.");
+					retry.retryAuthorization = { ownerId: this.ownership.token, requestId: captured.id };
 				}
-			}
-			const requiredSources = requireUnreceived
-				? (captured.sourceCapture?.members
-						.filter((source) => !received.has(nativeSourceKey(source)) && !cancelled.has(nativeSourceKey(source)))
-						.map((source) => source.index) ?? [])
-				: undefined;
-			const retry = records.find(
-				(record) =>
-					nativeHoldPending(record) &&
-					!record.retryAuthorization?.requestId &&
-					record.retryAuthorization?.ownerId === this.ownership.token,
-			);
-			if (retry && !requireUnreceived)
-				throw new FlowLedgerError("identity", "Native retry requires input admission checks.");
-			if (retry) {
-				const capturedKeys = new Set(captured.sourceCapture?.members.map(nativeSourceKey));
-				if (
-					retry.sourceCapture?.members.some(
-						(source) =>
-							retry.requiredSources?.includes(source.index) &&
-							!cancelled.has(nativeSourceKey(source)) &&
-							!capturedKeys.has(nativeSourceKey(source)),
-					)
-				)
-					throw new FlowLedgerError("identity", "Native retry is missing held input.");
-				retry.retryAuthorization = { ownerId: this.ownership.token, requestId: captured.id };
-			}
-			records.push({
-				...captured,
-				ownerId: this.ownership.token,
-				...(requiredSources ? { requiredSources } : {}),
-				...(captured.projectionCapture
-					? {
-							requiredProjections: captured.projectionCapture.members
-								.filter((member) => member.message.role === "custom")
-								.map((member) => member.index),
-						}
-					: {}),
-				...(retry ? { retryOf: retry.id } : {}),
-			});
-		});
+				records.push({
+					...captured,
+					ownerId: this.ownership.token,
+					...(requiredSources ? { requiredSources } : {}),
+					...(captured.projectionCapture
+						? {
+								requiredProjections: captured.projectionCapture.members
+									.filter((member) => member.message.role === "custom")
+									.map((member) => member.index),
+							}
+						: {}),
+					...(retry ? { retryOf: retry.id } : {}),
+				});
+			},
+			{ requests: [captured.id], sources: claims?.map(sourceIdentity) },
+		);
 	}
 	private owned(records: NativeRequest[], id: string): NativeRequest {
 		const record = records.find((item) => item.id === id);
