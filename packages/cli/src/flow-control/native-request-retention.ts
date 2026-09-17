@@ -114,7 +114,7 @@ export function retirableNativeRequests(
 			const child = record.retryAuthorization?.requestId ? byId.get(record.retryAuthorization.requestId) : undefined;
 			const parent = record.retryOf ? byId.get(record.retryOf) : undefined;
 			return (
-				record.outcome !== undefined &&
+				(record.outcome !== undefined || record.reset === true) &&
 				!protectedRequestIds.has(record.id) &&
 				nativeCancelledSources([record]).every((source) => reconciledSources.has(nativeSourceKey(source))) &&
 				(record.outcome !== "success" ||

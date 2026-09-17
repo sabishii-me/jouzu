@@ -158,6 +158,53 @@ test("retry-chain retirement preserves unresolved and protected members at every
 	assert.deepEqual(select([parent, middle, incomplete, later]), []);
 	assert.deepEqual(select([parent, middle, { ...tail, outcome: "failure" }, later]), ["parent", "middle", "tail"]);
 	assert.deepEqual(select([parent, middle, later]), [], "a missing retry endpoint cannot split provenance");
+	assert.deepEqual(select([parent, middle, { ...tail, outcome: undefined, reset: true }, later]), [
+		"parent",
+		"middle",
+		"tail",
+	]);
+	assert.deepEqual(select([parent, middle, { ...tail, outcome: undefined, reset: true }, later], ["middle"]), []);
+});
+
+test("reset requests without outcomes retire without inventing a delivery result", async (t) => {
+	const f = await fixture(t);
+	const prepared = input("reset-prepared", ["prepared-source"]);
+	await f.store.begin(prepared);
+	assert.equal(await f.store.reset(), 1);
+	const handedOff = input("reset-handed-off", ["handed-off-source"]);
+	await f.store.begin(handedOff);
+	await f.store.handoff(handedOff.id, payload(handedOff));
+	assert.equal(await f.store.reset(), 1);
+	await complete(f.store, "later", ["later-source"]);
+	const before = await f.store.snapshot();
+	assert.equal(await f.store.retireHistory(1, new Set(["prepared-source", "handed-off-source"])), 0);
+	assert.equal(await f.store.retireHistory(1, new Set(), new Set([prepared.id, handedOff.id])), 0);
+	await assert.rejects(
+		f.store.retireHistory(1, new Set(), new Set(), () => {
+			throw new Error("revoked");
+		}),
+		/revoked/,
+	);
+	assert.equal((await f.store.snapshot()).length, 3);
+	assert.equal(await f.store.retireHistory(1), 2);
+	await f.reopen();
+	assert.deepEqual(
+		(await f.store.snapshot()).map(({ id }) => id),
+		["later"],
+	);
+	for (const request of [prepared, handedOff]) {
+		const archived = (
+			await f.storage.getValue(value("jouzu.flow.native-request-history", request.id), BACKGROUND_CONTEXT)
+		).value;
+		assert.deepEqual(
+			archived,
+			before.find(({ id }) => id === request.id),
+		);
+		assert.equal(archived.reset, true);
+		assert.equal(archived.outcome, undefined);
+		assert.equal(!!archived.payload, request === handedOff);
+		await assert.rejects(f.store.begin(request), { code: "stale" });
+	}
 });
 
 test("retired cancellations survive disk reopen and reject adapter delivery", async (t) => {
