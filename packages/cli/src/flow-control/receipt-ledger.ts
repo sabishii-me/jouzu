@@ -106,7 +106,14 @@ export interface FlowLedgerStore {
 	read(): Promise<FlowLedgerState | undefined>;
 	/** Read active state and exact archived attempts atomically for context exclusion. */
 	readContext?(attemptIds: readonly string[]): Promise<FlowLedgerState | undefined>;
-	transact<T>(update: (state: FlowLedgerState | undefined) => { state: FlowLedgerState; result: T }): Promise<T>;
+	/** Invoke beforeCommit after all asynchronous reads, immediately before committing writes. */
+	transact<T>(
+		update: (state: FlowLedgerState | undefined) => {
+			state: FlowLedgerState;
+			result: T;
+			beforeCommit?: () => void;
+		},
+	): Promise<T>;
 }
 
 export class FlowLedgerError extends Error {
@@ -425,7 +432,7 @@ export class FlowReceiptLedger {
 		});
 	}
 
-	private mutate<T>(update: (state: FlowLedgerState) => T): Promise<T> {
+	private mutate<T>(update: (state: FlowLedgerState) => T, beforeCommit?: () => void): Promise<T> {
 		return this.store.transact((state) => {
 			if (!state) throw new FlowLedgerError("schema", "Flow ledger is missing.");
 			FlowReceiptLedger.validate(state, this.scope, this.limits);
@@ -435,7 +442,7 @@ export class FlowReceiptLedger {
 			if (this.store.archivesRequests) for (const attempt of state.attempts) consolidateFlowRequests(attempt);
 			state.revision++;
 			FlowReceiptLedger.validate(state, this.scope, this.limits, true, !!this.store.retired);
-			return { state, result };
+			return { state, result, beforeCommit };
 		});
 	}
 
@@ -741,7 +748,7 @@ export class FlowReceiptLedger {
 			for (const attempt of prefix) attempt.resultRoundFolded = true;
 			state.attempts = state.attempts.filter((attempt) => !ids.has(attempt.id));
 			return retiring.length;
-		});
+		}, assertCurrent);
 	}
 
 	cancel(id: string, reason: string): Promise<void> {

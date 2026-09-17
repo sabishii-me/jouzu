@@ -112,6 +112,54 @@ async function settledAttempt(ledger, attemptId, intentId, resultProducer, outco
 	return items;
 }
 
+test("retirement rechecks authorization after asynchronous archive reads", async (t) => {
+	const repo = new MemorySessionRepo();
+	const session = await repo.create({}, context);
+	t.after(() => repo.close(context));
+	let revokeOnRead = false;
+	let authorized = true;
+	let checks = 0;
+	const wrapped = {
+		mutate: (operation, ctx) =>
+			session.mutate(
+				(mutation, inner) =>
+					operation(
+						{
+							getValue: async (...args) => {
+								const result = await mutation.getValue(...args);
+								if (revokeOnRead) authorized = false;
+								return result;
+							},
+							commit: (...args) => mutation.commit(...args),
+						},
+						inner,
+					),
+				ctx,
+			),
+	};
+	const ledger = await FlowReceiptLedger.attach(createPiLedgerStore(wrapped), scope);
+	await settledAttempt(ledger, "guarded", "guarded-work", "alpha");
+	const before = await ledger.snapshot();
+	await assert.rejects(
+		ledger.retire(0, new Set(), () => {
+			checks++;
+			if (!authorized) throw new Error("retirement authority revoked");
+			revokeOnRead = true;
+		}),
+		/retirement authority revoked/,
+	);
+	assert.equal(checks, 2, "authorization is checked before selection and immediately before commit");
+	revokeOnRead = false;
+	assert.deepEqual(await ledger.snapshot(), before);
+	const retired = await ledger.retired({
+		members: [retiredMemberHash("guarded-work", "r1")],
+		settled: ["guarded-work"],
+	});
+	assert.deepEqual(retired.members, []);
+	assert.deepEqual(retired.settled, []);
+	assert.equal(await ledger.retire(0), 1, "a fresh retirement succeeds after rollback");
+});
+
 test("retirement removes settled attempts and keeps the newest addressable", async (t) => {
 	const ledger = await fixture(t);
 	for (let index = 0; index < 5; index++) await settledAttempt(ledger, `a${index}`, "loop");

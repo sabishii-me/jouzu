@@ -83,7 +83,7 @@ export function createPiLedgerStore(
 		transact(update) {
 			return session.mutate(async (mutation, context) => {
 				const previous = await read(mutation);
-				const { state, result } = update(structuredClone(previous));
+				const { state, result, beforeCommit } = update(structuredClone(previous));
 				const { attempts, ...header } = state;
 				const priorHeader = (await mutation.getValue(headerAddress, context))?.value;
 				const retirementEpoch =
@@ -137,6 +137,7 @@ export function createPiLedgerStore(
 					writes.push(setValue(attemptHistoryAddress(priorHeader?.retirementEpoch ?? 0, id), attempt));
 					writes.push(deleteValue(attemptAddress(id)));
 				}
+				beforeCommit?.();
 				await mutation.commit(writes, context);
 				return result;
 			}, BACKGROUND_CONTEXT);
