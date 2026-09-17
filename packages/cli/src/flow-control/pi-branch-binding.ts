@@ -3,6 +3,7 @@ import type { CustomEntry, SessionManager } from "@earendil-works/pi-coding-agen
 import { verifyPiHistoryEntry } from "./pi-history-receipts.js";
 import {
 	type FlowBranchPosition,
+	type FlowBranchRecord,
 	type FlowSessionRegistryState,
 	neverNavigated,
 	type PiFlowSessionRegistry,
@@ -84,6 +85,19 @@ async function assertRegistry(registry: PiFlowSessionRegistry, scope: FlowScope,
 	if (current.revision !== revision || current.transition || current.activeBranchId !== scope.branchId)
 		throw new FlowLedgerError("stale", "Branch registry changed during transcript verification.");
 }
+/** The retained branch whose own marker is the deepest one on this transcript path. */
+function reactivationTarget(state: FlowSessionRegistryState, marker: Marker | undefined): FlowBranchRecord | undefined {
+	if (!marker) return undefined;
+	const record = state.branches.find((branch) => branch.id === marker.data.branchId);
+	if (
+		!record ||
+		record.transitionId !== marker.data.transitionId ||
+		!record.position ||
+		record.position.entryId !== marker.id
+	)
+		return undefined;
+	return record;
+}
 
 /** Reconcile an owned registry with the active Pi transcript before attaching a controller. */
 export async function bindPiFlowBranch(registry: PiFlowSessionRegistry, manager: SessionManager): Promise<FlowScope> {
@@ -93,37 +107,67 @@ export async function bindPiFlowBranch(registry: PiFlowSessionRegistry, manager:
 		let marker = latestMarker(manager);
 		const pending = state.transition;
 		if (pending) {
-			if (!marker || marker.data.branchId !== pending.branchId || marker.data.transitionId !== pending.id)
-				throw new FlowLedgerError("transition", "Interrupted navigation has no matching branch marker.");
-			const leafId = manager.getLeafId();
-			const position = await evidence(manager, marker);
-			const scope = await registry.finishNavigation(pending.id, marker.id, position);
-			await assertRegistry(registry, scope, state.revision + 1);
-			assertPosition(manager, state.sessionId, leafId);
-			return scope;
+			if (marker && marker.data.branchId === pending.branchId && marker.data.transitionId === pending.id) {
+				const leafId = manager.getLeafId();
+				const position = await evidence(manager, marker);
+				const scope = await registry.finishNavigation(pending.id, marker.id, position);
+				await assertRegistry(registry, scope, state.revision + 1);
+				assertPosition(manager, state.sessionId, leafId);
+				return scope;
+			}
+			// The fork never recorded its marker, so no work ever attached to it; recover by
+			// discarding the transition and rebinding to the branch that owns this transcript path.
+			const recovered = marker && reactivationTarget(state, marker);
+			if (recovered && marker) {
+				const leafId = manager.getLeafId();
+				const position = await evidence(manager, marker);
+				if (recovered.position?.entryHash !== position.entryHash)
+					throw new FlowLedgerError("identity", "Recovered branch position differs from its marker.");
+				const scope = await registry.reactivateNavigation(pending.id, recovered.id);
+				await assertRegistry(registry, scope, state.revision + 1);
+				assertPosition(manager, state.sessionId, leafId);
+				return scope;
+			}
+			throw new FlowLedgerError("transition", "Interrupted navigation has no matching branch marker.");
 		}
-		const branch = state.branches.at(-1);
+		const branch = state.branches.find((record) => record.id === state.activeBranchId);
 		if (!branch) throw new FlowLedgerError("schema", "Active branch record is missing.");
 		if (!marker && !branch.position && neverNavigated(state) && manager.getLeafId() === branch.enteredAtLeafId)
 			marker = appendMarker(manager, { version: 1, sessionId: state.sessionId, branchId: branch.id });
-		if (!marker || marker.data.branchId !== branch.id || marker.data.transitionId !== branch.transitionId)
+		// A restart reopens the transcript at its newest entry, which can belong to another retained
+		// branch; verified position evidence decides ownership, so attachment follows the transcript.
+		const target = marker && reactivationTarget(state, marker);
+		let active = branch;
+		let revision = state.revision;
+		if (target && target.id !== branch.id) {
+			const rebound = await registry.rebindActiveBranch(target.id);
+			revision++;
+			await assertRegistry(registry, rebound, revision);
+			active = target;
+		} else if (
+			!target &&
+			(!marker || marker.data.branchId !== branch.id || marker.data.transitionId !== branch.transitionId)
+		)
 			throw new FlowLedgerError("identity", "Active Pi branch differs from its flow registry.");
+		if (!marker) throw new FlowLedgerError("identity", "Active Pi branch has no flow marker.");
+		if (active.position && active.position.entryId !== marker.id)
+			throw new FlowLedgerError("identity", "Verified branch position differs from its registry binding.");
 		const leafId = manager.getLeafId();
 		const position = await evidence(manager, marker);
-		if (branch.position) {
+		if (active.position) {
 			if (
-				branch.position.entryId !== position.entryId ||
-				branch.position.entryHash !== position.entryHash ||
-				branch.position.memoryInstanceId !== position.memoryInstanceId
+				active.position.entryId !== position.entryId ||
+				active.position.entryHash !== position.entryHash ||
+				active.position.memoryInstanceId !== position.memoryInstanceId
 			)
 				throw new FlowLedgerError("identity", "Verified branch position differs from its registry binding.");
 		} else {
-			if (!neverNavigated(state) || marker.parentId !== branch.enteredAtLeafId)
+			if (!neverNavigated(state) || marker.parentId !== active.enteredAtLeafId)
 				throw new FlowLedgerError("identity", "Unbound branch marker cannot establish initial ownership.");
 			await registry.bindInitialPosition(state.revision, position);
 		}
-		const scope = { sessionId: state.sessionId, branchId: branch.id };
-		await assertRegistry(registry, scope, state.revision + (branch.position ? 0 : 1));
+		const scope = { sessionId: state.sessionId, branchId: active.id };
+		await assertRegistry(registry, scope, revision + (active.position ? 0 : 1));
 		assertPosition(manager, state.sessionId, leafId);
 		return scope;
 	});
@@ -141,17 +185,31 @@ export async function completePiFlowNavigation(
 		const pending = state.transition;
 		if (!pending || pending.id !== transitionId)
 			throw new FlowLedgerError("stale", "Branch transition changed before binding.");
-		let marker = latestMarker(manager);
-		if (!marker || marker.data.branchId !== pending.branchId || marker.data.transitionId !== pending.id)
-			marker = appendMarker(manager, {
+		const marker = latestMarker(manager);
+		// A leaf owned by another retained branch reactivates it and keeps its durable work; a
+		// rewind within the active branch forks like any unowned position, dropping nothing durable.
+		const target = marker && reactivationTarget(state, marker);
+		if (target && marker && target.id !== state.activeBranchId) {
+			const leafId = manager.getLeafId();
+			const position = await evidence(manager, marker);
+			if (target.position?.entryHash !== position.entryHash)
+				throw new FlowLedgerError("identity", "Reactivated branch position differs from its marker.");
+			const scope = await registry.reactivateNavigation(pending.id, target.id);
+			await assertRegistry(registry, scope, state.revision + 1);
+			assertPosition(manager, state.sessionId, leafId);
+			return scope;
+		}
+		let forkMarker = marker;
+		if (!forkMarker || forkMarker.data.branchId !== pending.branchId || forkMarker.data.transitionId !== pending.id)
+			forkMarker = appendMarker(manager, {
 				version: 1,
 				sessionId: state.sessionId,
 				branchId: pending.branchId,
 				transitionId: pending.id,
 			});
 		const leafId = manager.getLeafId();
-		const position = await evidence(manager, marker);
-		const scope = await registry.finishNavigation(pending.id, marker.id, position);
+		const position = await evidence(manager, forkMarker);
+		const scope = await registry.finishNavigation(pending.id, forkMarker.id, position);
 		await assertRegistry(registry, scope, state.revision + 1);
 		assertPosition(manager, state.sessionId, leafId);
 		return scope;

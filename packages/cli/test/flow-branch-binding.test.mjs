@@ -76,14 +76,16 @@ test("restart reconciles a durable marker written before registry completion", a
 	await bindPiFlowBranch(next, reopened);
 	assert.equal(await readFile(manager.getSessionFile(), "utf8"), bytes);
 });
-test("pending navigation without a marker stays unresolved and writes no transcript", async (t) => {
+test("pending navigation without a marker recovers to the leaf's branch and writes no transcript", async (t) => {
 	const { manager, registry } = await fixture(t);
-	await bindPiFlowBranch(registry, manager);
+	const scope = await bindPiFlowBranch(registry, manager);
 	await registry.beginNavigation((await registry.snapshot()).revision, manager.getLeafId());
 	const bytes = await readFile(manager.getSessionFile(), "utf8");
-	await assert.rejects(bindPiFlowBranch(registry, manager), { code: "transition" });
+	// The fork never recorded a marker, so reconciliation discards the transition and rebinds.
+	assert.deepEqual(await bindPiFlowBranch(registry, manager), scope);
+	assert.equal((await registry.snapshot()).transition, undefined);
 	assert.equal(await readFile(manager.getSessionFile(), "utf8"), bytes);
-	assert.ok((await registry.snapshot()).transition);
+	assert.equal((await registry.currentScope()).branchId, scope.branchId);
 });
 test("an unregistered transcript branch cannot reuse active flow ownership", async (t) => {
 	const { manager, registry } = await fixture(t);
@@ -267,4 +269,74 @@ test("memory copies of durable transcripts cannot downgrade a persistent branch 
 	);
 	await registry.close();
 	await assert.rejects(bindPiFlowBranch(await open(copied), copied), /another transcript lifetime/);
+});
+
+test("navigation onto a retained branch's path reactivates it without a new record", async (t) => {
+	const { manager, registry, open } = await fixture(t);
+	const first = await bindPiFlowBranch(registry, manager);
+	manager.appendMessage({ role: "user", content: "first", timestamp: 1 });
+	const firstEntry = manager.getLeafId();
+	// Resetting to the transcript root leaves no marker on the path, so it forks a new branch.
+	const transition = await registry.beginNavigation((await registry.snapshot()).revision, manager.getLeafId());
+	manager.resetLeaf();
+	const second = await completePiFlowNavigation(registry, manager, transition.id);
+	assert.notEqual(second.branchId, first.branchId);
+	manager.appendMessage({ role: "user", content: "second", timestamp: 2 });
+	const secondEntry = manager.getLeafId();
+	// The first branch's entries still carry its marker, so returning there reactivates it.
+	const back = await registry.beginNavigation((await registry.snapshot()).revision, manager.getLeafId());
+	manager.branch(firstEntry);
+	const reactivated = await completePiFlowNavigation(registry, manager, back.id);
+	assert.deepEqual(reactivated, first);
+	const state = await registry.snapshot();
+	assert.equal(state.activeBranchId, first.branchId);
+	assert.equal(state.branches.length, 2, "reactivation appends no record");
+	assert.equal(state.transition, undefined);
+	// Returning to the second branch's own path reactivates it in turn.
+	const forward = await registry.beginNavigation(state.revision, manager.getLeafId());
+	manager.branch(secondEntry);
+	assert.deepEqual(await completePiFlowNavigation(registry, manager, forward.id), second);
+	// Leave the session on the first branch at a non-tip leaf, then restart: Pi reopens the
+	// transcript at its newest entry, so verified evidence rebinds attachment to its owner.
+	const away = await registry.beginNavigation((await registry.snapshot()).revision, manager.getLeafId());
+	manager.branch(firstEntry);
+	await completePiFlowNavigation(registry, manager, away.id);
+	await registry.close();
+	const reopened = SessionManager.open(manager.getSessionFile());
+	assert.notEqual(reopened.getLeafId(), firstEntry, "a restart reopens the transcript at its newest entry");
+	assert.deepEqual(await bindPiFlowBranch(await open(reopened), reopened), second);
+});
+
+test("navigation onto a retired branch's position forks with a fresh marker", async (t) => {
+	const { manager, registry } = await fixture(t);
+	const first = await bindPiFlowBranch(registry, manager);
+	manager.appendMessage({ role: "user", content: "first", timestamp: 1 });
+	const firstEntry = manager.getLeafId();
+	const transition = await registry.beginNavigation((await registry.snapshot()).revision, manager.getLeafId());
+	manager.resetLeaf();
+	const second = await completePiFlowNavigation(registry, manager, transition.id);
+	const secondEntry = manager.getLeafId();
+	assert.equal(await registry.retireBranchHistory(1), 1, "the active branch bounds the prefix drop");
+	// The retired branch's marker is still the deepest on its abandoned path, but it names a
+	// branch no registry retains, so the navigation forks with a fresh marker instead.
+	const nav = await registry.beginNavigation((await registry.snapshot()).revision, manager.getLeafId());
+	manager.branch(firstEntry);
+	const third = await completePiFlowNavigation(registry, manager, nav.id);
+	const thirdEntry = manager.getLeafId();
+	assert.notEqual(third.branchId, second.branchId);
+	assert.notEqual(third.branchId, first.branchId);
+	const grown = await registry.snapshot();
+	assert.equal(grown.branches.length, 2);
+	assert.equal(grown.branches.at(-1).fromBranchId, second.branchId);
+	assert.deepEqual(grown.retired, { count: 1, through: [first.branchId] });
+	// Returning to another retained branch's path reactivates it; neither move appends a record.
+	const toSecond = await registry.beginNavigation(grown.revision, manager.getLeafId());
+	manager.branch(secondEntry);
+	assert.deepEqual(await completePiFlowNavigation(registry, manager, toSecond.id), second);
+	const toThird = await registry.beginNavigation((await registry.snapshot()).revision, manager.getLeafId());
+	manager.branch(thirdEntry);
+	assert.deepEqual(await completePiFlowNavigation(registry, manager, toThird.id), third);
+	const settled = await registry.snapshot();
+	assert.equal(settled.branches.length, 2);
+	assert.equal(settled.activeBranchId, third.branchId);
 });

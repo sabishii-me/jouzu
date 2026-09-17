@@ -207,8 +207,9 @@ test("missing source history holds session-service automation after reopen", asy
 	assert.equal(next.requests.length, 0);
 });
 
-test("failed navigation stays held on reopen and failed attachment releases its session lease", async (t) => {
+test("failed navigation recovers its branch on reopen and releases the session lease", async (t) => {
 	const { root, session, service } = await fixture(t);
+	const original = service.branch().scope;
 	await session.prompt("first question");
 	const user = session.sessionManager
 		.getBranch()
@@ -219,9 +220,11 @@ test("failed navigation stays held on reopen and failed attachment releases its 
 	await assert.rejects(session.navigateTree(user.id), /fixture handoff failure/);
 	assert.throws(() => service.branch(), { code: "stale" });
 	await service.close();
-	for (let attempt = 0; attempt < 2; attempt++) {
-		await assert.rejects(PiFlowSessionService.open(session, options(root)), { code: "transition" });
-	}
+	// The handoff failed before the leaf moved, so the interrupted transition resolves back
+	// to the branch that owns the transcript instead of holding the session.
+	const reopened = await PiFlowSessionService.open(session, options(root));
+	assert.deepEqual(reopened.branch().scope, original);
+	await reopened.close();
 });
 
 test("session service updates native recovery gates and authorizes one reviewed retry", async (t) => {

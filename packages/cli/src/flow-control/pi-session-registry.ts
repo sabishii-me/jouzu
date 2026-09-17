@@ -265,6 +265,21 @@ export class PiFlowSessionRegistry {
 		});
 	}
 
+	/** Follow the transcript's owning branch when attachment finds the active record elsewhere. */
+	rebindActiveBranch(branchId: string): Promise<FlowScope> {
+		if (!identity(branchId))
+			return Promise.reject(new FlowLedgerError("identity", "Invalid branch rebinding identity."));
+		return this.transact((state) => {
+			if (state.transition) throw new FlowLedgerError("transition", "Branch rebinding requires a settled navigation.");
+			if (!state.branches.some((record) => record.id === branchId))
+				throw new FlowLedgerError("stale", "Branch rebinding target is not retained.");
+			if (state.activeBranchId === branchId)
+				return { result: { sessionId: state.sessionId, branchId }, changed: false };
+			state.activeBranchId = branchId;
+			return { result: { sessionId: state.sessionId, branchId }, changed: true };
+		});
+	}
+
 	/** Persist before detaching the old controller or mutating the host transcript. */
 	beginNavigation(expectedRevision: number, previousLeafId: string | null): Promise<FlowBranchTransition> {
 		if (!leaf(previousLeafId))
