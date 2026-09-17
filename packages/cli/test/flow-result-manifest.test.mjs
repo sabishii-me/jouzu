@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -58,6 +59,9 @@ test("manifest retention freezes membership, is order-independent, and pages exa
 	assert.equal(first.members[0].warnings.length, 1);
 	assert.equal(first.remaining, 2);
 	assert.deepEqual(await attachment.ledger.snapshot(), before);
+	await attachment.results.retain([member("newest")]);
+	assert.equal(await attachment.results.retire(1), 1);
+	await attachment.ledger.reset();
 	await attachment.close();
 	attachment = await PiFlowAttachment.open(root, scope);
 	const rest = await attachment.results.page(reference, { ...pageOptions, cursor: first.next });
@@ -67,6 +71,9 @@ test("manifest retention freezes membership, is order-independent, and pages exa
 	);
 	assert.equal(rest.next, undefined);
 	assert.equal(rest.remaining, 0);
+	await assert.rejects(attachment.results.retain([{ ...member("a", "failure"), title: "changed" }]), {
+		code: "identity",
+	});
 });
 
 test("terminal execution/revision cannot change status, reference, or warnings across manifests", async (t) => {
@@ -105,10 +112,10 @@ test("cursors cannot cross manifests or branches and stale attachments cannot re
 	await assert.rejects(branch.results.page(reference, pageOptions), { code: "identity" });
 });
 
-test("manifest count overflow leaves previous membership retrievable", async (t) => {
+test("manifest count bounds the recent index without losing older membership", async (t) => {
 	const { store } = await memory(t, { maxManifests: 1, maxMembers: 20, maxBytes: 20000 });
 	const reference = await store.retain([member("a")]);
-	await assert.rejects(store.retain([member("b")]), { code: "capacity" });
+	await store.retain([member("b")]);
 	assert.equal((await store.page(reference, pageOptions)).members[0].id, "a");
 });
 
@@ -231,7 +238,7 @@ test("manifest retirement protects referenced and pending results and rejects st
 	assert.equal(await store.retire(1, references, results), 1);
 	for (const reference of [referenced, pending, newest])
 		assert.equal((await store.page(reference, pageOptions)).total, 1);
-	await assert.rejects(store.page(old, pageOptions), { code: "identity" });
+	assert.equal((await store.page(old, pageOptions)).total, 1);
 	assert.equal(await store.retire(1), 2, "released references become eligible for retirement");
 });
 
@@ -239,16 +246,14 @@ test("manifest retirement frees the limit and keeps the newest references readab
 	const { store } = await memory(t, { maxManifests: 6, maxMembers: 32, maxBytes: 512 * 1024 });
 	const references = [];
 	for (let index = 0; index < 6; index++) references.push(await store.retain([member(`r${index}`)]));
-	await assert.rejects(store.retain([member("overflow")]), { code: "capacity" });
-
-	assert.equal(await store.retire(2), 4, "the oldest manifests are retired");
+	assert.equal(await store.retire(2), 4, "the oldest manifests leave the recent index");
 	assert.equal(await store.retire(2), 0, "and retiring again does nothing");
 	for (const reference of references.slice(-2)) {
 		const page = await store.page(reference, pageOptions);
 		assert.equal(page.total, 1, "a kept manifest still pages its exact membership");
 	}
-	for (const reference of references.slice(0, 4))
-		await assert.rejects(store.page(reference, pageOptions), { code: "identity" });
+	for (const reference of references.slice(0, 4)) assert.equal((await store.page(reference, pageOptions)).total, 1);
+	await assert.rejects(store.retain([{ ...member("r0"), status: "failure" }]), { code: "identity" });
 
 	// The freed slots accept new work, which is the point of retiring at all.
 	const later = await store.retain([member("after")]);
@@ -267,9 +272,122 @@ test("retirement rejects an invalid keep size and survives reopen", async (t) =>
 	await attachment.close();
 
 	attachment = await PiFlowAttachment.open(root, scope);
-	await assert.rejects(attachment.results.page(first, pageOptions), { code: "identity" });
+	assert.equal((await attachment.results.page(first, pageOptions)).members[0].id, "first");
 	assert.equal((await attachment.results.page(second, pageOptions)).members[0].id, "second");
-	// A retired manifest's content can be retained again; retirement is not a permanent fence.
+	// Retaining an archived duplicate returns the same immutable reference.
 	assert.equal(await attachment.results.retain([member("first")]), first);
 	assert.equal((await attachment.results.page(first, pageOptions)).members[0].id, "first");
+});
+
+test("equal-size batches stay admissible at the exact byte boundary across retirement counts", async (t) => {
+	const record = { version: 1, scope, members: [member("00")] };
+	const recordBytes = Buffer.byteLength(JSON.stringify(record));
+	const header = { version: 1, scope, manifests: [{ id: "a".repeat(64), bytes: recordBytes }], indexed: true };
+	const { store } = await memory(t, {
+		maxManifests: 1,
+		maxMembers: 20,
+		maxBytes: Buffer.byteLength(JSON.stringify(header)) + recordBytes,
+	});
+	const references = [];
+	for (let i = 0; i < 20; i++) references.push(await store.retain([member(String(i).padStart(2, "0"))]));
+	assert.equal((await store.page(references[0], pageOptions)).members[0].id, "00");
+});
+
+function observedSession(session, state) {
+	return {
+		mutate: (update, context) =>
+			session.mutate(
+				(mutation, ctx) =>
+					update(
+						new Proxy(mutation, {
+							get(target, property) {
+								if (property === "getValue")
+									return (...args) => {
+										state.reads++;
+										return target.getValue(...args);
+									};
+								if (property === "commit")
+									return (...args) => {
+										if (state.fail) throw new Error("injected commit failure");
+										return target.commit(...args);
+									};
+								const field = Reflect.get(target, property);
+								return typeof field === "function" ? field.bind(target) : field;
+							},
+						}),
+						ctx,
+					),
+				context,
+			),
+	};
+}
+
+test("indexed history crosses byte limits with bounded queries and rolls back failed writes", async (t) => {
+	const limits = { maxManifests: 100, maxMembers: 20, maxBytes: 1600 };
+	const { session, ownership } = await memory(t, limits);
+	const observed = { reads: 0, fail: false };
+	const store = await FlowResultManifestStore.attach(observedSession(session, observed), ownership, limits);
+	const references = [];
+	for (let i = 0; i < 40; i++) {
+		observed.reads = 0;
+		references.push(await store.retain([member(`bytes-${i}`)]));
+		assert.ok(observed.reads <= 4, `retaining one member needs bounded reads: ${observed.reads}`);
+	}
+	const header = (await session.getValue(value("jouzu.flow.result-manifests", "v1"), context)).value;
+	assert.ok(header.manifests.length < 40);
+	assert.ok(
+		Buffer.byteLength(JSON.stringify(header)) + header.manifests.reduce((sum, entry) => sum + entry.bytes, 0) <=
+			limits.maxBytes,
+	);
+	observed.reads = 0;
+	assert.equal((await store.page(references[0], pageOptions)).members[0].id, "bytes-0");
+	assert.equal(observed.reads, 2);
+	await assert.rejects(store.retain([{ ...member("bytes-0"), warnings: [] }]), { code: "identity" });
+	observed.fail = true;
+	await assert.rejects(store.retain([member("failed")]), /injected commit failure/);
+	assert.deepEqual((await session.getValue(value("jouzu.flow.result-manifests", "v1"), context)).value, header);
+	observed.fail = false;
+	const changed = { ...member("failed"), status: "failure" };
+	const saved = await store.retain([changed]);
+	assert.deepEqual(
+		(await store.page(saved, pageOptions)).members,
+		[changed],
+		"failed transaction leaves no immutable identity behind",
+	);
+});
+
+test("legacy migration commits metadata indexes atomically and handles a full byte window", async (t) => {
+	const { session, ownership } = await memory(t);
+	const record = { version: 1, scope, members: [member("legacy")] };
+	const id = createHash("sha256").update(JSON.stringify(record)).digest("hex");
+	const header = { version: 1, scope, manifests: [{ id, bytes: Buffer.byteLength(JSON.stringify(record)) }] };
+	const headerKey = value("jouzu.flow.result-manifests", "v1");
+	await session.mutate(
+		(mutation, ctx) =>
+			mutation.commit([setValue(headerKey, header), setValue(value("jouzu.flow.result-manifest", id), record)], ctx),
+		context,
+	);
+	const limits = {
+		maxManifests: 1,
+		maxMembers: 20,
+		maxBytes: Buffer.byteLength(JSON.stringify(header)) + header.manifests[0].bytes,
+	};
+	const observed = { reads: 0, fail: true };
+	await assert.rejects(
+		FlowResultManifestStore.attach(observedSession(session, observed), ownership, limits),
+		/injected commit failure/,
+	);
+	assert.deepEqual((await session.getValue(headerKey, context)).value, header);
+	observed.fail = false;
+	const store = await FlowResultManifestStore.attach(observedSession(session, observed), ownership, limits);
+	assert.equal(
+		(await session.getValue(headerKey, context)).value.manifests.length,
+		0,
+		"migration metadata can evict a full recent index without losing pages",
+	);
+	assert.deepEqual((await store.page(`flow-results:${id}`, pageOptions)).members, record.members);
+	await assert.rejects(store.retain([{ ...member("legacy"), title: "changed" }]), { code: "identity" });
+	observed.reads = 0;
+	await FlowResultManifestStore.attach(observedSession(session, observed), ownership, limits);
+	assert.equal(observed.reads, 1, "reopen does not repeat historical migration");
 });

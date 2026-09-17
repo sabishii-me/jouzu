@@ -88,3 +88,66 @@ test("150 distinct-input turns retire history, preserve live receipts, and remai
 		await reopened.shutdown();
 	}
 });
+
+test("result batches cross the manifest quota with transcript references and reopen intact", async (t) => {
+	const producerExtensions = await installedProducerExtensions();
+	const f = await assembledSession(t, { persist: true, producerExtensions, script: () => ({ text: "ack" }) });
+	let revision = 0;
+	const result = () => ({
+		id: "result",
+		producer: "endurance",
+		execution: `run-${revision}`,
+		revision: String(revision),
+		status: "success",
+		title: `Result ${revision}`,
+		reference: `output:${revision}`,
+		warnings: ["Keep this warning"],
+	});
+	const registration = f.ingress.registerProducer({
+		version: 1,
+		namespace: "endurance",
+		snapshot: async () => [
+			{
+				id: "result",
+				producer: "endurance",
+				revision: String(revision),
+				sequence: revision,
+				rank: 6,
+				independent: true,
+				runnable: true,
+			},
+		],
+		build: () => assert.fail("results use metadata"),
+		describeResult: async () => result(),
+	});
+	t.after(() => registration.dispose());
+	for (revision = 1; revision <= 132; revision++) {
+		await registration.changed();
+		await settle();
+		assert.equal(f.bodies.length, revision, `result batch ${revision} reaches the provider`);
+		if (revision % 8 === 0) await maintain(f);
+	}
+	const references = [...new Set(JSON.stringify(f.session.messages).match(/flow-results:[a-f0-9]{64}/g))];
+	assert.equal(references.length, 132);
+	const options = { limit: 20, maxBytes: 20000 };
+	const first = await f.ingress.branch().attachment.results.page(references[0], options);
+	assert.equal(first.members[0].reference, "output:1");
+	registration.dispose();
+	const history = f.sessionManager.getSessionFile();
+	await f.shutdown("resume", history);
+	const reopened = await assembledSession(t, {
+		root: f.root,
+		persist: true,
+		producerExtensions,
+		sessionManager: SessionManager.open(history),
+	});
+	try {
+		assert.deepEqual(await reopened.ingress.branch().attachment.results.page(references[0], options), first);
+		await reopened.session.prompt("Continue after the result history");
+		assert.equal(reopened.bodies.length, 1);
+		assert.deepEqual(f.errors, []);
+		assert.deepEqual(reopened.errors, []);
+	} finally {
+		await reopened.shutdown();
+	}
+});

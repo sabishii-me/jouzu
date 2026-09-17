@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
 import {
 	BACKGROUND_CONTEXT,
-	deleteValue,
 	type Session,
 	type SessionReader,
 	setValue,
 	value,
+	type Write,
 } from "@earendil-works/pi-agent-core";
 import { type FlowResultReference, normalizeFlowResults } from "./result-types.js";
 
@@ -23,11 +23,8 @@ interface Header {
 	version: 1;
 	scope: FlowScope;
 	manifests: { id: string; bytes: number }[];
-	/**
-	 * Manifests dropped by retirement. Their membership is no longer retrievable, so the reuse check
-	 * below covers retained manifests only: a later identity that contradicts a retired one is not a
-	 * contradiction any reader can still observe.
-	 */
+	/** Recent manifest index; content and member identities remain addressable after eviction. */
+	indexed?: true;
 	retired?: number;
 }
 export interface FlowResultPage {
@@ -40,16 +37,23 @@ export interface FlowResultPage {
 	next?: string;
 }
 export interface FlowResultManifestLimits {
+	/** Maximum entries in the recent index, excluding archived pages. */
 	maxManifests: number;
+	/** Maximum members in one manifest. */
 	maxMembers: number;
+	/** Byte budget for the recent index and its manifest contents. */
 	maxBytes: number;
 }
 const headerAddress = value<Header>("jouzu.flow.result-manifests", "v1");
 const address = (id: string) => value<Manifest>("jouzu.flow.result-manifest", id);
 const hash = (data: unknown) => createHash("sha256").update(JSON.stringify(data)).digest("hex");
 const bytes = (data: unknown) => Buffer.byteLength(JSON.stringify(data));
+// Lifetime accounting has a fixed safe-integer bound but must not reduce admission space as it grows.
+const windowBytes = (header: Header) =>
+	bytes({ ...header, retired: undefined }) + header.manifests.reduce((total, entry) => total + entry.bytes, 0);
 const key = (member: FlowResultReference) =>
 	JSON.stringify([member.producer, member.id, member.execution, member.revision]);
+const memberAddress = (member: FlowResultReference) => value<string>("jouzu.flow.result-member", hash(key(member)));
 const sameScope = (a: FlowScope, b: FlowScope) => a?.sessionId === b.sessionId && a?.branchId === b.branchId;
 const referenceFor = (id: string) => `flow-results:${id}`;
 function referenceId(reference: string): string {
@@ -81,7 +85,25 @@ export class FlowResultManifestStore {
 		await ownership.run(() =>
 			session.mutate(async (mutation, context) => {
 				const header = await store.header(mutation);
-				await mutation.commit([setValue(headerAddress, header)], context);
+				const writes: Write[] = [];
+				if (!header.indexed) {
+					const members = new Map<string, FlowResultReference>();
+					for (const entry of header.manifests) {
+						for (const member of (await store.read(mutation, entry)).members) {
+							const previous = members.get(key(member));
+							if (previous && JSON.stringify(previous) !== JSON.stringify(member))
+								throw new FlowLedgerError("identity", "Terminal result identity was reused with changed metadata.");
+							members.set(key(member), member);
+						}
+					}
+					for (const member of members.values()) {
+						await store.checkMember(mutation, member);
+						writes.push(setValue(memberAddress(member), JSON.stringify(member)));
+					}
+					header.indexed = true;
+				}
+				store.trim(header, true);
+				await mutation.commit([...writes, setValue(headerAddress, header)], context);
 			}, BACKGROUND_CONTEXT),
 		);
 		store.initialized = true;
@@ -93,6 +115,7 @@ export class FlowResultManifestStore {
 		const header: Header = saved ?? { version: 1, scope: this.ownership.scope, manifests: [] };
 		if (
 			header.version !== 1 ||
+			(header.indexed !== undefined && header.indexed !== true) ||
 			!sameScope(header.scope, this.ownership.scope) ||
 			!Array.isArray(header.manifests) ||
 			header.manifests.length > this.limits.maxManifests ||
@@ -101,17 +124,32 @@ export class FlowResultManifestStore {
 			) ||
 			new Set(header.manifests.map((entry) => entry.id)).size !== header.manifests.length ||
 			(header.retired !== undefined && (!Number.isSafeInteger(header.retired) || header.retired < 1)) ||
-			bytes(header) + header.manifests.reduce((total, entry) => total + entry.bytes, 0) > this.limits.maxBytes
+			windowBytes(header) > this.limits.maxBytes
 		)
 			throw new FlowLedgerError("schema", "Invalid result manifest index.");
 		return structuredClone(header);
 	}
-	private async read(reader: SessionReader, entry: Header["manifests"][number]): Promise<Manifest> {
+	private trim(header: Header, allowEmpty = false): void {
+		while (header.manifests.length > this.limits.maxManifests || windowBytes(header) > this.limits.maxBytes) {
+			if (header.manifests.length <= (allowEmpty ? 0 : 1))
+				throw new FlowLedgerError("capacity", "Result manifest retention limit reached.");
+			header.manifests.shift();
+			header.retired = (header.retired ?? 0) + 1;
+		}
+		if (!Number.isSafeInteger(header.retired ?? 0))
+			throw new FlowLedgerError("capacity", "Result manifest retirement count exceeds safe integer range.");
+	}
+	private async checkMember(reader: SessionReader, member: FlowResultReference): Promise<void> {
+		const previous = await reader.getValue(memberAddress(member), BACKGROUND_CONTEXT);
+		if (previous && previous.value !== JSON.stringify(member))
+			throw new FlowLedgerError("identity", "Terminal result identity was reused with changed metadata.");
+	}
+	private async read(reader: SessionReader, entry: { id: string; bytes?: number }): Promise<Manifest> {
 		const record = (await reader.getValue(address(entry.id), BACKGROUND_CONTEXT))?.value;
 		if (
 			record?.version !== 1 ||
 			!sameScope(record.scope, this.ownership.scope) ||
-			bytes(record) !== entry.bytes ||
+			(entry.bytes !== undefined && bytes(record) !== entry.bytes) ||
 			hash(record) !== entry.id
 		)
 			throw new FlowLedgerError("identity", "Result manifest content is missing or changed.");
@@ -130,28 +168,26 @@ export class FlowResultManifestStore {
 		return this.ownership.run(() =>
 			this.session.mutate(async (mutation, context) => {
 				const header = await this.header(mutation);
-				const incoming = new Map(record.members.map((member) => [key(member), JSON.stringify(member)]));
-				for (const entry of header.manifests) {
-					const existing = await this.read(mutation, entry);
-					for (const member of existing.members) {
-						const candidate = incoming.get(key(member));
-						if (candidate !== undefined && candidate !== JSON.stringify(member))
-							throw new FlowLedgerError("identity", "Terminal result identity was reused with changed metadata.");
-					}
+				for (const member of record.members) await this.checkMember(mutation, member);
+				if (await mutation.getValue(address(id), BACKGROUND_CONTEXT)) {
+					await this.read(mutation, { id });
+					return referenceFor(id);
 				}
-				if (header.manifests.some((entry) => entry.id === id)) return referenceFor(id);
 				header.manifests.push({ id, bytes: bytes(record) });
-				if (
-					header.manifests.length > this.limits.maxManifests ||
-					bytes(header) + header.manifests.reduce((total, entry) => total + entry.bytes, 0) > this.limits.maxBytes
-				)
-					throw new FlowLedgerError("capacity", "Result manifest retention limit reached.");
-				await mutation.commit([setValue(address(id), record), setValue(headerAddress, header)], context);
+				this.trim(header);
+				await mutation.commit(
+					[
+						...record.members.map((member) => setValue(memberAddress(member), JSON.stringify(member))),
+						setValue(address(id), record),
+						setValue(headerAddress, header),
+					],
+					context,
+				);
 				return referenceFor(id);
 			}, BACKGROUND_CONTEXT),
 		);
 	}
-	/** Retire unreferenced manifests past the history window; live references take priority over its size. */
+	/** Shrink the recent index while preserving exact pages and immutable metadata in durable storage. */
 	retire(
 		keep = 32,
 		protectedReferences: ReadonlySet<string> = new Set(),
@@ -181,10 +217,9 @@ export class FlowResultManifestStore {
 				const ids = new Set(dropped.map((entry) => entry.id));
 				header.manifests = header.manifests.filter((entry) => !ids.has(entry.id));
 				header.retired = (header.retired ?? 0) + dropped.length;
-				await mutation.commit(
-					[...dropped.map((entry) => deleteValue(address(entry.id))), setValue(headerAddress, header)],
-					context,
-				);
+				if (!Number.isSafeInteger(header.retired))
+					throw new FlowLedgerError("capacity", "Result manifest retirement count exceeds safe integer range.");
+				await mutation.commit([setValue(headerAddress, header)], context);
 				return dropped.length;
 			}, BACKGROUND_CONTEXT),
 		);
@@ -215,8 +250,7 @@ export class FlowResultManifestStore {
 		return this.ownership.run(() =>
 			this.session.mutate(async (mutation) => {
 				const header = await this.header(mutation);
-				const entry = header.manifests.find((item) => item.id === id);
-				if (!entry) throw new FlowLedgerError("identity", "Result manifest is not retained in this session branch.");
+				const entry = header.manifests.find((item) => item.id === id) ?? { id };
 				const manifest = await this.read(mutation, entry);
 				if (offset >= manifest.members.length)
 					throw new FlowLedgerError("identity", "Result page cursor is outside the manifest.");

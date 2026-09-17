@@ -264,7 +264,7 @@ test("a provider call outside compaction is still refused without a request chec
 	assert.equal(f.bodies.length, before, "and the transport is never reached");
 });
 
-test("a result manifest is retired only once its reference leaves the model's context", async (t) => {
+test("result pages survive compaction and recent-index retirement", async (t) => {
 	const f = await assembledSession(t, {
 		producerExtensions: await installedProducerExtensions(),
 		// One recent entry is kept, so compaction has something to drop after a few turns.
@@ -313,20 +313,18 @@ test("a result manifest is retired only once its reference leaves the model's co
 	const first = await orphan("orphan-a");
 	await orphan("orphan-b");
 
-	// Retirement keeps it while the model could still page it with agent_results.
-	await retire();
+	// The referenced manifest stays in the recent index while the orphan leaves it.
+	assert.equal(await retire(), 1);
 	assert.ok(
 		JSON.stringify(f.session.messages).includes(referenced[0]),
 		"the reference is still in context after maintenance",
 	);
 	const page = await f.ingress.branch().attachment.results.page(referenced[0], { limit: 8, maxBytes: 20_000 });
 	assert.ok(page.total > 0, "and the manifest it names is still readable");
-	// An unreferenced manifest went in that same pass, so the keep window is not what saved the other.
-	await assert.rejects(f.ingress.branch().attachment.results.page(first, { limit: 8, maxBytes: 20_000 }), {
-		code: "identity",
-	});
+	// Unreferenced pages remain addressable after leaving the recent index.
+	assert.equal((await f.ingress.branch().attachment.results.page(first, { limit: 8, maxBytes: 20_000 })).total, 1);
 
-	// Compaction drops the message carrying it, and only then may the manifest go.
+	// Compaction can remove the reference from context without deleting its page data.
 	await f.session.prompt("second");
 	await f.session.compact();
 	assert.equal(
@@ -334,23 +332,20 @@ test("a result manifest is retired only once its reference leaves the model's co
 		false,
 		"compaction removed the reference from context",
 	);
-	await retire();
-	await assert.rejects(
-		f.ingress.branch().attachment.results.page(referenced[0], { limit: 8, maxBytes: 20_000 }),
-		{ code: "identity" },
-		"a manifest the model can no longer name is retired",
+	assert.equal(await retire(), 1);
+	assert.deepEqual(
+		await f.ingress.branch().attachment.results.page(referenced[0], { limit: 8, maxBytes: 20_000 }),
+		page,
 	);
 	assert.deepEqual(f.errors, []);
 });
 
-test("a manifest for results still pending with their producer is not retired unread", async (t) => {
+test("pending result pages remain readable during history retirement", async (t) => {
 	const f = await assembledSession(t, { producerExtensions: await installedProducerExtensions() });
 	const synthetic = syntheticProducer();
 	const registration = f.ingress.registerProducer(synthetic.producer);
 	t.after(() => registration.dispose());
-	// The result is pending but not yet deliverable, so no wake has carried its reference into the
-	// model's context. Its manifest exists only in the store, which is exactly the shape whose
-	// retirement would make it unavailable to agent_results before anyone read it.
+	// The result is pending but not yet deliverable; its reference has not entered model context.
 	synthetic.offer([{ id: "intent", revision: "1", rank: 6, runnable: false }]);
 	await registration.changed();
 	const results = f.ingress.branch().attachment.results;
@@ -385,19 +380,13 @@ test("a manifest for results still pending with their producer is not retired un
 			}
 		}
 	};
-	await retire();
+	assert.equal(await retire(), 1, "only the unprotected orphan leaves the recent index");
 	assert.equal(
 		(await results.page(pending, { limit: 8, maxBytes: 20_000 })).total,
 		1,
 		"the unread result keeps its manifest",
 	);
-	await assert.rejects(
-		results.page(first, { limit: 8, maxBytes: 20_000 }),
-		{
-			code: "identity",
-		},
-		"an unreferenced manifest with no pending result was retired in the same pass",
-	);
+	assert.equal((await results.page(first, { limit: 8, maxBytes: 20_000 })).total, 1);
 	assert.deepEqual(f.errors, []);
 });
 
