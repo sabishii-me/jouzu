@@ -31,7 +31,7 @@ export async function retainUserWork(
 	participants: readonly string[] = [],
 ) {
 	participants = captureUserWorkParticipants(participants);
-	const record = (await attachment.submissions.snapshot()).find((item) => item.id === id);
+	const [record] = await attachment.submissions.forIds([id]);
 	if (!record || record.revision !== revision || record.status !== "retained")
 		throw new FlowLedgerError("stale", "User work requires the retained submission revision.");
 	if (!isNativeUserInput(record.submission))

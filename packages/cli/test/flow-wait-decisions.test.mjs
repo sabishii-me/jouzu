@@ -94,7 +94,11 @@ for (const variant of ["success", "failure", "changed", "wrong-operation", "wron
 			},
 		];
 		const producer = createFlowWaitDecisionProducer(store, {
-			submissions: { snapshot: async () => submissions },
+			submissions: {
+				snapshot: async () => submissions,
+				forOperations: async (operations) =>
+					submissions.filter((record) => operations.includes(record.dispatch?.operationId)),
+			},
 			requests: { snapshot: async () => requests },
 		});
 		assert.equal((await producer.snapshot(signal())).length, variant === "success" ? 0 : 1);

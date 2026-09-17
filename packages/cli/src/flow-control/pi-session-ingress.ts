@@ -509,7 +509,7 @@ export class PiSessionFlowIngress implements Ingress {
 	): Promise<boolean> {
 		if (!this.session) throw new FlowLedgerError("stale", "Flow ingress has no host session.");
 		const session = this.session;
-		const records = await branch.attachment.submissions.snapshot();
+		const records = await branch.attachment.submissions.snapshot(false);
 		const state = await branch.attachment.ledger.snapshot();
 		const policy = this.options.policy();
 		const waits = branch.attachment.waits.gate();

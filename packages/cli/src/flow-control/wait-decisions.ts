@@ -61,7 +61,7 @@ function decisionText(wait: FlowWaitState): string {
 interface NativeWaitEvidence {
 	/** Composed decisions are visible only here, so a producer without it can re-offer a delivered one. */
 	ledger?: { snapshot(): Promise<FlowLedgerState> };
-	submissions: Pick<FlowSubmissionStore, "snapshot">;
+	submissions: Pick<FlowSubmissionStore, "snapshot" | "forOperations">;
 	requests: Pick<FlowNativeRequestStore, "snapshot">;
 }
 
@@ -79,7 +79,19 @@ async function deliveredNativeDecisions(
 	);
 	const delivered = new Set<string>();
 	if (!expected.size) return delivered;
-	const [submissions, requests] = await Promise.all([evidence.submissions.snapshot(), evidence.requests.snapshot()]);
+	const requests = await evidence.requests.snapshot();
+	const operations = [
+		...new Set(
+			requests.flatMap((request) =>
+				request.outcome !== "success"
+					? []
+					: (request.sourceCapture?.members ?? [])
+							.filter((source) => source.prompt && nativeSourceDelivered(request, source.index))
+							.map((source) => source.operationId),
+			),
+		),
+	];
+	const submissions = operations.length ? await evidence.submissions.forOperations(operations) : [];
 	const acknowledge = (message: { customType?: unknown; content?: unknown } | undefined) => {
 		if (message?.customType !== "jouzu-wait-context" || typeof message.content !== "string") return;
 		let items: unknown;
