@@ -1,6 +1,6 @@
 import type { FlowAttempt, FlowLedgerState } from "./receipt-ledger.js";
 import { flowMemberIncluded } from "./request-retention.js";
-import { orderFlowResultProducers } from "./result-order.js";
+import { replayFlowResultRound } from "./result-order.js";
 import { MAX_RETIRED_FLOW_IDENTITIES, retiredIdentityHash, validRetiredIdentityHash } from "./retired-identities.js";
 
 /**
@@ -8,6 +8,12 @@ import { MAX_RETIRED_FLOW_IDENTITIES, retiredIdentityHash, validRetiredIdentityH
  * result-producer fairness. Context quarantine still requires full attempts, so attempts with
  * unsuccessful or omitted input remain addressable.
  */
+export interface FlowRetirementQuery {
+	members?: readonly string[];
+	work?: readonly string[];
+	settled?: readonly string[];
+}
+
 export interface FlowRetiredAttempts {
 	version: 1;
 	/** Fences member replay: hash of the member id and revision. */
@@ -99,7 +105,7 @@ export function foldRetiredAttempts(
 	const work = new Set(retired.work);
 	const settled = new Map(retired.settled.map((entry) => [entry.id, entry.count]));
 	// Fairness is replayed over the attempts being retired, seeded by the existing carried round.
-	const round = orderFlowResultProducers([], { ...state, attempts: [...retiring], retiredAttempts: retired });
+	const round = replayFlowResultRound({ ...state, attempts: [...retiring], retiredAttempts: retired });
 	for (const attempt of retiring) {
 		const selected = attempt.admission?.choice.intent;
 		if (attempt.phase === "cancelled" && attempt.consumed === false) continue;

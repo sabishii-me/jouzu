@@ -40,6 +40,8 @@ export class PiFlowAttachment {
 			const store = createPiLedgerStore(session);
 			const ledger = await FlowReceiptLedger.attach(
 				{
+					archivesRequests: store.archivesRequests,
+					retired: (query) => ownership.run(() => store.retired(query)),
 					read: () => ownership.run(() => store.read()),
 					transact: (update) => ownership.run(() => store.transact(update)),
 				},

@@ -323,6 +323,12 @@ export class SessionFlowController {
 					this.held.set(producer.namespace, error instanceof Error ? error.message : "Producer state unavailable.");
 				}
 			}
+			state.retiredAttempts = await this.host.ledger.retired({
+				members: items.map((item) => retiredMemberHash(item.id, item.revision)),
+				work: items.flatMap((item) =>
+					item.workId && item.workRevision ? [retiredWorkHash(item.workId, item.workRevision)] : [],
+				),
+			});
 			if (this.closed || revision !== this.revision) return;
 			const trigger = chooseFlowIntent(
 				admission,

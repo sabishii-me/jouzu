@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 import { BACKGROUND_CONTEXT as context, MemorySessionRepo, setValue, value } from "@earendil-works/pi-agent-core";
 import { initialFlowAdmission } from "../dist/flow-control/admission.js";
-import { emptyRetiredAttempts, retiredMemberHash } from "../dist/flow-control/attempt-retention.js";
+import { emptyRetiredAttempts, retiredMemberHash, retiredWorkHash } from "../dist/flow-control/attempt-retention.js";
 import { retainedByReceipt } from "../dist/flow-control/controller.js";
+import { PiFlowAttachment } from "../dist/flow-control/pi-attachment.js";
 import { createPiLedgerStore } from "../dist/flow-control/pi-ledger-store.js";
 import { FlowReceiptLedger } from "../dist/flow-control/receipt-ledger.js";
 import { orderFlowResultProducers } from "../dist/flow-control/result-order.js";
@@ -33,7 +37,7 @@ async function fixture(t) {
 	return FlowReceiptLedger.attach(createPiLedgerStore(session), scope);
 }
 
-/** A ledger whose replay-fence quota is nearly spent, with room for the state that implies. */
+/** A legacy ledger at the retired-identity budget must migrate under ordinary limits. */
 async function fencedFixture(t, spent) {
 	const repo = new MemorySessionRepo();
 	const session = await repo.create({}, context);
@@ -55,10 +59,7 @@ async function fencedFixture(t, spent) {
 			),
 		context,
 	);
-	return FlowReceiptLedger.attach(createPiLedgerStore(session), scope, {
-		maxAttempts: 1024,
-		maxBytes: 64 * 1024 * 1024,
-	});
+	return FlowReceiptLedger.attach(createPiLedgerStore(session), scope);
 }
 
 const intent = (id, overrides = {}) => ({
@@ -79,6 +80,7 @@ async function settledAttempt(ledger, attemptId, intentId, resultProducer) {
 	// One member must carry the selected intent's identity for the ledger to accept the choice.
 	const work = { ...member(intentId), id: intentId, revision: "r1" };
 	const items = [work];
+	if (resultProducer) items.push(member(`result-${attemptId}`, "result"));
 	// Each selection must quote the current admission revision and advance it.
 	const revision = (await ledger.snapshot()).admission?.revision ?? 0;
 	const choice = {
@@ -86,7 +88,14 @@ async function settledAttempt(ledger, attemptId, intentId, resultProducer) {
 		intent: intent(intentId),
 		coalescedIds: [],
 		next: { ...initialFlowAdmission(), revision: revision + 1 },
-		...(resultProducer ? { resultSnapshot: [{ id: work.id, revision: work.revision, producer: resultProducer }] } : {}),
+		...(resultProducer
+			? {
+					resultSnapshot: [
+						{ id: items[1].id, revision: "r1", producer: resultProducer },
+						{ id: "pending-beta", revision: "r1", producer: "beta" },
+					],
+				}
+			: {}),
 	};
 	await ledger.select(attemptId, items, choice);
 	const queue = { id: `queue-${attemptId}`, revision: 1 };
@@ -129,6 +138,10 @@ test("a retired attempt still fences its members and its cadence work", async (t
 	assert.equal(retainedByReceipt(intent("loop"), before), true);
 	await ledger.retire(0);
 	const after = await ledger.snapshot();
+	after.retiredAttempts = await ledger.retired({
+		members: [retiredMemberHash(work.id, work.revision)],
+		work: [retiredWorkHash("campaign", "1:1")],
+	});
 	assert.equal(after.attempts.length, 0);
 	assert.equal(retainedByReceipt(memberIntent, after), true, "member replay stays fenced after retirement");
 	assert.equal(retainedByReceipt(intent("loop"), after), true, "cadence replay stays fenced after retirement");
@@ -157,6 +170,7 @@ test("iteration numbering continues across retirement", async (t) => {
 	assert.equal(counted(before), 3);
 	await ledger.retire(0);
 	const after = await ledger.snapshot();
+	after.retiredAttempts = await ledger.retired({ settled: ["loop"] });
 	assert.equal(after.attempts.length, 0);
 	assert.equal(counted(after), 3, "the settled count survives pruning");
 	assert.deepEqual(after.retiredAttempts.settled, [{ id: "loop", count: 3 }]);
@@ -166,11 +180,16 @@ test("the producer round carries past retirement so fairness does not restart", 
 	const ledger = await fixture(t);
 	await settledAttempt(ledger, "a0", "loop", "alpha");
 	const before = await ledger.snapshot();
-	const served = orderFlowResultProducers([], before);
+	const eligible = [
+		intent("next-alpha", { rank: 6, producer: "alpha", sequence: 0 }),
+		intent("pending-beta", { rank: 6, producer: "beta", sequence: 1 }),
+	];
+	const served = orderFlowResultProducers(eligible, before);
+	assert.deepEqual(served, ["beta", "alpha"]);
 	await ledger.retire(0);
 	const after = await ledger.snapshot();
-	assert.deepEqual(after.retiredAttempts.round, served, "the carried round matches the replayed round");
-	assert.deepEqual(orderFlowResultProducers([], after), served, "ordering is unchanged by retirement");
+	assert.deepEqual(after.retiredAttempts.round, ["beta"]);
+	assert.deepEqual(orderFlowResultProducers(eligible, after), served, "ordering is unchanged by retirement");
 });
 
 test("an active attempt is never retired", async (t) => {
@@ -208,6 +227,62 @@ test("a successful request with an omitted result retains its context exclusion 
 	assert.equal((await ledger.snapshot()).attempts[0].members[1].id, result.id);
 });
 
+test("indexed retirement survives repeated attachments and reset starts a new replay epoch", async (t) => {
+	const repo = new MemorySessionRepo();
+	const session = await repo.create({}, context);
+	t.after(() => repo.close(context));
+	const store = createPiLedgerStore(session);
+	let ledger = await FlowReceiptLedger.attach(store, scope);
+	await settledAttempt(ledger, "first", "loop");
+	await ledger.retire(0);
+	await assert.rejects(ledger.select("first", [member("different")]), { code: "identity" });
+	for (let i = 0; i < 3; i++) ledger = await FlowReceiptLedger.attach(store, scope);
+	const query = {
+		members: [retiredMemberHash("loop", "r1")],
+		work: [retiredWorkHash("campaign", "1:1")],
+		settled: ["loop"],
+	};
+	let facts = await ledger.retired(query);
+	assert.equal(facts.members.length, 1);
+	assert.equal(facts.work.length, 1);
+	assert.deepEqual(facts.settled, [{ id: "loop", count: 1 }]);
+	assert.ok(await session.getValue(value("jouzu.flow.attempt-history", JSON.stringify([0, "first"])), context));
+	await ledger.reset();
+	facts = await ledger.retired(query);
+	assert.equal(facts.members.length, 0);
+	assert.equal(facts.work.length, 0);
+	assert.equal(facts.settled.length, 0);
+	await settledAttempt(ledger, "second", "loop");
+	await ledger.retire(0);
+	facts = await ledger.retired(query);
+	assert.deepEqual(facts.settled, [{ id: "loop", count: 1 }]);
+});
+
+test("production attachment queries indexed retirement after disk reopen and reset", async (t) => {
+	const root = await mkdtemp(join(tmpdir(), "flow-retired-index-"));
+	let attachment;
+	t.after(async () => {
+		await attachment?.close();
+		await rm(root, { recursive: true, force: true });
+	});
+	attachment = await PiFlowAttachment.open(root, scope);
+	await settledAttempt(attachment.ledger, "first", "loop");
+	await attachment.ledger.retire(0);
+	await attachment.close();
+	attachment = await PiFlowAttachment.open(root, scope);
+	const query = {
+		members: [retiredMemberHash("loop", "r1")],
+		work: [retiredWorkHash("campaign", "1:1")],
+		settled: ["loop"],
+	};
+	const facts = await attachment.ledger.retired(query);
+	assert.deepEqual(facts.members, query.members);
+	assert.deepEqual(facts.work, query.work);
+	assert.deepEqual(facts.settled, [{ id: "loop", count: 1 }]);
+	await attachment.ledger.reset();
+	assert.deepEqual(await attachment.ledger.retired(query), emptyRetiredAttempts());
+});
+
 test("retirement rejects an invalid window", async (t) => {
 	const ledger = await fixture(t);
 	assert.throws(
@@ -220,47 +295,24 @@ test("retirement rejects an invalid window", async (t) => {
 	);
 });
 
-test("the retired-identity fence budget holds retirement fail-closed at its limit", async (t) => {
-	// One slot short of the shared 16,384-identity safety budget: retiring both settled attempts
-	// below would need two. The budget is a fail-closed bound, not a claim of infinite retention.
-	const spent = Array.from({ length: MAX_RETIRED_FLOW_IDENTITIES - 1 }, (_, index) =>
+test("indexed retirement crosses the old lifetime budget without growing the operational snapshot", async (t) => {
+	const spent = Array.from({ length: MAX_RETIRED_FLOW_IDENTITIES }, (_, index) =>
 		retiredMemberHash(`spent-${index}`, "r1"),
 	);
 	const ledger = await fencedFixture(t, spent);
-	await settledAttempt(ledger, "one", "fence-one");
-	await settledAttempt(ledger, "two", "fence-two");
-	// A fold past the budget commits nothing, so the refusal is atomic: no attempt is dropped
-	// without its replay fence being recorded.
-	await assert.rejects(
-		() => ledger.retire(0),
-		(error) => ["schema", "capacity"].includes(error.code),
-	);
-	assert.deepEqual(
-		(await ledger.snapshot()).attempts.map((attempt) => attempt.id),
-		["one", "two"],
-		"no attempt was dropped by the refused retirement",
-	);
-	// The last free slot still retires one attempt, which keeps the budget a bound on history
-	// rather than a brick: the newest attempt stays addressable and its fence is recorded.
-	assert.equal(await ledger.retire(1), 1);
-	const after = await ledger.snapshot();
-	assert.deepEqual(
-		after.attempts.map((attempt) => attempt.id),
-		["two"],
-	);
-	assert.equal(after.retiredAttempts.members.length, MAX_RETIRED_FLOW_IDENTITIES);
-	// The budget is now spent, so retiring the survivor is refused the same fail-closed way.
-	await assert.rejects(
-		() => ledger.retire(0),
-		(error) => ["schema", "capacity"].includes(error.code),
-	);
-	assert.equal((await ledger.snapshot()).attempts.length, 1);
-	// The one recorded fence still blocks replay of the retired member.
-	assert.equal(
-		retainedByReceipt(
-			{ ...intent("fence-one"), rank: 6, workId: undefined, workRevision: undefined, revision: "r1" },
-			after,
-		),
-		true,
-	);
+	for (let i = 0; i < 12; i++) {
+		await settledAttempt(ledger, `a-${i}`, "loop");
+		assert.equal(await ledger.retire(0), 1);
+	}
+	const state = await ledger.snapshot();
+	assert.equal(state.attempts.length, 0);
+	assert.equal(state.retiredAttempts.members.length, 0);
+	assert.equal(state.retiredAttempts.settled.length, 0);
+	assert.ok(Buffer.byteLength(JSON.stringify(state)) < 2000);
+	const facts = await ledger.retired({
+		members: [spent[0], spent.at(-1), retiredMemberHash("loop", "r1"), retiredMemberHash("fresh", "r1")],
+		settled: ["loop"],
+	});
+	assert.deepEqual(facts.members, [spent[0], spent.at(-1), retiredMemberHash("loop", "r1")]);
+	assert.deepEqual(facts.settled, [{ id: "loop", count: 12 }]);
 });

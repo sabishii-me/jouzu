@@ -3,7 +3,7 @@ import type { FlowLedgerState } from "./receipt-ledger.js";
 import { flowMemberIncluded } from "./request-retention.js";
 
 /** Replay producer rounds from final inclusion, never from builds or queued attempts. */
-export function orderFlowResultProducers(intents: FlowIntent[], state: FlowLedgerState): string[] {
+export function replayFlowResultRound(state: FlowLedgerState): string[] {
 	// Seed from the round carried past retirement so pruning cannot restart a producer's turn.
 	let round: string[] = [...(state.retiredAttempts?.round ?? [])];
 	for (const attempt of state.attempts) {
@@ -29,6 +29,11 @@ export function orderFlowResultProducers(intents: FlowIntent[], state: FlowLedge
 		}
 		round = round.filter((producer) => !served.has(producer));
 	}
+	return round;
+}
+
+export function orderFlowResultProducers(intents: FlowIntent[], state: FlowLedgerState): string[] {
+	let round = replayFlowResultRound(state);
 	const eligible = [
 		...new Set(
 			intents

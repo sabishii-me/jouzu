@@ -8,6 +8,7 @@ import {
 import {
 	emptyRetiredAttempts,
 	type FlowRetiredAttempts,
+	type FlowRetirementQuery,
 	foldRetiredAttempts,
 	retirableAttempts,
 	validateRetiredAttempts,
@@ -96,6 +97,9 @@ export interface FlowLedgerState {
 export interface FlowLedgerStore {
 	/** Opt in only when transactions atomically archive removed requests and reject reused archived IDs. */
 	readonly archivesRequests?: true;
+	/** Opt in to transactional retirement indexing. Transactions drain identity arrays into exact
+	 * archived keys; this method projects only the caller's current candidates from those keys. */
+	retired?(query: FlowRetirementQuery): Promise<FlowRetiredAttempts>;
 	read(): Promise<FlowLedgerState | undefined>;
 	transact<T>(update: (state: FlowLedgerState | undefined) => { state: FlowLedgerState; result: T }): Promise<T>;
 }
@@ -216,7 +220,7 @@ export class FlowReceiptLedger {
 						: "Unsent handoff cancelled on reattachment.";
 			}
 			delete state.activeAttemptId;
-			FlowReceiptLedger.validate(state, captured, limits);
+			FlowReceiptLedger.validate(state, captured, limits, true, !!store.retired);
 			return { state, result: state.generation };
 		});
 		return new FlowReceiptLedger(store, captured, generation, { ...limits });
@@ -227,6 +231,7 @@ export class FlowReceiptLedger {
 		scope: FlowScope,
 		limits: { maxAttempts: number; maxBytes: number },
 		enforceCapacity = true,
+		indexedRetirement = false,
 	) {
 		if (state.admission !== undefined) validateFlowAdmission(state.admission);
 		if (state.schemaVersion !== 1) throw new FlowLedgerError("schema", "Unsupported flow ledger schema.");
@@ -361,12 +366,28 @@ export class FlowReceiptLedger {
 			} catch (error) {
 				throw new FlowLedgerError("schema", error instanceof Error ? error.message : "Invalid retired attempts.");
 			}
+		const operational =
+			indexedRetirement && state.retiredAttempts
+				? { ...state, retiredAttempts: { ...emptyRetiredAttempts(), round: state.retiredAttempts.round } }
+				: state;
 		if (
 			enforceCapacity &&
 			(state.attempts.length > limits.maxAttempts ||
-				new TextEncoder().encode(JSON.stringify(state)).length > limits.maxBytes)
+				new TextEncoder().encode(JSON.stringify(operational)).length > limits.maxBytes)
 		)
 			throw new FlowLedgerError("capacity", "Flow receipt retention limit reached; work remains held.");
+	}
+
+	async retired(query: FlowRetirementQuery): Promise<FlowRetiredAttempts> {
+		const state = await this.snapshot();
+		if (this.store.retired) return this.store.retired(query);
+		const retired = state.retiredAttempts ?? emptyRetiredAttempts();
+		return {
+			...retired,
+			members: retired.members.filter((key) => query.members?.includes(key)),
+			work: retired.work.filter((key) => query.work?.includes(key)),
+			settled: retired.settled.filter(({ id }) => query.settled?.includes(id)),
+		};
 	}
 
 	async snapshot(): Promise<FlowLedgerState> {
@@ -393,7 +414,7 @@ export class FlowReceiptLedger {
 			const result = update(state);
 			if (this.store.archivesRequests) for (const attempt of state.attempts) consolidateFlowRequests(attempt);
 			state.revision++;
-			FlowReceiptLedger.validate(state, this.scope, this.limits);
+			FlowReceiptLedger.validate(state, this.scope, this.limits, true, !!this.store.retired);
 			return { state, result };
 		});
 	}

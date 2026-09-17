@@ -2,6 +2,7 @@ import { AsyncLocalStorage, AsyncResource } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import type { AgentSession, CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent";
+import { retiredMemberHash } from "./attempt-retention.js";
 import { type FlowProducer, retainedByReceipt } from "./controller.js";
 import type { FlowInputItem } from "./model-input.js";
 import {
@@ -714,7 +715,11 @@ export class PiSessionFlowIngress implements Ingress {
 			},
 		);
 		const ledger = await branch.attachment.ledger.snapshot();
-		const candidates = (await source.snapshot(signal)).filter((intent) => !retainedByReceipt(intent, ledger));
+		const offered = await source.snapshot(signal);
+		ledger.retiredAttempts = await branch.attachment.ledger.retired({
+			members: offered.map((item) => retiredMemberHash(item.id, item.revision)),
+		});
+		const candidates = offered.filter((intent) => !retainedByReceipt(intent, ledger));
 		let clearPrevious = false;
 		if ((!forceEmpty || !waits.length) && !candidates.length && !live.length) {
 			for (const message of [...session.agent.state.messages].reverse()) {

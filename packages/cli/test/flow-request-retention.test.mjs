@@ -8,6 +8,7 @@ import { BACKGROUND_CONTEXT as context, MemorySessionRepo, setValue, value } fro
 import { checkpointFlowJournal } from "../dist/flow-control/journal-checkpoint.js";
 import { openLocalFlowSession } from "../dist/flow-control/local-storage.js";
 import { checkFlowNoReply, flowNoReplyToken } from "../dist/flow-control/no-reply.js";
+import { PiFlowAttachment } from "../dist/flow-control/pi-attachment.js";
 import { createPiLedgerStore } from "../dist/flow-control/pi-ledger-store.js";
 import { FlowReceiptLedger } from "../dist/flow-control/receipt-ledger.js";
 import {
@@ -163,6 +164,25 @@ test("failed consolidation commit leaves original receipts and archive unchanged
 	await assert.rejects(ledger.requestOutcome("attempt", "atomic-0", "failure"), { code: "identity" });
 	await ledger.requestOutcome("attempt", "atomic-5", "success");
 	await assert.rejects(ledger.prepare("attempt", "atomic-0", included, false, members), { code: "identity" });
+});
+
+test("the production attachment forwards archival support through its ownership wrapper", async (t) => {
+	const root = await mkdtemp(join(tmpdir(), "flow-owned-request-history-"));
+	let attachment;
+	t.after(async () => {
+		await attachment?.close();
+		await rm(root, { recursive: true, force: true });
+	});
+	attachment = await PiFlowAttachment.open(root, scope);
+	await start(attachment.ledger);
+	for (let i = 0; i < 12; i++) await request(attachment.ledger, `owned-${i}`, included);
+	assert.equal((await attachment.ledger.snapshot()).attempts[0].requests.length, 4);
+	assert.equal((await attachment.ledger.snapshot()).attempts[0].requestSummary.count, 8);
+	await attachment.ledger.settle("attempt", "success");
+	await attachment.close();
+	attachment = await PiFlowAttachment.open(root, scope);
+	await start(attachment.ledger, "next");
+	await assert.rejects(attachment.ledger.prepare("next", "owned-0", included, false, members), { code: "identity" });
 });
 
 test("a store without archival support retains request identities", async () => {
