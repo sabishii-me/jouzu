@@ -6,7 +6,13 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { BACKGROUND_CONTEXT as context, MemorySessionRepo, setValue, value } from "@earendil-works/pi-agent-core";
+import {
+	BACKGROUND_CONTEXT as context,
+	deleteValue,
+	MemorySessionRepo,
+	setValue,
+	value,
+} from "@earendil-works/pi-agent-core";
 import { createFlowSession, deferred } from "../../../scripts/fixtures/pi-flow-session.mjs";
 import { FlowOwnership } from "../dist/flow-control/ownership.js";
 import { PiFlowAttachment } from "../dist/flow-control/pi-attachment.js";
@@ -714,6 +720,77 @@ test("submission indexes outlive the archive count quota without routine history
 		assert.equal(header.history.next, 16385);
 	}, context);
 	assert.equal((await store.snapshot()).length, 16385);
+});
+
+test("submission indexes outlive the archived byte quota without legacy validation", async (t) => {
+	const root = await rootFor(t);
+	const owner = FlowOwnership.acquire(root, scope);
+	const repo = new MemorySessionRepo();
+	const session = await repo.create({}, context);
+	afterCleanup(t, async () => {
+		await owner.close(() => session.close(context));
+		await repo.close(context);
+	});
+	const padded = (id) => ({
+		...submission(id),
+		args: [
+			[
+				{ type: "text", text: "x".repeat(3 * 1024 * 1024) },
+				{ type: "image", data: "aGVsbG8=", mimeType: "image/png" },
+			],
+			undefined,
+		],
+	});
+	let store = await FlowSubmissionStore.attach(session, owner, { maxRecords: 1, maxBytes: 4 * 1024 * 1024 });
+	let total = 0;
+	for (let index = 0; index < 22; index++) {
+		const id = `bulk-${index}`;
+		const input = padded(id);
+		total += Buffer.byteLength(JSON.stringify(input));
+		await store.retain(input);
+		await store.dispatch(id, 1, `bulk-op-${index}`, async (observer) => observer.completeWithoutInput());
+		await store.archiveHandled([{ id, revision: 1 }]);
+	}
+	assert.ok(total > 64 * 1024 * 1024, "archived bodies must exceed the former legacy byte cap");
+	store = await FlowSubmissionStore.attach(session, owner, { maxRecords: 1, maxBytes: 4 * 1024 * 1024 });
+	assert.deepEqual(await store.snapshot(false), []);
+	assert.equal((await store.snapshot()).length, 22);
+	assert.deepEqual(
+		(await store.forOperations(["bulk-op-21"])).map((record) => record.id),
+		["bulk-21"],
+	);
+	await assert.rejects(store.retain(padded("bulk-0")), { code: "stale" });
+});
+
+test("exact history queries treat a deleted index copy as absent while full inspection keeps validating", async (t) => {
+	const root = await rootFor(t);
+	const owner = FlowOwnership.acquire(root, scope);
+	const repo = new MemorySessionRepo();
+	const session = await repo.create({}, context);
+	afterCleanup(t, async () => {
+		await owner.close(() => session.close(context));
+		await repo.close(context);
+	});
+	let store = await FlowSubmissionStore.attach(session, owner);
+	await consumeForArchive(store, "fault-first");
+	await consumeForArchive(store, "fault-second");
+	await store.archiveHandled([
+		{ id: "fault-first", revision: 1 },
+		{ id: "fault-second", revision: 1 },
+	]);
+	const before = await store.snapshot();
+	await session.mutate(async (mutation, ctx) => {
+		const header = (await mutation.getValue(value("jouzu.flow.submissions", "v1"), ctx)).value;
+		const key = createHash("sha256")
+			.update(JSON.stringify([header.history.generation, "operation", "operation-fault-first"]))
+			.digest("hex");
+		return mutation.commit([deleteValue(value("jouzu.flow.submission-history", key))], ctx);
+	}, context);
+	store = await FlowSubmissionStore.attach(session, owner);
+	assert.deepEqual(await store.forOperations(["operation-fault-first"]), []);
+	assert.deepEqual(await store.forIds(["fault-first"]), [before[0]]);
+	assert.deepEqual(await store.snapshot(), before);
+	await assert.rejects(store.retain(submission("fault-first")), { code: "stale" });
 });
 
 test("indexed submission receipts survive disk reopen and rejected retirement guards", async (t) => {
