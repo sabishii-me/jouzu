@@ -726,40 +726,90 @@ test("Pi: unrelated work excludes a rejected instruction and its image without r
 	assert.equal((await ledger.snapshot()).attempts[1].phase, "settled");
 });
 
-test("Pi: changed inactive frames reintroduced by a transform withhold the next request", async (t) => {
-	let saved,
-		first = true;
-	const { controller, calls, ledger } = await fixture(t, true, {
-		extensions: [
-			(pi) => {
-				pi.on("context", ({ messages }) => {
-					if (!saved) {
-						saved = structuredClone(
-							messages.find((item) => item.role === "custom" && item.customType === "jouzu-flow"),
-						);
-						return;
-					}
-					const changed = structuredClone(saved);
-					const frame = JSON.parse(changed.content[0].text);
-					frame.content = "altered instruction";
-					changed.content[0].text = JSON.stringify(frame);
-					return { messages: [changed, ...messages] };
-				});
-				pi.on("before_provider_request", ({ payload }) => {
-					if (!first) return payload;
-					first = false;
-					return { ...payload, messages: payload.messages.filter((item) => item.role !== "user") };
-				});
-			},
-		],
+for (const reopen of [false, true])
+	test(`Pi: retired rejected instructions remain excluded from context: reopen=${reopen}`, async (t) => {
+		let first = true;
+		let f = await fixture(t, true, {
+			extensions: [
+				(pi) =>
+					pi.on("before_provider_request", ({ payload }) => {
+						if (!first) return payload;
+						first = false;
+						return { ...payload, messages: payload.messages.filter((item) => item.role !== "user") };
+					}),
+			],
+		});
+		f.controller.register(
+			producer("alpha", undefined, (item) => ({
+				id: item.id,
+				revision: item.revision,
+				kind: "work",
+				text: "archived rejected instruction",
+				images: [{ type: "image", mimeType: "image/png", data: "aGVsbG8=" }],
+			})),
+		);
+		await f.controller.wake();
+		assert.deepEqual(f.calls, []);
+		assert.equal(await f.ledger.retire(0), 1);
+		assert.deepEqual((await f.ledger.snapshot()).attempts, []);
+		if (reopen) {
+			const history = f.session.sessionFile;
+			await f.controller.close();
+			await f.attachment.close();
+			f = await fixture(t, true, { storageRoot: f.storageRoot, sessionManager: SessionManager.open(history) });
+		}
+		f.controller.register(producer("beta"));
+		await f.controller.wake();
+		assert.deepEqual(f.calls, ["beta"]);
+		assert.equal(JSON.stringify(f.payloads).includes("archived rejected instruction"), false);
+		assert.equal(JSON.stringify(f.payloads).includes("aGVsbG8="), false);
+		assert.equal(JSON.stringify(f.session.sessionManager.getBranch()).includes("archived rejected instruction"), true);
 	});
-	controller.register(producer("alpha"));
-	controller.register(producer("beta"));
-	await controller.wake();
-	assert.deepEqual(calls, []);
-	assert.equal((await ledger.snapshot()).attempts.length, 2);
-	assert.ok((await ledger.snapshot()).attempts.every((item) => item.consumed));
-});
+
+for (const retire of [false, true])
+	test(`Pi: changed inactive frames reintroduced by a transform withhold the next request: retired=${retire}`, async (t) => {
+		let saved,
+			first = true;
+		const { controller, calls, ledger } = await fixture(t, true, {
+			extensions: [
+				(pi) => {
+					pi.on("context", ({ messages }) => {
+						if (!saved) {
+							saved = structuredClone(
+								messages.find((item) => item.role === "custom" && item.customType === "jouzu-flow"),
+							);
+							return;
+						}
+						const changed = structuredClone(saved);
+						const frame = JSON.parse(changed.content[0].text);
+						frame.content = "altered instruction";
+						changed.content[0].text = JSON.stringify(frame);
+						return { messages: [changed, ...messages] };
+					});
+					pi.on("before_provider_request", ({ payload }) => {
+						if (!first) return payload;
+						first = false;
+						return { ...payload, messages: payload.messages.filter((item) => item.role !== "user") };
+					});
+				},
+			],
+		});
+		controller.register(producer("alpha"));
+		await controller.wake();
+		if (retire) assert.equal(await ledger.retire(0), 1);
+		controller.register(producer("beta"));
+		await controller.wake();
+		assert.deepEqual(calls, []);
+		assert.equal((await ledger.snapshot()).attempts.length, retire ? 1 : 2);
+		assert.ok((await ledger.snapshot()).attempts.every((item) => item.consumed));
+		if (retire) {
+			const withheld = (await ledger.snapshot()).attempts[0];
+			assert.equal(withheld.phase, "cancelled");
+			assert.equal(await ledger.retire(0), 1);
+			assert.deepEqual((await ledger.snapshot()).attempts, []);
+			assert.equal((await ledger.contextSnapshot([withheld.id])).attempts[0].phase, "cancelled");
+		}
+	});
 
 test("Pi: controller disposal aborts and joins an ordinary user run before closing receipts", async (t) => {
 	const entered = deferred(),
@@ -793,6 +843,41 @@ test("Pi: controller disposal aborts and joins an ordinary user run before closi
 	assert.deepEqual((await ledger.snapshot()).attempts, []);
 	await controller.close();
 });
+
+for (const native of [false, true])
+	test(`retired snapshot-only results require a work turn: native=${native}`, async (t) => {
+		const { controller, ledger } = await fixture(t, native, { maxInputBytes: 450 });
+		let large = true;
+		controller.register(producer("work", [descriptor("work", "first-work")]));
+		controller.register(
+			producer("result", [descriptor("result", "pending-result", 6)], (item) => ({
+				id: item.id,
+				revision: item.revision,
+				kind: "result",
+				text: large ? "x".repeat(2000) : "small result",
+			})),
+		);
+		await controller.wake();
+		assert.deepEqual(
+			(await ledger.snapshot()).attempts[0].members.map((item) => item.id),
+			["first-work"],
+		);
+		assert.equal(await ledger.retire(0, new Set(["pending-result"])), 1);
+		assert.equal((await ledger.retired({ settled: ["first-work"] })).triggers, undefined);
+		large = false;
+		await controller.wake();
+		assert.deepEqual(
+			(await ledger.snapshot()).attempts,
+			[],
+			"deferred result does not authorize pagination after retirement",
+		);
+		controller.register(producer("next", [descriptor("next", "next-work")]));
+		await controller.wake();
+		assert.deepEqual(
+			(await ledger.snapshot()).attempts[0].members.map((item) => item.id),
+			["next-work", "pending-result"],
+		);
+	});
 
 for (const native of [false, true]) {
 	const label = native ? "Pi" : "synthetic";

@@ -53,10 +53,28 @@ async function read(reader: SessionReader): Promise<FlowLedgerState | undefined>
 /** The caller owns the writable Pi Session and its process lock for this adapter's lifetime. */
 export function createPiLedgerStore(
 	session: Session,
-): FlowLedgerStore & Required<Pick<FlowLedgerStore, "archivesRequests" | "retired">> {
+): FlowLedgerStore & Required<Pick<FlowLedgerStore, "archivesRequests" | "retired" | "readContext">> {
 	return {
 		archivesRequests: true,
 		read: () => session.mutate((mutation) => read(mutation), BACKGROUND_CONTEXT),
+		readContext: (attemptIds) =>
+			session.mutate(async (mutation) => {
+				const state = await read(mutation);
+				if (!state) return undefined;
+				const header = (await mutation.getValue(headerAddress, BACKGROUND_CONTEXT))?.value;
+				if (!header) throw new FlowLedgerError("schema", "Flow ledger is missing.");
+				const activeIds = new Set(state.attempts.map((attempt) => attempt.id));
+				for (const id of new Set(attemptIds)) {
+					if (activeIds.has(id)) continue;
+					const archived = (
+						await mutation.getValue(attemptHistoryAddress(header.retirementEpoch ?? 0, id), BACKGROUND_CONTEXT)
+					)?.value;
+					if (!archived) continue;
+					if (archived.id !== id) throw new FlowLedgerError("identity", "Archived flow attempt identity changed.");
+					state.attempts.push(archived);
+				}
+				return structuredClone(state);
+			}, BACKGROUND_CONTEXT),
 		retired: (query) =>
 			session.mutate(async (mutation) => {
 				const header = (await mutation.getValue(headerAddress, BACKGROUND_CONTEXT))?.value;

@@ -325,6 +325,7 @@ export class SessionFlowController {
 			}
 			state.retiredAttempts = await this.host.ledger.retired({
 				members: items.map((item) => retiredMemberHash(item.id, item.revision)),
+				triggers: items.filter((item) => item.rank === 6).map((item) => retiredMemberHash(item.id, item.revision)),
 				work: items.flatMap((item) =>
 					item.workId && item.workRevision ? [retiredWorkHash(item.workId, item.workRevision)] : [],
 				),
@@ -336,13 +337,14 @@ export class SessionFlowController {
 					(item) =>
 						!retainedByReceipt(item, state) &&
 						(item.rank !== 6 ||
-							!state.attempts.some(
-								(attempt) =>
-									attempt.consumed !== false &&
-									attempt.admission?.choice.resultSnapshot?.some(
-										(sample) => sample.id === item.id && sample.revision === item.revision,
-									),
-							)),
+							(!state.retiredAttempts?.triggers?.includes(retiredMemberHash(item.id, item.revision)) &&
+								!state.attempts.some(
+									(attempt) =>
+										attempt.consumed !== false &&
+										attempt.admission?.choice.resultSnapshot?.some(
+											(sample) => sample.id === item.id && sample.revision === item.revision,
+										),
+								))),
 				),
 				this.host.gate(),
 			);

@@ -104,6 +104,8 @@ export interface FlowLedgerStore {
 	 * archived keys; this method projects only the caller's current candidates from those keys. */
 	retired?(query: FlowRetirementQuery): Promise<FlowRetiredAttempts>;
 	read(): Promise<FlowLedgerState | undefined>;
+	/** Read active state and exact archived attempts atomically for context exclusion. */
+	readContext?(attemptIds: readonly string[]): Promise<FlowLedgerState | undefined>;
 	transact<T>(update: (state: FlowLedgerState | undefined) => { state: FlowLedgerState; result: T }): Promise<T>;
 }
 
@@ -387,11 +389,13 @@ export class FlowReceiptLedger {
 		const state = await this.snapshot();
 		if (this.store.retired) return this.store.retired(query);
 		const retired = state.retiredAttempts ?? emptyRetiredAttempts();
+		const { triggers, ...facts } = retired;
 		return {
-			...retired,
+			...facts,
 			members: retired.members.filter((key) => query.members?.includes(key)),
 			work: retired.work.filter((key) => query.work?.includes(key)),
 			settled: retired.settled.filter(({ id }) => query.settled?.includes(id)),
+			...(query.triggers ? { triggers: (triggers ?? []).filter((key) => query.triggers?.includes(key)) } : {}),
 		};
 	}
 
@@ -401,6 +405,17 @@ export class FlowReceiptLedger {
 		FlowReceiptLedger.validate(state, this.scope, this.limits);
 		return structuredClone(state);
 	}
+	async contextSnapshot(attemptIds: readonly string[]): Promise<FlowLedgerState> {
+		const ids = [...new Set(attemptIds)];
+		for (const id of ids) requireIdentity(id);
+		if (!this.store.readContext) return this.snapshot();
+		const state = await this.store.readContext(ids);
+		if (!state) throw new FlowLedgerError("schema", "Flow ledger is missing.");
+		// Context can reference more archived attempts than the active retention window.
+		FlowReceiptLedger.validate(state, this.scope, this.limits, false);
+		return structuredClone(state);
+	}
+
 	reset(): Promise<void> {
 		return this.mutate((state) => {
 			state.attempts = [];
@@ -709,7 +724,7 @@ export class FlowReceiptLedger {
 	): Promise<number> {
 		if (!Number.isSafeInteger(keep) || keep < 0) throw new FlowLedgerError("capacity", "Invalid retention window.");
 		return this.mutate((state) => {
-			const retiring = retirableAttempts(state, keep).filter(
+			const retiring = retirableAttempts(state, keep, !!this.store.readContext).filter(
 				(attempt) => !attempt.members.some((member) => protectedMembers.has(member.id)),
 			);
 			assertCurrent();

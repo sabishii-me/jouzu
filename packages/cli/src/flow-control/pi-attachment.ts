@@ -42,6 +42,7 @@ export class PiFlowAttachment {
 				{
 					archivesRequests: store.archivesRequests,
 					retired: (query) => ownership.run(() => store.retired(query)),
+					readContext: (ids) => ownership.run(() => store.readContext(ids)),
 					read: () => ownership.run(() => store.read()),
 					transact: (update) => ownership.run(() => store.transact(update)),
 				},

@@ -205,6 +205,7 @@ for (const reason of ["protected", "quarantined"])
 		let failCommit = false;
 		const store = {
 			...durable,
+			...(reason === "quarantined" ? { readContext: undefined } : {}),
 			transact: (update) =>
 				durable.transact((state) => {
 					const next = update(state);
@@ -281,8 +282,74 @@ test("a successful request with an omitted result retains its context exclusion 
 	await ledger.handoff("filtered", "filtered-request");
 	await ledger.requestOutcome("filtered", "filtered-request", "success");
 	await ledger.settle("filtered", "success");
-	assert.equal(await ledger.retire(0), 0, "success does not establish inclusion of every composed member");
-	assert.equal((await ledger.snapshot()).attempts[0].members[1].id, result.id);
+	assert.equal(await ledger.retire(0), 1, "indexed context evidence allows retirement without successful inclusion");
+	assert.equal((await ledger.snapshot()).attempts.length, 0);
+	assert.equal((await ledger.contextSnapshot(["filtered"])).attempts[0].members[1].id, result.id);
+});
+
+test("withheld attempts retain full evidence after retirement", async (t) => {
+	const ledger = await fixture(t);
+	const item = member("withheld-work");
+	await ledger.select("withheld", [item], {
+		revision: 0,
+		intent: intent(item.id),
+		coalescedIds: [],
+		next: { ...initialFlowAdmission(), revision: 1 },
+	});
+	const queue = { id: "withheld-queue", revision: 1 };
+	await ledger.queued("withheld", queue);
+	await ledger.claim("withheld", queue);
+	assert.equal(
+		await ledger.prepare(
+			"withheld",
+			"withheld-request",
+			[{ id: item.id, revision: item.revision, disposition: "omitted" }],
+			false,
+		),
+		false,
+	);
+	const before = (await ledger.snapshot()).attempts[0];
+	assert.equal(before.phase, "withheld");
+	assert.equal(await ledger.retire(0), 1);
+	assert.deepEqual((await ledger.snapshot()).attempts, []);
+	assert.deepEqual((await ledger.contextSnapshot([before.id])).attempts, [before]);
+});
+
+test("archived quarantine crosses the active attempt window and reset isolates context history", async (t) => {
+	const repo = new MemorySessionRepo();
+	const session = await repo.create({}, context);
+	t.after(() => repo.close(context));
+	const store = createPiLedgerStore(session);
+	const limits = { maxAttempts: 2, maxBytes: 1024 * 1024 };
+	let ledger = await FlowReceiptLedger.attach(store, scope, limits);
+	const ids = [];
+	for (let index = 0; index < 8; index++) {
+		const id = `failed-${index}`;
+		ids.push(id);
+		await settledAttempt(ledger, id, `work-${index}`, "alpha", "failure");
+		assert.equal(await ledger.retire(0), 1);
+		assert.deepEqual((await ledger.snapshot()).attempts, []);
+	}
+	ledger = await FlowReceiptLedger.attach(store, scope, limits);
+	const state = await ledger.contextSnapshot(ids);
+	const triggers = ids.map((id) => retiredMemberHash(`result-${id}`, "r1"));
+	assert.deepEqual((await ledger.retired({ triggers })).triggers, triggers);
+	assert.deepEqual(
+		state.attempts.map((attempt) => attempt.id),
+		ids,
+	);
+	assert.ok(state.attempts.every((attempt) => attempt.outcome === "failure"));
+	assert.deepEqual(
+		(await ledger.contextSnapshot([ids[0], ids[0], "missing"])).attempts.map((attempt) => attempt.id),
+		[ids[0]],
+	);
+	await ledger.reset();
+	assert.deepEqual((await ledger.retired({ triggers })).triggers, []);
+	assert.deepEqual((await ledger.contextSnapshot(ids)).attempts, []);
+	await ledger.select(ids[0], [member("reused-work")]);
+	await ledger.cancel(ids[0], "Cancel reused identity");
+	await ledger.retire(0);
+	assert.equal((await ledger.contextSnapshot(ids)).attempts[0].members[0].id, "reused-work");
 });
 
 test("indexed retirement survives repeated attachments and reset starts a new replay epoch", async (t) => {

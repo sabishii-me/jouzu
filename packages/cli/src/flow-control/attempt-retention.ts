@@ -4,13 +4,14 @@ import { MAX_RETIRED_FLOW_IDENTITIES, retiredIdentityHash, validRetiredIdentityH
 
 /**
  * Summary evidence retained after pruning: replay fences, multiloop iteration counts, and
- * result-producer fairness. Context quarantine still requires full attempts, so attempts with
- * unsuccessful or omitted input remain addressable.
+ * result-producer fairness. Stores without exact context history queries retain attempts with
+ * unsuccessful or omitted input for quarantine.
  */
 export interface FlowRetirementQuery {
 	members?: readonly string[];
 	work?: readonly string[];
 	settled?: readonly string[];
+	triggers?: readonly string[];
 }
 
 export interface FlowRetiredAttempts {
@@ -19,6 +20,8 @@ export interface FlowRetiredAttempts {
 	members: string[];
 	/** Fences cadence replay: hash of the selected work id and revision. */
 	work: string[];
+	/** Snapshot-only results may coalesce with work but cannot trigger pagination turns. */
+	triggers?: string[];
 	/** Settled successful attempts per selected intent id, continuing iteration numbering. */
 	settled: { id: string; count: number }[];
 	/** The producer round carried forward so fairness does not restart at the retirement point. */
@@ -43,6 +46,11 @@ export function validateRetiredAttempts(retired: FlowRetiredAttempts): void {
 		!Array.isArray(retired.work) ||
 		!Array.isArray(retired.settled) ||
 		!Array.isArray(retired.round) ||
+		(retired.triggers !== undefined &&
+			(!Array.isArray(retired.triggers) ||
+				retired.triggers.length > MAX_RETIRED_FLOW_IDENTITIES ||
+				!retired.triggers.every(validRetiredIdentityHash) ||
+				new Set(retired.triggers).size !== retired.triggers.length)) ||
 		retired.members.length > MAX_RETIRED_FLOW_IDENTITIES ||
 		retired.work.length > MAX_RETIRED_FLOW_IDENTITIES ||
 		retired.settled.length > MAX_RETIRED_FLOW_IDENTITIES ||
@@ -73,18 +81,21 @@ export const retiredByReceipt = (retired: FlowRetiredAttempts | undefined, membe
 	!!retired && (retired.members.includes(member) || (work !== undefined && retired.work.includes(work)));
 
 /**
- * Select settled attempts that no longer need context quarantine. Callers must also reconcile
+ * Select terminal attempts whose context quarantine evidence remains available. Callers must also reconcile
  * producer delivery and wait observation before pruning. Unconsumed cancellations carry no fence.
  */
-export function retirableAttempts(state: FlowLedgerState, keep: number): FlowAttempt[] {
+export function retirableAttempts(state: FlowLedgerState, keep: number, archivedContext = false): FlowAttempt[] {
 	const settledOnly = state.attempts.filter(
 		(attempt) =>
 			attempt.id !== state.activeAttemptId &&
-			(attempt.phase === "settled" || attempt.phase === "cancelled") &&
+			(attempt.phase === "settled" ||
+				attempt.phase === "cancelled" ||
+				(archivedContext && attempt.phase === "withheld")) &&
 			!attempt.requests.some((request) => request.handedOff && request.outcome === undefined) &&
 			// Persisted instructions without successful inclusion still need the full attempt for
 			// context quarantine. A replay fence alone cannot keep them out of later user requests.
 			!(
+				!archivedContext &&
 				attempt.admission &&
 				attempt.consumed !== false &&
 				attempt.members.some((member) => !flowMemberIncluded(attempt, member))
@@ -102,10 +113,14 @@ export function foldRetiredAttempts(
 ): FlowRetiredAttempts {
 	const members = new Set(retired.members);
 	const work = new Set(retired.work);
+	const triggers = new Set(retired.triggers ?? []);
 	const settled = new Map(retired.settled.map((entry) => [entry.id, entry.count]));
 	for (const attempt of retiring) {
 		const selected = attempt.admission?.choice.intent;
 		if (attempt.phase === "cancelled" && attempt.consumed === false) continue;
+		if (attempt.consumed !== false)
+			for (const sample of attempt.admission?.choice.resultSnapshot ?? [])
+				triggers.add(retiredMemberHash(sample.id, sample.revision));
 		for (const member of attempt.members) members.add(retiredMemberHash(member.id, member.revision));
 		if (selected && (selected.rank === 4 || selected.rank === 5) && selected.workId && selected.workRevision)
 			work.add(retiredWorkHash(selected.workId, selected.workRevision));
@@ -116,6 +131,7 @@ export function foldRetiredAttempts(
 		version: 1,
 		members: [...members],
 		work: [...work],
+		...(triggers.size ? { triggers: [...triggers] } : {}),
 		settled: [...settled].map(([id, count]) => ({ id, count })),
 		round,
 	};

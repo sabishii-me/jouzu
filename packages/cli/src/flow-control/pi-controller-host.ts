@@ -31,6 +31,32 @@ interface Pending {
 }
 const attached = new WeakSet<AgentSession>();
 
+function contextAttemptIds(messages: AgentMessage[]): string[] {
+	const ids = new Set<string>();
+	for (const message of messages) {
+		if (message.role !== "user" && message.role !== "custom") continue;
+		const content = typeof message.content === "string" ? [{ type: "text", text: message.content }] : message.content;
+		if (!Array.isArray(content)) continue;
+		for (const part of content) {
+			if (part?.type !== "text") continue;
+			try {
+				const marker = JSON.parse(part.text)?.flowInput;
+				if (
+					Array.isArray(marker) &&
+					marker[0] === "jouzu-flow" &&
+					typeof marker[1] === "string" &&
+					marker[1].length > 0 &&
+					marker[1].length <= 512
+				)
+					ids.add(marker[1]);
+			} catch {
+				/* Ordinary context text. */
+			}
+		}
+	}
+	return [...ids];
+}
+
 /** Quarantine exact inactive instructions lacking successful inclusion; leave durable history intact. */
 function quarantine(messages: AgentMessage[], state: FlowLedgerState): AgentMessage[] {
 	const inactive = state.attempts.filter((attempt) => attempt.admission && attempt.id !== state.activeAttemptId);
@@ -109,11 +135,14 @@ export class PiControllerHost implements FlowControllerHost {
 		const transform = session.agent.transformContext;
 		this.hooks.set(session.agent, "transformContext", async (messages, signal) => {
 			this.assertActive();
-			const state = await ledger.snapshot();
+			const state = await ledger.contextSnapshot(contextAttemptIds(messages));
+			this.assertActive();
 			const admitted = quarantine(messages, state);
 			const result = transform ? await transform(admitted, signal) : admitted;
 			this.assertActive();
-			return quarantine(result, state);
+			const transformedState = await ledger.contextSnapshot(contextAttemptIds(result));
+			this.assertActive();
+			return quarantine(result, transformedState);
 		});
 		const previous = session.agent.flowCheckpoints;
 		this.hooks.set(session.agent, "flowCheckpoints", {
