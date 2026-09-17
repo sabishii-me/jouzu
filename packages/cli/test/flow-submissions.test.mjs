@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { fork } from "node:child_process";
+import { createHash } from "node:crypto";
 import { once } from "node:events";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -540,5 +541,199 @@ test("archive rejects unconsumed submissions atomically and detects changed hist
 		return mutation.commit([setValue(address, { ...record, acceptedAt: record.acceptedAt + 1 })], ctx);
 	}, context);
 	await assert.rejects(store.snapshot(), { code: "identity" });
+	const reopened = await FlowSubmissionStore.attach(session, owner);
+	assert.deepEqual(await reopened.snapshot(false), await store.snapshot(false));
+	await assert.rejects(reopened.forOperations(["operation-handled"]), { code: "identity" });
+});
+
+test("submission history migration validates bodies and publishes indexes atomically", async (t) => {
+	const root = await rootFor(t);
+	const owner = FlowOwnership.acquire(root, scope);
+	const repo = new MemorySessionRepo();
+	const session = await repo.create({}, context);
+	afterCleanup(t, async () => {
+		await owner.close(() => session.close(context));
+		await repo.close(context);
+	});
+	let store = await FlowSubmissionStore.attach(session, owner);
+	for (const id of ["first", "second", "active"]) await consumeForArchive(store, id);
+	const before = await store.snapshot();
+	await store.archiveHandled([
+		{ id: "second", revision: 1 },
+		{ id: "first", revision: 1 },
+	]);
+	const headerAddress = value("jouzu.flow.submissions", "v1");
+	let legacy;
+	let first;
+	await session.mutate(async (mutation, ctx) => {
+		const { history: _history, ...header } = (await mutation.getValue(headerAddress, ctx)).value;
+		const archived = [];
+		for (const id of ["second", "first"]) {
+			const record = (await mutation.getValue(value("jouzu.flow.submission", id), ctx)).value;
+			if (id === "first") first = record;
+			archived.push({
+				id,
+				revision: record.revision,
+				operationId: record.dispatch.operationId,
+				bytes: Buffer.byteLength(JSON.stringify(record)),
+				contentHash: createHash("sha256").update(JSON.stringify(record)).digest("hex"),
+			});
+		}
+		legacy = { ...header, archived, orderIds: ["first", "second", "active"] };
+		await mutation.commit(
+			[
+				setValue(headerAddress, legacy),
+				setValue(value("jouzu.flow.submission", "first"), { ...first, acceptedAt: first.acceptedAt + 1 }),
+			],
+			ctx,
+		);
+	}, context);
 	await assert.rejects(FlowSubmissionStore.attach(session, owner), { code: "identity" });
+	await session.mutate(async (mutation, ctx) => {
+		assert.deepEqual((await mutation.getValue(headerAddress, ctx)).value, legacy);
+		const key = createHash("sha256")
+			.update(JSON.stringify([legacy.revision, "id", "second"]))
+			.digest("hex");
+		assert.equal(await mutation.getValue(value("jouzu.flow.submission-history", key), ctx), undefined);
+		await mutation.commit([setValue(value("jouzu.flow.submission", "first"), first)], ctx);
+	}, context);
+	const failing = {
+		mutate: (run, ctx) =>
+			session.mutate(
+				(mutation, current) =>
+					run(
+						new Proxy(mutation, {
+							get(target, key) {
+								if (key === "commit")
+									return async () => {
+										throw new Error("injected migration commit failure");
+									};
+								const result = Reflect.get(target, key);
+								return typeof result === "function" ? result.bind(target) : result;
+							},
+						}),
+						current,
+					),
+				ctx,
+			),
+	};
+	await assert.rejects(FlowSubmissionStore.attach(failing, owner), /injected migration commit failure/);
+	await session.mutate(async (mutation, ctx) => {
+		assert.deepEqual((await mutation.getValue(headerAddress, ctx)).value, legacy);
+	}, context);
+	store = await FlowSubmissionStore.attach(session, owner);
+	assert.deepEqual(await store.snapshot(), before);
+	await session.mutate(async (mutation, ctx) => {
+		const header = (await mutation.getValue(headerAddress, ctx)).value;
+		assert.equal(header.archived, undefined);
+		assert.equal(header.orderIds, undefined);
+		assert.equal(header.history.next, 3);
+		assert.deepEqual(header.history.active, [{ id: "active", position: 2 }]);
+		assert.deepEqual((await mutation.getValue(value("jouzu.flow.submission", "first"), ctx)).value, first);
+	}, context);
+	await assert.rejects(store.retain(submission("first")), { code: "stale" });
+	await store.retain(submission("fresh"));
+	await assert.rejects(
+		store.dispatch("fresh", 1, "operation-first", async () => {}),
+		{ code: "identity" },
+	);
+	await store.reset();
+	assert.deepEqual(await store.snapshot(), []);
+	assert.deepEqual(await store.forOperations(["operation-first"]), []);
+	await consumeForArchive(store, "first");
+	await store.archiveHandled([{ id: "first", revision: 1 }]);
+	store = await FlowSubmissionStore.attach(session, owner);
+	assert.deepEqual(
+		(await store.snapshot()).map((record) => record.id),
+		["first"],
+	);
+});
+
+test("submission indexes outlive the archive count quota without routine history reads", async (t) => {
+	const root = await rootFor(t);
+	const owner = FlowOwnership.acquire(root, scope);
+	const repo = new MemorySessionRepo();
+	const session = await repo.create({}, context);
+	afterCleanup(t, async () => {
+		await owner.close(() => session.close(context));
+		await repo.close(context);
+	});
+	let reads = 0;
+	const counted = {
+		mutate: (run, ctx) =>
+			session.mutate(
+				(mutation, current) =>
+					run(
+						new Proxy(mutation, {
+							get(target, key) {
+								if (key === "getValue")
+									return (...args) => {
+										reads++;
+										return target.getValue(...args);
+									};
+								const result = Reflect.get(target, key);
+								return typeof result === "function" ? result.bind(target) : result;
+							},
+						}),
+						current,
+					),
+				ctx,
+			),
+	};
+	let store = await FlowSubmissionStore.attach(counted, owner, { maxRecords: 1, maxBytes: 8192 });
+	for (let index = 0; index < 16385; index++) {
+		const id = `entry-${index}`;
+		await store.retain(submission(id));
+		await store.dispatch(id, 1, `op-${index}`, async (observer) => observer.completeWithoutInput());
+		await store.archiveHandled([{ id, revision: 1 }]);
+	}
+	reads = 0;
+	store = await FlowSubmissionStore.attach(counted, owner, { maxRecords: 1, maxBytes: 8192 });
+	assert.equal(reads, 1);
+	reads = 0;
+	assert.deepEqual(await store.snapshot(false), []);
+	assert.equal(reads, 1);
+	reads = 0;
+	assert.deepEqual(
+		(await store.forOperations(["op-16384"])).map((record) => record.id),
+		["entry-16384"],
+	);
+	assert.equal(reads, 3);
+	reads = 0;
+	await assert.rejects(store.retain(submission("entry-0")), { code: "stale" });
+	assert.equal(reads, 2);
+	await session.mutate(async (mutation, ctx) => {
+		const header = (await mutation.getValue(value("jouzu.flow.submissions", "v1"), ctx)).value;
+		assert.ok(Buffer.byteLength(JSON.stringify(header)) < 512);
+		assert.equal(header.history.next, 16385);
+	}, context);
+	assert.equal((await store.snapshot()).length, 16385);
+});
+
+test("indexed submission receipts survive disk reopen and rejected retirement guards", async (t) => {
+	const root = await rootFor(t);
+	let attachment = await PiFlowAttachment.open(root, scope);
+	afterCleanup(t, () => attachment.close());
+	await consumeForArchive(attachment.submissions, "disk-first");
+	await consumeForArchive(attachment.submissions, "disk-second");
+	const before = await attachment.submissions.snapshot();
+	let checks = 0;
+	await assert.rejects(
+		attachment.submissions.archiveHandled([{ id: "disk-second", revision: 1 }], () => {
+			if (++checks === 2) throw new Error("retirement authorization changed");
+		}),
+		/retirement authorization changed/,
+	);
+	assert.deepEqual(await attachment.submissions.snapshot(false), before);
+	await attachment.submissions.archiveHandled([{ id: "disk-second", revision: 1 }]);
+	await attachment.close();
+	attachment = await PiFlowAttachment.open(root, scope);
+	assert.deepEqual(await attachment.submissions.snapshot(), before);
+	assert.deepEqual(await attachment.submissions.forOperations(["operation-disk-second"]), [before[1]]);
+	await assert.rejects(attachment.submissions.retain(submission("disk-second")), { code: "stale" });
+	await attachment.submissions.reset();
+	await attachment.close();
+	attachment = await PiFlowAttachment.open(root, scope);
+	assert.deepEqual(await attachment.submissions.snapshot(), []);
+	assert.deepEqual(await attachment.submissions.forOperations(["operation-disk-second"]), []);
 });
