@@ -4,13 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { createWorkflowIntegration } from "../dist/subagents/integration.js";
-import { assembledSession } from "./fixtures/flow-assembly.mjs";
+import { afterFlowCleanup, assembledSession } from "./fixtures/flow-assembly.mjs";
 
 test("tree navigation releases unread child completions without blocking later results", {
 	timeout: 15000,
 }, async (t) => {
 	const root = await mkdtemp(join(tmpdir(), "flow-child-tree-"));
-	t.after(() => rm(root, { recursive: true, force: true }));
+	afterFlowCleanup(t, () => rm(root, { recursive: true, force: true }));
 	const workers = [];
 	const integration = createWorkflowIntegration(
 		{ configDir: join(root, "config"), stateDir: join(root, "state") },
@@ -83,7 +83,7 @@ test("tree navigation releases unread child completions without blocking later r
 for (const transform of ["included", "replaced", "omitted"])
 	test(`terminal read observation requires final-input inclusion: ${transform}`, { timeout: 15000 }, async (t) => {
 		const root = await mkdtemp(join(tmpdir(), "flow-child-real-"));
-		t.after(() => rm(root, { recursive: true, force: true }));
+		afterFlowCleanup(t, () => rm(root, { recursive: true, force: true }));
 		const workers = [];
 		const integration = createWorkflowIntegration(
 			{ configDir: join(root, "config"), stateDir: join(root, "state") },

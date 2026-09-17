@@ -247,7 +247,7 @@ test("fork extraction at the assistant tool call repairs the forked session", as
 	await first.attachment.close();
 
 	const root = await mkdtemp(join(tmpdir(), "jouzu-tool-history-fork-"));
-	t.after(() => rm(root, { recursive: true, force: true }));
+	afterCleanup(t, () => rm(root, { recursive: true, force: true }));
 	const forkedSeen = [];
 	const forked = await nativeRequests(t, {
 		root,
@@ -261,7 +261,7 @@ test("fork extraction at the assistant tool call repairs the forked session", as
 
 test("reopened persisted session repairs the projection without a new transcript entry", async (t) => {
 	const root = await mkdtemp(join(tmpdir(), "jouzu-tool-history-reopen-"));
-	t.after(() => rm(root, { recursive: true, force: true }));
+	afterCleanup(t, () => rm(root, { recursive: true, force: true }));
 	const seen = [];
 	const first = await nativeRequests(t, {
 		root,
