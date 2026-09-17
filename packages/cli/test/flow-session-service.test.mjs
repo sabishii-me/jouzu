@@ -434,6 +434,85 @@ test("native queue cancellation evidence survives session-service reopen", async
 	assert.equal(record.dispatch.queueClaims[0].consumed, false);
 });
 
+test("switching away and back preserves a branch's pending work and late results", async (t) => {
+	const scopes = [];
+	const f = await fixture(t, {
+		attachWaitSources: async (attachment) => {
+			scopes.push(attachment.ledger.scope);
+			attachment.waitProducers.register(
+				{
+					version: 1,
+					namespace: "bg",
+					subscribe: () => () => {},
+					snapshot: async (identity) => ({
+						...identity,
+						revision: 1,
+						predicates: [{ until: "exit", state: "pending" }],
+					}),
+					close: () => {},
+				},
+				assert.ifError,
+			);
+		},
+	});
+	const original = f.service.branch();
+	const handle = { producer: "bg", handle: "job", execution: "exec", until: "exit" };
+	await original.attachment.waits.declare(
+		{
+			token: "wait",
+			scope: original.scope,
+			workId: "work",
+			reason: "dependency",
+			mode: "all",
+			on: [handle],
+			expiresAt: 100,
+		},
+		[{ ...handle, scope: original.scope, workId: "work", state: "pending" }],
+		0,
+		100,
+	);
+	// A late result retained against this branch stays readable only through it.
+	const reference = await original.attachment.results.retain([
+		{
+			id: "late",
+			producer: "bg",
+			execution: "late-exec",
+			revision: "1",
+			status: "success",
+			title: "late",
+			reference: "bg-result:late",
+			warnings: [],
+		},
+	]);
+	await f.session.prompt("first question");
+	const user = f.session.sessionManager
+		.getBranch()
+		.find((entry) => entry.type === "message" && entry.message.role === "user");
+	const tip = f.session.sessionManager.getLeafId();
+	// Switching away forks an empty branch: neither the wait nor the result follows.
+	await f.session.navigateTree(user.id);
+	const fork = f.service.branch();
+	assert.notEqual(fork.scope.branchId, original.scope.branchId);
+	assert.deepEqual(await fork.attachment.waits.snapshot(), []);
+	await assert.rejects(fork.attachment.results.page(reference, { limit: 4, maxBytes: 4096 }), {
+		code: "identity",
+	});
+	// Returning to the original branch's path reactivates it with its durable work intact.
+	await f.session.navigateTree(tip);
+	assert.deepEqual(f.service.branch().scope, original.scope);
+	assert.deepEqual(scopes, [original.scope, fork.scope, original.scope]);
+	const back = f.service.branch();
+	const waits = await back.attachment.waits.snapshot();
+	assert.equal(waits.length, 1);
+	assert.equal(waits[0].token, "wait");
+	assert.equal(waits[0].state, "waiting");
+	assert.deepEqual(back.waitSourceRecovery.missing, []);
+	assert.equal(back.host.gate().recoveryBlocked, false);
+	const page = await back.attachment.results.page(reference, { limit: 4, maxBytes: 4096 });
+	assert.equal(page.total, 1);
+	assert.equal(page.members[0].id, "late");
+});
+
 test("branch startup awaits source registration and closes each source on navigation", async (t) => {
 	const scopes = [],
 		closed = [];
