@@ -327,6 +327,87 @@ test("retirement never drops a reactivated active branch or a retained parent", 
 	assert.equal(after.branches.length, before.branches.length - 1);
 });
 
+test("retirement never drops a protected tip owner", async (t) => {
+	const { open } = await fixture(t);
+	const registry = await open();
+	const grown = await navigate(registry, 1);
+	const original = grown.branches[0];
+	// The active branch sits at the end; protecting the first record bounds the prefix drop.
+	assert.equal(await registry.retireBranchHistory(1, new Set([original.id])), 0);
+	assert.equal((await registry.snapshot()).branches.length, 2);
+	assert.equal(await registry.retireBranchHistory(1), 1);
+	const after = await registry.snapshot();
+	assert.equal(after.branches.length, 1);
+	assert.deepEqual(after.retired, { count: 1, through: [original.id] });
+});
+
+test("malformed retired ancestry cannot select a branch", async (t) => {
+	const { root, cleanup } = await fixture(t);
+	const repo = new MemorySessionRepo();
+	const session = await repo.create({}, BACKGROUND_CONTEXT);
+	cleanup(() => repo.close(BACKGROUND_CONTEXT));
+	const registry = await PiFlowSessionRegistry.open(root, "parent", null, async () => session);
+	cleanup(() => registry.close());
+	const initial = await registry.snapshot();
+	const initialId = initial.branches[0].id;
+	for (const corrupt of [
+		{
+			// A self-parent that cites itself through the retired set.
+			...initial,
+			branches: [{ id: "solo", fromBranchId: "solo", transitionId: "t", enteredAtLeafId: null }],
+			activeBranchId: "solo",
+			retired: { count: 1, through: ["solo"] },
+		},
+		{
+			// A forward parent: the cited record appears later in the array.
+			...initial,
+			branches: [
+				{ id: "x", fromBranchId: "y", transitionId: "t1", enteredAtLeafId: null },
+				{ id: "y", fromBranchId: "dropped", transitionId: "t2", enteredAtLeafId: null },
+			],
+			activeBranchId: "y",
+			retired: { count: 1, through: ["dropped"] },
+		},
+		{
+			// A retired entry no retained record cites.
+			...initial,
+			branches: [{ id: "kept", fromBranchId: "dropped", transitionId: "t", enteredAtLeafId: null }],
+			activeBranchId: "kept",
+			retired: { count: 2, through: ["dropped", "unused"] },
+		},
+		{
+			// More cited parents than records ever dropped.
+			...initial,
+			branches: [{ id: "kept", fromBranchId: "dropped", transitionId: "t", enteredAtLeafId: null }],
+			activeBranchId: "kept",
+			retired: { count: 1, through: ["dropped", "dropped-2"] },
+		},
+	]) {
+		await session.mutate(
+			(m) => m.commit([setValue(value("jouzu.flow.session", "v1"), corrupt)], BACKGROUND_CONTEXT),
+			BACKGROUND_CONTEXT,
+		);
+		await assert.rejects(registry.currentScope(), { code: "schema" });
+	}
+	// The same shape with every cited parent dropped exactly once still validates.
+	await session.mutate(
+		(m) =>
+			m.commit(
+				[
+					setValue(value("jouzu.flow.session", "v1"), {
+						...initial,
+						branches: [{ id: "kept", fromBranchId: "dropped", transitionId: "t", enteredAtLeafId: null }],
+						activeBranchId: "kept",
+						retired: { count: 1, through: ["dropped"] },
+					}),
+				],
+				BACKGROUND_CONTEXT,
+			),
+		BACKGROUND_CONTEXT,
+	);
+	assert.notEqual("kept", initialId);
+});
+
 test("legacy single-parent retirement normalizes on read and validates as an array", async (t) => {
 	const { root, cleanup } = await fixture(t);
 	const repo = new MemorySessionRepo();

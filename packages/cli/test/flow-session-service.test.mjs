@@ -511,6 +511,21 @@ test("switching away and back preserves a branch's pending work and late results
 	const page = await back.attachment.results.page(reference, { limit: 4, maxBytes: 4096 });
 	assert.equal(page.total, 1);
 	assert.equal(page.members[0].id, "late");
+	// The branch owning the newest transcript entry survives a keep-one retirement: append on
+	// the reactivated branch, switch away again, retire, and reopen at the tip it owns.
+	await f.session.prompt("more on the original branch");
+	const forkMarker = f.session.sessionManager
+		.getEntries()
+		.find((entry) => entry.type === "custom" && entry.data?.branchId === fork.scope.branchId);
+	await f.session.navigateTree(forkMarker.id);
+	assert.deepEqual(f.service.branch().scope, fork.scope);
+	await f.service.retireResultHistory(1, 1);
+	await f.service.close();
+	const reopened = await fixture(t, {
+		root: f.root,
+		manager: SessionManager.open(f.session.sessionManager.getSessionFile()),
+	});
+	assert.deepEqual(reopened.service.branch().scope, original.scope, "the tip owner rebinds after retirement");
 });
 
 test("branch startup awaits source registration and closes each source on navigation", async (t) => {

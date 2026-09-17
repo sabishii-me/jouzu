@@ -106,9 +106,16 @@ export class PiFlowSessionRegistry {
 				!Array.isArray(retired.through) ||
 				!retired.through.length ||
 				retired.through.some((id) => !identity(id)) ||
-				new Set(retired.through).size !== retired.through.length)
+				new Set(retired.through).size !== retired.through.length ||
+				retired.through.length > retired.count)
 		)
 			throw new FlowLedgerError("schema", "Invalid retired branch ancestry.");
+		const allIds = new Set<string>();
+		for (const branch of state.branches) if (branch && identity(branch.id)) allIds.add(branch.id);
+		const cited = new Set<string>();
+		for (const branch of state.branches) if (branch && identity(branch.fromBranchId)) cited.add(branch.fromBranchId);
+		if (retired && (retired.through.some((id) => allIds.has(id)) || retired.through.some((id) => !cited.has(id))))
+			throw new FlowLedgerError("schema", "Retired branch ancestry does not follow its retained records.");
 		const ids = new Set<string>(),
 			transitions = new Set<string>(),
 			positions = new Set<string>();
@@ -127,10 +134,13 @@ export class PiFlowSessionRegistry {
 				if (index !== 0 || retired || branch.transitionId !== undefined)
 					throw new FlowLedgerError("schema", "Invalid session branch ancestry.");
 			} else {
-				// A parent is either an earlier retained record or a retired ancestor.
+				// A parent is either an earlier retained record or a retired ancestor; a record
+				// appearing later in the array can never be cited.
+				const retainedParent = ids.has(parent);
 				if (
 					!identity(parent) ||
-					(!ids.has(parent) && !(retired && retired.through.includes(parent))) ||
+					(!retainedParent && allIds.has(parent)) ||
+					(!retainedParent && !(retired && retired.through.includes(parent))) ||
 					branch.transitionId === undefined ||
 					transitions.has(branch.transitionId)
 				)
@@ -222,16 +232,22 @@ export class PiFlowSessionRegistry {
 	/**
 	 * Drop branch ancestry past `keep`, oldest first. Only the active branch and the newest records
 	 * carry position evidence a live attachment can still need; older records are history. The
-	 * active branch is never retired and retirement is refused while a navigation is unresolved, so
+	 * active branch and any protected record — such as the branch owning the newest transcript
+	 * entry — are never retired, and retirement is refused while a navigation is unresolved, so
 	 * a reconciling attachment always finds its own ancestry. Returns how many were retired.
 	 */
-	retireBranchHistory(keep = 64): Promise<number> {
+	retireBranchHistory(keep = 64, protectedIds: ReadonlySet<string> = new Set()): Promise<number> {
 		if (!Number.isSafeInteger(keep) || keep < 1)
 			return Promise.reject(new FlowLedgerError("capacity", "Invalid branch retention size."));
 		return this.transact((state) => {
 			if (state.transition) throw new FlowLedgerError("busy", "Branch retirement requires a settled navigation.");
 			const activeIndex = state.branches.findIndex((branch) => branch.id === state.activeBranchId);
-			const excess = Math.min(state.branches.length - keep, activeIndex);
+			const guardedIndex = state.branches.findIndex((branch) => protectedIds.has(branch.id));
+			const excess = Math.min(
+				state.branches.length - keep,
+				activeIndex,
+				guardedIndex < 0 ? state.branches.length : guardedIndex,
+			);
 			if (excess < 1) return { result: 0, changed: false };
 			const dropped = state.branches.splice(0, excess);
 			// A dropped parent stays cited only while a retained record references it.

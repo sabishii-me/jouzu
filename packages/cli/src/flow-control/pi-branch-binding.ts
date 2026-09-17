@@ -30,8 +30,14 @@ interface MarkerData {
 }
 type Marker = CustomEntry<MarkerData> & { data: MarkerData };
 const identity = (id: unknown): id is string => typeof id === "string" && id.length > 0 && id.length <= 512;
-function latestMarker(manager: SessionManager): Marker | undefined {
-	for (const entry of manager.getBranch().reverse()) {
+function markerFrom(sessionId: string, entries: readonly unknown[]): Marker | undefined {
+	for (let index = entries.length - 1; index >= 0; index--) {
+		const entry = entries[index] as {
+			type?: unknown;
+			customType?: unknown;
+			data?: unknown;
+			id?: unknown;
+		};
 		if (entry.type !== "custom" || entry.customType !== customType) continue;
 		const data = entry.data as MarkerData;
 		if (
@@ -41,9 +47,13 @@ function latestMarker(manager: SessionManager): Marker | undefined {
 			(data.transitionId !== undefined && !identity(data.transitionId))
 		)
 			throw new FlowLedgerError("schema", "Invalid flow branch marker.");
-		if (data.sessionId === manager.getSessionId()) return entry as Marker;
+		if (!identity(entry.id)) throw new FlowLedgerError("schema", "Invalid flow branch marker.");
+		if (data.sessionId === sessionId) return entry as unknown as Marker;
 	}
 	return undefined;
+}
+function latestMarker(manager: SessionManager): Marker | undefined {
+	return markerFrom(manager.getSessionId(), manager.getBranch());
 }
 function assertSession(state: FlowSessionRegistryState, manager: SessionManager): void {
 	if (state.sessionId !== manager.getSessionId())
@@ -99,6 +109,20 @@ function reactivationTarget(state: FlowSessionRegistryState, marker: Marker | un
 	return record;
 }
 
+/** The flow branches a restart or reattachment can still land on, for retirement protection. */
+export function piTranscriptBranchOwners(manager: SessionManager): Set<string> {
+	const owners = new Set<string>();
+	const leafOwner = latestMarker(manager)?.data.branchId;
+	if (leafOwner) owners.add(leafOwner);
+	// A restart reopens the transcript at its newest entry, which may sit on another branch.
+	const tip = manager.getEntries().at(-1);
+	if (tip && identity(tip.id)) {
+		const tipOwner = markerFrom(manager.getSessionId(), manager.getBranch(tip.id))?.data.branchId;
+		if (tipOwner) owners.add(tipOwner);
+	}
+	return owners;
+}
+
 /** Reconcile an owned registry with the active Pi transcript before attaching a controller. */
 export async function bindPiFlowBranch(registry: PiFlowSessionRegistry, manager: SessionManager): Promise<FlowScope> {
 	return registry.run(async () => {
@@ -128,32 +152,44 @@ export async function bindPiFlowBranch(registry: PiFlowSessionRegistry, manager:
 				assertPosition(manager, state.sessionId, leafId);
 				return scope;
 			}
-			throw new FlowLedgerError("transition", "Interrupted navigation has no matching branch marker.");
+			// No retained branch owns this path (an unmarked or retired owner). The recorded fork
+			// never attached, so complete it at the crash point instead of holding the session.
+			const forkMarker = appendMarker(manager, {
+				version: 1,
+				sessionId: state.sessionId,
+				branchId: pending.branchId,
+				transitionId: pending.id,
+			});
+			const position = await evidence(manager, forkMarker);
+			const scope = await registry.finishNavigation(pending.id, forkMarker.id, position);
+			await assertRegistry(registry, scope, state.revision + 1);
+			assertPosition(manager, state.sessionId, forkMarker.id);
+			return scope;
 		}
 		const branch = state.branches.find((record) => record.id === state.activeBranchId);
 		if (!branch) throw new FlowLedgerError("schema", "Active branch record is missing.");
 		if (!marker && !branch.position && neverNavigated(state) && manager.getLeafId() === branch.enteredAtLeafId)
 			marker = appendMarker(manager, { version: 1, sessionId: state.sessionId, branchId: branch.id });
+		if (!marker) throw new FlowLedgerError("identity", "Active Pi branch has no flow marker.");
 		// A restart reopens the transcript at its newest entry, which can belong to another retained
 		// branch; verified position evidence decides ownership, so attachment follows the transcript.
-		const target = marker && reactivationTarget(state, marker);
+		// Evidence is verified before the registry changes, so a rejected marker selects nothing.
+		const leafId = manager.getLeafId();
+		const position = await evidence(manager, marker);
+		const target = reactivationTarget(state, marker);
 		let active = branch;
 		let revision = state.revision;
 		if (target && target.id !== branch.id) {
+			if (!target.position || target.position.entryHash !== position.entryHash)
+				throw new FlowLedgerError("identity", "Verified branch position differs from its registry binding.");
 			const rebound = await registry.rebindActiveBranch(target.id);
 			revision++;
 			await assertRegistry(registry, rebound, revision);
 			active = target;
-		} else if (
-			!target &&
-			(!marker || marker.data.branchId !== branch.id || marker.data.transitionId !== branch.transitionId)
-		)
+		} else if (!target && (marker.data.branchId !== branch.id || marker.data.transitionId !== branch.transitionId))
 			throw new FlowLedgerError("identity", "Active Pi branch differs from its flow registry.");
-		if (!marker) throw new FlowLedgerError("identity", "Active Pi branch has no flow marker.");
 		if (active.position && active.position.entryId !== marker.id)
 			throw new FlowLedgerError("identity", "Verified branch position differs from its registry binding.");
-		const leafId = manager.getLeafId();
-		const position = await evidence(manager, marker);
 		if (active.position) {
 			if (
 				active.position.entryId !== position.entryId ||

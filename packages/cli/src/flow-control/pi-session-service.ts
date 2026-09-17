@@ -4,7 +4,7 @@ import { SessionFlowController } from "./controller.js";
 import { isNativeUserInput } from "./native-admission.js";
 import { reconcileNativeSources } from "./native-source-reconciliation.js";
 import { PiFlowAttachment } from "./pi-attachment.js";
-import { bindPiFlowBranch, completePiFlowNavigation } from "./pi-branch-binding.js";
+import { bindPiFlowBranch, completePiFlowNavigation, piTranscriptBranchOwners } from "./pi-branch-binding.js";
 import { PiControllerHost, type PiControllerHostOptions } from "./pi-controller-host.js";
 import { recoverPiHistory } from "./pi-history-recovery.js";
 import { PiNativeDispatch } from "./pi-native-dispatch.js";
@@ -339,7 +339,12 @@ export class PiFlowSessionService {
 					references.resultIds,
 					() => references.assertCurrent(),
 				);
-				return manifests + (await this.registry.retireBranchHistory(keepBranches));
+				// Branches a restart or reattachment can still land on must survive retirement:
+				// a restart reopens at the newest transcript entry and binds by its marker.
+				return (
+					manifests +
+					(await this.registry.retireBranchHistory(keepBranches, piTranscriptBranchOwners(this.session.sessionManager)))
+				);
 			});
 			if (result.kind === "busy") throw new FlowLedgerError("busy", "Result retirement requires an idle session.");
 			return result.value;

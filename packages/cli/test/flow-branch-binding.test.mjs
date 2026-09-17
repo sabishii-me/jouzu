@@ -307,6 +307,67 @@ test("navigation onto a retained branch's path reactivates it without a new reco
 	assert.deepEqual(await bindPiFlowBranch(await open(reopened), reopened), second);
 });
 
+test("an interrupted navigation onto a retired path completes its fork on reopen", async (t) => {
+	const { manager, registry, open } = await fixture(t);
+	const first = await bindPiFlowBranch(registry, manager);
+	manager.appendMessage({ role: "user", content: "first", timestamp: 1 });
+	const firstEntry = manager.getLeafId();
+	const transition = await registry.beginNavigation((await registry.snapshot()).revision, manager.getLeafId());
+	manager.resetLeaf();
+	const second = await completePiFlowNavigation(registry, manager, transition.id);
+	assert.equal(await registry.retireBranchHistory(1), 1);
+	// Crash point: the transition is durable, the leaf moved onto the retired path, and Pi's
+	// branch summary (here a plain message) landed before the flow marker was appended.
+	const nav = await registry.beginNavigation((await registry.snapshot()).revision, manager.getLeafId());
+	manager.branch(firstEntry);
+	manager.appendMessage({ role: "user", content: "summary", timestamp: 2 });
+	manager.flush();
+	await registry.close();
+	const reopened = SessionManager.open(manager.getSessionFile());
+	const next = await open(reopened);
+	const scope = await bindPiFlowBranch(next, reopened);
+	assert.equal(scope.branchId, nav.branchId);
+	assert.equal(scope.branchId !== first.branchId && scope.branchId !== second.branchId, true);
+	const state = await next.snapshot();
+	assert.equal(state.transition, undefined);
+	assert.equal(state.activeBranchId, nav.branchId);
+	// The completed fork is idempotent to reconcile.
+	assert.deepEqual(await bindPiFlowBranch(next, reopened), scope);
+});
+
+test("a changed marker at a retained rebind target rejects binding without selecting it", async (t) => {
+	const { manager, registry, open } = await fixture(t);
+	const first = await bindPiFlowBranch(registry, manager);
+	const firstMarker = manager.getBranch().find((entry) => entry.type === "custom");
+	const transition = await registry.beginNavigation((await registry.snapshot()).revision, manager.getLeafId());
+	manager.resetLeaf();
+	const second = await completePiFlowNavigation(registry, manager, transition.id);
+	manager.appendMessage({ role: "user", content: "on second", timestamp: 1 });
+	manager.flush();
+	// Reactivate the first branch; the file tip stays on the second branch's path.
+	const away = await registry.beginNavigation((await registry.snapshot()).revision, manager.getLeafId());
+	manager.branch(firstMarker.id);
+	await completePiFlowNavigation(registry, manager, away.id);
+	const state = await registry.snapshot();
+	assert.equal(state.activeBranchId, first.branchId);
+	await registry.close();
+	// Corrupt the retained second branch's marker bytes on disk, reopen at its tip, and confirm
+	// the failed identity check left the registry's active branch untouched.
+	const path = manager.getSessionFile();
+	const entries = (await readFile(path, "utf8")).trim().split("\n").map(JSON.parse);
+	const marker = entries.find(
+		(entry) => entry.customType === "jouzu-flow-branch" && entry.data?.branchId === second.branchId,
+	);
+	marker.timestamp = "changed";
+	await writeFile(path, `${entries.map(JSON.stringify).join("\n")}\n`);
+	const reopened = SessionManager.open(path);
+	const next = await open(reopened);
+	await assert.rejects(bindPiFlowBranch(next, reopened), { code: "identity" });
+	const after = await next.snapshot();
+	assert.equal(after.activeBranchId, first.branchId, "a rejected marker selects nothing");
+	assert.equal(after.revision, state.revision);
+});
+
 test("navigation onto a retired branch's position forks with a fresh marker", async (t) => {
 	const { manager, registry } = await fixture(t);
 	const first = await bindPiFlowBranch(registry, manager);
