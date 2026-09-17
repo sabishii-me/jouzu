@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.1.12 - 2026-09-17
+
+### Added
+
+- Control subagents per session with `/workflow on`, `/workflow off`, `/workflow toggle`, or the Workflow On/Off control. Disabling stops running and queued children without undoing their file changes; retained results remain readable.
+- Include the `jouzu-delegation` skill in Core and JA, with assignment and follow-up examples. Give every parent model a short checklist for objectives, verified context, constraints, acceptance checks, and stopping points while subagents are enabled.
+- Show goal, loop, and child-agent activity on the Session Line, with an animated marker while work runs and lifecycle counts. Keep workspace, Git, runtime, and context information in the Status Bar.
+
+### Changed
+
+- Reserve subagent model selection for the user. The agent-facing tool rejects model overrides; new launches use the configured role model and resumes keep their saved model and definition. Change role models through Workflow.
+- Display friendly subagent model names and readable activity/output previews while retaining exact model identifiers and original paged output.
+- Resolve a sole saved goal directly with `/goal resume`; route ambiguous targets to the agent and deliver explicit resumes through flow control.
+
+### Fixed
+
+- Reconnect tasks and multiloops after conversation-tree navigation, preserving saved tasks while discarding abandoned scheduling state.
+- Reconcile unread child completions after tree navigation. Require successful model-input receipts before complete terminal reads suppress a completion notification.
+- Prepare missing tool results as explicit unknown outcomes before ordinary and automatic model requests and built-in summaries. Preserve saved transcripts and tool side effects; reject ambiguous or mismatched tool results.
+- Refresh authenticated catalogs without an activated revision before initial model selection, with an eight-second budget. Keep cached catalog refreshes in the background and tolerate malformed catalog configuration during startup.
+
+### Installation
+
+- Document the Windows installer's `/LOG` flag for diagnosing failed activation. The unsigned x64 installer preview includes this release's CLI changes.
+
+### Testing limits
+
+- Automated tests verify delegation guidance delivery, not model compliance or improved task performance. Flow and catalog regression tests use controlled fixtures; live-provider recovery across branches remains unverified.
+- Native Windows installer acceptance covers Windows Server 2025 x64. Clean Windows 10/11 testing remains pending.
+
 ## 0.1.11 - 2026-09-16
 
 ### Added
