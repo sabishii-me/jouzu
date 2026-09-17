@@ -515,7 +515,7 @@ export class FlowSubmissionStore {
 	}
 	private transact<T>(
 		update: (state: State, archived: RecordData[]) => { result: T; changed: boolean },
-		includeArchived = false,
+		includeArchived: boolean | ReadonlySet<string> = false,
 	): Promise<T> {
 		return this.ownership.run(() =>
 			this.session.mutate(async (mutation, context) => {
@@ -552,20 +552,22 @@ export class FlowSubmissionStore {
 				this.validate(state);
 				const archived = includeArchived
 					? await Promise.all(
-							(state.archived ?? []).map(async (entry) => {
-								const record = (await mutation.getValue(recordAddress(entry.id), context))?.value;
-								if (
-									!record ||
-									record.id !== entry.id ||
-									record.revision !== entry.revision ||
-									record.dispatch?.operationId !== entry.operationId ||
-									Buffer.byteLength(JSON.stringify(record)) !== entry.bytes ||
-									recordHash(record) !== entry.contentHash
-								)
-									throw new FlowLedgerError("identity", "Archived submission content is missing or changed.");
-								this.validate({ version: 1, scope: state.scope, revision: state.revision, records: [record] });
-								return structuredClone(record);
-							}),
+							(state.archived ?? [])
+								.filter((entry) => includeArchived === true || includeArchived.has(entry.operationId))
+								.map(async (entry) => {
+									const record = (await mutation.getValue(recordAddress(entry.id), context))?.value;
+									if (
+										!record ||
+										record.id !== entry.id ||
+										record.revision !== entry.revision ||
+										record.dispatch?.operationId !== entry.operationId ||
+										Buffer.byteLength(JSON.stringify(record)) !== entry.bytes ||
+										recordHash(record) !== entry.contentHash
+									)
+										throw new FlowLedgerError("identity", "Archived submission content is missing or changed.");
+									this.validate({ version: 1, scope: state.scope, revision: state.revision, records: [record] });
+									return structuredClone(record);
+								}),
 						)
 					: [];
 				const { result, changed } = update(state, archived);
@@ -646,10 +648,26 @@ export class FlowSubmissionStore {
 	}
 
 	snapshot(includeArchived = true): Promise<RetainedSubmission[]> {
+		return this.readRecords(includeArchived);
+	}
+
+	/** Read consumption evidence only for the requested operation identities. */
+	forOperations(operationIds: readonly string[]): Promise<RetainedSubmission[]> {
+		if (!Array.isArray(operationIds) || operationIds.some((id) => !identity(id)))
+			return Promise.reject(new FlowLedgerError("identity", "Invalid submission operation query."));
+		return this.readRecords(new Set(operationIds));
+	}
+
+	private readRecords(includeArchived: boolean | ReadonlySet<string>): Promise<RetainedSubmission[]> {
 		return this.transact(
 			(state, archived) => ({
 				changed: false,
 				result: [...state.records, ...archived]
+					.filter(
+						(record) =>
+							typeof includeArchived === "boolean" ||
+							(!!record.dispatch && includeArchived.has(record.dispatch.operationId)),
+					)
 					.sort((a, b) => (state.orderIds ? state.orderIds.indexOf(a.id) - state.orderIds.indexOf(b.id) : 0))
 					.map(({ payload, digest: _digest, dispatch, ...record }) => ({
 						...record,

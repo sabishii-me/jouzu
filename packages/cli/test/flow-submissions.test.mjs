@@ -480,6 +480,38 @@ test("submission archive frees admission slots and preserves source order across
 	assert.equal(dispatched, false);
 });
 
+test("submission operation queries validate only selected archived bodies", async (t) => {
+	const root = await rootFor(t);
+	const owner = FlowOwnership.acquire(root, scope);
+	const repo = new MemorySessionRepo();
+	const session = await repo.create({}, context);
+	afterCleanup(t, async () => {
+		await owner.close(() => session.close(context));
+		await repo.close(context);
+	});
+	let store = await FlowSubmissionStore.attach(session, owner);
+	for (const id of ["first", "second", "active"]) await consumeForArchive(store, id);
+	const before = await store.snapshot();
+	await store.archiveHandled(["first", "second"].map((id) => ({ id, revision: 1 })));
+	store = await FlowSubmissionStore.attach(session, owner);
+	assert.deepEqual(await store.forOperations(["operation-active", "operation-first", "operation-first"]), [
+		before[0],
+		before[2],
+	]);
+	assert.deepEqual(await store.forOperations([]), []);
+	assert.deepEqual(await store.forOperations(["unknown"]), []);
+	await assert.rejects(store.forOperations([""]), { code: "identity" });
+	await session.mutate(async (mutation, ctx) => {
+		const address = value("jouzu.flow.submission", "second");
+		const record = (await mutation.getValue(address, ctx)).value;
+		return mutation.commit([setValue(address, { ...record, acceptedAt: record.acceptedAt + 1 })], ctx);
+	}, context);
+	assert.deepEqual(await store.forOperations(["operation-first"]), [before[0]]);
+	assert.deepEqual(await store.forOperations([]), []);
+	await assert.rejects(store.forOperations(["operation-second"]), { code: "identity" });
+	await assert.rejects(store.snapshot(), { code: "identity" });
+});
+
 test("archive rejects unconsumed submissions atomically and detects changed historical bodies", async (t) => {
 	const root = await rootFor(t);
 	const owner = FlowOwnership.acquire(root, scope);

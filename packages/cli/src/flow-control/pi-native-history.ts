@@ -178,7 +178,7 @@ export class PiNativeHistory {
 		return { recovered: recovery.recovered, unresolved: recovery.unresolved };
 	}
 	async validateSources(members: NativeRequestSource[], store: FlowSubmissionStore): Promise<void> {
-		const records = await store.snapshot();
+		const records = await store.forOperations(members.map((member) => member.operationId));
 		for (const member of members) {
 			const dispatch = records.find((record) => record.dispatch?.operationId === member.operationId)?.dispatch;
 			const claimed = member.prompt

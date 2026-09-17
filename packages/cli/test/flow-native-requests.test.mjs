@@ -123,7 +123,7 @@ test("native source capture rejects mutation while identity validation is pendin
 
 test("native source links require retained consumption receipts", async (t) => {
 	const f = await nativeRequests(t, { retainInputs: true });
-	t.mock.method(f.attachment.submissions, "snapshot", async () => []);
+	t.mock.method(f.attachment.submissions, "forOperations", async () => []);
 	await f.session.prompt("unverified source");
 	assert.equal(f.sent.length, 0);
 	assert.deepEqual(await f.store.snapshot(), []);
