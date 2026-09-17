@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { BACKGROUND_CONTEXT, setValue, value } from "@earendil-works/pi-agent-core";
 import { openLocalFlowSession } from "../dist/flow-control/local-storage.js";
-import { supersededNativeRequests } from "../dist/flow-control/native-request-retention.js";
+import { retirableNativeRequests, supersededNativeRequests } from "../dist/flow-control/native-request-retention.js";
 import { MAX_RETIRED_NATIVE_REQUESTS } from "../dist/flow-control/native-request-store.js";
 import { PiFlowAttachment } from "../dist/flow-control/pi-attachment.js";
 import { retiredIdentityHash } from "../dist/flow-control/retired-identities.js";
@@ -118,6 +118,82 @@ async function complete(store, id, operations = ["input"], outcome = "success", 
 	await store.handoff(id, payload(record, model === "intact" ? "included" : model));
 	await store.finish(id, outcome);
 }
+
+test("retry-chain retirement preserves unresolved and protected members at every depth", () => {
+	const parent = {
+		...successful("parent"),
+		outcome: "withheld",
+		requiredSources: [0],
+		retryAuthorization: { ownerId: "owner", requestId: "middle" },
+	};
+	const middle = {
+		...successful("middle"),
+		outcome: "withheld",
+		requiredSources: [0],
+		retryOf: "parent",
+		retryAuthorization: { ownerId: "owner", requestId: "tail" },
+	};
+	const tail = { ...successful("tail"), retryOf: "middle" };
+	const later = successful("later", ["unrelated"]);
+	const chain = [parent, middle, tail, later];
+	const select = (records, protectedIds = []) => retirableNativeRequests(records, 1, new Set(), new Set(protectedIds));
+	assert.deepEqual(select(chain), ["parent", "middle", "tail"]);
+	assert.deepEqual(
+		select([{ ...parent, cancelledSources: [0] }, middle, tail, later]),
+		[],
+		"cancellation evidence remains available to context filtering",
+	);
+	assert.deepEqual(select([{ ...parent, cancelledProjections: [0] }, middle, tail, later]), []);
+	for (const id of ["parent", "middle", "tail"]) assert.deepEqual(select(chain, [id]), []);
+	for (const outcome of [undefined, "withheld"]) {
+		const held = { ...tail, outcome, requiredSources: [0] };
+		assert.deepEqual(select([parent, middle, held, later]), []);
+	}
+	const incomplete = structuredClone(tail);
+	incomplete.sourceCapture.model.members[0] = { sourceIndex: 0, status: "unresolved" };
+	assert.deepEqual(select([parent, middle, incomplete, later]), []);
+	assert.deepEqual(select([parent, middle, { ...tail, outcome: "failure" }, later]), ["parent", "middle", "tail"]);
+	assert.deepEqual(select([parent, middle, later]), [], "a missing retry endpoint cannot split provenance");
+});
+
+test("completed retry chains retire together and retain provenance after reopen", async (t) => {
+	const f = await fixture(t);
+	const first = input("held", ["retry-input"], "unresolved");
+	await f.store.begin(first, true, first.sourceCapture.members);
+	assert.equal(await f.store.handoff(first.id, payload(first, "unresolved")), false);
+	await f.store.authorizeRetry(first.id, hash);
+	const retry = input("retry", ["retry-input"]);
+	await f.store.begin(retry, true, retry.sourceCapture.members);
+	await f.store.handoff(retry.id, payload(retry));
+	await f.store.finish(retry.id, "success");
+	const chain = await f.store.snapshot();
+	assert.equal(chain[0].retryAuthorization.requestId, "retry");
+	assert.equal(chain[1].retryOf, "held");
+	assert.equal(await f.store.retireHistory(1), 0, "the keep window cannot split a chain");
+	await complete(f.store, "newest", ["new-input"]);
+	assert.equal(await f.store.retireHistory(1, new Set(["retry-input"])), 0);
+	assert.equal(await f.store.retireHistory(1, new Set(), new Set(["held"])), 0);
+	await assert.rejects(
+		f.store.retireHistory(1, new Set(), new Set(), () => {
+			throw new Error("revoked");
+		}),
+		/revoked/,
+	);
+	assert.equal((await f.store.snapshot()).length, 3);
+	assert.equal(await f.store.retireHistory(1), 2);
+	await f.reopen();
+	assert.deepEqual(
+		(await f.store.snapshot()).map(({ id }) => id),
+		["newest"],
+	);
+	for (const record of chain) {
+		assert.deepEqual(
+			(await f.storage.getValue(value("jouzu.flow.native-request-history", record.id), BACKGROUND_CONTEXT)).value,
+			record,
+		);
+		await assert.rejects(f.store.begin(input(record.id)), { code: "stale" });
+	}
+});
 
 test("history retirement bounds settled outcomes while preserving live and incomplete evidence across reopen", async (t) => {
 	const f = await fixture(t);

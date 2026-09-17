@@ -71,7 +71,7 @@ export function supersededNativeRequests(records: readonly NativeRequest[]): str
  * - unresolved requests, and any request still held for input or context, stay;
  * - a settled failure is retired like a success: it delivered nothing, so it holds no evidence a
  *   later reader needs, and excluding it would leave a failure-prone session unbounded;
- * - a request linked to a retry, in either direction, stays with its partner;
+ * - retry chains retire together, after every member is terminal and unprotected;
  * - a request observing an operation that still owns a retained submission stays, so every live
  *   submission keeps a complete request view.
  *
@@ -83,26 +83,52 @@ export function retirableNativeRequests(
 	liveOperations: ReadonlySet<string>,
 	protectedRequestIds: ReadonlySet<string> = new Set(),
 ): string[] {
-	const linked = new Set(
-		records.flatMap((record) =>
-			[record.retryOf, record.retryAuthorization?.requestId].filter((id): id is string => !!id),
-		),
+	const byId = new Map(records.map((record) => [record.id, record]));
+	const groups: NativeRequest[][] = [];
+	const visited = new Set<string>();
+	for (const record of records) {
+		if (visited.has(record.id)) continue;
+		const group: NativeRequest[] = [];
+		const pending = [record];
+		while (pending.length) {
+			const member = pending.pop();
+			if (!member) break;
+			if (visited.has(member.id)) continue;
+			visited.add(member.id);
+			group.push(member);
+			for (const id of [member.retryOf, member.retryAuthorization?.requestId]) {
+				const partner = id ? byId.get(id) : undefined;
+				if (partner) pending.push(partner);
+			}
+		}
+		groups.push(group);
+	}
+	const eligible = groups.filter((group) =>
+		group.every((record) => {
+			const child = record.retryAuthorization?.requestId ? byId.get(record.retryAuthorization.requestId) : undefined;
+			const parent = record.retryOf ? byId.get(record.retryOf) : undefined;
+			return (
+				record.outcome !== undefined &&
+				!protectedRequestIds.has(record.id) &&
+				!record.cancelledSources?.length &&
+				!record.cancelledProjections?.length &&
+				(record.outcome !== "success" ||
+					(!record.sourceCapture?.members.length && !record.projectionCapture?.members.length) ||
+					observations(record) !== undefined) &&
+				(!record.retryOf || parent?.retryAuthorization?.requestId === record.id) &&
+				(!record.retryAuthorization || child?.retryOf === record.id) &&
+				(!nativeRequestHeld(record) || !!child) &&
+				!(record.sourceCapture?.members ?? []).some((source) => liveOperations.has(source.operationId))
+			);
+		}),
 	);
-	const retirable = records.filter(
-		(record) =>
-			record.outcome !== undefined &&
-			!protectedRequestIds.has(record.id) &&
-			// A success is retired only once its delivery evidence is complete and verifiable. A
-			// request that never delivered has no such evidence to preserve, so keeping it forever
-			// would walk any session with intermittent provider failures to the record limit.
-			(record.outcome !== "success" ||
-				(!record.sourceCapture?.members.length && !record.projectionCapture?.members.length) ||
-				observations(record) !== undefined) &&
-			!nativeRequestHeld(record) &&
-			!record.retryOf &&
-			!record.retryAuthorization &&
-			!linked.has(record.id) &&
-			!(record.sourceCapture?.members ?? []).some((source) => liveOperations.has(source.operationId)),
+	const eligibleIds = new Set(eligible.flatMap((group) => group.map((record) => record.id)));
+	const ordered = records.filter((record) => eligibleIds.has(record.id));
+	const oldest = new Set(ordered.slice(0, Math.max(0, ordered.length - keep)).map((record) => record.id));
+	const retiring = new Set(
+		eligible
+			.filter((group) => group.every((record) => oldest.has(record.id)))
+			.flatMap((group) => group.map((record) => record.id)),
 	);
-	return retirable.slice(0, Math.max(0, retirable.length - keep)).map((record) => record.id);
+	return records.filter((record) => retiring.has(record.id)).map((record) => record.id);
 }
