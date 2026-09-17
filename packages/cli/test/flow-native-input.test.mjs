@@ -91,8 +91,18 @@ for (const handled of [false, true])
 		}
 	});
 
-test("native queue consumption waits for its exact input observation", async (t) => {
+test("native queue consumption waits for its exact input observation without scanning history", async (t) => {
 	const f = await fixture(t);
+	const snapshot = f.attachment.submissions.snapshot.bind(f.attachment.submissions);
+	t.mock.method(f.attachment.submissions, "snapshot", () => {
+		throw new Error("Queue consumption must not scan submission history");
+	});
+	const queries = [];
+	const forOperations = f.attachment.submissions.forOperations.bind(f.attachment.submissions);
+	t.mock.method(f.attachment.submissions, "forOperations", (operations) => {
+		queries.push([...operations]);
+		return forOperations(operations);
+	});
 	const entered = deferred(),
 		release = deferred();
 	const dispatch = f.attachment.submissions.dispatch.bind(f.attachment.submissions);
@@ -119,7 +129,9 @@ test("native queue consumption waits for its exact input observation", async (t)
 	release.resolve();
 	await Promise.all([enqueuing, running]);
 	assert.equal(f.requests.length, 1);
-	const [record] = await f.attachment.submissions.snapshot();
+	const [record] = await snapshot();
+	assert.equal(queries.length, 3);
+	assert.ok(queries.every((operations) => operations.length === 1 && operations[0] === record.dispatch.operationId));
 	assert.deepEqual(record.dispatch.inputs[0].queue, { id: item.id, revision: item.revision });
 	assert.equal(record.dispatch.inputs[0].args[0].content[0].text, "queued");
 	assert.deepEqual(record.dispatch.queueClaims, [{ id: item.id, revision: item.revision, consumed: true }]);

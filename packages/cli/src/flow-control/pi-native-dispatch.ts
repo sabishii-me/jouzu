@@ -172,7 +172,11 @@ export class PiNativeDispatch {
 				const accepted = previous?.beforeQueueClaim ? await previous.beforeQueueClaim(items, signal) : true;
 				this.assertActive();
 				if (!accepted) return false;
-				const records = await this.store.snapshot();
+				const operations = items.flatMap((item) => {
+					const observed = this.queued.get(item.id);
+					return observed ? [observed.operationId] : [];
+				});
+				const records = await this.store.forOperations(operations);
 				const selected = new Map<string, number>();
 				for (const item of items) {
 					const observed = this.queued.get(item.id);
@@ -213,7 +217,7 @@ export class PiNativeDispatch {
 					}
 					selected.set(record.id, record.revision);
 				}
-				const current = await this.store.snapshot();
+				const current = await this.store.forOperations(operations);
 				this.assertActive();
 				signal?.throwIfAborted();
 				return [...selected].every(([id, revision]) =>
@@ -239,7 +243,12 @@ export class PiNativeDispatch {
 					);
 				}
 				await previous?.afterQueueClaim?.(receipt, signal);
-				const records = await this.store.snapshot();
+				const records = await this.store.forOperations(
+					receipt.claimed.flatMap((item) => {
+						const observed = this.queued.get(item.id);
+						return observed ? [observed.operationId] : [];
+					}),
+				);
 				this.assertActive();
 				for (const item of receipt.claimed) {
 					const observed = this.queued.get(item.id);
