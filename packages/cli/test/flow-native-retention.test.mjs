@@ -143,7 +143,11 @@ test("retry-chain retirement preserves unresolved and protected members at every
 		[],
 		"cancellation evidence remains available to context filtering",
 	);
-	assert.deepEqual(select([{ ...parent, cancelledProjections: [0] }, middle, tail, later]), []);
+	assert.deepEqual(select([{ ...parent, cancelledProjections: [0] }, middle, tail, later]), [
+		"parent",
+		"middle",
+		"tail",
+	]);
 	for (const id of ["parent", "middle", "tail"]) assert.deepEqual(select(chain, [id]), []);
 	for (const outcome of [undefined, "withheld"]) {
 		const held = { ...tail, outcome, requiredSources: [0] };
@@ -154,6 +158,32 @@ test("retry-chain retirement preserves unresolved and protected members at every
 	assert.deepEqual(select([parent, middle, incomplete, later]), []);
 	assert.deepEqual(select([parent, middle, { ...tail, outcome: "failure" }, later]), ["parent", "middle", "tail"]);
 	assert.deepEqual(select([parent, middle, later]), [], "a missing retry endpoint cannot split provenance");
+});
+
+test("retired cancellations survive disk reopen and reject adapter delivery", async (t) => {
+	const f = await fixture(t);
+	const held = input("cancel-held", ["cancel-input"], "unresolved");
+	await f.store.begin(held, true, held.sourceCapture.members);
+	assert.equal(await f.store.handoff(held.id, payload(held, "unresolved")), false);
+	await f.store.cancelSources(held.id, hash, [0]);
+	await complete(f.store, "later", ["other"]);
+	assert.equal(await f.store.retireHistory(1), 0);
+	await f.store.reconcileSources(held.sourceCapture.members, "compacted");
+	await assert.rejects(
+		f.store.retireHistory(1, new Set(), new Set(), () => {
+			throw new Error("revoked");
+		}),
+		/revoked/,
+	);
+	assert.equal((await f.store.snapshot()).length, 2);
+	assert.equal(await f.store.retireHistory(1), 1);
+	await f.reopen();
+	assert.deepEqual(await f.store.cancelledSources(held.sourceCapture.members), held.sourceCapture.members);
+	assert.deepEqual(await f.store.cancelledSources(input("unrelated", ["distinct"]).sourceCapture.members), []);
+	const replay = input("replay-cancelled", ["cancel-input"]);
+	await f.store.begin(replay, true, replay.sourceCapture.members);
+	assert.deepEqual((await f.store.snapshot()).at(-1).requiredSources, []);
+	await assert.rejects(f.store.handoff(replay.id, payload(replay)), { code: "identity" });
 });
 
 test("completed retry chains retire together and retain provenance after reopen", async (t) => {
@@ -417,8 +447,20 @@ test("failed legacy native migration preserves both arrays and retries after reo
 		retired: [requestKey],
 		reconciled: [{ key: sourceKey, reason: "compacted" }],
 	};
+	const archived = {
+		...input("old", ["compacted"], "unresolved"),
+		ownerId: "owner",
+		outcome: "withheld",
+		reset: true,
+		requiredSources: [0],
+		cancelledSources: [0],
+	};
 	await f.storage.mutate(
-		(writer, context) => writer.commit([setValue(headerAddress, legacy)], context),
+		(writer, context) =>
+			writer.commit(
+				[setValue(headerAddress, legacy), setValue(value("jouzu.flow.native-request-history", "old"), archived)],
+				context,
+			),
 		BACKGROUND_CONTEXT,
 	);
 	const mutate = f.storage.mutate.bind(f.storage);
@@ -451,12 +493,40 @@ test("failed legacy native migration preserves both arrays and retries after reo
 		await f.storage.getValue(value("jouzu.flow.native-source-reconciled", sourceKey), BACKGROUND_CONTEXT),
 		undefined,
 	);
+	assert.equal(
+		await f.storage.getValue(value("jouzu.flow.native-source-cancelled", sourceKey), BACKGROUND_CONTEXT),
+		undefined,
+	);
 	await f.reopen();
 	await assert.rejects(f.store.begin(input("old")), { code: "stale" });
+	assert.deepEqual(await f.store.cancelledSources(archived.sourceCapture.members), archived.sourceCapture.members);
 	assert.equal(await f.store.sourceReconciled(source), true);
 	const header = (await f.storage.getValue(headerAddress, BACKGROUND_CONTEXT)).value;
 	assert.equal(header.retired, undefined);
 	assert.equal(header.reconciled, undefined);
+	assert.equal(header.cancellationIndexVersion, 1);
+	await f.reopen();
+	const reopenedMutate = f.storage.mutate.bind(f.storage);
+	f.storage.mutate = (update, context) =>
+		reopenedMutate(
+			(mutation, ctx) =>
+				update(
+					new Proxy(mutation, {
+						get(target, key) {
+							if (key === "scanValues")
+								return () => {
+									throw new Error("repeated cancellation migration scan");
+								};
+							const field = Reflect.get(target, key);
+							return typeof field === "function" ? field.bind(target) : field;
+						},
+					}),
+					ctx,
+				),
+			context,
+		);
+	assert.deepEqual(await f.store.cancelledSources(archived.sourceCapture.members), archived.sourceCapture.members);
+	await f.store.snapshot();
 });
 
 test("native admission and source checks query exact history without scans or rewrites", async (t) => {

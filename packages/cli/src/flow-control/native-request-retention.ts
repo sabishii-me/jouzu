@@ -1,5 +1,10 @@
 import { nativeProjectionDelivered, nativeSourceDelivered } from "./native-inclusion.js";
-import { type NativeRequest, nativeRequestHeld } from "./native-request-store.js";
+import {
+	type NativeRequest,
+	nativeCancelledSources,
+	nativeHoldPending,
+	nativeSourceKey,
+} from "./native-request-store.js";
 
 /** Successful per-input evidence, independent of its position in a later request. */
 function observations(request: NativeRequest): string[] | undefined {
@@ -82,6 +87,7 @@ export function retirableNativeRequests(
 	keep: number,
 	liveOperations: ReadonlySet<string>,
 	protectedRequestIds: ReadonlySet<string> = new Set(),
+	reconciledSources: ReadonlySet<string> = new Set(),
 ): string[] {
 	const byId = new Map(records.map((record) => [record.id, record]));
 	const groups: NativeRequest[][] = [];
@@ -110,14 +116,13 @@ export function retirableNativeRequests(
 			return (
 				record.outcome !== undefined &&
 				!protectedRequestIds.has(record.id) &&
-				!record.cancelledSources?.length &&
-				!record.cancelledProjections?.length &&
+				nativeCancelledSources([record]).every((source) => reconciledSources.has(nativeSourceKey(source))) &&
 				(record.outcome !== "success" ||
 					(!record.sourceCapture?.members.length && !record.projectionCapture?.members.length) ||
 					observations(record) !== undefined) &&
 				(!record.retryOf || parent?.retryAuthorization?.requestId === record.id) &&
 				(!record.retryAuthorization || child?.retryOf === record.id) &&
-				(!nativeRequestHeld(record) || !!child) &&
+				(!nativeHoldPending(record) || !!child) &&
 				!(record.sourceCapture?.members ?? []).some((source) => liveOperations.has(source.operationId))
 			);
 		}),

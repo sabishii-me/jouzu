@@ -88,6 +88,7 @@ interface SourceReconciliation {
 	reason: "compacted" | "reset";
 }
 interface Header {
+	cancellationIndexVersion?: 1;
 	reconciled?: SourceReconciliation[];
 	version: 1;
 	scope: FlowScope;
@@ -101,6 +102,7 @@ const requestIdentity = (id: string) => retiredIdentityHash("native-request", id
 const headerAddress = value<Header>("jouzu.flow.native-requests", "v1");
 const address = (id: string) => value<NativeRequest>("jouzu.flow.native-request", id);
 const historyAddress = (id: string) => value<NativeRequest>("jouzu.flow.native-request-history", id);
+const cancelledAddress = (key: string) => value<true>("jouzu.flow.native-source-cancelled", key);
 const retiredAddress = (key: string) => value<true>("jouzu.flow.native-request-retired", key);
 const reconciledAddress = (key?: string) =>
 	key === undefined
@@ -407,8 +409,13 @@ export class FlowNativeRequestStore {
 		}
 	}
 	private transact<T>(
-		update: (records: NativeRequest[], retired: string[], reconciled: SourceReconciliation[]) => T,
-		query: { requests?: string[]; sources?: string[]; allSources?: boolean } = {},
+		update: (
+			records: NativeRequest[],
+			retired: string[],
+			reconciled: SourceReconciliation[],
+			cancelled: ReadonlySet<string>,
+		) => T,
+		query: { requests?: string[]; sources?: string[]; allSources?: boolean; retirement?: boolean } = {},
 	): Promise<T> {
 		return this.ownership.run(() =>
 			this.session.mutate(async (mutation, context) => {
@@ -427,6 +434,7 @@ export class FlowNativeRequestStore {
 					throw new FlowLedgerError("schema", "Invalid native source reconciliation.");
 				if (
 					header.version !== 1 ||
+					(header.cancellationIndexVersion !== undefined && header.cancellationIndexVersion !== 1) ||
 					header.scope?.sessionId !== this.scope.sessionId ||
 					header.scope?.branchId !== this.scope.branchId ||
 					!Array.isArray(header.ids) ||
@@ -454,12 +462,47 @@ export class FlowNativeRequestStore {
 				}
 				if (header.ids.some((id) => retiredIds.has(requestIdentity(id))))
 					throw new FlowLedgerError("identity", "Retired native request is still active.");
+				const records = await Promise.all(
+					header.ids.map(async (id) => {
+						const item = (await mutation.getValue(address(id), context))?.value;
+						if (!item || item.id !== id)
+							throw new FlowLedgerError("identity", "Native request manifest has missing content.");
+						return structuredClone(item);
+					}),
+				);
+				this.validate(records);
+				const cancelled = new Set(nativeCancelledSources(records).map(sourceIdentity));
+				const migrateCancellations = !!saved && header.cancellationIndexVersion === undefined;
+				const migratedCancellations = new Set<string>();
+				if (migrateCancellations) {
+					for (const archived of await mutation.scanValues(
+						value<NativeRequest>("jouzu.flow.native-request-history"),
+						context,
+					)) {
+						if (!archived.value || archived.value.id !== archived.address.key)
+							throw new FlowLedgerError("identity", "Native request history has invalid content.");
+						for (const source of nativeCancelledSources([archived.value]))
+							migratedCancellations.add(sourceIdentity(source));
+					}
+					for (const key of migratedCancellations) cancelled.add(key);
+				}
+				for (const key of new Set([
+					...(query.sources ?? []),
+					...records.flatMap((record) => (record.sourceCapture?.members ?? []).map(sourceIdentity)),
+				])) {
+					const stored = await mutation.getValue(cancelledAddress(key), context);
+					if (!stored) continue;
+					if (stored.value !== true) throw new FlowLedgerError("schema", "Invalid native source cancellation.");
+					cancelled.add(key);
+				}
 				const indexedSources = new Set<string>();
 				const sourceKeys = new Set(reconciled.map((item) => item.key));
 				const storedSources = query.allSources
 					? await mutation.scanValues(reconciledAddress(), context)
 					: await Promise.all(
-							[...new Set(query.sources ?? [])].map((key) => mutation.getValue(reconciledAddress(key), context)),
+							[...new Set([...(query.sources ?? []), ...(query.retirement ? [...cancelled] : [])])].map((key) =>
+								mutation.getValue(reconciledAddress(key), context),
+							),
 						);
 				for (const stored of storedSources) {
 					if (!stored) continue;
@@ -477,20 +520,15 @@ export class FlowNativeRequestStore {
 						sourceKeys.add(item.key);
 					}
 				}
-				const records = await Promise.all(
-					header.ids.map(async (id) => {
-						const item = (await mutation.getValue(address(id), context))?.value;
-						if (!item || item.id !== id)
-							throw new FlowLedgerError("identity", "Native request manifest has missing content.");
-						return structuredClone(item);
-					}),
-				);
-				this.validate(records);
 				const previous = new Map(records.map((record) => [record.id, JSON.stringify(record)]));
-				const result = update(records, retired, reconciled);
+				const result = update(records, retired, reconciled, cancelled);
 				this.validate(records);
 				const changed = records.filter((record) => previous.get(record.id) !== JSON.stringify(record));
 				const removed = [...previous.entries()].filter(([id]) => !records.some((record) => record.id === id));
+				const cancellationKeys = new Set([
+					...migratedCancellations,
+					...nativeCancelledSources(removed.map(([, record]) => JSON.parse(record))).map(sourceIdentity),
+				]);
 				const retirementWrites = retired
 					.filter((key) => !indexedRetired.has(key))
 					.map((key) => setValue(retiredAddress(key), true));
@@ -499,6 +537,7 @@ export class FlowNativeRequestStore {
 					.map((item) => setValue(reconciledAddress(item.key), item));
 				if (
 					!saved ||
+					migrateCancellations ||
 					changed.length ||
 					removed.length ||
 					header.retired !== undefined ||
@@ -510,10 +549,12 @@ export class FlowNativeRequestStore {
 						[
 							setValue(headerAddress, {
 								version: 1,
+								cancellationIndexVersion: 1,
 								scope: this.scope,
 								ids: records.map((record) => record.id),
 							}),
 							...retirementWrites,
+							...[...cancellationKeys].map((key) => setValue(cancelledAddress(key), true)),
 							...reconciliationWrites,
 							...changed.map((record) => setValue(address(record.id), record)),
 							...removed.flatMap(([id, record]) => [
@@ -619,17 +660,40 @@ export class FlowNativeRequestStore {
 	): Promise<number> {
 		if (!Number.isSafeInteger(keep) || keep < 1)
 			return Promise.reject(new FlowLedgerError("capacity", "Invalid native request retention size."));
-		return this.transact((records, retired) => {
-			if (this.requiresRecovery(records))
-				throw new FlowLedgerError("busy", "Request history retirement requires settled requests.");
-			const selected = new Set(retirableNativeRequests(records, keep, liveOperations, protectedRequestIds));
-			if (!selected.size) return 0;
-			assertCurrent();
-			retired.push(...[...selected].map(requestIdentity));
-			const remaining = records.filter((record) => !selected.has(record.id));
-			records.splice(0, records.length, ...remaining);
-			return selected.size;
-		});
+		return this.transact(
+			(records, retired, reconciled) => {
+				if (this.requiresRecovery(records))
+					throw new FlowLedgerError("busy", "Request history retirement requires settled requests.");
+				const reconciledKeys = new Set(reconciled.map((item) => item.key));
+				const cancelledReconciled = new Set(
+					nativeCancelledSources(records)
+						.filter((source) => reconciledKeys.has(sourceIdentity(source)))
+						.map(nativeSourceKey),
+				);
+				const selected = new Set(
+					retirableNativeRequests(records, keep, liveOperations, protectedRequestIds, cancelledReconciled),
+				);
+				if (!selected.size) return 0;
+				assertCurrent();
+				retired.push(...[...selected].map(requestIdentity));
+				const remaining = records.filter((record) => !selected.has(record.id));
+				records.splice(0, records.length, ...remaining);
+				return selected.size;
+			},
+			{ retirement: true },
+		);
+	}
+	cancelledSources(candidates: NativeRequestSource[]): Promise<NativeRequestSource[]> {
+		const captured = structuredClone(candidates);
+		return this.transact(
+			(records, _retired, _reconciled, cancelled) => {
+				const sources = new Map(nativeCancelledSources(records).map((source) => [nativeSourceKey(source), source]));
+				for (const source of captured)
+					if (cancelled.has(sourceIdentity(source))) sources.set(nativeSourceKey(source), source);
+				return structuredClone([...sources.values()]);
+			},
+			{ sources: captured.map(sourceIdentity) },
+		);
 	}
 	snapshot(): Promise<NativeRequest[]> {
 		return this.transact((records) => structuredClone(records));
@@ -726,14 +790,13 @@ export class FlowNativeRequestStore {
 			...(input.waitTokens?.length ? { waitTokens: [...new Set(input.waitTokens)] } : {}),
 		};
 		return this.transact(
-			(records, retired, reconciled) => {
+			(records, retired, reconciled, cancelled) => {
 				if (retired.includes(requestIdentity(captured.id)))
 					throw new FlowLedgerError("stale", "Native request identity has been retired.");
 				if (records.some((record) => record.id === captured.id))
 					throw new FlowLedgerError("identity", "Native request ID is already retained.");
 				if (this.requiresRecovery(records))
 					throw new FlowLedgerError("busy", "Native request requires reconciliation before another request.");
-				const cancelled = new Set(nativeCancelledSources(records).map(nativeSourceKey));
 				const received = new Set(
 					records.flatMap((request) =>
 						(request.sourceCapture?.members ?? [])
@@ -753,7 +816,7 @@ export class FlowNativeRequestStore {
 								(claim) =>
 									!reconciled.some((item) => item.key === sourceIdentity(claim)) &&
 									!received.has(nativeSourceKey(claim)) &&
-									!cancelled.has(nativeSourceKey(claim)) &&
+									!cancelled.has(sourceIdentity(claim)) &&
 									!capturedKeys.has(nativeSourceKey(claim)),
 							)
 						)
@@ -765,7 +828,7 @@ export class FlowNativeRequestStore {
 				}
 				const requiredSources = requireUnreceived
 					? (captured.sourceCapture?.members
-							.filter((source) => !received.has(nativeSourceKey(source)) && !cancelled.has(nativeSourceKey(source)))
+							.filter((source) => !received.has(nativeSourceKey(source)) && !cancelled.has(sourceIdentity(source)))
 							.map((source) => source.index) ?? [])
 					: undefined;
 				const retry = records.find(
@@ -782,7 +845,7 @@ export class FlowNativeRequestStore {
 						retry.sourceCapture?.members.some(
 							(source) =>
 								retry.requiredSources?.includes(source.index) &&
-								!cancelled.has(nativeSourceKey(source)) &&
+								!cancelled.has(sourceIdentity(source)) &&
 								!capturedKeys.has(nativeSourceKey(source)),
 						)
 					)
@@ -803,7 +866,10 @@ export class FlowNativeRequestStore {
 					...(retry ? { retryOf: retry.id } : {}),
 				});
 			},
-			{ requests: [captured.id], sources: claims?.map(sourceIdentity) },
+			{
+				requests: [captured.id],
+				sources: [...(claims ?? []), ...(captured.sourceCapture?.members ?? [])].map(sourceIdentity),
+			},
 		);
 	}
 	private owned(records: NativeRequest[], id: string): NativeRequest {
@@ -814,16 +880,15 @@ export class FlowNativeRequestStore {
 	}
 	handoff(id: string, payload: NonNullable<NativeRequest["payload"]>): Promise<boolean> {
 		const captured = structuredClone(payload);
-		return this.transact((records) => {
+		return this.transact((records, _retired, _reconciled, cancelled) => {
 			const record = this.owned(records, id);
 			if (record.payload || record.outcome)
 				throw new FlowLedgerError("transition", "Native request already has a disposition.");
-			const cancelled = new Set(nativeCancelledSources(records).map(nativeSourceKey));
 			// Both checks read model conversion, which is the checkpoint that decides what the provider
 			// adapter received. A cancelled input must not have reached it, and required content must.
 			if (
 				record.sourceCapture?.members.some(
-					(source) => cancelled.has(nativeSourceKey(source)) && nativeSourceDelivered(record, source.index),
+					(source) => cancelled.has(sourceIdentity(source)) && nativeSourceDelivered(record, source.index),
 				)
 			)
 				throw new FlowLedgerError("identity", "Cancelled native input reached the provider adapter.");

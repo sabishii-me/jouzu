@@ -15,7 +15,7 @@ import type {
 	NativeSourceCapture,
 	NativeSourceClaim,
 } from "./native-request-store.js";
-import { nativeCancelledSources, nativeSourceKey } from "./native-request-store.js";
+import { nativeSourceKey } from "./native-request-store.js";
 import { copyFlowPayload } from "./payload-copy.js";
 import { PiHostHooks } from "./pi-host-hooks.js";
 import { preparePiProviderRoute } from "./pi-provider-route.js";
@@ -130,7 +130,7 @@ export class PiNativeRequests {
 						hash(messages) !== sourceHash
 					)
 						throw new FlowLedgerError("stale", "Native source context changed during identity capture.");
-					const cancelled = nativeCancelledSources(await store.snapshot());
+					const cancelled = await store.cancelledSources(members);
 					if (cancelled.length) {
 						if (hash(messages) !== sourceHash || messages.some((message, index) => message !== references[index]))
 							throw new FlowLedgerError("stale", "Native context changed during cancellation lookup.");

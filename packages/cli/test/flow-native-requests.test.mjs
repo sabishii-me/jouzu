@@ -1159,6 +1159,16 @@ test("partial cancellation preserves duplicate instruction identity and remainin
 	assert.equal(retry.retryOf, held.id);
 	assert.equal(retry.sourceCapture.model.members[0].status, "intact");
 	assert.equal(retry.sourceCapture.members[0].operationId, held.sourceCapture.members[1].operationId);
+	await f.session.prompt("later request");
+	assert.equal(await f.store.retireHistory(1), 0, "unreconciled cancellation protects the chain");
+	await f.store.reconcileSources([held.sourceCapture.members[0]], "compacted");
+	assert.equal(await f.store.retireHistory(1), 2);
+	await f.session.prompt("after retirement");
+	assert.equal(f.sent.length, 3);
+	assert.equal(
+		f.sent.at(-1).messages.filter((message) => JSON.stringify(message.content).includes("same instruction")).length,
+		1,
+	);
 });
 
 test("cancellation cannot use an old hold after its retry starts", async (t) => {
