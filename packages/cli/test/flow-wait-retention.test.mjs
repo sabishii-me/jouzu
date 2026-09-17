@@ -14,8 +14,9 @@ const scope = { sessionId: "session", branchId: "branch" };
 const empty = () => ({ work: [], executions: [], waits: [] });
 async function fixture(t, retiredCount = 0) {
 	const root = await mkdtemp(join(tmpdir(), "jouzu-wait-retention-"));
+	let session;
 	let attachment = await PiFlowAttachment.open(root, scope, async (directory) => {
-		const session = await openLocalFlowSession(directory);
+		session = await openLocalFlowSession(directory);
 		if (retiredCount)
 			await session.mutate(
 				async (writer, context) =>
@@ -46,9 +47,16 @@ async function fixture(t, retiredCount = 0) {
 		get store() {
 			return attachment.waits;
 		},
-		async reopen() {
+		get session() {
+			return session;
+		},
+		async reopen(configure) {
 			await attachment.close();
-			attachment = await PiFlowAttachment.open(root, scope);
+			attachment = await PiFlowAttachment.open(root, scope, async (directory) => {
+				session = await openLocalFlowSession(directory);
+				await configure?.(session);
+				return session;
+			});
 		},
 	};
 }
@@ -188,12 +196,24 @@ test("retirement atomically frees waits, execution evidence, tool receipts, and 
 	const work = await f.store.changeWork("work", "bg", d.work.revision, "stopped", "Stop", 4);
 	await assert.rejects(f.store.retire({ ...empty(), work: [work] }), { code: "busy" });
 	await assert.rejects(f.store.retire({ ...empty(), executions: [d.execution] }), { code: "busy" });
+	const receipts = await f.store.toolReceipts();
 	assert.deepEqual(await f.store.retire({ work: [work], executions: [d.execution], waits: [d.wait] }), {
 		work: 1,
 		executions: 1,
 		waits: 1,
 	});
 	await f.reopen();
+	for (const [kind, key, record] of [
+		["work", retiredIdentityHash(work.id), work],
+		["executions", retiredIdentityHash(d.execution.producer, d.execution.execution), d.execution],
+		["waits", retiredIdentityHash(d.wait.token), d.wait],
+	]) {
+		const archived = (
+			await f.session.getValue(value(`jouzu.flow.wait-history-${kind}`, JSON.stringify([0, key])), BACKGROUND_CONTEXT)
+		).value;
+		assert.deepEqual(archived.record, record);
+		if (kind === "waits") assert.deepEqual(archived.toolReceipts, receipts);
+	}
 	assert.deepEqual(await f.store.snapshot(), []);
 	assert.deepEqual(await f.store.toolReceipts(), []);
 	assert.deepEqual(await f.store.authoritySnapshot(), { version: 1, work: [], executions: [], waitTokens: [] });
@@ -306,18 +326,335 @@ test("an execution change races retirement without losing the newer evidence", a
 	assert.equal((await f.store.authoritySnapshot()).executions[0].revision, 2);
 });
 
-test("replay-fence capacity holds retirement atomically while existing records remain usable", async (t) => {
-	const f = await fixture(t, MAX_RETIRED_FLOW_IDENTITIES - 1);
+function failWaitCommits(session) {
+	const mutate = session.mutate.bind(session);
+	session.mutate = (update, context) =>
+		mutate(
+			(writer, ctx) =>
+				update(
+					new Proxy(writer, {
+						get(target, key) {
+							if (key === "commit")
+								return (writes, context) => {
+									if (writes.some((write) => write.namespace === "jouzu.flow.waits"))
+										throw new Error("injected wait commit failure");
+									return target.commit(writes, context);
+								};
+							const field = Reflect.get(target, key);
+							return typeof field === "function" ? field.bind(target) : field;
+						},
+					}),
+					ctx,
+				),
+			context,
+		);
+	return () => {
+		session.mutate = mutate;
+	};
+}
+
+test("wait retirement failure preserves active records and committed admission membership", async (t) => {
+	const f = await fixture(t);
+	const work = await completed(f.store);
+	const restore = failWaitCommits(f.session);
+	await assert.rejects(f.store.retire({ ...empty(), work: [work] }), /injected wait commit failure/);
+	restore();
+	assert.deepEqual((await f.store.authoritySnapshot()).work, [work]);
+	assert.equal(f.store.gate().isWorkRetired(work.id), false);
+	assert.equal(
+		await f.session.getValue(
+			value("jouzu.flow.wait-history-work", JSON.stringify([0, retiredIdentityHash(work.id)])),
+			BACKGROUND_CONTEXT,
+		),
+		undefined,
+	);
+	await f.reopen();
+	assert.deepEqual((await f.store.authoritySnapshot()).work, [work]);
+	await f.store.retire({ ...empty(), work: [work] });
+	assert.equal(f.store.gate().isWorkRetired(work.id), true);
+});
+
+test("retirement rechecks eligibility after asynchronous archive lookups", async (t) => {
+	const f = await fixture(t);
+	const work = await completed(f.store);
+	let current = true;
+	const mutate = f.session.mutate.bind(f.session);
+	f.session.mutate = (update, context) =>
+		mutate(
+			(writer, ctx) =>
+				update(
+					new Proxy(writer, {
+						get(target, key) {
+							if (key === "getValue")
+								return (address, context) => {
+									if (address.namespace.startsWith("jouzu.flow.wait-history-")) current = false;
+									return target.getValue(address, context);
+								};
+							const field = Reflect.get(target, key);
+							return typeof field === "function" ? field.bind(target) : field;
+						},
+					}),
+					ctx,
+				),
+			context,
+		);
+	await assert.rejects(
+		f.store.retire({ ...empty(), work: [work] }, () => {
+			if (!current) throw new Error("eligibility changed");
+		}),
+		/eligibility changed/,
+	);
+	f.session.mutate = mutate;
+	assert.deepEqual((await f.store.authoritySnapshot()).work, [work]);
+	assert.equal(f.store.gate().isWorkRetired(work.id), false);
+	assert.equal(
+		await f.session.getValue(
+			value("jouzu.flow.wait-history-work", JSON.stringify([0, retiredIdentityHash(work.id)])),
+			BACKGROUND_CONTEXT,
+		),
+		undefined,
+	);
+});
+
+for (const state of ["pending", "satisfied"])
+	test(`reset archives active wait evidence and permits token and execution reuse: ${state}`, async (t) => {
+		const f = await fixture(t);
+		const retired = await completed(f.store, "retired");
+		await f.store.retire({ ...empty(), work: [retired] });
+		const first = await dependency(f.store, { state });
+		const receipts = await f.store.toolReceipts();
+		const restore = failWaitCommits(f.session);
+		await assert.rejects(f.store.reset(), /injected wait commit failure/);
+		restore();
+		assert.deepEqual(await f.store.snapshot(), [first.wait]);
+		assert.deepEqual(await f.store.toolReceipts(), receipts);
+		assert.equal(f.store.gate().isWorkRetired(retired.id), true);
+		await f.store.reset();
+		await f.reopen();
+		assert.equal(f.store.gate().isWorkRetired(retired.id), false);
+		assert.deepEqual(await f.store.snapshot(), []);
+		const second = await dependency(f.store, { state });
+		assert.equal(second.execution.execution, first.execution.execution);
+		assert.equal(second.wait.token, first.wait.token);
+		await f.store.reset();
+		for (const epoch of [0, 1]) {
+			const wait = (
+				await f.session.getValue(
+					value("jouzu.flow.wait-history-waits", JSON.stringify([epoch, retiredIdentityHash(first.wait.token)])),
+					BACKGROUND_CONTEXT,
+				)
+			).value;
+			assert.deepEqual(wait.record, first.wait);
+			assert.deepEqual(wait.toolReceipts, receipts);
+			assert.deepEqual(
+				(
+					await f.session.getValue(
+						value(
+							"jouzu.flow.wait-history-executions",
+							JSON.stringify([epoch, retiredIdentityHash(first.execution.producer, first.execution.execution)]),
+						),
+						BACKGROUND_CONTEXT,
+					)
+				).value.record,
+				first.execution,
+			);
+		}
+	});
+
+for (const replacement of [false, true])
+	test(`owned declaration rechecks authorization after history reads: replacement=${replacement}`, async (t) => {
+		const f = await fixture(t);
+		const d = await dependency(f.store);
+		if (!replacement) await f.store.cancelOwned("bg", d.work.revision, d.wait.token, "Finish prior wait", 4);
+		const before = await f.store.snapshot();
+		const receipts = await f.store.toolReceipts();
+		const gate = f.store.gate().waitingWorkIds;
+		let active = true;
+		const mutate = f.session.mutate.bind(f.session);
+		f.session.mutate = (update, context) =>
+			mutate(
+				(writer, ctx) =>
+					update(
+						new Proxy(writer, {
+							get(target, key) {
+								if (key === "getValue")
+									return (address, context) => {
+										if (address.namespace === "jouzu.flow.wait-history-waits") active = false;
+										return target.getValue(address, context);
+									};
+								const field = Reflect.get(target, key);
+								return typeof field === "function" ? field.bind(target) : field;
+							},
+						}),
+						ctx,
+					),
+				context,
+			);
+		await assert.rejects(
+			f.store.declareOwned(
+				"bg",
+				d.work.revision,
+				{ ...d.wait, token: "new-wait" },
+				5,
+				100,
+				replacement ? d.wait.token : undefined,
+				() => {
+					if (!active) throw new Error("authorization revoked");
+				},
+				{ toolCallId: "replacement", toolName: "agent_wait" },
+			),
+			/authorization revoked/,
+		);
+		f.session.mutate = mutate;
+		assert.deepEqual(await f.store.snapshot(), before);
+		assert.deepEqual(await f.store.toolReceipts(), receipts);
+		assert.deepEqual(f.store.gate().waitingWorkIds, gate);
+	});
+
+test("owned cancellation rechecks authorization after its change callback yields", async (t) => {
+	const f = await fixture(t);
+	const d = await dependency(f.store);
+	let active = true;
+	await assert.rejects(
+		f.store.cancelOwned("bg", d.work.revision, d.wait.token, "Cancel", 4, () => {
+			if (!active) throw new Error("authorization revoked");
+			queueMicrotask(() => {
+				active = false;
+			});
+		}),
+		/authorization revoked/,
+	);
+	assert.deepEqual(await f.store.snapshot(), [d.wait]);
+	assert.deepEqual(f.store.gate().waitingWorkIds, [d.work.id]);
+});
+
+test("failed legacy wait migration retries atomically after reopen", async (t) => {
+	const f = await fixture(t);
+	const legacy = {
+		version: 1,
+		scope,
+		waits: [],
+		retired: {
+			work: [retiredIdentityHash("old")],
+			executions: [retiredIdentityHash("bg", "old-exec")],
+			waits: [retiredIdentityHash("old-wait")],
+		},
+	};
+	await f.session.mutate(
+		(writer, context) => writer.commit([setValue(value("jouzu.flow.waits", "v1"), legacy)], context),
+		BACKGROUND_CONTEXT,
+	);
+	await assert.rejects(
+		f.reopen((session) => {
+			failWaitCommits(session);
+		}),
+		/injected wait commit failure/,
+	);
+	await f.reopen(async (session) => {
+		assert.deepEqual((await session.getValue(value("jouzu.flow.waits", "v1"), BACKGROUND_CONTEXT)).value, legacy);
+		for (const kind of ["work", "executions", "waits"])
+			assert.equal(
+				await session.getValue(
+					value(`jouzu.flow.wait-history-${kind}`, JSON.stringify([0, legacy.retired[kind][0]])),
+					BACKGROUND_CONTEXT,
+				),
+				undefined,
+			);
+	});
+	assert.equal(f.store.gate().isWorkRetired("old"), true);
+	assert.equal(
+		(await f.session.getValue(value("jouzu.flow.waits", "v1"), BACKGROUND_CONTEXT)).value.retired,
+		undefined,
+	);
+	for (const kind of ["work", "executions", "waits"])
+		assert.ok(
+			await f.session.getValue(
+				value(`jouzu.flow.wait-history-${kind}`, JSON.stringify([0, legacy.retired[kind][0]])),
+				BACKGROUND_CONTEXT,
+			),
+		);
+});
+
+test("reset isolates reused identities and preserves each generation's archived records", async (t) => {
+	const f = await fixture(t);
+	const first = await completed(f.store);
+	await f.store.retire({ ...empty(), work: [first] });
+	await f.store.reset();
+	await f.reopen();
+	assert.equal(f.store.gate().isWorkRetired(first.id), false);
+	const active = await f.store.registerWork(first.id, "other-owner", 4);
+	const second = await f.store.changeWork(
+		active.id,
+		active.owner,
+		active.revision,
+		"completed",
+		"Second generation",
+		5,
+	);
+	await f.store.retire({ ...empty(), work: [second] });
+	await f.reopen();
+	assert.equal(f.store.gate().isWorkRetired(first.id), true);
+	for (const [epoch, record] of [
+		[0, first],
+		[1, second],
+	]) {
+		assert.deepEqual(
+			(
+				await f.session.getValue(
+					value("jouzu.flow.wait-history-work", JSON.stringify([epoch, retiredIdentityHash(record.id)])),
+					BACKGROUND_CONTEXT,
+				)
+			).value.record,
+			record,
+		);
+	}
+});
+
+test("ordinary wait updates query exact history without rescanning or rewriting retirement records", async (t) => {
+	const f = await fixture(t, 20);
+	const mutate = f.session.mutate.bind(f.session);
+	f.session.mutate = (update, context) =>
+		mutate(
+			(writer, ctx) =>
+				update(
+					new Proxy(writer, {
+						get(target, key) {
+							if (key === "scanValues")
+								return () => {
+									throw new Error("unexpected retirement scan");
+								};
+							if (key === "commit")
+								return (writes, context) => {
+									assert.ok(writes.every((write) => !write.namespace.startsWith("jouzu.flow.wait-history-")));
+									return target.commit(writes, context);
+								};
+							const field = Reflect.get(target, key);
+							return typeof field === "function" ? field.bind(target) : field;
+						},
+					}),
+					ctx,
+				),
+			context,
+		);
+	await completed(f.store, "fresh");
+	await assert.rejects(f.store.registerWork("retired-0", "bg", 4), { code: "stale" });
+	assert.equal(f.store.gate().isWorkRetired("retired-19"), true);
+});
+
+test("legacy wait replay fences migrate at the quota and permit further retirement", async (t) => {
+	const f = await fixture(t, MAX_RETIRED_FLOW_IDENTITIES);
 	const first = await completed(f.store, "first"),
 		second = await completed(f.store, "second");
-	await assert.rejects(f.store.retire({ ...empty(), work: [first, second] }), { code: "capacity" });
-	assert.equal((await f.store.authoritySnapshot()).work.length, 2);
-	assert.equal(f.store.gate().isWorkRetired("first"), false);
-	assert.equal(f.store.gate().isWorkRetired("second"), false);
-	await f.store.retire({ ...empty(), work: [first] });
+	await f.store.retire({ ...empty(), work: [first, second] });
+	const header = (await f.session.getValue(value("jouzu.flow.waits", "v1"), BACKGROUND_CONTEXT)).value;
+	assert.equal(header.retired, undefined);
+	assert.ok(JSON.stringify(header).length < 512);
 	await f.reopen();
-	await assert.rejects(f.store.retire({ ...empty(), work: [second] }), { code: "capacity" });
-	assert.deepEqual((await f.store.authoritySnapshot()).work, [second]);
+	for (const id of ["retired-0", `retired-${MAX_RETIRED_FLOW_IDENTITIES - 1}`, "first", "second"]) {
+		assert.equal(f.store.gate().isWorkRetired(id), true);
+		await assert.rejects(f.store.registerWork(id, "bg", 3), { code: "stale" });
+	}
+	assert.deepEqual(await f.store.retire({ ...empty(), work: [first, second] }), { work: 0, waits: 0, executions: 0 });
+	assert.deepEqual((await f.store.authoritySnapshot()).work, []);
 	await f.store.registerWork("usable", "bg", 3);
-	await assert.rejects(f.store.registerWork("first", "bg", 3), { code: "stale" });
 });
