@@ -97,19 +97,17 @@ A direct switch is blocked only when the estimated active context plus a 4,096-t
 
 ## Automatic work and flow control
 
-Session flow control is on by default. Background completions wait for active work and queued messages, then arrive in batches. Goals, measured loops, and other automatic work share this scheduling. Task lists advance through remaining work by default unless interrupted; `TaskReorder` changes their order, and `TaskList` shows what runs next. Waits have deadlines and can check whether a background process is still alive.
+Jouzu coordinates background jobs, goals, loops, and task lists by default. Background results arrive in batches after the current response and queued messages. Tasks can wait for your input or for another job before continuing. You can ask Jouzu to show, reorder, pause, or continue tasks.
 
-Task continuations keep the task's work identity, so they can start background jobs and declare or cancel waits. Dependencies and explicit pauses hold automatic continuation. Use `TaskUpdate` with `waitForUser: true` when an answer is needed, or `paused: true` to pause a task; clear the corresponding field to continue. A task with unchanged instructions and state stops after three admitted continuation attempts. Saved tasks without a work binding appear in `/flow`; start them with `TaskUpdate` (`status: "in_progress"`) or `TaskExecute` from a user turn.
+Run `/flow` to see why automatic work has stopped and which commands can resume it. `/flow pause` pauses automatic replies; `/flow resume` allows them again. Interrupting a reply also pauses automatic work until your next message or `/flow resume`. Pausing does not stop background jobs.
 
-Run `/flow runtime` to see the running and installed builds and the resolved flow-adapter paths and hashes captured at startup. Jouzu warns once per session if the installed build changes or a required adapter patch differs at startup. Restart to load a changed build.
+If a turn stays stuck, run `/flow reset` while Jouzu is idle. This releases the stuck turn without stopping jobs or deleting their records. If Jouzu cannot tell whether a model request completed, use `/flow resolve <attempt> retry|discard` with the identifier shown by `/flow`. Retrying may repeat a request the model already answered.
 
-Run `/flow` to see held work, why it is held, and its recovery commands. The report names the submitted source, the stage that failed, and the owning task with its dependencies. It keeps the original failure cause after a reset. `/flow pause` holds automatic turns, and `/flow resume` releases them. Interrupting a turn also pauses automatic work until your next message or `/flow resume`. Pausing does not stop running shell jobs.
+Returning to where you last left a recent conversation branch resumes its unfinished work, including tasks waiting for background jobs. Rewinding to an earlier point starts a new branch without resuming that work. It does not undo file changes. Reopening a session continues from its last saved position, which may differ from the branch you last viewed.
 
-If the session stays stuck after an interrupt, run `/flow reset` while idle. It releases the blocked turn without stopping background jobs or deleting execution records. When Jouzu cannot tell whether a provider answered a request, `/flow resolve <attempt> retry|discard` records your decision; retrying may repeat a turn the provider already answered.
+If a conversation branch lacks a tool result, Jouzu tells the model the outcome is unknown. It does not rerun the tool, copy a result from another branch, or change the saved conversation. If Jouzu cannot safely match tool calls to their results, it stops the request.
 
-With flow control enabled, forking, rewinding, or reopening a session can leave a tool call without its result on the selected branch. Before sending history to the model, Jouzu fills that gap with an explicit “outcome unknown” result. This does not rerun the tool, copy results from another branch, or change the saved conversation. The same preparation applies to automatic turns and built-in model-generated summaries. Failed or aborted assistant responses and their associated results are excluded from model replay; ambiguous or mismatched tool identities still block the request. Rewinding conversation history does not undo file changes or other tool side effects.
-
-Rewinding to an earlier message starts fresh flow work, including on repeated visits to the same message. Returning to a retained branch at its recorded departure point resumes that branch's waits and work. Reopening a saved session follows the last entry written to its transcript.
+Use `/flow runtime` to compare the running and installed versions when troubleshooting. If they differ, restart Jouzu to load the installed version.
 
 Set `JOUZU_FLOW_CONTROL=0` before starting Jouzu to disable flow control for that process. See [v0.1.9 release notes](https://github.com/shisa-ai/jouzu/blob/main/docs/releases/v0.1.9.md) for the command list and [Testing](https://github.com/shisa-ai/jouzu/blob/main/docs/testing.md) for validation limits.
 
