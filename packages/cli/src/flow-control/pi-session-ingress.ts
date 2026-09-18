@@ -337,8 +337,10 @@ export class PiSessionFlowIngress implements Ingress {
 				this.semanticReleaseRequested = false;
 				this.automaticReleaseRunning = true;
 				const joinedExisting = !!this.releasing;
-				void Promise.resolve()
-					.then(async () => {
+				// Drain the scheduler on close without making it an admission frame: its wake/release
+				// calls create their own frames and reject recursive admission.
+				void this.trackLifetime(
+					Promise.resolve().then(async () => {
 						// Drain an already admitted native pass before considering another dispatch.
 						await this.releasing;
 						if (wakeSemantic && this.options.autoRelease?.retireHistory && !this.disposed && !this.fenced) {
@@ -353,8 +355,10 @@ export class PiSessionFlowIngress implements Ingress {
 						if (wakeSemantic && !this.disposed && !this.fenced && this.branch().controller.view().producers.length)
 							await this.wakeProducers();
 						// Producer scheduling releases retained users first, then applies semantic rank ordering.
+						if (this.disposed || this.fenced) return { released: [], held: [] };
 						return this.releaseReady();
-					})
+					}),
+				)
 					.then((result) => {
 						if (joinedExisting || (result.released.length && result.held.length)) this.releaseRequested = true;
 					})
@@ -612,10 +616,17 @@ export class PiSessionFlowIngress implements Ingress {
 	private track<T>(run: () => Promise<T>, id?: string): Promise<T> {
 		const frame = { active: true, id };
 		const operation = this.frames.run(frame, run);
-		this.active.add(operation);
 		void operation
 			.finally(() => {
 				frame.active = false;
+			})
+			.catch(() => {});
+		return this.trackLifetime(operation);
+	}
+	private trackLifetime<T>(operation: Promise<T>): Promise<T> {
+		this.active.add(operation);
+		void operation
+			.finally(() => {
 				this.active.delete(operation);
 			})
 			.catch(() => {});

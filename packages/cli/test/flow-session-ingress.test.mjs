@@ -158,6 +158,43 @@ test("automatic idle maintenance retires duplicate native receipts without anoth
 	assert.equal((await f.ingress.branch().attachment.submissionViews()).length, 2);
 });
 
+test("disposal joins automatic maintenance without closing its storage early", { timeout: 5000 }, async (t) => {
+	const errors = [];
+	const f = await fixture(t, {
+		autoRelease: { retireHistory: true, onError: (error) => errors.push(error) },
+	});
+	const entered = deferred(),
+		release = deferred();
+	const ledger = f.ingress.branch().attachment.ledger;
+	// Hold the first retirement phase; later phases still need an owned, open ledger.
+	const waits = f.ingress.branch().attachment.waits;
+	const original = waits.snapshot.bind(waits);
+	let paused = false;
+	t.mock.method(waits, "snapshot", async (...args) => {
+		if (!paused) {
+			paused = true;
+			entered.resolve();
+			await release.promise;
+			await ledger.snapshot();
+		}
+		return original(...args);
+	});
+	f.ingress.requestRelease();
+	await entered.promise;
+	let closed = false;
+	const closing = f.ingress.dispose().then(() => {
+		closed = true;
+	});
+	try {
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.equal(closed, false);
+	} finally {
+		release.resolve();
+	}
+	await closing;
+	assert.deepEqual(errors, []);
+});
+
 test("idle wait maintenance releases terminal producer listeners without removing evidence", async (t) => {
 	const f = await fixture(t);
 	const attachment = f.ingress.branch().attachment;
@@ -4283,9 +4320,19 @@ for (const phase of ["selected", "prepared", "handed-off", "partial"])
 		);
 		assert.deepEqual(after.attempts[0].requests, before.attempts[0].requests);
 		assert.equal(ingress.automatedPause(), undefined);
-		assert.match(notices[0].text, /Cleared flow reservation stuck/);
+		// A reset that leaves the provider outcome unknown preserves the decision the user still owes,
+		// and the controller gate holds automated work until they make it.
+		assert.match(
+			notices[0].text,
+			phase === "handed-off"
+				? /preserved pending evidence that still needs reconciliation/
+				: /Cleared flow reservation stuck/,
+		);
 		assert.equal(f.sent.length, 0);
-		if (phase === "handed-off") await f.session.prompt("/flow resolve stuck discard");
+		if (phase === "handed-off") {
+			await f.session.prompt("/flow resolve stuck discard");
+			assert.equal(ingress.branch().host.gate().recoveryBlocked, false);
+		}
 		await f.session.prompt("hello after reset");
 		assert.equal(f.sent.length, 1);
 	});

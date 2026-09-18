@@ -4,6 +4,7 @@ import { verifyPiHistoryEntry } from "./pi-history-receipts.js";
 import {
 	type FlowBranchPosition,
 	type FlowBranchRecord,
+	type FlowBranchTransition,
 	type FlowSessionRegistryState,
 	neverNavigated,
 	type PiFlowSessionRegistry,
@@ -40,15 +41,17 @@ function markerFrom(sessionId: string, entries: readonly unknown[]): Marker | un
 		};
 		if (entry.type !== "custom" || entry.customType !== customType) continue;
 		const data = entry.data as MarkerData;
+		// Another session's marker is not this session's to validate. A copied or malformed foreign
+		// marker must not make every binding on this transcript throw.
+		if (!data || data.sessionId !== sessionId) continue;
 		if (
-			data?.version !== 1 ||
-			!identity(data.sessionId) ||
+			data.version !== 1 ||
 			!identity(data.branchId) ||
 			(data.transitionId !== undefined && !identity(data.transitionId))
 		)
 			throw new FlowLedgerError("schema", "Invalid flow branch marker.");
 		if (!identity(entry.id)) throw new FlowLedgerError("schema", "Invalid flow branch marker.");
-		if (data.sessionId === sessionId) return entry as unknown as Marker;
+		return entry as unknown as Marker;
 	}
 	return undefined;
 }
@@ -79,6 +82,10 @@ async function evidence(manager: SessionManager, marker: Marker): Promise<FlowBr
 		throw new FlowLedgerError("transition", "Branch marker is not durably recorded in the Pi transcript.");
 	return { entryId: marker.id, entryHash: result.entryHash };
 }
+/** Position evidence is the full triple: the same entry in another transcript lifetime is not the same position. */
+function samePosition(a: FlowBranchPosition | undefined, b: FlowBranchPosition): boolean {
+	return !!a && a.entryId === b.entryId && a.entryHash === b.entryHash && a.memoryInstanceId === b.memoryInstanceId;
+}
 function appendMarker(manager: SessionManager, data: MarkerData): Marker {
 	const id = manager.appendCustomEntry(customType, data);
 	manager.flush();
@@ -107,6 +114,29 @@ function reactivationTarget(state: FlowSessionRegistryState, marker: Marker | un
 	)
 		return undefined;
 	return record;
+}
+
+function navigationPosition(manager: SessionManager, pending: FlowBranchTransition) {
+	const current = manager.getLeafId();
+	const entries = manager.getEntries();
+	const tipIndex =
+		pending.previousTipId === null ? -1 : entries.findIndex((entry) => entry.id === pending.previousTipId);
+	// Older journals lack the file-tip checkpoint. They can prove only an unchanged selected leaf.
+	if (pending.previousTipId === undefined || (tipIndex < 0 && pending.previousTipId !== null))
+		return { destination: current, untouched: current === pending.previousLeafId };
+	const path = new Set(manager.getBranch().map((entry) => entry.id));
+	const appended = entries.slice(tipIndex + 1).find((entry) => path.has(entry.id));
+	return {
+		// Pi appends its summary/label at the destination before calling branchChanged.
+		destination: appended ? appended.parentId : current,
+		untouched:
+			!appended && (current === pending.previousLeafId || (manager.isPersisted() && current === pending.previousTipId)),
+	};
+}
+
+function canResume(target: FlowBranchRecord | undefined, activeId: string, destination: string | null): boolean {
+	// A legacy record without a saved departure can still bind on restart, but cannot prove a resume.
+	return !!target && target.id !== activeId && target.departedAtLeafId === destination;
 }
 
 /** The flow branches a restart or reattachment can still land on, for retirement protection. */
@@ -139,21 +169,25 @@ export async function bindPiFlowBranch(registry: PiFlowSessionRegistry, manager:
 				assertPosition(manager, state.sessionId, leafId);
 				return scope;
 			}
-			// The fork never recorded its marker, so no work ever attached to it; recover by
-			// discarding the transition and rebinding to the branch that owns this transcript path.
+			// No attached work belongs to the unmarked fork. An untouched journal follows the
+			// reopened file tip; a persisted navigation uses the same resume rule as live completion.
+			const navigation = navigationPosition(manager, pending);
 			const recovered = marker && reactivationTarget(state, marker);
-			if (recovered && marker) {
+			if (
+				recovered &&
+				marker &&
+				(navigation.untouched || canResume(recovered, state.activeBranchId, navigation.destination))
+			) {
 				const leafId = manager.getLeafId();
 				const position = await evidence(manager, marker);
-				if (recovered.position?.entryHash !== position.entryHash)
+				if (!samePosition(recovered.position, position))
 					throw new FlowLedgerError("identity", "Recovered branch position differs from its marker.");
 				const scope = await registry.reactivateNavigation(pending.id, recovered.id);
 				await assertRegistry(registry, scope, state.revision + 1);
 				assertPosition(manager, state.sessionId, leafId);
 				return scope;
 			}
-			// No retained branch owns this path (an unmarked or retired owner). The recorded fork
-			// never attached, so complete it at the crash point instead of holding the session.
+			// A rewind or an unowned destination completes the recorded fork at the crash point.
 			const forkMarker = appendMarker(manager, {
 				version: 1,
 				sessionId: state.sessionId,
@@ -180,7 +214,7 @@ export async function bindPiFlowBranch(registry: PiFlowSessionRegistry, manager:
 		let active = branch;
 		let revision = state.revision;
 		if (target && target.id !== branch.id) {
-			if (!target.position || target.position.entryHash !== position.entryHash)
+			if (!samePosition(target.position, position))
 				throw new FlowLedgerError("identity", "Verified branch position differs from its registry binding.");
 			const rebound = await registry.rebindActiveBranch(target.id);
 			revision++;
@@ -222,13 +256,13 @@ export async function completePiFlowNavigation(
 		if (!pending || pending.id !== transitionId)
 			throw new FlowLedgerError("stale", "Branch transition changed before binding.");
 		const marker = latestMarker(manager);
-		// A leaf owned by another retained branch reactivates it and keeps its durable work; a
-		// rewind within the active branch forks like any unowned position, dropping nothing durable.
+		// Only returning to a retained branch's saved departure resumes its work.
 		const target = marker && reactivationTarget(state, marker);
-		if (target && marker && target.id !== state.activeBranchId) {
+		const navigation = navigationPosition(manager, pending);
+		if (target && marker && canResume(target, state.activeBranchId, navigation.destination)) {
 			const leafId = manager.getLeafId();
 			const position = await evidence(manager, marker);
-			if (target.position?.entryHash !== position.entryHash)
+			if (!samePosition(target.position, position))
 				throw new FlowLedgerError("identity", "Reactivated branch position differs from its marker.");
 			const scope = await registry.reactivateNavigation(pending.id, target.id);
 			await assertRegistry(registry, scope, state.revision + 1);

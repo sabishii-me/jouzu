@@ -40,6 +40,9 @@ async function fixture(t, config = {}) {
 		},
 		extensions: [
 			(pi) => pi.on("session_tree", () => treeScopes.push(service.branch().scope)),
+			...(config.summary
+				? [(pi) => pi.on("session_before_tree", () => ({ summary: { summary: "Saved branch summary" } }))]
+				: []),
 			// Cloning before model conversion leaves required input unresolved there, which is what
 			// holds a request now that provider bodies are not decoded.
 			...(config.holdInput
@@ -149,6 +152,56 @@ test("reopen holds automated admission when consumed input has no provable histo
 	await branch.controller.wake();
 	assert.equal(builds, 0);
 	assert.deepEqual(next.requests, []);
+});
+
+test("resolving an interrupted turn releases the recovery gate it held after reopen", async (t) => {
+	const first = await fixture(t);
+	const ledger = first.service.branch().attachment.ledger;
+	// The input is in the transcript exactly as the flow records it, so the reopen has no missing
+	// history evidence: the adopted uncertainty is the only recovery gate left to release.
+	const input = FlowModelInput.compose(
+		"interrupted",
+		[{ id: "work", revision: "1", kind: "work", text: "Interrupted work" }],
+		4096,
+	);
+	await first.session.sendCustomMessage(
+		{ customType: "jouzu-flow", content: input.content, display: false },
+		{ triggerTurn: false },
+	);
+	await ledger.select(input.attemptId, input.members);
+	await ledger.queued(input.attemptId, { id: "queue", revision: 1 });
+	await ledger.claim(input.attemptId, { id: "queue", revision: 1 });
+	await ledger.prepare(
+		input.attemptId,
+		"request",
+		input.members.map((member) => ({
+			id: member.id,
+			revision: member.revision,
+			disposition: "included",
+			contentHash: member.contentHash,
+		})),
+		false,
+	);
+	await ledger.handoff(input.attemptId, "request");
+	await first.service.close();
+	const next = await fixture(t, {
+		root: first.root,
+		manager: SessionManager.open(first.session.sessionManager.getSessionFile()),
+	});
+	const branch = next.service.branch();
+	assert.deepEqual(branch.recovery, { recovered: 1, unresolved: 0 });
+	const state = await branch.attachment.ledger.snapshot();
+	// The reopen adopts the interrupted handoff as uncertain, and its generation stays with the
+	// attachment that created it, so resolving it must not require this attachment's ownership.
+	assert.equal(state.attempts[0].phase, "uncertain");
+	assert.notEqual(state.attempts[0].generation, state.generation);
+	assert.equal(branch.host.gate().recoveryBlocked, true);
+	await next.service.resolveUncertainAttempt(input.attemptId, "discard");
+	const [resolved] = (await branch.attachment.ledger.snapshot()).attempts;
+	assert.equal(resolved.phase, "settled");
+	assert.equal(resolved.outcome, "failure");
+	assert.equal(resolved.reason, "Resolved from /flow as spent.");
+	assert.equal(branch.host.gate().recoveryBlocked, false);
 });
 
 test("session ownership remains held until the branch controller drains", async (t) => {
@@ -526,6 +579,72 @@ test("switching away and back preserves a branch's pending work and late results
 		manager: SessionManager.open(f.session.sessionManager.getSessionFile()),
 	});
 	assert.deepEqual(reopened.service.branch().scope, original.scope, "the tip owner rebinds after retirement");
+});
+
+for (const annotation of ["summary", "label"])
+	for (const destination of ["rewind", "resume"])
+		for (const interrupted of [false, true])
+			test(`${annotation} ${destination} preserves navigation semantics, interrupted=${interrupted}`, async (t) => {
+				const f = await fixture(t, { summary: true });
+				const original = f.service.branch();
+				await f.session.prompt("first turn");
+				const early = f.session.sessionManager.getLeafId();
+				await f.session.prompt("second turn");
+				const departure = f.session.sessionManager.getLeafId();
+				const handle = { producer: "bg", handle: "job", execution: "exec", until: "exit" };
+				await original.attachment.waits.declare(
+					{
+						token: "later-wait",
+						scope: original.scope,
+						workId: "work",
+						reason: "dependency",
+						mode: "all",
+						on: [handle],
+						expiresAt: 100,
+					},
+					[{ ...handle, scope: original.scope, workId: "work", state: "pending" }],
+					0,
+					100,
+				);
+				await f.session.navigateTree(early);
+				assert.deepEqual(await f.service.branch().attachment.waits.snapshot(), []);
+				const target = destination === "rewind" ? early : departure;
+				const navigation = annotation === "summary" ? { summarize: true } : { label: "Saved position" };
+				let branch;
+				if (interrupted) {
+					t.mock.method(f.service, "branchChanged", async () => {
+						throw new Error("interrupted before marker");
+					});
+					await assert.rejects(f.session.navigateTree(target, navigation), /interrupted before marker/);
+					await f.service.close();
+					const next = await fixture(t, {
+						root: f.root,
+						manager: SessionManager.open(f.session.sessionManager.getSessionFile()),
+					});
+					branch = next.service.branch();
+				} else {
+					await f.session.navigateTree(target, navigation);
+					branch = f.service.branch();
+				}
+				assert.equal(branch.scope.branchId === original.scope.branchId, destination === "resume");
+				assert.deepEqual(
+					(await branch.attachment.waits.snapshot()).map((wait) => wait.token),
+					destination === "resume" ? ["later-wait"] : [],
+				);
+			});
+
+test("repeated unsummarized rewinds exclude work declared after the selected entry", async (t) => {
+	const f = await fixture(t);
+	const original = f.service.branch();
+	await f.session.prompt("first turn");
+	const early = f.session.sessionManager.getLeafId();
+	await f.session.prompt("second turn");
+	await original.attachment.waits.registerWork("later-work", "lane", 0);
+	for (let visit = 0; visit < 3; visit++) {
+		await f.session.navigateTree(early);
+		assert.notEqual(f.service.branch().scope.branchId, original.scope.branchId);
+		assert.deepEqual((await f.service.branch().attachment.waits.authoritySnapshot()).work, []);
+	}
 });
 
 test("branch startup awaits source registration and closes each source on navigation", async (t) => {

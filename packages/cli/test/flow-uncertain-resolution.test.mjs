@@ -91,6 +91,31 @@ test("a resolved attempt survives reattachment with its decision", async (t) => 
 	}
 });
 
+test("an attempt interrupted by reattachment is resolved by the attachment that adopts it", async (t) => {
+	const root = await mkdtemp(join(tmpdir(), "jouzu-uncertain-adopted-"));
+	t.after(() => rm(root, { recursive: true, force: true }));
+	const first = await PiFlowAttachment.open(root, scope);
+	await interrupted(first.ledger);
+	await first.close();
+
+	// A process kill between transmission and outcome leaves the attempt to the next attachment, which
+	// adopts it as uncertain under the generation that created it. Deciding it is a fact about the past,
+	// so it must not require this attachment's dispatch ownership.
+	const reopened = await PiFlowAttachment.open(root, scope);
+	try {
+		const state = await reopened.ledger.snapshot();
+		assert.equal(state.attempts[0].phase, "uncertain");
+		assert.notEqual(state.attempts[0].generation, state.generation);
+		await reopened.ledger.resolveUncertain("attempt", "retry", "Resolved from /flow as undelivered.");
+		const [attempt] = (await reopened.ledger.snapshot()).attempts;
+		assert.equal(attempt.phase, "cancelled");
+		assert.equal(attempt.reason, "Resolved from /flow as undelivered.");
+		assert.equal(attempt.requests[0].handedOff, true, "the handed-off request stays on the record");
+	} finally {
+		await reopened.close();
+	}
+});
+
 test("state written under an earlier version is isolated rather than read", async (t) => {
 	// Flow ownership resolves its directory through realpath, so a symlinked tmpdir such as
 	// macOS /var would not match the isolation path this test compares against.

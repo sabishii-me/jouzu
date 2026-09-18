@@ -661,13 +661,19 @@ export class FlowReceiptLedger {
 	 * `retry` treats the turn as undelivered and returns its work to ordinary admission, `discard`
 	 * accepts it as spent and settles the attempt so nothing re-runs. Leaving it unresolved is the
 	 * third choice and needs no transition.
+	 *
+	 * The interruption that made the attempt uncertain is usually the same event that replaced the
+	 * attachment, so the attempt belongs to an earlier generation and is looked up by identity and
+	 * phase, like history recovery. Only this attachment's dispatch ownership is generation-bound.
 	 */
 	resolveUncertain(id: string, resolution: "retry" | "discard", reason: string): Promise<void> {
 		requireIdentity(reason);
 		if (resolution !== "retry" && resolution !== "discard")
 			throw new FlowLedgerError("schema", "Invalid uncertain resolution.");
 		return this.mutate((state) => {
-			const attempt = this.attempt(state, id, ["uncertain"]);
+			const attempt = state.attempts.find((item) => item.id === id);
+			if (!attempt) throw new FlowLedgerError("identity", "Unknown flow attempt for this attachment.");
+			if (attempt.phase !== "uncertain") throw new FlowLedgerError("transition", `Flow attempt is ${attempt.phase}.`);
 			attempt.reason = reason;
 			if (resolution === "discard") {
 				attempt.outcome = "failure";

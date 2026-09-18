@@ -66,6 +66,9 @@ export class PiFlowSessionService {
 	};
 	private transitionId?: string;
 	private closing = false;
+	// Ledger uncertainty is part of the controller's recovery gate, and the ledger can change it after
+	// the branch was opened. The gate is synchronous, so the last read is kept here.
+	private outcomeUnresolved = false;
 	private readonly trustedStream?: AgentSession["agent"]["streamFunction"];
 	private constructor(
 		private readonly session: AgentSession,
@@ -130,10 +133,8 @@ export class PiFlowSessionService {
 			const recovery = await recoverPiHistory(this.session.sessionManager, attachment.ledger);
 			const state = await attachment.ledger.snapshot();
 
-			let recoveryBlocked =
-				waitSourceRecovery.missing.length > 0 ||
-				recovery.unresolved > 0 ||
-				state.attempts.some((attempt) => attempt.phase === "uncertain");
+			let recoveryBlocked = waitSourceRecovery.missing.length > 0 || recovery.unresolved > 0;
+			this.outcomeUnresolved = state.attempts.some((attempt) => attempt.phase === "uncertain");
 			await attachment.submissions.archiveCompleted();
 			await attachment.submissions.recoverCallbacks();
 			const native = new PiNativeDispatch(this.session, attachment.submissions, this.options.admitNativeQueue);
@@ -189,6 +190,7 @@ export class PiFlowSessionService {
 						recoveryBlocked:
 							waits.updating ||
 							attachment.waitProducers.updating ||
+							this.outcomeUnresolved ||
 							recoveryBlocked ||
 							attachment.nativeRequests.recoveryBlocked ||
 							policy.recoveryBlocked,
@@ -463,14 +465,24 @@ export class PiFlowSessionService {
 			const attempt = state.attempts.find((item) => item.id === id);
 			if (!attempt || attempt.phase !== "uncertain")
 				throw new FlowLedgerError("identity", "No uncertain attempt has that identity.");
-			// The recovery gate is recomputed from ledger state on every admission decision, so resolving
-			// the attempt releases it without a separate call.
 			await branch.attachment.ledger.resolveUncertain(
 				id,
 				resolution,
 				resolution === "retry" ? "Resolved from /flow as undelivered." : "Resolved from /flow as spent.",
 			);
+			await this.refreshOutcomeUnresolved(branch);
 		});
+	}
+
+	/**
+	 * Move the controller's recovery gate with the ledger after a user decision changes it. The
+	 * ingress reads ledger uncertainty live on every admission, so a gate left behind would hold
+	 * automated work for the rest of the attachment while the status report showed it resolved.
+	 */
+	private async refreshOutcomeUnresolved(branch: PiFlowBranchResources): Promise<void> {
+		this.outcomeUnresolved = (await branch.attachment.ledger.snapshot()).attempts.some(
+			(attempt) => attempt.phase === "uncertain",
+		);
 	}
 
 	/** Release a stuck active reservation without deleting receipts or stopping producer jobs. */
@@ -486,6 +498,7 @@ export class PiFlowSessionService {
 						attemptId,
 						"Emergency flow reset from /flow; provider outcome may be unknown.",
 					);
+				await this.refreshOutcomeUnresolved(branch);
 				await branch.attachment.submissions.archiveCompleted();
 				await reconcileNativeSources(this.session, branch.attachment, branch.native, "reset");
 				const releasedRequests = await branch.attachment.nativeRequests.reset();
@@ -622,6 +635,7 @@ export class PiFlowSessionService {
 		}
 		this.current = undefined;
 		this.opening = undefined;
+		this.outcomeUnresolved = false;
 	}
 
 	/** Called from Pi's prepared beforeBranchChange callback, with ingress fenced. */
@@ -629,7 +643,12 @@ export class PiFlowSessionService {
 		return this.registry.run(async () => {
 			const branch = this.branch();
 			const state = await this.registry.snapshot();
-			const transition = await this.registry.beginNavigation(state.revision, this.session.sessionManager.getLeafId());
+			const manager = this.session.sessionManager;
+			const transition = await this.registry.beginNavigation(
+				state.revision,
+				manager.getLeafId(),
+				manager.getEntries().at(-1)?.id ?? null,
+			);
 			this.transitionId = transition.id;
 			branch.host.handoffNavigation();
 			await this.closeBranch();

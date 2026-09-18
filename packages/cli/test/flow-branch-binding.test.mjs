@@ -105,6 +105,18 @@ test("copied foreign-session markers do not import another session's branch iden
 	assert.notEqual(scope.branchId, original.branchId);
 	assert.deepEqual(fork.buildSessionContext().messages, []);
 });
+test("a malformed foreign-session marker does not break this session's binding", async (t) => {
+	const { root, manager, registry, open } = await fixture(t);
+	const original = await bindPiFlowBranch(registry, manager);
+	const fork = SessionManager.create(root, join(root, "fork"));
+	// A copied marker from another session is not this session's to validate, so its damaged shape
+	// must not make every binding on this transcript throw.
+	fork.appendCustomEntry("jouzu-flow-branch", { version: 1, sessionId: 7, branchId: null, transitionId: 0 });
+	const other = await open(fork);
+	const scope = await bindPiFlowBranch(other, fork);
+	assert.notEqual(scope.sessionId, original.sessionId);
+	assert.notEqual(scope.branchId, original.branchId);
+});
 test("changed persisted marker bytes cannot replace a registry's position binding", async (t) => {
 	const { manager, registry, open } = await fixture(t);
 	await bindPiFlowBranch(registry, manager);
@@ -305,6 +317,95 @@ test("navigation onto a retained branch's path reactivates it without a new reco
 	const reopened = SessionManager.open(manager.getSessionFile());
 	assert.notEqual(reopened.getLeafId(), firstEntry, "a restart reopens the transcript at its newest entry");
 	assert.deepEqual(await bindPiFlowBranch(await open(reopened), reopened), second);
+});
+
+test("an untouched navigation journal follows the saved file tip on reopen", async (t) => {
+	const { manager, registry, open } = await fixture(t);
+	const first = await bindPiFlowBranch(registry, manager);
+	manager.appendMessage({ role: "user", content: "first", timestamp: 1 });
+	const firstLeaf = manager.getLeafId();
+	const fork = await registry.beginNavigation((await registry.snapshot()).revision, firstLeaf, firstLeaf);
+	manager.resetLeaf();
+	const second = await completePiFlowNavigation(registry, manager, fork.id);
+	const tip = manager.getLeafId();
+	const back = await registry.beginNavigation((await registry.snapshot()).revision, tip, tip);
+	manager.branch(firstLeaf);
+	assert.deepEqual(await completePiFlowNavigation(registry, manager, back.id), first);
+	await registry.beginNavigation((await registry.snapshot()).revision, firstLeaf, tip);
+	await registry.close();
+	const reopened = SessionManager.open(manager.getSessionFile());
+	const next = await open(reopened);
+	assert.deepEqual(await bindPiFlowBranch(next, reopened), second);
+	assert.equal((await next.snapshot()).branches.length, 2);
+	assert.equal((await next.snapshot()).transition, undefined);
+});
+
+test("a legacy branch without a departure checkpoint forks on explicit navigation", async (t) => {
+	const { manager, registry } = await fixture(t);
+	const first = await bindPiFlowBranch(registry, manager);
+	const firstLeaf = manager.getLeafId();
+	const fork = await registry.beginNavigation((await registry.snapshot()).revision, firstLeaf);
+	manager.resetLeaf();
+	await completePiFlowNavigation(registry, manager, fork.id);
+	const back = await registry.beginNavigation((await registry.snapshot()).revision, manager.getLeafId());
+	const snapshot = registry.snapshot.bind(registry);
+	t.mock.method(registry, "snapshot", async () => {
+		const state = await snapshot();
+		delete state.branches.find((branch) => branch.id === first.branchId).departedAtLeafId;
+		return state;
+	});
+	manager.branch(firstLeaf);
+	const scope = await completePiFlowNavigation(registry, manager, back.id);
+	assert.equal(scope.branchId, back.branchId);
+	assert.notEqual(scope.branchId, first.branchId);
+});
+
+test("memory lifetime mismatch rejects reactivation before changing selection", async (t) => {
+	const { manager, registry } = await fixture(t, { memory: true });
+	const first = await bindPiFlowBranch(registry, manager);
+	const firstLeaf = manager.getLeafId();
+	const fork = await registry.beginNavigation((await registry.snapshot()).revision, firstLeaf);
+	manager.resetLeaf();
+	const second = await completePiFlowNavigation(registry, manager, fork.id);
+	const snapshot = registry.snapshot.bind(registry);
+	const before = await snapshot();
+	t.mock.method(registry, "snapshot", async () => {
+		const state = await snapshot();
+		state.branches.find((branch) => branch.id === first.branchId).position.memoryInstanceId = "other-lifetime";
+		return state;
+	});
+	manager.branch(firstLeaf);
+	await assert.rejects(bindPiFlowBranch(registry, manager), { code: "identity" });
+	assert.equal((await snapshot()).activeBranchId, second.branchId);
+	assert.equal((await snapshot()).revision, before.revision);
+});
+
+test("an interrupted rewind inside the active branch forks on reopen instead of reactivating it", async (t) => {
+	const { manager, registry, open } = await fixture(t);
+	const first = await bindPiFlowBranch(registry, manager);
+	manager.appendMessage({ role: "user", content: "first", timestamp: 1 });
+	const firstEntry = manager.getLeafId();
+	manager.appendMessage({ role: "user", content: "second", timestamp: 2 });
+	const nav = await registry.beginNavigation((await registry.snapshot()).revision, manager.getLeafId());
+	// Crash point: Pi already persisted the rewind to an earlier entry of the same branch, and its
+	// branch summary (here a plain message) landed before the flow marker was appended.
+	manager.branch(firstEntry);
+	manager.appendMessage({ role: "user", content: "summary", timestamp: 3 });
+	manager.flush();
+	await registry.close();
+	const reopened = SessionManager.open(manager.getSessionFile());
+	const next = await open(reopened);
+	// The reopened path still carries the active branch's own marker, but ordinary completion of this
+	// navigation would have forked there, so recovery completes that fork instead of reactivating the
+	// branch the navigation was leaving.
+	const scope = await bindPiFlowBranch(next, reopened);
+	assert.equal(scope.branchId, nav.branchId);
+	assert.notEqual(scope.branchId, first.branchId);
+	const state = await next.snapshot();
+	assert.equal(state.transition, undefined);
+	assert.equal(state.activeBranchId, nav.branchId);
+	assert.equal(state.branches.length, 2, "the fork appends its record and the earlier branch is retained");
+	assert.deepEqual(await bindPiFlowBranch(next, reopened), scope);
 });
 
 test("an interrupted navigation onto a retired path completes its fork on reopen", async (t) => {
