@@ -249,7 +249,15 @@ export class PiControllerHost implements FlowControllerHost {
 		const pending = this.pending;
 		if (!pending) return;
 		pending.revoked = true;
-		if (pending.item) this.session.agent.cancelQueuedMessage(pending.item.id, pending.item.revision);
+		if (pending.item) {
+			try {
+				this.session.agent.cancelQueuedMessage(pending.item.id, pending.item.revision);
+			} catch (error) {
+				// Maintenance owns queue mutation. Revocation still fences beforeQueueClaim;
+				// reconciliation removes the item once that reservation is available.
+				if (!(error instanceof FlowLedgerError) || error.code !== "busy") throw error;
+			}
+		}
 	}
 	async reconcile(attemptId: string): Promise<void> {
 		this.assertActive();
@@ -257,8 +265,14 @@ export class PiControllerHost implements FlowControllerHost {
 		if (!this.session.isIdle || this.session.agent.state.isStreaming || this.session.isRetrying) return;
 		const attempt = state.attempts.find((item) => item.id === attemptId);
 		if (state.activeAttemptId === attemptId && attempt && ["selected", "queued"].includes(attempt.phase)) {
-			this.invalidate();
-			await this.ledger.cancel(attemptId, "Controller input was not consumed by the native run.");
+			const result = await this.boundary.atQueueMaintenance(async () => {
+				const current = await this.ledger.snapshot();
+				const live = current.attempts.find((item) => item.id === attemptId);
+				if (current.activeAttemptId !== attemptId || !live || !["selected", "queued"].includes(live.phase)) return;
+				this.invalidate();
+				await this.ledger.cancel(attemptId, "Controller input was not consumed by the native run.");
+			});
+			if (result.kind === "busy") return;
 		} else {
 			await this.boundary.atIdle(() => this.history.flush());
 			await this.boundary.reconcile(this.ledger, attemptId);

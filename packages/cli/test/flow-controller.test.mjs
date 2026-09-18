@@ -16,6 +16,7 @@ const { createJiti } = await import(
 
 import { createFlowSession, deferred } from "../../../scripts/fixtures/pi-flow-session.mjs";
 import { SessionFlowController } from "../dist/flow-control/controller.js";
+import { FlowModelInput } from "../dist/flow-control/model-input.js";
 import { createMultiloopControllerExtension } from "../dist/flow-control/multiloop-extension.js";
 import { MultiloopFlowProducer, multiloopWorkBinding } from "../dist/flow-control/multiloop-producer.js";
 import { PiFlowAttachment } from "../dist/flow-control/pi-attachment.js";
@@ -195,6 +196,39 @@ async function fixture(t, native, options = {}) {
 	afterCleanup(t, () => controller.close());
 	return { controller, host, observer, ledger, calls, payloads, policy, session, attachment, storageRoot, manifests };
 }
+
+for (const resume of ["reconcile", "claim"])
+	test(`revocation during queue maintenance stays fenced until ${resume}`, { timeout: 5000 }, async (t) => {
+		const f = await fixture(t, true);
+		const input = FlowModelInput.compose(
+			"revoked",
+			[{ id: "work", revision: "1", kind: "work", text: "Must not run" }],
+			4096,
+		);
+		await f.ledger.select(input.attemptId, input.members);
+		await f.host.enqueue(input, async () => true);
+		const entered = deferred(),
+			release = deferred();
+		const maintenance = f.host.atQueueMaintenance(async () => {
+			entered.resolve();
+			await release.promise;
+		});
+		await entered.promise;
+		try {
+			assert.doesNotThrow(() => f.host.invalidate());
+			assert.equal(f.session.agent.inspectQueuedMessages().length, 1);
+			await f.host.reconcile(input.attemptId);
+			assert.equal((await f.ledger.snapshot()).activeAttemptId, input.attemptId);
+		} finally {
+			release.resolve();
+			await maintenance;
+		}
+		if (resume === "claim") await f.host.run();
+		await f.host.reconcile(input.attemptId);
+		assert.equal(f.session.agent.inspectQueuedMessages().length, 0);
+		assert.equal((await f.ledger.snapshot()).attempts[0].phase, "cancelled");
+		assert.deepEqual(f.calls, []);
+	});
 
 test("Pi multiloop adapter holds three continuations and accounts once at native consumption", async (t) => {
 	let adapter,
