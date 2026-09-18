@@ -24,6 +24,7 @@ npm run build
 
 | Command | Scope |
 | --- | --- |
+| `npm run test:runner` | Test-runner deadlines, diagnostics, and command contracts |
 | `npm run test --workspace packages/session-ui` | Session UI |
 | `npm run test --workspace packages/cli` | CLI and session flow control |
 | `npm run test:python` | Python scanner |
@@ -31,6 +32,55 @@ npm run build
 | `npm run test:release-metadata` | Release metadata, smoke phases, and live-smoke event analysis |
 
 `npm run check` adds type checks, Biome, and the Pi patch and content-policy checks. `npm run release:check` runs the full release gate.
+
+### Bounded Node runs
+
+The Node suite commands use `scripts/run-tests.mjs`. It selects TAP output so
+failure details appear alongside failed tests, applies a 60-second default
+test timeout, and supervises each suite with a separate five-minute deadline.
+It prints elapsed-time notices to stderr every 15 seconds. The separate
+supervisor can terminate a blocked test event loop or leaked handles that
+prevent the test runner from exiting.
+
+Use the same runner for a focused test:
+
+```bash
+npm run test:node -- --test-name-pattern="rewind" packages/cli/test/flow-session-service.test.mjs
+```
+
+File paths and quoted globs resolve from the working directory. Every selection
+must match a file. Supported Node options are `--test-name-pattern`,
+`--test-skip-pattern`, and `--test-concurrency`. Reporter, watch, force-exit, and
+direct timeout flags are rejected rather than overriding the safeguards.
+
+| Environment variable | Default | Allowed range |
+| --- | --- | --- |
+| `JOUZU_TEST_TIMEOUT_MS` | `60000` | 1-3600000 milliseconds |
+| `JOUZU_TEST_SUITE_TIMEOUT_MS` | `300000` | 1-3600000 milliseconds |
+
+Set a larger finite budget only for a measured workload that needs it, and
+record the reason with the validation result. A timeout is a failure, not a
+skip. Configuration errors exit with status 2; the suite deadline exits with
+status 124. Interrupts exit with status 130 or 143. Timeout and interrupt
+handling kills the test process group on POSIX and uses `taskkill /T /F` on
+Windows; independently detached processes may require separate cleanup.
+
+CI's opt-in extension network qualification uses a 600000ms test budget and
+900000ms suite budget to accommodate its declared ten-minute network test.
+Those overrides do not apply to the default offline suites.
+
+Keep the full output while preserving failures in a Bash pipeline:
+
+```bash
+set -o pipefail
+npm run test:flow 2>&1 | tee /tmp/jouzu-flow-tests.log
+```
+
+Do not pipe a running suite through `tail`: that hides progress and may hide
+the failing exit status. Inspect the first failure's diagnostics while the
+suite is running. A focused rerun diagnoses a failure; it does not replace the
+full required gate. Runner regression tests check these package and CI entry
+points as part of `npm run check` and `npm test`.
 
 ## Session flow control
 
@@ -40,7 +90,7 @@ Flow control has a deterministic suite, a patched-Pi conformance check, and a li
 
 ```bash
 npm run build
-node --test packages/cli/test/flow-*.test.mjs
+npm run test:flow
 ```
 
 The files under `packages/cli/test/flow-*.test.mjs` substitute the provider, drive a real Pi session with a substituted stream, or exercise hand-built stores and pure functions. No test calls a provider. The suite imports `packages/cli/dist/flow-control/*.js`, so `npm run build` must run first; the full CLI test script rejects stale output.
@@ -97,7 +147,7 @@ To check recovery against an existing session without changing its files:
 ```bash
 JOUZU_FLOW_RECOVERY_SESSION=/path/to/session.jsonl \
 JOUZU_FLOW_RECOVERY_ROOT=/path/to/flow \
-node --test packages/cli/test/flow-saved-session-recovery.test.mjs
+npm run test:node -- packages/cli/test/flow-saved-session-recovery.test.mjs
 ```
 
 Run this after the source session has stopped writing. The test copies the transcript, session registry, and active flow branch to a temporary directory. It uses a local provider fixture and requires successful continuation, reset, two more requests, and another session reopen. The source files are only read. Both paths are required when either variable is set; the default suite skips this case when neither is set.

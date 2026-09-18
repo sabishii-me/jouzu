@@ -93,7 +93,7 @@ jobs:
         timeout-minutes: 20
       - if: matrix.os == 'windows-latest'
         name: Verify early-failure extension cleanup
-        run: node --test packages/cli/test/release-extension-behavior.test.mjs
+        run: node scripts/run-tests.mjs packages/cli/test/release-extension-behavior.test.mjs
         timeout-minutes: 5
         env:
           JOUZU_TEST_EXTENSION_EARLY_FAILURE: "1"
@@ -103,6 +103,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           JOUZU_EXTENSION_NETWORK: "1"
+          JOUZU_TEST_TIMEOUT_MS: "600000"
+          JOUZU_TEST_SUITE_TIMEOUT_MS: "900000"
       - name: Remove Windows Defender exclusions
         if: always() && (matrix.os == 'windows-latest')
         shell: pwsh
@@ -155,7 +157,7 @@ jobs:
       - run: npm run build
         timeout-minutes: 10
       - name: Load release-owned dependencies without Camoufox
-        run: node --test packages/cli/test/release-extensions.test.mjs
+        run: node scripts/run-tests.mjs packages/cli/test/release-extensions.test.mjs
         timeout-minutes: 5
       - name: Verify the default installation excludes Camoufox
         shell: bash
@@ -203,6 +205,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           JOUZU_EXTENSION_NETWORK: "1"
+          JOUZU_TEST_TIMEOUT_MS: "600000"
+          JOUZU_TEST_SUITE_TIMEOUT_MS: "900000"
       - run: npm run test:release-metadata
         timeout-minutes: 5
       - run: npm run pack:prepare:ci

@@ -9,7 +9,7 @@ if (!process.env.JOUZU_PI_TASKS_CHECKOUT?.trim()) {
 	const result = spawnSync(
 		process.execPath,
 		[
-			"--test",
+			fileURLToPath(new URL("./run-tests.mjs", import.meta.url)),
 			fileURLToPath(new URL("../packages/cli/test/flow-task-continuation-integration.test.mjs", import.meta.url)),
 		],
 		{ stdio: "inherit", env: process.env },

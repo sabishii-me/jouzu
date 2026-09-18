@@ -25,7 +25,7 @@
 	"scripts": {
 		"build": "tsc -p tsconfig.json",
 		"check": "tsc -p tsconfig.json --noEmit",
-		"test": "node --test test/*.test.mjs"
+		"test": "node ../../scripts/run-tests.mjs test/*.test.mjs"
 	},
 	"engines": {
 		"node": ">=22.19.0"

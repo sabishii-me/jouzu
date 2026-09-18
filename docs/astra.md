@@ -24,7 +24,7 @@ rules apply only to that exact provider, API, model ID, and endpoint.
 Run after building:
 
 ```sh
-node --test packages/cli/test/astra-compatibility.test.mjs packages/cli/test/model-guidance.test.mjs packages/cli/test/presentation.test.mjs
+npm run test:node -- packages/cli/test/astra-compatibility.test.mjs packages/cli/test/model-guidance.test.mjs packages/cli/test/presentation.test.mjs
 ```
 
 These fixtures also run through `npm test` and Pi upgrade qualification. They

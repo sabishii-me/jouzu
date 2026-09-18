@@ -55,4 +55,4 @@ jobs:
           npm run build --workspace packages/session-ui
           npx tsc -p packages/cli/tsconfig.json
       - name: Execute the native artifact and supervisor tests
-        run: node --test scripts/textguard-artifact.test.mjs packages/cli/test/textguard-native.test.mjs packages/cli/test/textguard-native-queue.test.mjs
+        run: node scripts/run-tests.mjs scripts/textguard-artifact.test.mjs packages/cli/test/textguard-native.test.mjs packages/cli/test/textguard-native-queue.test.mjs

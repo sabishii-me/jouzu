@@ -85,6 +85,14 @@ npm run release:check
 
 Do not claim Windows/macOS behavior from Linux-only results. Installer work uses its platform-native acceptance corpus.
 
+Run Node test suites through `npm test`, `npm run test:flow`, or
+`npm run test:node -- <files>`, not a bare `node --test`. The runner enforces TAP
+diagnostics and finite test/suite deadlines; it rejects reporter, watch, and
+force-exit overrides. See [`docs/testing.md`](docs/testing.md) for bounded
+overrides and focused runs. Treat a timeout as a failure to diagnose. Do not
+hide progress behind `tail` or wait for an end-of-run summary to inspect
+failures. With a shell pipeline, preserve the test exit status using `pipefail`.
+
 ## Commit discipline
 
 Immediately before committing:
