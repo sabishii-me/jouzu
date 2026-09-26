@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { visibleWidth } from "@earendil-works/pi-tui";
 
 const piRoot = fileURLToPath(new URL("../node_modules/@earendil-works/pi-coding-agent/", import.meta.url));
 const loadPi = (relative) => import(pathToFileURL(join(piRoot, relative)).href);
@@ -13,7 +14,6 @@ const { ISSUE_NEW_URL, ISSUES_URL, buildBugReportDraft, renderBugReport, reportB
 );
 const { InteractiveMode } = await loadPi("dist/modes/interactive/interactive-mode.js");
 const { BUILTIN_SLASH_COMMANDS } = await loadPi("dist/core/slash-commands.js");
-const { visibleWidth } = await loadPi("node_modules/@earendil-works/pi-tui/dist/index.js");
 
 initTheme("dark");
 

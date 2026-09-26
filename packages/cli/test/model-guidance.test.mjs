@@ -19,6 +19,22 @@ function hook() {
 	return handlers.get("before_agent_start");
 }
 
+function assertRecoveryGuidance(prompt) {
+	for (const clause of [
+		"diagnosis and failure reports are intermediate results, not completion",
+		"Do not weaken checks, bypass failures, or silently reduce the requested scope",
+		"If the user requested review or diagnosis only, respect that boundary",
+		"Keep the original deliverables active while resolving prerequisites",
+		"apply that instruction in the same turn",
+		"Preserve running jobs and pending work across follow-up messages",
+		"compare the requested deliverables with completed work and verification",
+		"A failed check or unsuccessful first attempt is not by itself a reason to stop",
+		"use the supported wait mechanism and resume on its result",
+	]) {
+		assert.ok(prompt.includes(clause), `Missing recovery instruction: ${clause}`);
+	}
+}
+
 test("Astra guidance follows the selected model on every turn without accumulating", async () => {
 	const before = hook();
 	const event = { systemPrompt: base, systemPromptOptions: { selectedTools: ["read"] } };
@@ -40,6 +56,7 @@ test("Astra guidance follows the selected model on every turn without accumulati
 		/If the user explicitly requests diagnosis only, review only, or otherwise limits changes, respect that boundary/,
 	);
 	assert.match(first.systemPrompt, /Authorization persists across turns/);
+	assertRecoveryGuidance(first.systemPrompt);
 	assert.match(first.systemPrompt, /repeat or broaden testing only/);
 	assert.doesNotMatch(first.systemPrompt, /Use `subagent`/);
 	const other = await before(event, { model: { id: "gpt-5.6-sol" } });
@@ -70,6 +87,7 @@ test("child sessions receive the same model guidance as main sessions", async (t
 	assert.ok(astraPrompt.includes("Review the change."));
 	assert.ok(astraPrompt.includes(buildModelGuidance("gpt-6-astra", ["read"])));
 	assert.match(astraPrompt.join("\n"), /offering to continue/);
+	assertRecoveryGuidance(astraPrompt.join("\n"));
 	const other = (await childResourceLoader(launch("gpt-5.6-sol"))).getAppendSystemPrompt();
 	assert.ok(other.includes("Review the change."));
 	assert.doesNotMatch(other.join("\n"), /Jouzu guidance for GPT-6 Astra/);

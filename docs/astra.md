@@ -19,6 +19,26 @@ caching. Explicit cache disable is preserved. It covers main-session requests
 and auxiliary requests that use the adapted model. Compatibility rules apply
 only to that exact provider, API, model ID, and endpoint.
 
+## Task completion guidance
+
+For implementation and repair assignments, the Astra instructions ask the agent
+to diagnose failed checks, make authorized in-scope repairs, rerun affected checks,
+and continue toward every requested deliverable. Review-only and diagnosis-only
+requests keep their stated boundaries. The instructions prohibit weakening checks
+or silently reducing scope to obtain a passing result.
+
+Follow-up corrections call for a concrete action or dependency wait in the same
+turn, rather than another promise to continue. Running jobs and unfinished
+requirements stay active across follow-up messages. Before a final report, the
+agent is instructed to compare the requested deliverables with completed work and
+verification. Explicit pauses and cancellations are respected; missing user input
+or external resources must be named. Waiting for an asynchronous job does not
+count as task completion.
+
+These are behavioral instructions, not a runtime guarantee. Prompt-delivery tests
+verify that the text reaches main and child sessions. They do not measure whether
+a model follows it on a coding task.
+
 ## Verification
 
 Run after building:
