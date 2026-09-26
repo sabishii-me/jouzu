@@ -124,3 +124,42 @@ test("attention with no other activity reads as a phrase and the label gives way
 		/attention/,
 	);
 });
+test("only markers and attention counts carry color; titles and metadata stay muted", () => {
+	const tagged = { apply: (role, text) => (text ? `[${role}]${text}` : text) };
+	const snapshot = {
+		scope: { sessionId: "s", branchId: "b" },
+		generation: 1,
+		sequence: 1,
+		sources: {
+			subagent: {
+				availability: "available",
+				complete: true,
+				units: [
+					{
+						id: "a",
+						producer: "subagent",
+						kind: "agent",
+						owner: "s",
+						state: "completed",
+						label: "coder",
+						attention: [{ id: "r", type: "result" }],
+						route: "/workflow",
+					},
+				],
+			},
+		},
+	};
+	const [divider, row] = renderWorkDashboard(
+		snapshot,
+		{ mode: "compact", terminalRows: 60, availableRows: 20, width: 60, now: 0 },
+		tagged,
+	);
+	assert.match(
+		divider,
+		/^\[prompt\.border\]── \[session\.hint\.muted\]Agents · \[session\.hint\.warning\]!1\[session\.hint\.muted\] \[prompt\.border\]─+$/,
+	);
+	assert.match(
+		row,
+		/^\[session\.hint\.muted\] {2}\[session\.hint\.warning\]!\[session\.hint\.muted\] \[session\.hint\.text\]coder\[session\.hint\.muted\] · unread result$/,
+	);
+});

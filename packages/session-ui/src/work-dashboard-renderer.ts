@@ -72,7 +72,12 @@ const SECTION_ORDER = Object.keys(SECTIONS) as WorkUnit["kind"][];
 const isTerminal = (unit: WorkUnit) =>
 	unit.state === "completed" || unit.state === "failed" || unit.state === "cancelled";
 /** Section counts cover every unit of the kind, so a collapsed section still summarizes it. */
-function sectionTitle(kind: WorkUnit["kind"], units: WorkUnit[], shown: WorkUnit[], now: number): string {
+function sectionTitle(
+	kind: WorkUnit["kind"],
+	units: WorkUnit[],
+	shown: WorkUnit[],
+	now: number,
+): [string, SessionUiStyleRole][] {
 	const running = units.filter((unit) => unit.state === "running").length;
 	const open = units.filter((unit) => !isTerminal(unit) && unit.state !== "running").length;
 	// Producers without completion times (tasks) report their finished checklist; others only recent finishes.
@@ -87,15 +92,22 @@ function sectionTitle(kind: WorkUnit["kind"], units: WorkUnit[], shown: WorkUnit
 	const failed = finished(["failed", "cancelled"]);
 	const attention = units.filter((unit) => unit.attention.length).length;
 	const hidden = units.some((unit) => !shown.includes(unit) && (!isTerminal(unit) || unit.attention.length));
-	return [
+	const counts = [
 		SECTIONS[kind],
 		...(running ? [`${running} running`] : []),
 		...(open ? [`${open} open`] : []),
 		...(done ? [`${done} done`] : []),
 		...(failed ? [`${failed} failed`] : []),
-		...(attention ? [`!${attention}`] : []),
-		...(hidden && units[0] ? [units[0].route] : []),
 	].join(" · ");
+	const route = hidden && units[0] ? ` · ${units[0].route}` : "";
+	// `!` is the warning color everywhere it appears; the rest of the title stays muted.
+	return attention
+		? [
+				[`${counts} · `, "session.hint.muted"],
+				[`!${attention}`, "session.hint.warning"],
+				[`${route} `, "session.hint.muted"],
+			]
+		: [[`${counts}${route} `, "session.hint.muted"]];
 }
 const ATTENTION_TEXT: Record<WorkUnit["attention"][number]["type"], string> = {
 	result: "unread result",
@@ -109,15 +121,11 @@ function rowStatus(unit: WorkUnit): string {
 	if (reason) return ` · ${ATTENTION_TEXT[reason.type]}`;
 	return ["failed", "cancelled", "waiting", "paused"].includes(unit.state) ? ` · ${unit.state}` : "";
 }
-function divider(title: string, width: number, styles: SessionUiStyles): string {
+function divider(title: [string, SessionUiStyleRole][], width: number, styles: SessionUiStyles): string {
 	const lead = "── ";
-	const label = `${title} `;
+	const used = terminalTextWidth(lead) + title.reduce((sum, [text]) => sum + terminalTextWidth(text), 0);
 	return styledRow(
-		[
-			[lead, "prompt.border"],
-			[label, "session.hint.muted"],
-			["─".repeat(Math.max(0, width - terminalTextWidth(lead) - terminalTextWidth(label))), "prompt.border"],
-		],
+		[[lead, "prompt.border"], ...title, ["─".repeat(Math.max(0, width - used)), "prompt.border"]],
 		width,
 		styles,
 	);
