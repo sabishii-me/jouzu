@@ -7,10 +7,10 @@ import { renderPromptFrameLines, SessionPromptEditor, terminalTextWidth } from "
 
 const style = {
 	border: (value) => `\u001b[38;5;240m${value}\u001b[39m`,
-	surface: (value) => `\u001b[48;2;52;53;65m${value}\u001b[49m`,
+	leader: (value) => `\u001b[38;5;45m${value}\u001b[39m`,
 };
 
-const SURFACE_FILL = "\u001b[48;2;52;53;65m";
+const LEADER = "\u001b[38;5;45m❯\u001b[39m ";
 
 const identity = (value) => value;
 const editorTheme = {
@@ -40,38 +40,41 @@ test("frames CJK editor content at exact terminal widths", () => {
 	const lines = renderPromptFrameLines(["─".repeat(18), "日本語の入力", "─".repeat(18)], 20, 0, style);
 	assert.equal(lines.length, 3);
 	assert.ok(lines.every((line) => terminalTextWidth(line) === 20));
-	assert.ok(lines[1].startsWith(SURFACE_FILL));
-	assert.match(stripTerminalSequences(lines[1]), /^日本語の入力\s+$/);
+	assert.ok(lines[1].startsWith(LEADER));
+	assert.equal(stripTerminalSequences(lines[1]), "❯ 日本語の入力      ");
 });
 
-test("starts prompt rows at the first column so a terminal copy carries no gutter", () => {
-	const lines = renderPromptFrameLines(["─".repeat(18), "alpha bravo", "─".repeat(18)], 20, 0, style);
-	assert.equal(stripTerminalSequences(lines[1]), "alpha bravo         ");
-	assert.equal(
-		lines.some((line) => line.includes("┃")),
-		false,
-	);
+test("leads the prompt once and leaves continuation rows without a marker", () => {
+	const lines = renderPromptFrameLines(["─".repeat(18), "first row", "second row", "─".repeat(18)], 20, 0, style);
+	assert.equal(stripTerminalSequences(lines[1]), "❯ first row".padEnd(20));
+	assert.equal(stripTerminalSequences(lines[2]), "  second row".padEnd(20));
+	assert.equal(lines.filter((line) => line.includes("❯")).length, 1);
+	assert.ok(lines.every((line) => terminalTextWidth(line) === 20));
 });
 
-test("keeps autocomplete rows outside the prompt surface", () => {
+test("keeps autocomplete rows outside the prompt leader", () => {
 	const lines = renderPromptFrameLines(["─".repeat(22), "draft", "─".repeat(22), "候補 one", "候補 two"], 24, 2, style);
 	assert.equal(lines.length, 5);
 	assert.ok(lines.slice(0, 3).every((line) => terminalTextWidth(line) === 24));
-	assert.equal(lines[1].includes(SURFACE_FILL), true, "the prompt row is filled");
-	assert.equal(lines[0].includes(SURFACE_FILL), false, "the top border is not a filled row");
-	assert.equal(lines[2].includes(SURFACE_FILL), false, "the bottom border is not a filled row");
+	assert.ok(lines[1].startsWith(LEADER));
+	assert.equal(lines[0].includes("❯"), false, "the top border carries no leader");
+	assert.equal(lines[2].includes("❯"), false, "the bottom border carries no leader");
 	assert.match(lines[3], /^ {2}候補 one/);
-	assert.ok(lines.slice(3).every((line) => line.includes(SURFACE_FILL) === false));
+	assert.equal(
+		lines.slice(3).some((line) => line.includes("❯")),
+		false,
+	);
 	assert.ok(lines.slice(3).every((line) => terminalTextWidth(line) <= 24));
 });
 
 test("keeps the no-color frame free of terminal styling", () => {
-	const plainStyle = { border: (value) => value, surface: (value) => value };
+	const plainStyle = { border: (value) => value, leader: (value) => value };
 	const lines = renderPromptFrameLines(["─".repeat(18), "draft", "─".repeat(18)], 20, 0, plainStyle);
 	assert.equal(
 		lines.some((line) => line.includes("\u001b")),
 		false,
 	);
+	assert.equal(stripTerminalSequences(lines[1]), "❯ draft             ");
 });
 
 test("degrades without a frame below the structural minimum", () => {
@@ -299,11 +302,11 @@ test("removes /scoped-models from autocomplete and intercepts exact manual submi
 	assert.equal(editor.getText(), "");
 });
 
-test("exact Pi autocomplete rows stay outside the prompt surface", async () => {
-	const filledStyles = {
-		apply: (role, value) => (role === "prompt.surface" ? `<surface>${value}</surface>` : value),
+test("exact Pi autocomplete rows stay outside the prompt leader", async () => {
+	const markedStyles = {
+		apply: (role, value) => (role === "prompt.leader" ? `<leader>${value}</leader>` : value),
 	};
-	const editor = new SessionPromptEditor(tui, editorTheme, { matches: editorKeybindings }, filledStyles);
+	const editor = new SessionPromptEditor(tui, editorTheme, { matches: editorKeybindings }, markedStyles);
 	editor.setAutocompleteProvider({
 		triggerCharacters: ["/"],
 		async getSuggestions() {
@@ -320,9 +323,6 @@ test("exact Pi autocomplete rows stay outside the prompt surface", async () => {
 	const rows = editor.render(40);
 	const suggestion = rows.find((line) => line.includes("Model command"));
 	assert.ok(suggestion);
-	assert.doesNotMatch(suggestion, /<surface>/);
-	assert.ok(
-		rows.some((line) => line.includes("<surface>")),
-		"the prompt row is filled",
-	);
+	assert.doesNotMatch(suggestion, /<leader>/);
+	assert.equal(rows.filter((line) => line.includes("<leader>")).length, 1);
 });

@@ -1,11 +1,11 @@
 import { CustomEditor, type KeybindingsManager } from "@earendil-works/pi-coding-agent";
 import type { AutocompleteProvider, Component, EditorTheme, TUI } from "@earendil-works/pi-tui";
-import { fillTerminalColumns, fitTerminalText, padTerminalText } from "./layout.js";
+import { fillTerminalColumns, fitTerminalText, padTerminalText, terminalTextWidth } from "./layout.js";
 import type { SessionUiStyles } from "./styles.js";
 
 export interface PromptFrameStyle {
 	border(value: string): string;
-	surface(value: string): string;
+	leader(value: string): string;
 }
 
 export function renderPromptFrameLines(
@@ -22,10 +22,14 @@ export function renderPromptFrameLines(
 	const autocomplete = baseLines.slice(frameEnd);
 	if (frame.length < 2) return baseLines.map((line) => fitTerminalText(line, width));
 	const innerWidth = width - 2;
+	// One leader marks the prompt. Later rows keep the indent alone, so a terminal selection picks up
+	// at most one marker character instead of one per wrapped row.
+	const leader = `${style.leader("❯")} `;
+	const gutter = " ".repeat(terminalTextWidth(leader));
 	const border = style.border(fillTerminalColumns("─", width));
 	return [
 		border,
-		...frame.slice(1, -1).map((line) => style.surface(padTerminalText(line, width))),
+		...frame.slice(1, -1).map((line, index) => `${index === 0 ? leader : gutter}${padTerminalText(line, innerWidth)}`),
 		border,
 		...autocomplete.map((line) => `  ${fitTerminalText(line, innerWidth)}`),
 	];
@@ -175,10 +179,11 @@ export class SessionPromptEditor extends CustomEditor {
 
 	render(width: number): string[] {
 		if (width < 4) return super.render(width);
-		const rendered = super.render(width);
-		const frame = renderPromptFrameLines(rendered, width, autocompleteLineCount(this, width), {
+		const innerWidth = width - 2;
+		const rendered = super.render(innerWidth);
+		const frame = renderPromptFrameLines(rendered, width, autocompleteLineCount(this, innerWidth), {
 			border: (value) => this.styles.apply("prompt.border", value),
-			surface: (value) => this.styles.apply("prompt.surface", value),
+			leader: (value) => this.styles.apply("prompt.leader", value),
 		});
 		const top = this.options.topLine?.(width);
 		return top === undefined ? frame : [top, ...frame];

@@ -134,7 +134,7 @@ Release-owned extensions and their default runtime dependencies ship inside `jou
 
 Jouzu provides its prompt and status surfaces directly:
 
-- The **Prompt Frame** keeps Pi's editor, application actions, history, paste handling, autocomplete, cursor positioning, and IME behavior while adding Jouzu borders and a filled prompt area.
+- The **Prompt Frame** keeps Pi's editor, application actions, history, paste handling, autocomplete, cursor positioning, and IME behavior while adding Jouzu borders and a single `❯` prompt leader.
 - The **Session Line** keeps provider/model/thinking identity on the right. The left side reports goals, loops, and child agents with an animated marker while work runs and a static marker for paused, stopped, or completed counts. That activity replaces the shortcut hint while it is present and the hint returns when nothing is running. Activity text truncates to fit, and either one disappears before the model identity overlaps.
 - The **Status Bar** shows local workspace, Git, detected project runtime, context, and active-branch token facts. Fields compact and then disappear by semantic priority on narrow terminals.
 
