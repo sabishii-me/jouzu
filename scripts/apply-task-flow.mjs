@@ -23,7 +23,10 @@ export async function applyTaskFlow(packageRoot, checkOnly = false) {
 	const writes = [];
 	if (sha(original) !== lock.after) {
 		const digest = sha(original);
-		if (checkOnly || digest !== lock.before) throw new Error("Task flow source hash differs.");
+		if (checkOnly || digest !== lock.before)
+			throw new Error(
+				"Task flow source hash differs. Preserve any local edits, then reinstall to refresh the pinned @lhl/pi-tasks package.",
+			);
 		const changed = transformTaskFlow(original);
 		if (sha(changed) !== lock.after) throw new Error("Task flow transform differs.");
 		writes.push([path, changed]);

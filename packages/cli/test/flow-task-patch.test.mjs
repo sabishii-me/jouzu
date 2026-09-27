@@ -83,7 +83,11 @@ for (const variant of ["source", "runtime", "package"])
 				? JSON.stringify({ ...JSON.parse(original), version: "99.0.0" })
 				: `${original}\n// unrecognized change\n`;
 		await writeFile(join(root, target), altered);
-		await assert.rejects(applyTaskFlow(root), /differs/);
+		const expected =
+			variant === "source"
+				? /Task flow source hash differs\. Preserve any local edits, then reinstall to refresh the pinned @lhl\/pi-tasks package\./
+				: /differs/;
+		await assert.rejects(applyTaskFlow(root), expected);
 		assert.equal(await readFile(join(root, target), "utf8"), altered);
 	});
 
