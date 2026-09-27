@@ -82,7 +82,7 @@ const theme = (value: ThemeColor): SessionUiColor => Object.freeze({ source: "th
 const rgb = (red: number, green: number, blue: number): SessionUiColor =>
 	Object.freeze({ source: "rgb", red, green, blue });
 
-/** Jouzu brand accents, shared by the prompt leader and the Palette so one capability policy covers both. */
+/** Jouzu brand accents, shared by the prompt leader, the model label, and the Palette under one capability policy. */
 const BRAND_BLUE = rgb(103, 232, 249);
 const BRAND_PINK = rgb(244, 114, 182);
 
@@ -99,7 +99,7 @@ export const DEFAULT_SESSION_UI_STYLE_SCHEME: SessionUiStyleScheme = Object.free
 	"session.activity": theme("accent"),
 	"session.activity.idle": theme("dim"),
 	"session.provider": theme("dim"),
-	"session.model": theme("mdCode"),
+	"session.model": BRAND_BLUE,
 	"status.text": theme("text"),
 	"status.muted": theme("muted"),
 	"status.accent": theme("accent"),

@@ -12,7 +12,7 @@ test("maps Jouzu semantic roles to the retained Session UI color baseline", () =
 	assert.equal(styles.apply("prompt.border", "border"), "<borderMuted>border</borderMuted>");
 	assert.equal(styles.apply("prompt.leader", "❯"), "\u001b[38;2;103;232;249m❯\u001b[39m");
 	assert.equal(styles.apply("session.provider", "Codex"), "<dim>Codex</dim>");
-	assert.equal(styles.apply("session.model", "gpt"), "<mdCode>gpt</mdCode>");
+	assert.equal(styles.apply("session.model", "gpt"), "\u001b[38;2;103;232;249mgpt\u001b[39m");
 	assert.equal(styles.apply("status.workspace", "work"), "\u001b[38;2;215;215;255mwork\u001b[39m");
 	assert.equal(styles.apply("status.git.branch", "main"), "<syntaxKeyword>main</syntaxKeyword>");
 	assert.equal(styles.apply("status.git.changes", "[!]"), "<error>[!]</error>");
