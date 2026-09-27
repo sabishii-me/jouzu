@@ -5,7 +5,7 @@ import type { SessionUiStyles } from "./styles.js";
 
 export interface PromptFrameStyle {
 	border(value: string): string;
-	rail(value: string): string;
+	surface(value: string): string;
 }
 
 export function renderPromptFrameLines(
@@ -22,12 +22,10 @@ export function renderPromptFrameLines(
 	const autocomplete = baseLines.slice(frameEnd);
 	if (frame.length < 2) return baseLines.map((line) => fitTerminalText(line, width));
 	const innerWidth = width - 2;
-	const styledRail = style.rail("┃");
-	const rail = `${styledRail}${styledRail === "┃" ? "" : "\u001b[0m"} `;
 	const border = style.border(fillTerminalColumns("─", width));
 	return [
 		border,
-		...frame.slice(1, -1).map((line) => `${rail}${padTerminalText(line, innerWidth)}`),
+		...frame.slice(1, -1).map((line) => style.surface(padTerminalText(line, width))),
 		border,
 		...autocomplete.map((line) => `  ${fitTerminalText(line, innerWidth)}`),
 	];
@@ -177,11 +175,10 @@ export class SessionPromptEditor extends CustomEditor {
 
 	render(width: number): string[] {
 		if (width < 4) return super.render(width);
-		const innerWidth = width - 2;
-		const rendered = super.render(innerWidth);
-		const frame = renderPromptFrameLines(rendered, width, autocompleteLineCount(this, innerWidth), {
+		const rendered = super.render(width);
+		const frame = renderPromptFrameLines(rendered, width, autocompleteLineCount(this, width), {
 			border: (value) => this.styles.apply("prompt.border", value),
-			rail: (value) => this.styles.apply("prompt.rail", value),
+			surface: (value) => this.styles.apply("prompt.surface", value),
 		});
 		const top = this.options.topLine?.(width);
 		return top === undefined ? frame : [top, ...frame];

@@ -4,7 +4,7 @@ This private workspace owns the persistent interactive surfaces around a Jouzu s
 
 ## Surfaces
 
-- **Prompt Frame:** wraps Pi's `CustomEditor` with Jouzu borders and a left rail while preserving Pi input behavior.
+- **Prompt Frame:** wraps Pi's `CustomEditor` with Jouzu borders and a filled prompt area while preserving Pi input behavior. The fill replaces a per-row gutter character, so a terminal selection copies prompt text without frame characters.
 - **Session Line:** places one priority hint on the left and protects provider/model/thinking identity on the right.
 - **Status Bar:** renders provider-neutral workspace, Git, project-runtime, context, token, and health facts with deterministic narrowing.
 

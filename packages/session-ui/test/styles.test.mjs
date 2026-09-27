@@ -5,12 +5,13 @@ import { createSessionUiStyles, DEFAULT_SESSION_UI_STYLE_SCHEME } from "../dist/
 
 const taggedTheme = {
 	fg: (role, value) => `<${role}>${value}</${role}>`,
+	getBgAnsi: (role) => `<bg:${role}>`,
 };
 
 test("maps Jouzu semantic roles to the retained Session UI color baseline", () => {
 	const styles = createSessionUiStyles(taggedTheme, { colorEnabled: true });
 	assert.equal(styles.apply("prompt.border", "border"), "<borderMuted>border</borderMuted>");
-	assert.equal(styles.apply("prompt.rail", "┃"), "\u001b[38;2;103;232;249m┃\u001b[39m");
+	assert.equal(styles.apply("prompt.surface", "row"), "<bg:userMessageBg>row\u001b[49m");
 	assert.equal(styles.apply("session.provider", "Codex"), "<dim>Codex</dim>");
 	assert.equal(styles.apply("session.model", "gpt"), "<mdCode>gpt</mdCode>");
 	assert.equal(styles.apply("status.workspace", "work"), "\u001b[38;2;215;215;255mwork\u001b[39m");
@@ -45,34 +46,51 @@ test("maps custom RGB roles to the selected terminal color mode", () => {
 	const indexed = createSessionUiStyles(taggedTheme, { colorEnabled: true, colorMode: "256" });
 	assert.equal(indexed.apply("status.workspace", "work"), "\u001b[38;5;189mwork\u001b[39m");
 	const basic = createSessionUiStyles(taggedTheme, { colorEnabled: true, colorMode: "16" });
-	assert.equal(basic.apply("prompt.rail", "┃"), "\u001b[96m┃\u001b[39m");
+	assert.equal(basic.apply("status.context.normal", "19%"), "\u001b[93m19%\u001b[39m");
+});
+
+test("fills a surface row with a background that survives a reset inside it", () => {
+	const styles = createSessionUiStyles(taggedTheme, { colorEnabled: true });
+	// The editor draws its cursor as reverse video followed by a full reset.
+	assert.equal(
+		styles.apply("prompt.surface", "ab\u001b[7m \u001b[0mcd"),
+		"<bg:userMessageBg>ab\u001b[7m \u001b[0m<bg:userMessageBg>cd\u001b[49m",
+	);
+});
+
+test("styles every declared role when color is enabled", () => {
+	const styles = createSessionUiStyles(taggedTheme, { colorEnabled: true, colorMode: "truecolor" });
+	for (const role of Object.keys(DEFAULT_SESSION_UI_STYLE_SCHEME)) {
+		assert.notEqual(styles.apply(role, "value"), "value", `${role} must style its value when color is enabled`);
+	}
 });
 
 test("supports no-color output and replacement schemes without renderer changes", () => {
 	const plain = createSessionUiStyles(taggedTheme, { colorEnabled: false });
-	assert.equal(plain.apply("prompt.rail", "┃"), "┃");
+	assert.equal(plain.apply("prompt.surface", "row"), "row");
 	assert.equal(plain.apply("status.workspace", "work"), "work");
 	const detectedPlain = createSessionUiStyles({ fg: (_role, value) => value }, { env: {} });
-	assert.equal(detectedPlain.apply("prompt.rail", "┃"), "┃");
+	assert.equal(detectedPlain.apply("prompt.surface", "row"), "row");
 	const noColor = createSessionUiStyles(taggedTheme, { env: { NO_COLOR: "1" } });
 	assert.equal(noColor.apply("status.workspace", "work"), "work");
+	const noBackground = createSessionUiStyles({ fg: (_role, value) => value }, { colorEnabled: true });
+	assert.equal(noBackground.apply("prompt.surface", "row"), "row", "a theme without backgrounds leaves the row plain");
 
 	const scheme = {
 		...DEFAULT_SESSION_UI_STYLE_SCHEME,
-		"prompt.rail": { source: "theme", value: "accent" },
+		"prompt.surface": { source: "themeBackground", value: "selectedBg" },
 	};
 	const themed = createSessionUiStyles(taggedTheme, { colorEnabled: true, scheme });
-	assert.equal(themed.apply("prompt.rail", "┃"), "<accent>┃</accent>");
+	assert.equal(themed.apply("prompt.surface", "row"), "<bg:selectedBg>row\u001b[49m");
 });
 
 test("routes Palette roles through the same capability policy as the Session UI", () => {
 	const truecolor = createSessionUiStyles(taggedTheme, { colorEnabled: true, colorMode: "truecolor" });
-	// The Palette marker and the prompt rail share one brand accent, so a single
-	// capability policy covers both surfaces.
+	// Palette roles that share the Jouzu brand accent resolve through one capability policy.
 	assert.equal(
 		truecolor.apply("palette.marker", "→"),
-		truecolor.apply("prompt.rail", "→"),
-		"Palette marker and prompt rail must resolve to the same brand accent",
+		truecolor.apply("palette.heading", "→"),
+		"Palette marker and heading must resolve to the same brand accent",
 	);
 	assert.equal(truecolor.apply("palette.marker", "→"), "\u001b[38;2;103;232;249m→\u001b[39m");
 	assert.equal(truecolor.apply("palette.section.current", "Current"), "\u001b[38;2;244;114;182mCurrent\u001b[39m");

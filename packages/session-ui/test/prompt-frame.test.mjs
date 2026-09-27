@@ -1,14 +1,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { CustomEditor } from "@earendil-works/pi-coding-agent";
-import { KeybindingsManager } from "@earendil-works/pi-tui";
+import { KeybindingsManager, stripTerminalSequences } from "@earendil-works/pi-tui";
 
 import { renderPromptFrameLines, SessionPromptEditor, terminalTextWidth } from "../dist/index.js";
 
 const style = {
-	border: (value) => `\u001b[38;5;240m${value}\u001b[0m`,
-	rail: (value) => `\u001b[38;5;45m${value}\u001b[0m`,
+	border: (value) => `\u001b[38;5;240m${value}\u001b[39m`,
+	surface: (value) => `\u001b[48;2;52;53;65m${value}\u001b[49m`,
 };
+
+const SURFACE_FILL = "\u001b[48;2;52;53;65m";
 
 const identity = (value) => value;
 const editorTheme = {
@@ -38,21 +40,33 @@ test("frames CJK editor content at exact terminal widths", () => {
 	const lines = renderPromptFrameLines(["─".repeat(18), "日本語の入力", "─".repeat(18)], 20, 0, style);
 	assert.equal(lines.length, 3);
 	assert.ok(lines.every((line) => terminalTextWidth(line) === 20));
-	assert.match(lines[1], /┃.*日本語の入力/);
+	assert.ok(lines[1].startsWith(SURFACE_FILL));
+	assert.match(stripTerminalSequences(lines[1]), /^日本語の入力\s+$/);
 });
 
-test("keeps autocomplete rows outside the prompt rail", () => {
+test("starts prompt rows at the first column so a terminal copy carries no gutter", () => {
+	const lines = renderPromptFrameLines(["─".repeat(18), "alpha bravo", "─".repeat(18)], 20, 0, style);
+	assert.equal(stripTerminalSequences(lines[1]), "alpha bravo         ");
+	assert.equal(
+		lines.some((line) => line.includes("┃")),
+		false,
+	);
+});
+
+test("keeps autocomplete rows outside the prompt surface", () => {
 	const lines = renderPromptFrameLines(["─".repeat(22), "draft", "─".repeat(22), "候補 one", "候補 two"], 24, 2, style);
 	assert.equal(lines.length, 5);
 	assert.ok(lines.slice(0, 3).every((line) => terminalTextWidth(line) === 24));
-	assert.match(lines[1], /┃.*draft/);
+	assert.equal(lines[1].includes(SURFACE_FILL), true, "the prompt row is filled");
+	assert.equal(lines[0].includes(SURFACE_FILL), false, "the top border is not a filled row");
+	assert.equal(lines[2].includes(SURFACE_FILL), false, "the bottom border is not a filled row");
 	assert.match(lines[3], /^ {2}候補 one/);
-	assert.doesNotMatch(lines[3], /┃/);
+	assert.ok(lines.slice(3).every((line) => line.includes(SURFACE_FILL) === false));
 	assert.ok(lines.slice(3).every((line) => terminalTextWidth(line) <= 24));
 });
 
 test("keeps the no-color frame free of terminal styling", () => {
-	const plainStyle = { border: (value) => value, rail: (value) => value };
+	const plainStyle = { border: (value) => value, surface: (value) => value };
 	const lines = renderPromptFrameLines(["─".repeat(18), "draft", "─".repeat(18)], 20, 0, plainStyle);
 	assert.equal(
 		lines.some((line) => line.includes("\u001b")),
@@ -285,8 +299,11 @@ test("removes /scoped-models from autocomplete and intercepts exact manual submi
 	assert.equal(editor.getText(), "");
 });
 
-test("exact Pi autocomplete rows stay outside the prompt rail", async () => {
-	const editor = new SessionPromptEditor(tui, editorTheme, { matches: editorKeybindings }, plainStyles);
+test("exact Pi autocomplete rows stay outside the prompt surface", async () => {
+	const filledStyles = {
+		apply: (role, value) => (role === "prompt.surface" ? `<surface>${value}</surface>` : value),
+	};
+	const editor = new SessionPromptEditor(tui, editorTheme, { matches: editorKeybindings }, filledStyles);
 	editor.setAutocompleteProvider({
 		triggerCharacters: ["/"],
 		async getSuggestions() {
@@ -300,7 +317,12 @@ test("exact Pi autocomplete rows stay outside the prompt rail", async () => {
 	editor.handleInput("\t");
 	await new Promise((resolve) => setImmediate(resolve));
 	assert.equal(editor.isShowingAutocomplete(), true);
-	const suggestion = editor.render(40).find((line) => line.includes("Model command"));
+	const rows = editor.render(40);
+	const suggestion = rows.find((line) => line.includes("Model command"));
 	assert.ok(suggestion);
-	assert.doesNotMatch(suggestion, /┃/);
+	assert.doesNotMatch(suggestion, /<surface>/);
+	assert.ok(
+		rows.some((line) => line.includes("<surface>")),
+		"the prompt row is filled",
+	);
 });

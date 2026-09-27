@@ -3,7 +3,7 @@ import { detectTerminalColorMode, renderTerminalRgb, type TerminalColorMode } fr
 
 export type SessionUiStyleRole =
 	| "prompt.border"
-	| "prompt.rail"
+	| "prompt.surface"
 	| "session.hint.text"
 	| "session.hint.muted"
 	| "session.hint.accent"
@@ -71,25 +71,32 @@ export type SessionUiStyleRole =
 	| "palette.hint";
 
 type ThemeColor = Parameters<Theme["fg"]>[0];
+type ThemeBackground = Parameters<Theme["bg"]>[0];
 
+/**
+ * `theme` and `rgb` name a foreground color; `themeBackground` names a background. A role declares
+ * which plane it paints, so a renderer never has to know whether its value is text or a filled row.
+ */
 export type SessionUiColor =
 	| Readonly<{ source: "theme"; value: ThemeColor }>
-	| Readonly<{ source: "rgb"; red: number; green: number; blue: number }>;
+	| Readonly<{ source: "rgb"; red: number; green: number; blue: number }>
+	| Readonly<{ source: "themeBackground"; value: ThemeBackground }>;
 
 export type SessionUiStyleScheme = Readonly<Record<SessionUiStyleRole, SessionUiColor>>;
 
 const theme = (value: ThemeColor): SessionUiColor => Object.freeze({ source: "theme", value });
 const rgb = (red: number, green: number, blue: number): SessionUiColor =>
 	Object.freeze({ source: "rgb", red, green, blue });
+const themeBackground = (value: ThemeBackground): SessionUiColor => Object.freeze({ source: "themeBackground", value });
 
-/** Jouzu brand accents, shared by the prompt rail and the Palette so one capability policy covers both. */
+/** Jouzu brand accents for the Palette, behind one capability policy. */
 const BRAND_BLUE = rgb(103, 232, 249);
 const BRAND_PINK = rgb(244, 114, 182);
 
 /** Jouzu-owned semantic roles with defaults matched to the retained Session UI baseline. */
 export const DEFAULT_SESSION_UI_STYLE_SCHEME: SessionUiStyleScheme = Object.freeze({
 	"prompt.border": theme("borderMuted"),
-	"prompt.rail": BRAND_BLUE,
+	"prompt.surface": themeBackground("userMessageBg"),
 	"session.hint.text": theme("text"),
 	"session.hint.muted": theme("muted"),
 	"session.hint.accent": theme("accent"),
@@ -159,6 +166,10 @@ export const DEFAULT_SESSION_UI_STYLE_SCHEME: SessionUiStyleScheme = Object.free
 
 export interface SessionUiStyles {
 	readonly scheme: SessionUiStyleScheme;
+	/**
+	 * Style a value with the role's color. A background role fills the whole value, so the value
+	 * must be one complete row: the fill is restored after any reset the row already contains.
+	 */
 	apply(role: SessionUiStyleRole, value: string): string;
 }
 
@@ -171,13 +182,32 @@ export interface SessionUiStyleOptions {
 	env?: NodeJS.ProcessEnv;
 }
 
+/** The theme a session UI can style from. Pi themes always carry `bg`; test doubles may not. */
+export type SessionUiTheme = Pick<Theme, "fg"> & Partial<Pick<Theme, "bg" | "getBgAnsi">>;
+
 function themeSupportsColor(themeValue: Pick<Theme, "fg">): boolean {
 	const probe = "jouzu-color-probe";
 	return themeValue.fg("accent", probe) !== probe;
 }
 
+/** The opening sequence for a theme background, or undefined when the theme cannot supply one. */
+function themeBackgroundAnsi(themeValue: SessionUiTheme, color: ThemeBackground): string | undefined {
+	const read = themeValue.getBgAnsi;
+	if (typeof read !== "function") return undefined;
+	return read.call(themeValue, color);
+}
+
+/**
+ * Fill a row with a background color. The editor draws its cursor as reverse video followed by a full
+ * reset, which would end the fill part-way along the row, so the fill is restored after every reset.
+ */
+function fillBackground(value: string, ansi: string | undefined): string {
+	if (ansi === undefined) return value;
+	return `${ansi}${value.split("\u001b[0m").join(`\u001b[0m${ansi}`)}\u001b[49m`;
+}
+
 export function createSessionUiStyles(
-	themeValue: Pick<Theme, "fg">,
+	themeValue: SessionUiTheme,
 	options: SessionUiStyleOptions = {},
 ): SessionUiStyles {
 	const env = options.env ?? process.env;
@@ -197,6 +227,8 @@ export function createSessionUiStyles(
 			if (!colorEnabled || value.length === 0) return value;
 			const color = scheme[role];
 			if (color.source === "theme") return themeValue.fg(color.value, value);
+			if (color.source === "themeBackground")
+				return fillBackground(value, themeBackgroundAnsi(themeValue, color.value));
 			return renderTerminalRgb(value, color, colorMode);
 		},
 	});
