@@ -68,6 +68,15 @@ for (const outcome of ["completed", "failed", "cancelled", "deadline"]) {
 								name: "agent_wait",
 								arguments: {
 									on: [dependency],
+									...(outcome === "completed" || outcome === "deadline"
+										? {
+												on: [{ ...dependency, health: null, work: null, scope: null }],
+												work: null,
+												mode: null,
+												replaceToken: null,
+												checkAfter: null,
+											}
+										: {}),
 									reason: "Await child evidence",
 									deadline: outcome === "deadline" ? "1s" : "10s",
 								},

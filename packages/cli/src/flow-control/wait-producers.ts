@@ -243,7 +243,7 @@ export class FlowWaitProducerRegistry {
 		if (!policy)
 			throw new FlowLedgerError(
 				"identity",
-				`Health policy ${name} is not registered for this execution; declare a deadline-only wait instead.`,
+				`Health policy ${name} is not registered for this execution; declare a deadline-only wait instead. Omit on[].health and checkAfter or pass null. The until predicate is not a health policy.`,
 			);
 		return policy;
 	}
@@ -289,7 +289,10 @@ export class FlowWaitProducerRegistry {
 			!canObserveExecution(authority, captured.workId, ownerId) ||
 			(known && (known.workId !== ownerId || known.handle !== captured.handle))
 		)
-			throw new FlowLedgerError("identity", "Wait execution has different ownership.");
+			throw new FlowLedgerError(
+				"identity",
+				"Wait execution has different ownership. Copy the producer's dependency unchanged, including its exact handle and execution. Omit on[].work or pass null unless the producer returned it. Do not infer execution ownership from a child/job ID or session metadata.",
+			);
 		return { ...captured, workId: ownerId };
 	}
 

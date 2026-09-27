@@ -8,9 +8,9 @@ import { WAIT_ADJUSTMENT_NOTICES, waitToolResponse } from "./wait-tool-response.
 
 export const FLOW_WAIT_GUIDANCE = [
 	"Flow control coordinates automated continuations, dependency waits, and completion notifications. Workflow tools track the requested work; a wait holds its next automatic turn while a dependency runs. Ending your turn leaves that work and its background jobs in place.",
-	"Continue independent work while dependencies run. When remaining work depends on asynchronous execution, call agent_wait with the exact dependency values returned by the producer's tools. Omit work to wait as the current task or invocation; flowInput IDs identify messages, not work. A task may also wait on a job owned by its direct parent invocation. Do not invent handles or borrow a work ID from an unrelated turn; if ownership is refused, report the blocker instead of repeatedly retrying.",
+	"Continue independent work while dependencies run. When remaining work depends on asynchronous execution, copy the producer's waitDependency object unchanged into agent_wait.on and supply reason and deadline. Preserve any health, work, and scope it contains; do not invent missing metadata. Omit unused optional fields or use null if the interface requires them. Omit top-level work (or pass null) to wait as the current task or invocation. Nested on[].work identifies the dependency's owner, not the work to suspend; copy work and scope only when returned by the producer. Never substitute a child/job ID, flowInput message ID, or placeholder for top-level work. A task may also wait on a job owned by its direct parent invocation. If a corrected call still fails ownership checks, report the blocker instead of retrying invented IDs.",
 	"State the dependency in the reason and choose a hard deadline with bounded slack for its expected duration. The returned expiresAt is the effective deadline after the session cap; expiry is a decision point, not proof the job stopped.",
-	"Request health only with a policy name offered for that execution. Without one, the wait is deadline-only. checkAfter needs a monitored dependency. Health may end a wait early as unhealthy or health-unknown; it never extends the deadline.",
+	"Request health only with a policy name offered for that execution. Otherwise omit health and checkAfter (or pass null); the wait is deadline-only. The until predicate, such as terminal, is not a health policy. checkAfter needs a monitored dependency. Health may end a wait early as unhealthy or health-unknown; it never extends the deadline.",
 	"After agent_wait returns waiting and no independent work remains, briefly state what is running, what will unblock you, and what you will verify, then end the turn. Trust completion delivery; do not poll status, add timer-based checks, or create extra continuations merely to stay active. Inspect logs for a concrete diagnostic question or an explicit user request.",
 	"On a wake, match each result's producer and execution identity to the work you are waiting for. A stopped or completed older job does not describe its replacement. Notifications can be batched; inspect every relevant result and retrieve omitted details when needed. Verify output and completion criteria before marking requested work complete.",
 	"After user input or context restoration, use the supplied wait state and preserve pending work. A status question does not renew or replace a wait. At expiry or dependency failure, decide whether to repair, stop, or declare a new wait; do not retry the wait automatically.",
@@ -70,14 +70,25 @@ const waitSchema = {
 	properties: {
 		work: {
 			...string,
-			description: "Omit or pass null to use the current invocation. If supplied, must exactly match its work ID.",
+			type: ["string", "null"],
+			description:
+				"Work to suspend. Omit or pass null to use the current task or invocation. If supplied, must exactly match its work ID; never use a child/job ID, dependency owner, message ID, or placeholder.",
 		},
 		reason,
 		deadline: { type: "string", pattern: "^[1-9][0-9]*(ms|s|m|h|d)$" },
-		checkAfter: { type: "string", pattern: "^[1-9][0-9]*(ms|s|m|h|d)$" },
-		mode: { type: "string", enum: ["all", "any"] },
+		checkAfter: {
+			type: ["string", "null"],
+			pattern: "^[1-9][0-9]*(ms|s|m|h|d)$",
+			description: "Omit or pass null unless a dependency supplies a health policy. Must be shorter than deadline.",
+		},
+		mode: {
+			type: ["string", "null"],
+			enum: ["all", "any", null],
+			description: "Defaults to all when omitted or null.",
+		},
 		replaceToken: {
 			...string,
+			type: ["string", "null"],
 			description:
 				"Omit or pass null for a new wait ('none' also works). Unknown placeholders are ignored only when no live wait exists. A retained finished token is rejected; omit it to start a new wait. To replace a live wait, copy its exact returned token.",
 		},
@@ -94,16 +105,23 @@ const waitSchema = {
 					handle: string,
 					execution: string,
 					until: string,
-					health: string,
+					health: {
+						...string,
+						type: ["string", "null"],
+						description:
+							"Copy only a health policy offered by the producer; otherwise omit or pass null. Do not copy until here.",
+					},
 					work: {
-						type: "object",
+						type: ["object", "null"],
 						additionalProperties: false,
 						required: ["id", "revision"],
 						properties: { id: string, revision: { type: "integer", minimum: 1 } },
-						description: "Execution owner returned by the producer. Copy this when waiting from a different task.",
+						description: "Execution owner. Copy only when returned in the dependency; otherwise omit or pass null.",
 					},
 					scope: {
-						type: "object",
+						type: ["object", "null"],
+						description:
+							"Copy only when returned in the dependency; otherwise omit or pass null. Do not infer from session metadata.",
 						additionalProperties: false,
 						required: ["sessionId", "branchId"],
 						properties: { sessionId: string, branchId: string },
@@ -238,12 +256,14 @@ export function createFlowWaitExtension(options: FlowWaitToolOptions): InlineExt
 				name: "agent_wait",
 				label: "Wait for dependencies",
 				description:
-					"Declare a durable dependency wait for the current invocation; omit work to select it automatically. Use exact producer/handle/execution/until values returned by producer tools, and a health policy only where that tool offered one. A successful waiting result gates that work until completion, failure, cancellation, a health decision, or the capped hard deadline. Replacement requires replaceToken.",
+					"Wait for asynchronous dependencies as the current task or invocation. Copy each producer's waitDependency into on and supply reason and deadline. Omit optional fields, or use null if the interface requires them. Top-level work selects the work to suspend, not the child/job to wait for; normally omit it or pass null. Never invent dependency metadata or use until as a health policy. A waiting result holds this work until completion, failure, cancellation, a health decision, or the capped deadline. Replacing a live wait requires its exact replaceToken.",
 				promptSnippet: "agent_wait: wait for exact asynchronous dependencies with a hard deadline.",
 				promptGuidelines: FLOW_WAIT_GUIDANCE,
 				parameters: waitSchema,
-				// Strict providers derive a required-but-nullable form; keep that representation
-				// instead of letting them require a fabricated placeholder for optional fields.
+				// Nullability is declared at registration, including nested dependency metadata,
+				// so interfaces that require every field need no fabricated placeholders.
+				// Pi's strict converter cannot represent nullable objects; prefer permits
+				// its non-strict fallback while preserving the registered schema.
 				constrainedSampling: { type: "json_schema", strict: "prefer" },
 				prepareArguments: prepareWaitArguments,
 				async execute(toolCallId, raw, signal, _update, ctx) {
@@ -252,11 +272,17 @@ export function createFlowWaitExtension(options: FlowWaitToolOptions): InlineExt
 						attachment = options.attachment();
 					if (attachment.ledger.scope.sessionId !== ctx.sessionManager.getSessionId())
 						throw new FlowLedgerError("scope", "Wait tool belongs to another session.");
-					const workId = args.work ?? options.currentWork?.()?.id;
-					if (!workId)
+					const currentWork = options.currentWork?.();
+					const workId = args.work ?? currentWork?.id;
+					if (!workId || (options.currentWork && !currentWork))
 						throw new FlowLedgerError(
 							"identity",
-							"Waiting requires a current authorized work invocation. Omit work to use the current invocation; do not invent an ID. If no invocation is available, report the blocker.",
+							"Waiting requires a current authorized work invocation. Omit work or pass null to use the current invocation; do not invent an ID. If no invocation is available, report the blocker. No wait was installed.",
+						);
+					if (currentWork && workId !== currentWork.id)
+						throw new FlowLedgerError(
+							"identity",
+							"Requested work does not belong to this invocation. agent_wait.work selects the work to suspend. Omit work or pass null to use the current task or invocation. Do not use a child/job ID, on[].work, message ID, or placeholder. Copy the producer's waitDependency into on unchanged. No wait was installed.",
 						);
 					const authority = access(attachment, workId, signal);
 					for (const handle of args.on) {
@@ -265,7 +291,10 @@ export function createFlowWaitExtension(options: FlowWaitToolOptions): InlineExt
 							(handle.scope.sessionId !== attachment.ledger.scope.sessionId ||
 								handle.scope.branchId !== attachment.ledger.scope.branchId)
 						)
-							throw new FlowLedgerError("scope", "Dependency belongs to another session or branch.");
+							throw new FlowLedgerError(
+								"scope",
+								"Dependency belongs to another session or branch. Copy the producer's dependency unchanged. Omit on[].scope or pass null unless the producer returned it; do not infer it from session metadata. If the returned scope differs, report the blocker. No wait was installed.",
+							);
 					}
 					const expiresAt = now() + Math.min(duration(args.deadline), maxDurationMs);
 					if (!Number.isSafeInteger(expiresAt))

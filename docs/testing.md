@@ -139,7 +139,27 @@ For subagents, `subagent` launch/resume returns `waitDependency` in its result w
 
 `flow-schedule-waits.test.mjs` checks authority, job identity, storage errors, duplicate events, and recovery. `flow-schedule-wake.test.mjs` loads the installed scheduler and tests automatic trigger, removal, disable, error, and deadline wakes. It also checks inline prompt delivery and a one-shot timer with automatic disable. Trigger evidence retained by flow control survives reopening; if a crash leaves no trigger evidence, the deadline still provides a decision point. If a retained pending execution's producer state is unreadable, the session opens with automatic work held and a diagnostic identifying the source. `/flow` remains available for inspection. Repair the producer state and reopen, or use `/flow off` to work without automatic flow control; source failure does not establish completion.
 
-For `agent_wait`, omit the top-level `work` to suspend the current task or invocation. Copy the complete `Wait dependency` object returned by `bg_task` into `on`; its nested `work` identifies the execution owner. A task can observe its own execution or its direct parent's execution. This does not transfer job ownership or permit a sibling task's execution. Message IDs in `flowInput` are not work IDs. The regression tests check that the task produces no continuation requests while waiting and wakes when the parent job exits.
+For `agent_wait`, copy the producer's complete `waitDependency` object into `on` and supply `reason` and `deadline`. Omit optional fields, or pass `null` when the tool interface requires them. Top-level `work` selects the task or invocation to suspend; normally omit it or pass `null`. Never put a child run ID, job ID, message ID, or placeholder there. Nested `on[].work` identifies the execution owner; copy it and `scope` only when the producer returned them. Do not infer them from subagent context or session metadata. A task can observe its own execution or its direct parent's execution without transferring job ownership or gaining access to a sibling task's execution.
+
+For example, if a producer returns this dependency (the ID below is illustrative):
+
+```json
+{"producer":"subagent","handle":"run-123","execution":"run-123","until":"terminal"}
+```
+
+The minimal wait is:
+
+```json
+{
+  "on": [{"producer":"subagent","handle":"run-123","execution":"run-123","until":"terminal"}],
+  "reason": "Wait for the child result before reviewing it",
+  "deadline": "3m"
+}
+```
+
+Use the actual returned IDs. If the interface requires every field, set top-level `work`, `mode`, `replaceToken`, and `checkAfter` to `null`, and add `health`, `work`, and `scope` as `null` inside the dependency. `until: "terminal"` is a completion condition, not a health policy.
+
+An ownership error for `agent_wait.work` installs no wait. Correct that field to omission or `null`; do not cycle through guessed IDs. If ownership still fails, report the blocker. The regression tests cover nullable registration and provider payloads, rejected placeholders, unchanged live waits after refused calls, and child completion/deadline wakes with nullable arguments. Pi's strict-schema converter does not support nullable objects; `strict: "prefer"` falls back to the registered non-strict schema without dropping nullability. Local validation and execution ownership checks still apply.
 
 The standalone wait-decision case in `flow-assembly-pair.test.mjs` starts another background job, declares a wait, and cancels it from a decision turn. Context tests reject a foreign work or branch and preserve paused/completed work states.
 

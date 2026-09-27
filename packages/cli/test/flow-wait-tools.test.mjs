@@ -132,7 +132,7 @@ async function fixture(t, snapshot, healthPolicies) {
 	};
 }
 
-test("wait schema keeps optional fields optional and strict providers derive a nullable form", () => {
+test("wait schema preserves optional nullable fields through provider conversion", () => {
 	const tools = new Map();
 	createFlowWaitExtension({ maxDurationMs: 5000 }).factory({
 		on() {},
@@ -154,22 +154,11 @@ test("wait schema keeps optional fields optional and strict providers derive a n
 	]);
 	assert.deepEqual(wait.parameters.properties.on.items.required, ["producer", "handle", "execution", "until"]);
 	assert.deepEqual(wait.constrainedSampling, { type: "json_schema", strict: "prefer" });
-	// A strict-capable provider may require every property, but optional fields must stay
-	// nullable so the model can decline them instead of inventing a placeholder token.
-	const strict = makeStrictJsonSchema(wait.parameters);
-	assert.deepEqual([...strict.required].sort(), Object.keys(strict.properties).sort());
-	for (const key of ["work", "checkAfter", "mode", "replaceToken"])
-		assert.ok(
-			strict.properties[key].anyOf?.some((variant) => variant.type === "null"),
-			`${key} must stay nullable instead of requiring a placeholder`,
-		);
-	assert.equal(strict.properties.reason.anyOf, undefined);
-	assert.equal(strict.properties.deadline.anyOf, undefined);
-	for (const key of ["health", "work", "scope"])
-		assert.ok(
-			strict.properties.on.items.properties[key].anyOf?.some((variant) => variant.type === "null"),
-			`on[].${key} must stay nullable`,
-		);
+	// Pi's strict converter rejects nullable objects. Prefer falls back to the registered
+	// schema rather than removing null or failing the request.
+	assert.throws(() => makeStrictJsonSchema(wait.parameters), /properties require type object/);
+	assert.equal(wait.parameters.properties.reason.type, "string");
+	assert.equal(wait.parameters.properties.deadline.type, "string");
 	const tool = {
 		name: wait.name,
 		description: wait.description,
@@ -179,11 +168,75 @@ test("wait schema keeps optional fields optional and strict providers derive a n
 	const optional = convertResponsesTools([tool], { supportsStrictMode: false })[0];
 	assert.deepEqual(optional.parameters.required, ["reason", "deadline", "on"]);
 	assert.equal(optional.strict, undefined);
-	const required = convertResponsesTools([tool], { supportsStrictMode: true })[0];
-	assert.equal(required.strict, true);
-	assert.deepEqual([...required.parameters.required].sort(), Object.keys(required.parameters.properties).sort());
-	assert.ok(required.parameters.properties.replaceToken.anyOf?.some((variant) => variant.type === "null"));
-	assert.equal(required.parameters.properties.reason.anyOf, undefined);
+	const preferred = convertResponsesTools([tool], { supportsStrictMode: true })[0];
+	assert.equal(preferred.strict, false);
+	assert.deepEqual(preferred.parameters, wait.parameters);
+	assert.deepEqual(optional.parameters, wait.parameters);
+});
+
+test("wait registration exposes nullable optional fields before provider conversion", async (t) => {
+	const f = await fixture(t);
+	const wait = f.tools.get("agent_wait");
+	for (const key of ["work", "checkAfter", "mode", "replaceToken"])
+		assert.ok(wait.parameters.properties[key].type.includes("null"), `${key} must declare null at registration`);
+	for (const key of ["health", "work", "scope"])
+		assert.ok(
+			wait.parameters.properties.on.items.properties[key].type.includes("null"),
+			`on[].${key} must declare null`,
+		);
+	assert.ok(wait.parameters.properties.mode.enum.includes(null));
+	// Some interfaces require all fields without adding nullability. Registration must suffice.
+	const parameters = structuredClone(wait.parameters);
+	parameters.required = Object.keys(parameters.properties);
+	parameters.properties.on.items.required = Object.keys(parameters.properties.on.items.properties);
+	const args = {
+		reason: "Await exact dependency",
+		deadline: "4s",
+		work: null,
+		mode: null,
+		checkAfter: null,
+		replaceToken: null,
+		on: [{ ...handle, health: null, work: null, scope: null }],
+	};
+	assert.doesNotThrow(() => validateToolArguments({ ...wait, parameters }, { name: wait.name, arguments: args }));
+	const result = await f.preparedCall(args);
+	assert.equal(result.details.state, "waiting");
+	assert.equal(result.details.work, "work");
+	assert.equal(result.details.health, "deadline-only");
+	assert.deepEqual((await f.attachment.waits.snapshot())[0].on, [handle]);
+});
+
+test("foreign work and placeholder IDs explain recovery without installing a wait", async (t) => {
+	const f = await fixture(t);
+	for (const work of ["child-run-id", "none", "current", "/", "/current", "foreign"]) {
+		await assert.rejects(f.preparedCall({ ...request(), work }), {
+			code: "identity",
+			message: /agent_wait\.work.*Omit work or pass null.*Do not use a child\/job ID/,
+		});
+	}
+	assert.deepEqual(await f.attachment.waits.snapshot(), []);
+	assert.equal(f.listeners.size, 0);
+	assert.equal((await f.preparedCall({ ...request(), work: null })).details.state, "waiting");
+});
+
+test("invented dependency metadata names the field to correct without parking a wait", async (t) => {
+	const f = await fixture(t);
+	for (const [metadata, message] of [
+		[{ work: { id: "child-run-id", revision: 1 } }, /Omit on\[\]\.work or pass null unless the producer returned it/],
+		[
+			{ scope: { sessionId: "invented", branchId: "invented" } },
+			/Omit on\[\]\.scope or pass null unless the producer returned it/,
+		],
+		[
+			{ health: handle.until },
+			/Omit on\[\]\.health and checkAfter or pass null.*until predicate is not a health policy/,
+		],
+	]) {
+		await assert.rejects(f.preparedCall({ ...request(), on: [{ ...handle, ...metadata }] }), message);
+		assert.deepEqual(await f.attachment.waits.snapshot(), []);
+		assert.equal(f.listeners.size, 0);
+	}
+	assert.equal((await f.preparedCall(request())).details.state, "waiting");
 });
 
 test("wait tool subscribes exact executions, caps expiry, rejects accidental renewal, and cancels only its gate", async (t) => {
@@ -342,8 +395,12 @@ test("nullable optional arguments mean omission without weakening replacement id
 		replaceToken: null,
 		on: [{ ...handle, health: null, work: null, scope: null }],
 	};
-	// pi removes optional nulls before execution; the wait parser accepts the same shape directly.
-	assert.deepEqual(validateToolArguments(f.tools.get("agent_wait"), { name: "agent_wait", arguments: nullable }), {
+	// Registration accepts null; preparation and direct execution normalize it to omission.
+	assert.deepEqual(
+		validateToolArguments(f.tools.get("agent_wait"), { name: "agent_wait", arguments: nullable }),
+		nullable,
+	);
+	assert.deepEqual(f.tools.get("agent_wait").prepareArguments(nullable), {
 		reason: "process must exit",
 		deadline: "8h",
 		on: [handle],
