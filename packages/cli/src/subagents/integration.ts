@@ -555,6 +555,18 @@ export function createWorkflowIntegration(
 				required: ["op"],
 				additionalProperties: false,
 			} as unknown as ToolDefinition["parameters"];
+			// Declare null at registration rather than relying on a provider to add it.
+			// Type unions preserve strict-provider support for nullable arrays.
+			const properties = (
+				schema as unknown as {
+					properties: Record<string, { type: string | string[]; enum?: unknown[]; [key: string]: unknown }>;
+				}
+			).properties;
+			for (const [key, property] of Object.entries(properties)) {
+				if (key === "op") continue;
+				property.type = [property.type as string, "null"];
+				if (property.enum) property.enum = [...property.enum, null];
+			}
 			pi.registerTool({
 				name: "subagent",
 				label: "Subagent",
@@ -563,9 +575,7 @@ export function createWorkflowIntegration(
 				promptSnippet:
 					"subagent: discover roles, delegate coding or fresh review, inspect results, steer/stop/resume children.",
 				parameters: schema,
-				// Strict providers derive a required-but-nullable form, so a model that declines an
-				// operation-specific field sends null instead of a value nobody chose — a fabricated run
-				// ID or role would steer the wrong child.
+				// Strict providers may require every field; unused nullable fields mean omission.
 				constrainedSampling: { type: "json_schema", strict: "prefer" },
 				renderCall(raw, theme) {
 					const args = raw as { op?: string; role?: string };

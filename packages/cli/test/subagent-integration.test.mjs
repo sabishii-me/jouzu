@@ -159,6 +159,9 @@ test("subagent provider schemas allow omission without fabricated arguments", as
 	try {
 		const tool = f.tool;
 		assert.deepEqual(tool.parameters.required, ["op"]);
+		for (const [key, property] of Object.entries(tool.parameters.properties)) {
+			if (key !== "op") assert.ok(property.type.includes("null"), `${key} is nullable at registration`);
+		}
 		assert.deepEqual(tool.constrainedSampling, { type: "json_schema", strict: "prefer" });
 		for (const supportsStrictMode of [false, true]) {
 			const converted = convertResponsesTools([tool], { supportsStrictMode })[0];
@@ -168,11 +171,7 @@ test("subagent provider schemas allow omission without fabricated arguments", as
 			);
 			assert.equal(converted.strict, supportsStrictMode ? true : undefined);
 			for (const key of Object.keys(tool.parameters.properties).filter((key) => key !== "op")) {
-				if (supportsStrictMode)
-					assert.ok(
-						converted.parameters.properties[key].anyOf.some((variant) => variant.type === "null"),
-						key,
-					);
+				if (supportsStrictMode) assert.ok(converted.parameters.properties[key].type.includes("null"), key);
 				else assert.deepEqual(converted.parameters.properties[key], tool.parameters.properties[key]);
 			}
 			assert.deepEqual(converted.parameters.properties.op, tool.parameters.properties.op);
@@ -194,7 +193,7 @@ test("subagent provider schemas allow omission without fabricated arguments", as
 			{ op: "acknowledge", batchId: "delivered-batch-id" },
 		]) {
 			for (const args of [minimal, { ...nullable, ...minimal }])
-				assert.deepEqual(validateToolArguments(tool, { name: "subagent", arguments: args }), minimal);
+				assert.deepEqual(validateToolArguments(tool, { name: "subagent", arguments: args }), args);
 		}
 		assert.match(tool.description, /\{"op":"roles"\}/);
 		assert.match(tool.description, /Omit unused fields; use null only if required by the interface/);
@@ -237,7 +236,12 @@ test("discovery ignores unrelated launch fields and accepts nullable optional ar
 			assert.deepEqual(await f.invoke({ ...nullable, op }), expected);
 		}
 		assert.equal(f.workers.length, 0);
-		const started = await f.invoke({ ...nullable, op: "launch", role: "coder", task: "Inspect" });
+		const started = await f.invoke(
+			validateToolArguments(f.tool, {
+				name: "subagent",
+				arguments: { ...nullable, op: "launch", role: "coder", task: "Inspect" },
+			}),
+		);
 		assert.equal(started.context.mode, "fresh");
 		assert.equal(f.workers.length, 1);
 	} finally {
@@ -279,11 +283,7 @@ test("Codex request preserves subagent omission and nullable optional fields", a
 			const schema = payload.tools.find((tool) => tool.name === "subagent").parameters;
 			assert.deepEqual(schema.required, supportsStrictMode ? Object.keys(f.tool.parameters.properties) : ["op"]);
 			for (const key of Object.keys(schema.properties).filter((key) => key !== "op")) {
-				if (supportsStrictMode)
-					assert.ok(
-						schema.properties[key].anyOf.some((variant) => variant.type === "null"),
-						key,
-					);
+				if (supportsStrictMode) assert.ok(schema.properties[key].type.includes("null"), key);
 			}
 		}
 	} finally {
@@ -302,7 +302,9 @@ test("invalid launch fields explain a safe retry without starting a worker", asy
 				/Omit entryIds.*null.*Do not switch to splice/,
 			);
 			assert.equal(f.workers.length, 0);
-			const run = await f.invoke({ ...launch, ...corrected });
+			const run = await f.invoke(
+				validateToolArguments(f.tool, { name: "subagent", arguments: { ...launch, ...corrected } }),
+			);
 			assert.equal(run.context.mode, "fresh");
 			assert.equal(f.workers.length, 1);
 		} finally {
