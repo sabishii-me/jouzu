@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { assistantToolCalls } from "../../../scripts/fixtures/pi-flow-session.mjs";
+import { assistantToolCalls, createQualifiedFlowSession } from "../../../scripts/fixtures/pi-flow-session.mjs";
+import { cleanupContext } from "./fixtures/cleanup.mjs";
 import {
 	afterFlowCleanup,
 	assembledSession,
@@ -40,7 +41,7 @@ async function until(f, predicate) {
 			flow: f.errors,
 			agent: f.session.agent.state.errorMessage,
 			bodies: f.bodies.length,
-			inspect: await f.ingress.inspect(),
+			inspect: await f.ingress?.inspect(),
 		}),
 	);
 }
@@ -50,6 +51,63 @@ const messages = (f) =>
 		.getEntries()
 		.filter((entry) => entry.type === "message" && entry.message.role === "toolResult")
 		.map((entry) => entry.message);
+
+for (const delivery of ["flow", "off", "unattached"])
+	test(`installed task delivery has one owner with flow ${delivery}`, async (t) => {
+		const data = await setup(t);
+		await writeFile(
+			join(data.root, ".pi/tasks-config.json"),
+			JSON.stringify({ autoMode: "off", autoClearCompleted: "never" }),
+		);
+		const script = [
+			call("TaskCreate", { subject: "Delivery identity", description: "Complete through the selected delivery path" }),
+			{ text: "Created" },
+			call("TaskUpdate", { taskId: "1", status: "completed" }),
+			{ text: "Completed" },
+			{ text: "Copied instruction answered" },
+		];
+		const f =
+			delivery === "unattached"
+				? await createQualifiedFlowSession(cleanupContext(t), {
+						root: data.root,
+						extensions: [await installedTaskExtension(data.taskFile)],
+						script,
+					})
+				: await assembledSession(t, { ...data, script });
+		if (delivery === "off") await f.session.prompt("/flow off");
+		await f.session.prompt("Create the delivery task");
+		await f.session.waitForIdle();
+		assert.equal(f.bodies.length, 2, "automatic execution is initially off");
+		// This command queues from idle, where native delivery needs triggerTurn: true.
+		await f.session.prompt("/tasks auto");
+		await until(f, () => f.bodies.length >= 4);
+		await f.session.waitForIdle();
+		assert.equal(f.bodies.length, 4, "exactly one automatic turn completes the task");
+		const history = f.session.agent.state.messages;
+		const continuations = history.filter(
+			(message) => message.role === "custom" && ["jouzu-flow", "pi-tasks:continuation"].includes(message.customType),
+		);
+		assert.equal(continuations.length, 1, "native and flow delivery must not both run");
+		const continuation = continuations[0];
+		assert.equal(continuation.customType, delivery === "flow" ? "jouzu-flow" : "pi-tasks:continuation");
+		const instruction =
+			typeof continuation.content === "string"
+				? continuation.content
+				: JSON.parse(continuation.content[0].text).content;
+		assert.match(instruction, /Continue by working on task #1/);
+		assert.equal(typeof continuation.details[delivery === "flow" ? "attemptId" : "requestId"], "string");
+		if (delivery !== "flow") {
+			const task = JSON.parse(await readFile(data.taskFile, "utf8")).tasks[0];
+			assert.equal(continuation.details.taskId, task.id);
+			assert.equal(continuation.details.createdAt, task.createdAt);
+		}
+		// A user can quote the exact instruction after completion without becoming automation.
+		await f.session.prompt(instruction);
+		await f.session.waitForIdle();
+		assert.equal(f.bodies.length, 5, "copied task text remains user input after completion");
+		assert.match(JSON.stringify(f.bodies[4]), /Continue by working on task #1/);
+		assert.deepEqual(f.errors ?? [], []);
+	});
 
 test("flow reports installed task titles and unfinished dependencies without changing task state", async (t) => {
 	const f = await assembledSession(t, {

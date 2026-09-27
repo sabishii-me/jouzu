@@ -44,7 +44,7 @@ test("task live-predicate upgrade replaces only the pinned preceding runtime", a
 	assert.equal(await applyTaskFlow(root, true), 0);
 });
 
-test("task navigation upgrade replaces only the pinned preceding source", async (t) => {
+test("task patch refuses an assembly missing tree reconnection", async (t) => {
 	const root = await mkdtemp(join(tmpdir(), "jouzu-task-navigation-upgrade-"));
 	t.after(() => rm(root, { recursive: true, force: true }));
 	await mkdir(join(root, "src"));
@@ -52,19 +52,13 @@ test("task navigation upgrade replaces only the pinned preceding source", async 
 		await writeFile(join(root, path), await readFile(new URL(path, installed)));
 	const source = await readFile(new URL("src/index.ts", installed), "utf8");
 	const start = source.indexOf("  // Tree navigation replaces the flow branch");
-	const end = source.indexOf("  // message_start is the delivery-time signal", start);
+	const end = source.indexOf("  // Fallback for hosts that initialize extension UI lazily.", start);
 	assert.ok(start >= 0 && end > start);
-	const previous = source.slice(0, start) + source.slice(end);
-	const lock = JSON.parse(
-		await readFile(new URL("../../../upstream/task-flow/patch.lock.json", import.meta.url), "utf8"),
-	);
-	assert.equal(createHash("sha256").update(previous).digest("hex"), lock.previousAfter);
-	await writeFile(join(root, "src/index.ts"), previous);
-	await assert.rejects(applyTaskFlow(root, true), /differs/);
-	assert.equal(await readFile(join(root, "src/index.ts"), "utf8"), previous);
-	assert.equal(await applyTaskFlow(root), 1);
-	assert.equal(await readFile(join(root, "src/index.ts"), "utf8"), source);
-	assert.equal(await applyTaskFlow(root, true), 0);
+	const incomplete = source.slice(0, start) + source.slice(end);
+	await writeFile(join(root, "src/index.ts"), incomplete);
+	await assert.rejects(applyTaskFlow(root, true), /source hash differs/);
+	await assert.rejects(applyTaskFlow(root), /source hash differs/);
+	assert.equal(await readFile(join(root, "src/index.ts"), "utf8"), incomplete);
 });
 
 test("installed task adapter is pinned and idempotent", async () => {

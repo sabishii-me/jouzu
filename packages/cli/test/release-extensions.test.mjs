@@ -49,7 +49,7 @@ const expectedExtensions = [
 ];
 const expectedPiTasks = {
 	version: "0.6.1",
-	commit: "14b0f6c941635468b84f392e8a33524e2589bc70",
+	commit: "a07c749439b1909a95a974bf6ee8a560f6d2b0d9",
 };
 const expectedCompatibility = ["@sinclair/typebox", "esbuild", "typebox", "wreq-js"];
 

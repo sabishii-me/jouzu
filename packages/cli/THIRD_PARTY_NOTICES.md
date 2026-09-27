@@ -9,7 +9,7 @@ Jouzu distributes the following release-owned Pi extensions and their default ru
 | `pi-webaio` | `f65ae726bc95c50dc0e2c5a0ea95c2cdfb9a1bc2` (1.0.5) | MIT; `LICENSE` |
 | `@sinclair/typebox` | 0.34.52 | MIT; `license` |
 | `pi-code-previews` | 0.1.36 | MIT; `LICENSE` |
-| `@lhl/pi-tasks` | `14b0f6c941635468b84f392e8a33524e2589bc70` | MIT; `LICENSE` |
+| `@lhl/pi-tasks` | `a07c749439b1909a95a974bf6ee8a560f6d2b0d9` | MIT; `LICENSE` |
 | `pi-multiloop` | `becca4ab47bf9953c66d96ecbac16bf2debe6881` (v0.4.1) | MIT; `LICENSE` |
 | `@sting8k/pi-vcc` | 0.7.2 | The upstream `README.md` declares MIT under its License heading; the package has no separate license file |
 | `pi-skill-dollar` | `4bff5734d87c4f4725d81a4ea1d1c1283c22423c` (v0.2.0) | MIT; `LICENSE` |

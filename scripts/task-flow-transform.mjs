@@ -26,9 +26,11 @@ export function transformTaskFlow(source) {
 		// biome-ignore lint/suspicious/noTemplateCurlyInString: emitted TypeScript preserves the task interpolation.
 		"if (!taskFlow.runnable(current)) return { queued: false, message: `#${current.id}: paused or waiting for user input` };\n\n    if (queuedTaskIds.has(current.id)) {",
 	);
+	// The flow host owns its message identity and wake. Keep its builder textual;
+	// the upstream custom message and triggerTurn belong only to native fallback.
 	replace(
-		'pi.sendUserMessage(prompt, { deliverAs: "followUp" });',
-		'if (!taskFlow.send(queuedTask, () => buildTaskPrompt(store.get(current.id)!, options.additionalContext), () => queuedTaskIds.delete(current.id), () => queuedTaskIds.delete(current.id))) {\n        pi.sendUserMessage(prompt, { deliverAs: "followUp" });\n      }',
+		'pi.sendMessage(taskContinuation(queuedTask, prompt), { deliverAs: "followUp", triggerTurn: true });',
+		'if (!taskFlow.send(queuedTask, () => buildTaskPrompt(store.get(current.id)!, options.additionalContext), () => queuedTaskIds.delete(current.id), () => queuedTaskIds.delete(current.id))) {\n        pi.sendMessage(taskContinuation(queuedTask, prompt), { deliverAs: "followUp", triggerTurn: true });\n      }',
 	);
 	replace(
 		"if (keepsTasks) autoClear.onRunEnded();",
@@ -64,7 +66,7 @@ export function transformTaskFlow(source) {
 
 /** Upgrade the pinned task adapter without changing its store or tool contracts. */
 export function reconnectTaskFlowOnTree(source) {
-	const anchor = "  // message_start is the delivery-time signal for queued prompts.";
+	const anchor = "  // Fallback for hosts that initialize extension UI lazily.";
 	if (source.split(anchor).length !== 2) throw new Error("Task tree lifecycle source anchor differs.");
 	return source.replace(
 		anchor,
