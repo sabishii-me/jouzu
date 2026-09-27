@@ -51,6 +51,10 @@ The main model receives the `subagent` tool:
 {"op":"resume","id":"<run-id>","task":"Address the reported failure and rerun the check."}
 ```
 
+Only `op` is required by the shared schema. Each operation checks its own inputs: launch needs `role` and `task`; read/stop need `id`; resume/steer need `id` and `task`; acknowledge needs the delivered `batchId`. Roles, list, and parent trace need no other fields. Launch defaults to fresh context and the parent's workspace.
+
+Omit unrelated fields. If a strict provider requires every field, use `null` for unused optional fields—not empty strings, empty arrays, or invented IDs. For example, a fresh launch must omit `entryIds` or set it to `null`. If that field is rejected, remove it and retry; changing to splice would change the context shared with the child. Splice requires actual IDs obtained through parent trace. An interface that requires unrelated fields but rejects both omission and null cannot represent a valid call; report that interface error rather than guessing values.
+
 Before delegating, the main agent calls `roles` to check live availability and current definitions. It returns `{ "enabled": true, "roles": [...] }`, or `enabled: false` with a reason and the configured roles. Definitions can change during a session; choose a role with `child` or `both` placement. Launch checks the current definition and enable setting again. Only you can change a role's model through Workflow. The tool rejects model overrides, and the agent is instructed not to edit agent configuration to select another model. New launches use the role's configured model; resume keeps the exact model and definition saved with that run. A role configured as `same` uses the main session's model at launch.
 
 Launch returns immediately with a run ID. Unread terminal summaries arrive in a batch after active work and queued messages finish, including successful completion, limit exhaustion, timeout, cancellation, and crashes. Each batch includes status counts and a bounded sample; omitted results remain available through `list` and `read`. A notification reports completion, not acceptance of the work.

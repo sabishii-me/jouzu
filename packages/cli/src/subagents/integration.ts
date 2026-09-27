@@ -538,7 +538,8 @@ export function createWorkflowIntegration(
 						items: { type: "string" },
 						minItems: 1,
 						maxItems: 100,
-						description: "Launch with splice: message or compaction IDs from parent trace.",
+						description:
+							"Launch with splice only: 1–100 IDs returned by parent trace. For fresh or fork, omit entryIds (or use null); never supply an empty array or placeholder IDs.",
 					},
 					parentContext: {
 						type: "boolean",
@@ -558,7 +559,7 @@ export function createWorkflowIntegration(
 				name: "subagent",
 				label: "Subagent",
 				description:
-					'Launch and control child agents. Start with {"op":"roles"} for live availability and role definitions. Omit unused fields; use null only if required by the interface. Never invent IDs or placeholder values. Only the user changes role models or enables subagents. Launch uses the configured model; resume keeps its saved model, workspace, and context. Steer queues a message; resume starts a follow-up. File access follows enabled tools and OS permissions, not a workspace fence. Launch returns immediately; unread terminal results arrive in a batch after active work and queued messages finish. Read pages use byte offsets; reading all terminal output prevents redundant completion turns. Trace searches saved messages, tool calls/results, errors, and compactions without acknowledging completion. Acknowledge only the delivered batchId, alone, when no reply is needed. You retain main-session ownership; verify child output before accepting it.',
+					'Launch and control child agents. Start with {"op":"roles"} for live availability and role definitions. Omit unused fields; use null only if required by the interface. A launch needs only op, role, and task; context defaults to fresh. Never invent IDs or placeholder values. Only the user changes role models or enables subagents. Launch uses the configured model; resume keeps its saved model, workspace, and context. Steer queues a message; resume starts a follow-up. File access follows enabled tools and OS permissions, not a workspace fence. Launch returns immediately; unread terminal results arrive in a batch after active work and queued messages finish. Read pages use byte offsets; reading all terminal output prevents redundant completion turns. Trace searches saved messages, tool calls/results, errors, and compactions without acknowledging completion. Acknowledge only the delivered batchId, alone, when no reply is needed. You retain main-session ownership; verify child output before accepting it.',
 				promptSnippet:
 					"subagent: discover roles, delegate coding or fresh review, inspect results, steer/stop/resume children.",
 				parameters: schema,
@@ -606,6 +607,29 @@ export function createWorkflowIntegration(
 					params = Object.fromEntries(
 						Object.entries(params).filter(([key, value]) => key === "op" || value !== null),
 					) as typeof params;
+					const requiredFields: Record<string, string[]> = {
+						launch: ["role", "task"],
+						read: ["id"],
+						stop: ["id"],
+						resume: ["id", "task"],
+						steer: ["id", "task"],
+						acknowledge: ["batchId"],
+					};
+					for (const field of requiredFields[params.op] ?? []) {
+						const value = (params as unknown as Record<string, unknown>)[field];
+						if (typeof value === "string" && value.trim()) continue;
+						const hint =
+							field === "role"
+								? 'Call {"op":"roles"} and use a returned child-capable role.'
+								: field === "id"
+									? 'Call {"op":"list"} and use a returned run ID.'
+									: field === "batchId"
+										? "Use the batchId from a completion delivered in this run."
+										: "Supply the assignment or follow-up in task.";
+						throw new Error(
+							`subagent ${params.op} requires a non-empty ${field}. ${hint} Omit unrelated fields; use null only if the interface requires them.`,
+						);
+					}
 					if (["launch", "resume", "steer"].includes(params.op)) requireSubagents();
 					if (
 						params.op === "resume" &&

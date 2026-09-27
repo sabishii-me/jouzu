@@ -74,7 +74,9 @@ export function captureChildContext(
 	if (options.parentContext !== undefined && typeof options.parentContext !== "boolean")
 		throw new Error("Context: parentContext must be true or false.");
 	if (mode !== "splice" && options.entryIds !== undefined)
-		throw new Error("Context: entryIds is only valid with context: splice.");
+		throw new Error(
+			`Context: entryIds is only valid with context: splice, but this launch uses ${mode}. Omit entryIds, or send null if the interface requires the field. Do not switch to splice unless you intend to share selected parent entries.`,
+		);
 	const entries = contextEntries(branch);
 	if (mode === "splice") {
 		if (
@@ -83,7 +85,9 @@ export function captureChildContext(
 			options.entryIds.length > 100 ||
 			options.entryIds.some((id) => typeof id !== "string" || !entries.some((entry) => entry.id === id))
 		)
-			throw new Error("Context: splice requires 1–100 message or compaction entry IDs from the active parent branch.");
+			throw new Error(
+				'Context: splice requires 1–100 message or compaction entry IDs from the active parent branch. Call subagent with {"op":"trace"} to obtain IDs, then retry with those IDs. For a fresh assignment, omit both context and entryIds (or send null).',
+			);
 	}
 	const parentLookup = options.parentContext ?? !judging;
 	return {

@@ -245,6 +245,89 @@ test("discovery ignores unrelated launch fields and accepts nullable optional ar
 	}
 });
 
+test("Codex request preserves subagent omission and nullable optional fields", async () => {
+	const { stream } = await import("@earendil-works/pi-ai/api/openai-codex-responses");
+	const f = fixture();
+	try {
+		for (const supportsStrictMode of [false, true]) {
+			let payload;
+			const token = `fixture.${Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "fixture" } })).toString("base64url")}.fixture`;
+			const response = await stream(
+				{
+					id: "fixture",
+					input: ["text"],
+					api: "openai-codex-responses",
+					provider: "fixture",
+					baseUrl: "https://fixture.invalid",
+					compat: { supportsStrictMode },
+				},
+				{
+					messages: [
+						{ role: "system", content: "Test", timestamp: 0, toolsAdded: [f.tool] },
+						{ role: "user", content: "Test", timestamp: 1 },
+					],
+				},
+				{
+					apiKey: token,
+					onPayload(value) {
+						payload = value;
+						throw new Error("fixture-before-network");
+					},
+				},
+			).result();
+			assert.match(response.errorMessage, /fixture-before-network/);
+			const schema = payload.tools.find((tool) => tool.name === "subagent").parameters;
+			assert.deepEqual(schema.required, supportsStrictMode ? Object.keys(f.tool.parameters.properties) : ["op"]);
+			for (const key of Object.keys(schema.properties).filter((key) => key !== "op")) {
+				if (supportsStrictMode)
+					assert.ok(
+						schema.properties[key].anyOf.some((variant) => variant.type === "null"),
+						key,
+					);
+			}
+		}
+	} finally {
+		await f.shutdown();
+	}
+});
+
+test("invalid launch fields explain a safe retry without starting a worker", async () => {
+	for (const corrected of [{}, { entryIds: null }]) {
+		const f = fixture();
+		try {
+			await f.handlers.get("session_start")({}, f.ctx);
+			const launch = { op: "launch", role: "coder", task: "Inspect", context: "fresh" };
+			await assert.rejects(
+				f.invoke({ ...launch, entryIds: ["unused"] }),
+				/Omit entryIds.*null.*Do not switch to splice/,
+			);
+			assert.equal(f.workers.length, 0);
+			const run = await f.invoke({ ...launch, ...corrected });
+			assert.equal(run.context.mode, "fresh");
+			assert.equal(f.workers.length, 1);
+		} finally {
+			await f.shutdown();
+		}
+	}
+});
+
+test("missing operation fields name the field and discovery step", async () => {
+	const f = fixture();
+	try {
+		await f.handlers.get("session_start")({}, f.ctx);
+		for (const [args, error] of [
+			[{ op: "launch", task: "Inspect" }, /launch requires.*role.*op.*roles/],
+			[{ op: "launch", role: "coder", task: " " }, /launch requires.*task/],
+			[{ op: "read" }, /read requires.*id.*op.*list/],
+			[{ op: "resume", id: "returned-id" }, /resume requires.*task/],
+		])
+			await assert.rejects(f.invoke(args), error);
+		assert.equal(f.workers.length, 0);
+	} finally {
+		await f.shutdown();
+	}
+});
+
 test("launch captures parent context before authentication and resume keeps its snapshot", async () => {
 	const f = fixture();
 	try {
@@ -686,7 +769,7 @@ test("explicit workspace and file scanning carry into child launch and resume", 
 		assert.equal(parsed.task, undefined);
 		assert.equal(typeof f.tool.renderResult, "function");
 		await assert.rejects(
-			f.invoke({ op: "resume", id: parsed.id, workspace: f.root }),
+			f.invoke({ op: "resume", id: parsed.id, task: "Continue review", workspace: f.root }),
 			/Resume keeps the original workspace/,
 		);
 		await assert.rejects(
