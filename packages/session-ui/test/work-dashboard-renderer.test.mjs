@@ -124,7 +124,7 @@ test("attention with no other activity reads as a phrase and the label gives way
 		/attention/,
 	);
 });
-test("only markers and attention counts carry color; titles and metadata stay muted", () => {
+test("markers and section counts carry state color; row metadata stays muted", () => {
 	const tagged = { apply: (role, text) => (text ? `[${role}]${text}` : text) };
 	const snapshot = {
 		scope: { sessionId: "s", branchId: "b" },
@@ -145,18 +145,28 @@ test("only markers and attention counts carry color; titles and metadata stay mu
 						attention: [{ id: "r", type: "result" }],
 						route: "/workflow",
 					},
+					...["running", "queued", "completed", "failed"].map((state) => ({
+						id: state,
+						producer: "subagent",
+						kind: "agent",
+						owner: "s",
+						state,
+						label: state,
+						attention: [],
+						route: "/workflow",
+					})),
 				],
 			},
 		},
 	};
 	const [divider, row] = renderWorkDashboard(
 		snapshot,
-		{ mode: "compact", terminalRows: 60, availableRows: 20, width: 60, now: 0 },
+		{ mode: "compact", terminalRows: 60, availableRows: 20, width: 80, now: 0 },
 		tagged,
 	);
 	assert.match(
 		divider,
-		/^\[prompt\.border\]── \[session\.hint\.muted\]Agents · \[session\.hint\.warning\]!1\[session\.hint\.muted\] \[prompt\.border\]─+$/,
+		/^\[prompt\.border\]── \[session\.hint\.text\]Agents\[session\.hint\.muted\] · \[session\.activity\]1 running\[session\.hint\.muted\] · \[session\.hint\.muted\]1 open\[session\.hint\.muted\] · \[session\.hint\.success\]1 done\[session\.hint\.muted\] · \[session\.hint\.error\]1 failed\[session\.hint\.muted\] · \[session\.hint\.warning\]!1\[session\.hint\.muted\] \[prompt\.border\]─+$/,
 	);
 	assert.match(
 		row,

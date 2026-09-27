@@ -92,22 +92,25 @@ function sectionTitle(
 	const failed = finished(["failed", "cancelled"]);
 	const attention = units.filter((unit) => unit.attention.length).length;
 	const hidden = units.some((unit) => !shown.includes(unit) && (!isTerminal(unit) || unit.attention.length));
-	const counts = [
-		SECTIONS[kind],
-		...(running ? [`${running} running`] : []),
-		...(open ? [`${open} open`] : []),
-		...(done ? [`${done} done`] : []),
-		...(failed ? [`${failed} failed`] : []),
-	].join(" · ");
+	// Counts share their row marker's color (`1 done` with `✔`); open counts, separators, and the route stay muted.
+	const counts: [number, string, SessionUiStyleRole][] = [
+		[running, `${running} running`, "session.activity"],
+		[open, `${open} open`, "session.hint.muted"],
+		[done, `${done} done`, "session.hint.success"],
+		[failed, `${failed} failed`, "session.hint.error"],
+		[attention, `!${attention}`, "session.hint.warning"],
+	];
 	const route = hidden && units[0] ? ` · ${units[0].route}` : "";
-	// `!` is the warning color everywhere it appears; the rest of the title stays muted.
-	return attention
-		? [
-				[`${counts} · `, "session.hint.muted"],
-				[`!${attention}`, "session.hint.warning"],
-				[`${route} `, "session.hint.muted"],
-			]
-		: [[`${counts}${route} `, "session.hint.muted"]];
+	return [
+		[SECTIONS[kind], "session.hint.text"],
+		...counts
+			.filter(([count]) => count)
+			.flatMap(([, text, role]): [string, SessionUiStyleRole][] => [
+				[" · ", "session.hint.muted"],
+				[text, role],
+			]),
+		[`${route} `, "session.hint.muted"],
+	];
 }
 const ATTENTION_TEXT: Record<WorkUnit["attention"][number]["type"], string> = {
 	result: "unread result",
