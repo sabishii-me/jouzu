@@ -511,11 +511,16 @@ test("real child cancellation aborts a running shell and its process", { timeout
 		let pid;
 		// A cold runner needs to start the child, complete its model round trip, and start the shell,
 		// which takes several times what a warm machine needs. Poll to a deadline rather than assuming
-		// a fixed budget: the assertion below still fails if the file never appears.
+		// a fixed budget: the assertion below still fails if the file never appears. The file is also
+		// visible before its contents land, so a read that yields no positive integer keeps polling
+		// instead of ending the loop with an unparsed value.
 		for (let i = 0; i < 1200; i++) {
 			try {
-				pid = Number(readFileSync(join(p.cwd, "worker-shell.pid"), "utf8"));
-				break;
+				const candidate = Number(readFileSync(join(p.cwd, "worker-shell.pid"), "utf8"));
+				if (Number.isInteger(candidate) && candidate > 0) {
+					pid = candidate;
+					break;
+				}
 			} catch {}
 			await new Promise((resolve) => setTimeout(resolve, 25));
 		}
