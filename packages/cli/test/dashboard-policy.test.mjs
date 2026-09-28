@@ -24,7 +24,8 @@ test("dashboard policy defaults compact and roundtrips each saved mode privately
 	for (const mode of DASHBOARD_MODES) {
 		writeDashboardPolicy(paths, mode);
 		assert.deepEqual(loadDashboardPolicy(paths), { mode });
-		assert.equal(statSync(dashboardPolicyPath(paths)).mode & 0o777, 0o600);
+		// POSIX modes do not apply on Windows; private-fs.ts skips chmod there.
+		if (process.platform !== "win32") assert.equal(statSync(dashboardPolicyPath(paths)).mode & 0o777, 0o600);
 	}
 });
 test("invalid dashboard policies report errors and are not overwritten", (t) => {
