@@ -32,7 +32,7 @@
 
 - Dashboard coverage uses fixtures and one live qualification in tmux at 137x67. Expanded mode, the Settings route on short terminals, resizing, streaming-session animation, the loop producer, voice input, a multiline editor, and Windows or macOS terminal behavior are unqualified.
 - Session-label coverage uses fixtures and live tmux windows. It does not establish naming quality for every repository or query shape.
-- Flow control refuses a command the background extension would auto-background, `bg_task`, and `schedule_prompt` in a scheduled-prompt wake turn, which carries no owning work; the next host turn accepts them. A tool call that outlives the invocation holding its work is refused as inactive and succeeds when reissued.
+- Background and scheduled tools require an owning work item. A turn that carries none, such as a scheduled-prompt wake turn or a continuation whose work already completed, refuses a command the background extension would auto-background, `bg_task`, and `schedule_prompt`; the next host turn accepts them. A tool call that outlives the invocation holding its work is refused as inactive and succeeds when reissued.
 
 ## 0.1.16 - 2026-09-25
 
