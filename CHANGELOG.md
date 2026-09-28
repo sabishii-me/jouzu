@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.1.17 - 2026-09-29
+
+### Added
+
+- Show live work in a dashboard above the prompt editor. Each producer gets a section opened by a divider carrying its counts and route; rows carry the state marker shared with the Session Line, the producer kind, elapsed time, and detail. An unread child result raises an attention row and a count, the row leaves 30 seconds after it appears, and the count clears when the result is read. Compact (five lines) and expanded (ten lines) modes are saved in Settings and capped at one third of terminal height. Child agents, tasks, and flow alerts use the dashboard; background jobs and loops keep their native panels until the pinned producers implement the widget-claim interface. See [Interactive session UI](https://github.com/shisa-ai/jouzu/blob/v0.1.17/README.md#interactive-session-ui).
+- Name sessions and panes automatically. Naming runs after the first completed task turn on the selected provider/model and is on by default. `/labels` reports status, and `/labels global on|off`, `/labels on|off`, `/labels pin|auto`, and `/labels pane pin|auto` control it. Owned pane labels appear in stock tmux and Byobu status formats without renaming windows. See [Session labels](https://github.com/shisa-ai/jouzu/blob/v0.1.17/docs/session-labels.md).
+- Draw the prompt with a single `❯` leader on the first row and a blank gutter on continuation rows, replacing the rail and the background fill that replaced it. The model label uses the same teal as the leader and the provider stays dim.
+
+### Changed
+
+- Adopt `@lhl/pi-tasks` `a07c749`. Task continuations keep Jouzu's flow ownership while retaining upstream custom messages and idle wake options; the tree reconnection anchor is repaired and a source upgrade from an older pin is refused.
+- Remove the practical default ceiling on native provider request payloads, so a session history carrying images is no longer cut at 8 MiB. Explicit byte budgets and automatic-result limits are unchanged.
+- Astra diagnoses and repairs a problem the user points out by default, while diagnosis-only and review-only requests keep their scope.
+
+### Fixed
+
+- Declare optional subagent and `agent_wait` fields nullable at registration, and read an explicit `null`, an empty string, and the `none` sentinel as omission. A provider that requires every declared property can express an omitted field without relaxing authority checks, required fields, or unknown-field rejection.
+- Name the recovery in subagent argument errors, and ignore launch context on operations other than launch and resume.
+- Explain how to recover from a task package source mismatch without weakening the overwrite guard.
+- Count queued and running children on the Session Line from the child source only, treat disabled flow control as nothing pending, and poll idle flow state every five seconds instead of every second.
+- Coalesce dashboard source polls during an active read, expire finished rows without a producer event, and pause dashboard animation while the session streams.
+- Keep the model identity from overlapping a shortened Session Line that carries attention, and order flow alerts by first observation.
+
+### Development
+
+- Pin Pi's interactive root order in `scripts/check-pi-contract.mjs`, so a Pi upgrade fails qualification instead of dropping the dashboard panel.
+- Capture native stderr in the Windows acceptance harness without masking exit status or launch failures, and stop the notification-test timer before form disposal can reenter its callback.
+
+### Testing limits
+
+- Dashboard coverage uses fixtures and one live qualification in tmux at 137x67. Expanded mode, the Settings route on short terminals, resizing, streaming-session animation, the loop producer, voice input, a multiline editor, and Windows or macOS terminal behavior are unqualified.
+- Session-label coverage uses fixtures and live tmux windows. It does not establish naming quality for every repository or query shape.
+- Flow control refuses a command the background extension would auto-background, `bg_task`, and `schedule_prompt` in a scheduled-prompt wake turn, which carries no owning work; the next host turn accepts them. A tool call that outlives the invocation holding its work is refused as inactive and succeeds when reissued.
+
 ## 0.1.16 - 2026-09-25
 
 ### Fixed
