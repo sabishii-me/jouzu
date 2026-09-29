@@ -468,6 +468,44 @@ test("a completed dependency releases the next task with its own work identity",
 	assert.deepEqual(f.errors, []);
 });
 
+test("a task continuation can complete one task and start the next in the same turn", { timeout: 15000 }, async (t) => {
+	const f = await assembledSession(t, {
+		...(await setup(t)),
+		script: [
+			call("TaskCreateMany", {
+				tasks: [
+					{ subject: "First", description: "Complete first" },
+					{ subject: "Second", description: "Start a background job next" },
+				],
+			}),
+			{ text: "Tasks ready" },
+			call("TaskUpdate", { taskId: "1", status: "completed" }),
+			call("TaskUpdate", { taskId: "2", status: "in_progress" }),
+			call("bg_task", { action: "spawn", command: "true", notifyOnExit: false, notifyOnOutput: false }),
+			call("TaskUpdate", { taskId: "2", status: "completed" }),
+			{ text: "Both tasks complete" },
+		],
+	});
+	await f.session.prompt("Run both tasks");
+	await until(f, () => f.bodies.length >= 7);
+	await f.session.waitForIdle();
+	assert.ok(
+		messages(f).every((message) => !message.isError),
+		JSON.stringify(messages(f)),
+	);
+	const authority = await f.ingress.branch().attachment.waits.authoritySnapshot();
+	const tasks = authority.work.filter((work) => work.owner === "tasks");
+	assert.equal(tasks.length, 1, "the completed task with a background execution remains retained");
+	assert.equal(backgroundSpawns(f).length, 1);
+	const jobWork = backgroundSpawns(f)[0].details.task.flow.work.id;
+	assert.equal(jobWork, tasks[0].id);
+	const attempt = (await f.ingress.branch().attachment.ledger.snapshot()).attempts.find(
+		(item) => item.admission?.choice.intent.producer === "tasks",
+	);
+	assert.notEqual(jobWork, attempt.admission.choice.intent.workId, "the job belongs to the second task");
+	assert.deepEqual(f.errors, []);
+});
+
 for (const interactive of [false, true])
 	test(`session resume preserves task work (interactive=${interactive})`, {
 		timeout: 20000,

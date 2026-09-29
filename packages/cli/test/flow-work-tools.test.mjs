@@ -92,6 +92,65 @@ for (const parallel of [false, true])
 			assert.deepEqual(errors, []);
 		});
 
+for (const change of ["none", "paused", "revoked"])
+	test(`tool admission uses selected authority and expires its scope: ${change}`, async (t) => {
+		const root = await mkdtemp(join(tmpdir(), "jouzu-tool-admission-"));
+		const attachment = await PiFlowAttachment.open(root, { sessionId: "session", branchId: "branch" });
+		const context = new FlowWorkContext(() => attachment);
+		let admitted;
+		const observed = [];
+		const agent = {
+			subscribe: () => () => {},
+			async beforeToolCall() {
+				observed.push(context.current());
+				admitted = context.authorize("work");
+			},
+		};
+		const wrapper = new PiWorkTools({ agent }, context);
+		t.after(async () => {
+			wrapper.close();
+			await attachment.close();
+			await rm(root, { recursive: true, force: true });
+		});
+		await attachment.waits.registerWork("work", "host", 0);
+		const tool = {
+			name: "probe",
+			async execute() {
+				observed.push(context.current());
+			},
+		};
+		await context.run({ id: "work", actor: "host", revision: 1 }, async () => {
+			await context.runTool(async () => {
+				await attachment.waits.shareWork("work", "host", 1, "schedule", 1);
+				await context.selectToolWork({ id: "work", actor: "host", revision: 2 });
+			});
+			if (change === "paused") await attachment.waits.changeWork("work", "host", 2, "paused", "Pause", 2);
+			if (change === "revoked") context.revoke();
+			const args = {};
+			const admit = () =>
+				agent.beforeToolCall({ toolCall: { id: "call", name: "probe" }, args, context: { tools: [tool] } });
+			if (change !== "none") {
+				await assert.rejects(admit(), { code: change === "revoked" ? "identity" : "stale" });
+				assert.equal(admitted, undefined, "admission cannot borrow root authority");
+				return;
+			}
+			await admit();
+			assert.throws(() => admitted.assertActive(), { code: "stale" });
+			await tool.execute("call", args);
+		});
+		assert.deepEqual(
+			observed,
+			change === "none"
+				? [
+						{ id: "work", revision: 2 },
+						{ id: "work", revision: 2 },
+					]
+				: change === "revoked"
+					? [undefined]
+					: [],
+		);
+	});
+
 test("shared tool objects cannot exchange authority across matching call IDs and arguments", async (t) => {
 	const root = await mkdtemp(join(tmpdir(), "jouzu-shared-tool-work-"));
 	const attachments = await Promise.all(

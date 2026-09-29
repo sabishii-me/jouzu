@@ -316,6 +316,46 @@ test("an admitted task releases completed authority without adopting another wor
 	});
 });
 
+for (const change of ["none", "revision", "paused", "completed", "missing", "branch", "revoked"])
+	test(`a completed continuation returns only to its exact live creation origin: ${change}`, async (t) => {
+		const { context, attachment, changeBranch } = await fixture(t);
+		await attachment.waits.shareWork("work", "lane", 1, "tasks", 1);
+		const origin = { id: "work", revision: 2 };
+		const child = await attachment.waits.deriveWorkBinding(
+			{ producer: "tasks", key: ["continuation"] },
+			"1",
+			origin,
+			2,
+			["bg", "tasks"],
+		);
+		await context.run({ id: child.id, actor: "tasks", revision: child.revision }, async () => {
+			await context.runTool(async () => {
+				await attachment.waits.changeWork(child.id, "tasks", child.revision, "completed", "Done", 3);
+				if (change === "revision") await attachment.waits.shareWork("work", "lane", 2, "bg", 4);
+				if (["paused", "completed"].includes(change))
+					await attachment.waits.changeWork("work", "lane", 2, change, "Origin changed", 4);
+				if (change === "missing") {
+					const snapshot = attachment.waits.authoritySnapshot.bind(attachment.waits);
+					attachment.waits.authoritySnapshot = async () => {
+						const state = await snapshot();
+						return { ...state, work: state.work.filter((item) => item.id !== "work") };
+					};
+				}
+				if (change === "branch") changeBranch();
+				if (change === "revoked") context.revoke();
+				if (["branch", "revoked"].includes(change))
+					await assert.rejects(context.returnFromToolWork(), { code: "stale" });
+				else assert.equal(await context.returnFromToolWork(), true);
+			});
+			if (!["branch", "revoked"].includes(change))
+				await context.runTool(async () => {
+					assert.deepEqual(context.current(), change === "none" ? origin : undefined);
+					assert.throws(() => context.authorize(child.id), { code: "identity" });
+					assert.throws(() => context.authorize("other"), { code: "identity" });
+				});
+		});
+	});
+
 const resultIntent = (workId) => ({
 	id: "bg-result:execution",
 	revision: "1",

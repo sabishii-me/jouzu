@@ -1,12 +1,17 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { afterFlowCleanup, assembledSession, capturedNotices } from "./fixtures/flow-assembly.mjs";
+import {
+	afterFlowCleanup,
+	assembledSession,
+	capturedNotices,
+	installedTaskExtension,
+} from "./fixtures/flow-assembly.mjs";
 
 const { createJiti } = await import(
 	pathToFileURL(createRequire(import.meta.resolve("@earendil-works/pi-coding-agent")).resolve("jiti")).href
@@ -22,17 +27,30 @@ const { createCronTool } = await jiti.import(
 	fileURLToPath(new URL("../node_modules/pi-schedule-prompt/src/tool.ts", import.meta.url)),
 );
 
-for (const outcome of ["trigger", "inline", "timer", "remove", "disable", "error", "deadline", "reopen-corrupt"]) {
+for (const outcome of [
+	"trigger",
+	"inline",
+	"timer",
+	"remove",
+	"disable",
+	"error",
+	"deadline",
+	"reopen-corrupt",
+	"task-selection",
+]) {
 	test(`assembled scheduled-prompt wait wakes on ${outcome} without polling`, { timeout: 15000 }, async (t) => {
 		const root = await mkdtemp(join(tmpdir(), "flow-schedule-wake-"));
 		afterFlowCleanup(t, () => rm(root, { recursive: true, force: true }));
 		const wake = Promise.withResolvers();
 		let dependency, scheduler, storage, bus;
 		const delivered = [];
+		await mkdir(join(root, ".pi"));
+		await writeFile(join(root, ".pi/tasks-config.json"), JSON.stringify({ autoMode: "off" }));
 		const f = await assembledSession(t, {
 			root,
 			persist: outcome === "reopen-corrupt",
 			producerExtensions: [
+				...(outcome === "task-selection" ? [await installedTaskExtension(join(root, "tasks.json"))] : []),
 				{
 					name: "installed-scheduler",
 					factory(pi) {
@@ -63,6 +81,15 @@ for (const outcome of ["trigger", "inline", "timer", "remove", "disable", "error
 				},
 			],
 			script: async (_body, index) => {
+				if (outcome === "task-selection") {
+					const calls = [
+						{ name: "TaskCreate", arguments: { subject: "Schedule", description: "Own the schedule" } },
+						{ name: "TaskUpdate", arguments: { taskId: "1", status: "in_progress" } },
+						{ name: "TaskUpdate", arguments: { taskId: "1", description: "Refresh the owning revision" } },
+					];
+					if (index < calls.length) return { toolCalls: [{ id: `task-${index}`, ...calls[index] }] };
+					index -= calls.length;
+				}
 				if (index === 0)
 					return {
 						toolCalls: [
@@ -126,7 +153,12 @@ for (const outcome of ["trigger", "inline", "timer", "remove", "disable", "error
 			return;
 		}
 		const job = storage.getJob(dependency.handle);
-		if (outcome === "trigger" || outcome === "inline") await scheduler.executeJob(job);
+		if (outcome === "task-selection") {
+			const authority = await f.ingress.branch().attachment.waits.authoritySnapshot();
+			const task = authority.work.find((work) => work.owner === "tasks");
+			assert.equal(authority.executions.find((execution) => execution.producer === "schedule").workId, task.id);
+		}
+		if (outcome === "trigger" || outcome === "inline" || outcome === "task-selection") await scheduler.executeJob(job);
 		else if (outcome === "remove") {
 			storage.removeJob(job.id);
 			scheduler.removeJob(job.id);
@@ -139,11 +171,16 @@ for (const outcome of ["trigger", "inline", "timer", "remove", "disable", "error
 		await f.session.agent.waitForIdle();
 		assert.equal(
 			(await f.ingress.branch().attachment.waits.snapshot())[0].state,
-			["trigger", "inline", "timer"].includes(outcome) ? "resolved" : outcome === "deadline" ? "expired" : "failed",
+			["trigger", "inline", "timer", "task-selection"].includes(outcome)
+				? "resolved"
+				: outcome === "deadline"
+					? "expired"
+					: "failed",
 		);
-		if (outcome !== "inline") assert.equal(f.bodies.length, 4, "one automatic decision wake");
+		if (outcome !== "inline")
+			assert.equal(f.bodies.length, outcome === "task-selection" ? 7 : 4, "one automatic decision wake");
 		else assert.ok(JSON.stringify(f.bodies.at(-1)).includes("Scheduled fixture"));
-		assert.deepEqual(delivered, ["trigger", "timer"].includes(outcome) ? ["Scheduled fixture"] : []);
+		assert.deepEqual(delivered, ["trigger", "timer", "task-selection"].includes(outcome) ? ["Scheduled fixture"] : []);
 		assert.equal(
 			storage.getJob(job.id)?.enabled,
 			outcome === "remove" ? undefined : !["disable", "timer"].includes(outcome),

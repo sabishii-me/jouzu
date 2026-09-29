@@ -22,7 +22,7 @@ export class PiWorkTools {
 		const previous = session.agent.beforeToolCall;
 		this.hooks.set(session.agent, "beforeToolCall", async (input, signal) => {
 			if (this.closed) throw new FlowLedgerError("stale", "Tool work attachment is closed.");
-			const result = await previous?.(input, signal);
+			const result = await work.runTool(async () => previous?.(input, signal));
 			if (result?.block || signal?.aborted) return result;
 			if (this.closed) throw new FlowLedgerError("stale", "Tool work attachment closed during admission.");
 			const tool = input.context.tools?.find((item) => item.name === input.toolCall.name);

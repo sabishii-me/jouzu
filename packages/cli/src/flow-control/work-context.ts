@@ -156,7 +156,7 @@ export class FlowWorkContext {
 		return true;
 	}
 
-	/** Return only to authority retained when this invocation selected a child task. */
+	/** Return only to retained authority or the completed task's exact live creation origin. */
 	async returnFromToolWork(): Promise<boolean> {
 		const caller = this.invocations.getStore();
 		const selected = this.selected ?? this.active;
@@ -168,10 +168,16 @@ export class FlowWorkContext {
 			throw new FlowLedgerError("stale", "Task selection changed before returning from completed work.");
 		const completed = authority.work.find((item) => item.id === selected.work?.id);
 		if (completed?.lifecycle?.state !== "completed") return false;
-		const parent = this.returnWork.at(-1);
+		let parent = this.returnWork.at(-1);
+		if (!parent && completed.owner === "tasks" && completed.origin) {
+			// A resumed task has no in-memory return stack. Its durable origin names the
+			// invocation that created it; never substitute a newer revision or unrelated work.
+			const origin = authority.work.find((item) => item.id === completed.origin?.id);
+			if (origin && origin.revision === completed.origin.revision && (origin.lifecycle?.state ?? "active") === "active")
+				parent = { id: origin.id, actor: origin.owner, revision: origin.revision };
+		}
 		if (!parent) {
-			// A task continuation has no caller to return to. Following tools may inspect
-			// state, but receive no authority to start work under the completed task.
+			// Without a live return scope, following tools cannot start work under the completed task.
 			if (this.selected) this.selected.active = false;
 			this.selected = { attachment: selected.attachment, active: true, operation: selected.operation };
 			return true;
