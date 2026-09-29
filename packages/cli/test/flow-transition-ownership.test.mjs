@@ -4,7 +4,7 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { assembledSession, installedProducerExtensions, replacedSession } from "./fixtures/flow-assembly.mjs";
 
 for (const transition of ["new", "resume", "fork", "tree"])
-	test(`tool ownership is renewed after ${transition} without reviving old callbacks`, {
+	test(`tools remain usable after ${transition} with fresh work attribution`, {
 		timeout: 15000,
 	}, async (t) => {
 		let active;
@@ -23,10 +23,7 @@ for (const transition of ["new", "resume", "fork", "tree"])
 							const branch = active.ingress.branch();
 							const work = branch.workContext.current();
 							assert.ok(work);
-							const authority = branch.workContext.authorize(work.id);
-							authority.assertActive();
-							assert.deepEqual(branch.attachment.waits.captureExecutionWork(work.id, work.revision, "bg"), work);
-							observations.push({ work, scope: branch.scope, authority });
+							observations.push({ work, scope: branch.scope });
 							return { content: [{ type: "text", text: "verified" }], details: {} };
 						},
 					});
@@ -60,7 +57,6 @@ for (const transition of ["new", "resume", "fork", "tree"])
 				script,
 			});
 		}
-		assert.throws(() => observations[0].authority.assertActive(), { code: "stale" });
 		await active.session.prompt("Verify fixture ownership.");
 		assert.equal(
 			observations.length,
@@ -73,7 +69,6 @@ for (const transition of ["new", "resume", "fork", "tree"])
 			transition === "resume" || transition === "tree",
 		);
 		assert.equal(observations[0].scope.branchId === observations[1].scope.branchId, transition === "resume");
-		assert.throws(() => observations[0].authority.assertActive(), { code: "stale" });
-		assert.throws(() => observations[1].authority.assertActive(), { code: "stale" });
+		assert.ok(active.ingress.branch().workContext.current(), "idle tools retain session attribution");
 		assert.deepEqual(active.errors, []);
 	});

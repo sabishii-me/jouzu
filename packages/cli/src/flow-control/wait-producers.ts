@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 import { FlowLedgerError, type FlowScope } from "./receipt-ledger.js";
-import { canObserveExecution, type FlowAuthorityExecution, requireAuthorityWork } from "./wait-authority.js";
+import { type FlowAuthorityExecution, requireAttributedWork } from "./wait-authority.js";
 import { type FlowWaitClock, systemWaitClock } from "./wait-deadlines.js";
 import { type FlowHealthEvidence, type FlowHealthPolicy, validateFlowHealthPolicy } from "./wait-health.js";
 import type { FlowWaitStore } from "./wait-store.js";
@@ -265,17 +265,27 @@ export class FlowWaitProducerRegistry {
 		return [...this.producers.keys()];
 	}
 
-	/** Resolve observation access without changing the producer's execution ownership. */
+	/**
+	 * Resolve the work that owns an exact execution receipt. The caller's work hint and the
+	 * producer-returned hint are attribution only: an unrelated or stale hint never rejects a valid
+	 * producer/handle/execution tuple, while an exact handle mismatch still fails. Missing hints fall
+	 * back to the hint the caller supplied, which the store then validates as a registered work.
+	 */
 	async waitIdentity(
 		namespace: string,
 		identity: Omit<FlowExecutionIdentity, "scope">,
-		workRevision: number,
+		_workRevision: number,
 		executionWorkId?: string,
 	): Promise<Omit<FlowExecutionIdentity, "scope">> {
 		if (this.closed) throw new FlowLedgerError("stale", "Wait producer registry is closed.");
 		const captured = structuredClone(identity);
+		if (
+			![captured.workId, captured.handle, captured.execution].every(
+				(value) => typeof value === "string" && value.length > 0 && value.length <= 512,
+			)
+		)
+			throw new FlowLedgerError("identity", "Invalid producer execution identity.");
 		const authority = await this.store.authoritySnapshot();
-		requireAuthorityWork(authority, captured.workId, namespace, workRevision);
 		const known = authority.executions.find(
 			(execution) => execution.producer === namespace && execution.execution === captured.execution,
 		);
@@ -284,15 +294,18 @@ export class FlowWaitProducerRegistry {
 				"identity",
 				"This producer requires a registered launch receipt. Use the dependency returned when the execution was started; do not invent an execution or its owner.",
 			);
-		const ownerId = executionWorkId ?? known?.workId ?? captured.workId;
-		if (
-			!canObserveExecution(authority, captured.workId, ownerId) ||
-			(known && (known.workId !== ownerId || known.handle !== captured.handle))
-		)
+		if (known && known.handle !== captured.handle)
 			throw new FlowLedgerError(
 				"identity",
-				"Wait execution has different ownership. Copy the producer's dependency unchanged, including its exact handle and execution. Omit on[].work or pass null unless the producer returned it. Do not infer execution ownership from a child/job ID or session metadata.",
+				"Wait execution has a different handle. Copy the producer's dependency unchanged, including its exact handle and execution. Do not infer execution ownership from a child/job ID or session metadata.",
 			);
+		// Resolve ownership from the exact receipt. A producer-returned work hint is used only when it is
+		// itself registered; an unknown hint falls back to the caller's selected work rather than failing.
+		const ownerId =
+			known?.workId ??
+			(executionWorkId !== undefined && authority.work.some((work) => work.id === executionWorkId)
+				? executionWorkId
+				: captured.workId);
 		return { ...captured, workId: ownerId };
 	}
 
@@ -594,7 +607,7 @@ class ExecutionBinding {
 		return this.starting;
 	}
 	private async initialize(): Promise<void> {
-		requireAuthorityWork(await this.store.authoritySnapshot(), this.identity.workId, this.namespace, this.workRevision);
+		requireAttributedWork(await this.store.authoritySnapshot(), this.identity.workId);
 		this.abort.signal.throwIfAborted();
 		this.unsubscribe = this.subscribe(structuredClone(this.identity), this.publish);
 		if (typeof this.unsubscribe !== "function")

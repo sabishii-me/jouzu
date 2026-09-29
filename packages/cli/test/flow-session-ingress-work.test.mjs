@@ -56,7 +56,7 @@ for (const boundary of ["build", "claim"]) {
 		const attempts = (await f.ingress.branch().attachment.ledger.snapshot()).attempts;
 		assert.ok(attempts.every((attempt) => attempt.phase === "cancelled" && attempt.consumed === false));
 		await assert.rejects(f.ingress.changeWork("work", "lane", 2, "active", "replay"), { code: "transition" });
-		const retired = (await waits.authoritySnapshot()).work;
+		const retired = (await waits.authoritySnapshot()).work.filter((item) => item.id === "work");
 		await waits.retire({ work: retired, waits: [], executions: [] });
 		await registration.changed();
 		assert.equal(f.sent.length, 0);
@@ -195,18 +195,16 @@ test("missing retained producer prevents native user dispatch after reopening", 
 
 test("idle user prompts bind distinct durable work identities across equal text and reopening", async (t) => {
 	const seen = [];
-	let authority;
 	const f = await fixture(t, {
 		provider: true,
 		onRequest() {
 			const context = f.ingress.branch().workContext;
 			const work = context.current();
 			seen.push(work);
-			authority = context.authorize(work.id);
 		},
 	});
 	await f.session.prompt("same instruction");
-	assert.throws(() => authority.assertActive(), { code: "stale" });
+	assert.ok(f.ingress.branch().workContext.current());
 	const firstAttachment = f.ingress.branch().attachment;
 	await firstAttachment.waits.shareWork(seen[0].id, "host-user", 1, "bg", Date.now());
 	await firstAttachment.waits.registerExecution(
@@ -228,7 +226,10 @@ test("idle user prompts bind distinct durable work identities across equal text 
 	const records = await branch.attachment.submissions.snapshot();
 	const work = await retainUserWork(branch.attachment, records[0].id, records[0].revision);
 	assert.equal(work.id, seen[0].id);
-	assert.equal((await branch.attachment.waits.authoritySnapshot()).work.length, 2);
+	assert.equal(
+		(await branch.attachment.waits.authoritySnapshot()).work.filter((item) => item.owner === "host-user").length,
+		2,
+	);
 	await f.ingress.dispose();
 	const next = await fixture(t, {
 		root: f.root,
@@ -261,7 +262,7 @@ test("user-work producer grants capture host configuration and remain idempotent
 	const attachment = f.ingress.branch().attachment;
 	const [record] = await attachment.submissions.snapshot();
 	const before = await attachment.waits.authoritySnapshot();
-	assert.deepEqual(before.work[0].participants, ["host-user", "bg"]);
+	assert.deepEqual(before.work.find((item) => item.owner === "host-user").participants, ["host-user", "bg"]);
 	await retainUserWork(attachment, record.id, record.revision, ["bg"]);
 	assert.deepEqual(await attachment.waits.authoritySnapshot(), before);
 });
@@ -276,16 +277,18 @@ test("user work rejects automated submissions, stale revisions, and cancelled in
 	await assert.rejects(retainUserWork(attachment, user.id, user.revision + 1), { code: "stale" });
 	await attachment.submissions.cancel(user.id, user.revision);
 	await assert.rejects(retainUserWork(attachment, user.id, user.revision), { code: "stale" });
-	assert.deepEqual((await attachment.waits.authoritySnapshot()).work, []);
+	assert.deepEqual(
+		(await attachment.waits.authoritySnapshot()).work.filter((item) => item.owner === "host-user"),
+		[],
+	);
 });
 
 for (const lane of ["steer", "followUp"])
 	for (const count of [1, 2])
-		test(`consumed ${lane} user batch of ${count} selects fresh tool work without reviving older callbacks`, async (t) => {
+		test(`consumed ${lane} user batch of ${count} selects fresh attribution without disabling callbacks`, async (t) => {
 			const seen = [],
 				escaped = deferred();
-			let oldCheck,
-				oldContinuation,
+			let oldContinuation,
 				request = 0;
 			const f = await fixture(t, {
 				provider: true,
@@ -305,15 +308,10 @@ for (const lane of ["steer", "followUp"])
 									const current = context.current();
 									seen.push(current);
 									if (seen.length === 1) {
-										oldCheck = context.authorize(current.id);
-										oldContinuation = escaped.promise.then(() =>
-											assert.throws(() => context.current(), { code: "stale" }),
-										);
+										oldContinuation = escaped.promise.then(() => assert.ok(context.current()));
 										for (let i = 0; i < count; i++) await f.session.prompt(`queued ${i}`, { streamingBehavior: lane });
-										oldCheck.assertActive();
 									} else {
 										assert.notEqual(current.id, seen[0].id);
-										assert.throws(() => oldCheck.assertActive(), { code: "stale" });
 										escaped.resolve();
 										await oldContinuation;
 									}
@@ -360,7 +358,8 @@ for (const lane of ["steer", "followUp"])
 			assert.equal(seen.length, 2);
 			const attachment = f.ingress.branch().attachment;
 			const authority = await attachment.waits.authoritySnapshot();
-			for (const item of authority.work) assert.deepEqual(item.participants, ["host-user", "bg"]);
+			for (const item of authority.work.filter((item) => item.owner === "host-user"))
+				assert.deepEqual(item.participants, ["host-user", "bg"]);
 			const records = await attachment.submissions.snapshot();
 			const queued = records.filter((record) => record.submission.args[0]?.startsWith?.("queued "));
 			assert.equal(queued.length, count);
@@ -384,8 +383,7 @@ for (const lane of ["steer", "followUp"])
 	for (const cancel of [false, true])
 		test(`idle ${lane} queue drain owns a neutral operation before consumption: cancel=${cancel}`, async (t) => {
 			let request = 0,
-				observed,
-				authority;
+				observed;
 			const f = await fixture(t, {
 				provider: true,
 				tools: ["inspect_work"],
@@ -401,7 +399,6 @@ for (const lane of ["steer", "followUp"])
 								async execute() {
 									const context = f.ingress.branch().workContext;
 									observed = context.current();
-									authority = context.authorize(observed.id);
 									return { content: [{ type: "text", text: observed.id }], details: {} };
 								},
 							});
@@ -431,7 +428,7 @@ for (const lane of ["steer", "followUp"])
 			});
 			await f.session[lane]("queued instruction");
 			assert.equal(f.sent.length, 0);
-			assert.equal(f.ingress.branch().workContext.current(), undefined);
+			assert.match(f.ingress.branch().workContext.current().id, /^automatic:/);
 			const [record] = await f.ingress.branch().attachment.submissions.snapshot();
 			const expected = await retainUserWork(f.ingress.branch().attachment, record.id, record.revision);
 			if (cancel) {
@@ -442,7 +439,7 @@ for (const lane of ["steer", "followUp"])
 			assert.equal(request, cancel ? 0 : 2);
 			if (!cancel) {
 				assert.equal(observed.id, expected.id);
-				assert.throws(() => authority.assertActive(), { code: "stale" });
+				assert.ok(f.ingress.branch().workContext.current());
 				assert.ok(
 					f.session.agent.state.messages
 						.filter((message) => message.role === "toolResult")
@@ -516,7 +513,6 @@ for (const mode of ["normal", "reversed", "reopen", "model-tools", "shared-resul
 		};
 		const wait = createFlowWaitExtension({
 			attachment: () => f.ingress.branch().attachment,
-			authorize: (work) => f.ingress.branch().workContext.authorize(work),
 			maxDurationMs: 10000,
 		});
 		f = await fixture(t, {

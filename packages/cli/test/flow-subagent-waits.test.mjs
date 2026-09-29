@@ -139,11 +139,17 @@ test("pending child subscriptions restore and close on detach", async (t) => {
 	await f.extension.detach();
 	assert.equal(f.listeners.size, 0);
 });
-test("launch authority is captured before execution and errors return no receipt", async (t) => {
+test("launch attribution is optional and errors return no receipt", async (t) => {
 	const f = await fixture(t);
 	f.setCurrent(undefined);
-	assert.throws(() => f.call(), /owning work/);
-	f.setCurrent({ id: "work", revision: 2 });
+	await f.call("unattributed");
+	const unattributed = await f.result("unattributed");
+	assert.equal(unattributed.details.waitDependency.execution, "run-1");
+	assert.deepEqual(f.errors, []);
+});
+
+test("failed launches return no receipt and resume retains captured attribution", async (t) => {
+	const f = await fixture(t);
 	f.call();
 	assert.equal(await f.result("call-1", true), undefined);
 	assert.equal(f.listeners.size, 0);

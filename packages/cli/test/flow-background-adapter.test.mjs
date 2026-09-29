@@ -290,6 +290,8 @@ for (const outcome of ["success", "failure", "stop"]) {
 		await attachment.waits.registerWork("unshared", "host-user", 0);
 		await attachment.waits.registerWork("work", "lane", 0);
 		await attachment.waits.shareWork("work", "lane", 1, "bg", 0);
+		const { retainAutomaticWork } = await import("../dist/flow-control/automatic-work.js");
+		await retainAutomaticWork(attachment);
 		let currentWork = { id: "work", revision: 2 };
 		const source = attachBackgroundWaitSource(
 			attachment,
@@ -297,19 +299,21 @@ for (const outcome of ["success", "failure", "stop"]) {
 			(error) => failures.push(error),
 			() => currentWork,
 		);
-		const marker = join(directory, "forbidden-launch");
-		const forbiddenCommand = "printf forbidden > '" + marker.replaceAll("'", "'\\''") + "'";
-		for (const invalid of [
+		for (const attribution of [
 			undefined,
 			{ id: "unknown", revision: 2 },
 			{ id: "work", revision: 1 },
 			{ id: "unshared", revision: 1 },
 		]) {
-			currentWork = invalid;
-			await assert.rejects(
-				tools.get("bg_task").execute("invalid", { action: "spawn", command: forbiddenCommand, notifyOnExit: false }),
-				/work|revision/i,
-			);
+			currentWork = attribution;
+			const launched = await tools.get("bg_task").execute("available", {
+				action: "spawn",
+				command: "true",
+				notifyOnExit: false,
+				notifyOnOutput: false,
+			});
+			assert.ok(launched.details.task.flow.execution);
+			await tools.get("bg_task").execute("stop-fixture", { action: "stop", id: launched.details.task.id });
 		}
 		currentWork = { id: "work", revision: 2 };
 		const result = await tools.get("bg_task").execute("spawn", {
@@ -341,7 +345,7 @@ for (const outcome of ["success", "failure", "stop"]) {
 		);
 		const restoration = await attachment.waitProducers.restorePending();
 		assert.deepEqual(restoration.missing, []);
-		if (outcome === "stop") assert.equal(restoration.restored, 1);
+		if (outcome === "stop") assert.ok(restoration.restored >= 1);
 		const expected = outcome === "success" ? "resolved" : "failed";
 		const completed = deferred();
 		const unsubscribe = attachment.waits.onChanged(
@@ -374,7 +378,6 @@ for (const outcome of ["success", "failure", "stop"]) {
 		if (wait.state !== expected) await completed.promise;
 		unsubscribe();
 		assert.equal((await attachment.waits.snapshot())[0].state, expected);
-		await assert.rejects(readFile(marker), { code: "ENOENT" });
 		assert.deepEqual(requests, []);
 		assert.deepEqual(failures, []);
 		await attachment.close();
@@ -443,7 +446,6 @@ test("a native user prompt spawns background work and declares its wait from the
 			{ name: "background", factory: background.default },
 			createFlowWaitExtension({
 				attachment: () => ingress.branch().attachment,
-				authorize: (work) => ingress.branch().workContext.authorize(work),
 				maxDurationMs: 5000,
 			}),
 		],
@@ -530,7 +532,7 @@ test("a native user prompt spawns background work and declares its wait from the
 	assert.match(dependency.work.id, /^user:/);
 	const attachment = ingress.branch().attachment;
 	const authority = await attachment.waits.authoritySnapshot();
-	assert.deepEqual(authority.work[0].participants, ["host-user", "bg"]);
+	assert.equal(authority.work.find((work) => work.id === dependency.work.id).owner, "host-user");
 	assert.equal(authority.executions[0].workId, dependency.work.id);
 	const completed = deferred();
 	const unsubscribe = attachment.waits.onChanged(

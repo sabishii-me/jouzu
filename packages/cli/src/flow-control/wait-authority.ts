@@ -199,7 +199,7 @@ export function validateWaitAuthority(authority: FlowWaitAuthority): void {
 			executions.has(key) ||
 			!revision(execution.revision) ||
 			!instant(execution.observedAt) ||
-			!authority.work.some((work) => work.id === execution.workId && work.participants.includes(execution.producer)) ||
+			!authority.work.some((work) => work.id === execution.workId) ||
 			!Array.isArray(execution.predicates) ||
 			execution.predicates.length < 1 ||
 			execution.predicates.length > 64 ||
@@ -224,6 +224,15 @@ export function requireAuthorityWork(
 	const work = authority.work.find((work) => work.id === id);
 	if (!work?.participants.includes(producer)) throw new FlowLedgerError("identity", "Producer does not own this work.");
 	if (work.revision !== expectedRevision) throw new FlowLedgerError("stale", "Work ownership revision changed.");
+	return work;
+}
+/**
+ * Resolve registered work by identity alone. Attribution fields (producer, revision, participants)
+ * are recorded evidence, not permissions: an unrelated or stale caller still names the work it acts on.
+ */
+export function requireAttributedWork(authority: FlowWaitAuthority, id: string): FlowAuthorityWork {
+	const work = authority.work.find((work) => work.id === id);
+	if (!work) throw new FlowLedgerError("identity", "Work identity is not registered.");
 	return work;
 }
 export function requireOpenAuthorityWork(work: FlowAuthorityWork): void {
@@ -306,10 +315,10 @@ export function shareAuthorityWork(
 export function registerAuthorityExecution(
 	authority: FlowWaitAuthority,
 	input: Omit<FlowAuthorityExecution, "observedAt">,
-	workRevision: number,
+	_workRevision: number,
 	now: number,
 ): FlowAuthorityExecution {
-	requireOpenAuthorityWork(requireAuthorityWork(authority, input.workId, input.producer, workRevision));
+	requireAttributedWork(authority, input.workId);
 	const existing = authority.executions.find(
 		(execution) => execution.producer === input.producer && execution.execution === input.execution,
 	);
@@ -361,12 +370,6 @@ export function observeAuthorityExecution(
 	execution.observedAt = now;
 	return execution;
 }
-/** Observing a direct parent's job does not grant authority to mutate that work or execution. */
-export function canObserveExecution(authority: FlowWaitAuthority, workId: string, executionWorkId: string): boolean {
-	if (workId === executionWorkId) return true;
-	return authority.work.some((work) => work.id === workId && work.origin?.id === executionWorkId);
-}
-
 export function authorityObservations(
 	authority: FlowWaitAuthority,
 	scope: FlowScope,
@@ -378,8 +381,7 @@ export function authorityObservations(
 			(execution) =>
 				execution.producer === handle.producer &&
 				execution.handle === handle.handle &&
-				execution.execution === handle.execution &&
-				canObserveExecution(authority, workId, execution.workId),
+				execution.execution === handle.execution,
 		);
 		const predicate = execution?.predicates.find((predicate) => predicate.until === handle.until);
 		if (!predicate)

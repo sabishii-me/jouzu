@@ -1,5 +1,6 @@
 import type { ExtensionAPI, InlineExtension, SessionManager } from "@earendil-works/pi-coding-agent";
 import { type AgentRun, isActiveRun } from "../subagents/manager.js";
+import { retainAutomaticWork } from "./automatic-work.js";
 import type { PiFlowAttachment } from "./pi-attachment.js";
 import type { PiSessionFlowIngress } from "./pi-session-ingress.js";
 import { FlowLedgerError } from "./receipt-ledger.js";
@@ -54,7 +55,7 @@ export function createSubagentWaitExtension(options: {
 		name: "jouzu-subagent-waits",
 		factory(pi) {
 			events = pi.events;
-			pi.on("tool_call", (event) => {
+			pi.on("tool_call", async (event) => {
 				if (
 					event.toolName !== "subagent" ||
 					!["launch", "resume"].includes(String(event.input.op)) ||
@@ -64,12 +65,7 @@ export function createSubagentWaitExtension(options: {
 					return;
 				const branch = options.ingress().branch();
 				if (branch.attachment !== attached) throw new FlowLedgerError("stale", "Subagent wait branch changed.");
-				const current = branch.workContext.current();
-				if (!current)
-					throw new FlowLedgerError(
-						"identity",
-						"Subagent launch requires current owning work. Continue from an authorized user or task turn.",
-					);
+				const current = branch.workContext.current() ?? (await retainAutomaticWork(branch.attachment));
 				calls.set(event.toolCallId, {
 					attachment: branch.attachment,
 					work: branch.attachment.waits.captureExecutionWork(current.id, current.revision, "subagent"),

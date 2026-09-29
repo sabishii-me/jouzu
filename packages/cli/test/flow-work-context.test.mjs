@@ -18,9 +18,14 @@ async function fixture(t, options = {}) {
 	await attachment.waits.registerWork("work", "lane", 0);
 	await attachment.waits.registerWork("other", "lane", 0);
 	let current = attachment;
+	const context = new FlowWorkContext(
+		() => current,
+		options.automatic ? () => retainAutomaticWork(current) : undefined,
+	);
+	if (options.automatic) await context.attach();
 	return {
 		attachment,
-		context: new FlowWorkContext(() => current, options.automatic ? () => retainAutomaticWork(current) : undefined),
+		context,
 		changeBranch: (replacement) => {
 			current = replacement;
 		},
@@ -28,36 +33,24 @@ async function fixture(t, options = {}) {
 }
 const work = { id: "work", actor: "lane", revision: 1 };
 
-test("work authority requires a live host invocation and expires in detached continuations", async (t) => {
+test("attribution is optional and never blocks a tool", async (t) => {
 	const { context } = await fixture(t);
+	// No branch host identity is registered, so there is nothing to attribute to.
 	assert.equal(context.current(), undefined);
-	assert.throws(() => context.authorize("work"), { code: "identity" });
-	let authority, detached;
-	const resume = deferred();
-	await context.run(work, async () => {
-		assert.deepEqual(context.current(), { id: "work", revision: 1 });
-		authority = context.authorize("work");
-		authority.assertActive();
-		assert.throws(() => context.authorize("other"), { code: "identity" });
-		detached = resume.promise.then(() => assert.throws(() => context.current(), { code: "stale" }));
-	});
-	assert.throws(() => authority.assertActive(), { code: "stale" });
-	resume.resolve();
-	await detached;
+	assert.equal(typeof context.authorize, "undefined", "authority checks are gone");
+	// Running without attribution still works and reports none.
+	await context.run(undefined, async () => assert.equal(context.current(), undefined));
+	assert.equal(context.busy, false);
 });
 
-for (const change of ["revision", "paused", "branch"])
-	test(`captured work authority rejects ${change} changes`, async (t) => {
-		const f = await fixture(t);
-		await f.context.run(work, async () => {
-			const authority = f.context.authorize("work");
-			if (change === "revision") await f.attachment.waits.shareWork("work", "lane", 1, "bg", 1);
-			if (change === "paused") await f.attachment.waits.changeWork("work", "lane", 1, "paused", "Paused", 1);
-			if (change === "branch") f.changeBranch();
-			assert.throws(() => f.context.authorize("work"), { code: "stale" });
-			if (change === "branch") assert.throws(() => authority.assertActive(), { code: "stale" });
-		});
-	});
+test("a branch host identity is available outside any invocation", async (t) => {
+	const { context, attachment } = await fixture(t, { automatic: true });
+	const host = context.current();
+	assert.equal(host.id, automaticWorkId(attachment.ledger.scope));
+	assert.ok(host.revision >= 1);
+	await context.run(work, async () => assert.equal(context.current().id, "work"));
+	assert.equal(context.current().id, automaticWorkId(attachment.ledger.scope), "selection is released");
+});
 
 test("overlapping invocations cannot replace work and failures release the reservation", async (t) => {
 	const { context } = await fixture(t);
@@ -78,281 +71,93 @@ test("overlapping invocations cannot replace work and failures release the reser
 	await context.run({ ...work, id: "other" }, async () => assert.equal(context.current().id, "other"));
 });
 
-test("wait tools use host work authority and cannot claim another registered work", async (t) => {
-	const { createFlowWaitExtension } = await import("../dist/flow-control/wait-tools.js");
-	const { attachment, context } = await fixture(t);
-	await attachment.waits.shareWork("work", "lane", 1, "bg", 1);
-	await attachment.waits.registerExecution(
-		{
-			producer: "bg",
-			handle: "bg-1",
-			execution: "exec-1",
-			workId: "work",
-			revision: 1,
-			predicates: [{ until: "exit", state: "pending" }],
-		},
-		2,
-		1,
-	);
-	attachment.waitProducers.register(
-		{
-			version: 1,
-			namespace: "bg",
-			subscribe() {
-				return () => {};
-			},
-			async snapshot(identity) {
-				return { ...identity, revision: 1, predicates: [{ until: "exit", state: "pending" }] };
-			},
-		},
-		(error) => {
-			throw error;
-		},
-	);
-	const tools = new Map();
-	createFlowWaitExtension({
-		attachment: () => attachment,
-		currentWork: () => context.current(),
-		authorize: (id) => context.authorize(id),
-		maxDurationMs: 1000,
-		now: () => 2,
-	}).factory({
-		on() {},
-		registerTool(tool) {
-			tools.set(tool.name, tool);
-		},
-	});
-	const request = {
-		work: "work",
-		reason: "Await process exit",
-		deadline: "1s",
-		on: [{ producer: "bg", handle: "bg-1", execution: "exec-1", until: "exit" }],
-	};
-	const execute = (args) =>
-		tools
-			.get("agent_wait")
-			.execute("call-1", args, undefined, undefined, { sessionManager: { getSessionId: () => "session" } });
-	await assert.rejects(execute(request), { code: "identity" });
-	const { work: _work, ...implicit } = request;
-	await assert.rejects(execute(implicit), { code: "identity" });
-	await context.run({ ...work, revision: 2 }, async () => {
-		await assert.rejects(execute({ ...request, work: "other" }), { code: "identity" });
-		await execute(implicit);
-	});
-	const [wait] = await attachment.waits.snapshot();
-	assert.equal(wait.workId, "work");
-	assert.equal(wait.state, "waiting");
-	await attachment.waits.shareWork("other", "lane", 1, "bg", 2);
-	await context.run({ ...work, id: "other", revision: 2 }, async () => {
-		await assert.rejects(
-			tools
-				.get("agent_wait_cancel")
-				.execute("cancel", { token: wait.token, reason: "User changed work" }, undefined, undefined, {
-					sessionManager: { getSessionId: () => "session" },
-				}),
-			/Requested work does not belong to this invocation/,
-		);
-		await assert.rejects(
-			execute({ ...request, replaceToken: wait.token }),
-			/Requested work does not belong to this invocation/,
-		);
-		await assert.rejects(execute({ ...request, work: "other" }), /different ownership/);
-	});
-	assert.deepEqual(await attachment.waits.snapshot(), [wait], "refused management leaves the original wait intact");
-});
-
-test("revocation preserves the invocation reservation until native execution returns", async (t) => {
+test("withOperation shares the outer invocation instead of nesting", async (t) => {
 	const { context } = await fixture(t);
 	await context.run(work, async () => {
-		const authority = context.authorize("work");
+		assert.equal(await context.withOperation(async () => context.current().id), "work");
+	});
+	await context.withOperation(async () => assert.equal(context.current(), undefined));
+});
+
+test("revocation falls back to branch attribution without ending the run", async (t) => {
+	const { context, attachment } = await fixture(t, { automatic: true });
+	await context.run(work, async () => {
 		context.revoke();
 		context.revoke();
-		assert.throws(() => authority.assertActive(), { code: "stale" });
-		assert.throws(() => context.current(), { code: "stale" });
+		assert.equal(context.current().id, automaticWorkId(attachment.ledger.scope));
 		await assert.rejects(
 			context.run({ ...work, id: "other" }, async () => {}),
 			{ code: "busy" },
 		);
 	});
-	await context.run({ ...work, id: "other" }, async () => assert.equal(context.current().id, "other"));
+	assert.equal(context.current().id, automaticWorkId(attachment.ledger.scope));
+});
+
+test("a live tool selects attribution for following tools", async (t) => {
+	const { context } = await fixture(t);
+	await context.run(work, async () => {
+		assert.equal(await context.selectToolWork({ id: "other", actor: "lane", revision: 1 }), true);
+		assert.equal(context.current().id, "other");
+		await context.selectToolWork(work);
+		assert.equal(context.current().id, "work");
+	});
 });
 
 const otherWork = { id: "other", actor: "lane", revision: 1 };
-test("a live tool selects work for following tools without replacing a parallel sibling identity", async (t) => {
-	const { context } = await fixture(t);
+test("task selection returns to the retained parent, or to branch attribution", async (t) => {
+	const { context, attachment } = await fixture(t, { automatic: true });
 	await context.run(work, async () => {
-		const started = deferred(),
-			finish = deferred();
-		const sibling = context.runTool(async () => {
-			started.resolve();
-			await finish.promise;
-			assert.equal(context.current().id, "work");
-		});
-		await started.promise;
-		await context.runTool(async () => {
-			assert.equal(await context.selectToolWork(otherWork), true);
-			assert.equal(context.current().id, "work");
-		});
-		await context.runTool(async () => assert.equal(context.current().id, "other"));
-		finish.resolve();
-		await sibling;
+		await context.selectToolWork(otherWork, true);
+		assert.equal(await context.returnFromToolWork(), false, "active child cannot return");
+		await attachment.waits.changeWork("other", "lane", 1, "completed", "Done", 1);
+		assert.equal(await context.returnFromToolWork(), true);
+		assert.equal(context.current().id, "work");
+	});
+	// A completed task with no retained parent falls back to branch attribution.
+	await attachment.waits.registerWork("solo", "lane", 0);
+	await context.run({ id: "solo", actor: "lane", revision: 1 }, async () => {
+		await attachment.waits.changeWork("solo", "lane", 1, "completed", "Done", 2);
+		assert.equal(await context.returnFromToolWork(), true);
+		assert.equal(context.current().id, automaticWorkId(attachment.ledger.scope));
 	});
 });
 
-for (const duringRead of [false, true])
-	test(`revoked child cannot select new work${duringRead ? " across authority read" : ""}`, async (t) => {
-		const { context, attachment } = await fixture(t);
-		await context.run(work, async () => {
-			await context.runTool(async () => {
-				if (duringRead) {
-					const original = attachment.waits.authoritySnapshot.bind(attachment.waits);
-					attachment.waits.authoritySnapshot = async () => {
-						const snapshot = await original();
-						context.revoke();
-						return snapshot;
-					};
-				} else context.revoke();
-				await assert.rejects(context.selectToolWork(otherWork), { code: "stale" });
-			});
-		});
-	});
-
-test("native root may select consumed user work after revoking the old scope", async (t) => {
-	const { context } = await fixture(t);
-	await context.run(work, async () => {
-		context.revoke();
-		assert.equal(await context.selectToolWork(otherWork), true);
-		await context.runTool(async () => assert.equal(context.current().id, "other"));
-	});
-});
-
-for (const variant of ["valid", "foreign-work", "foreign-branch", "paused", "completed"])
-	test(`wait-decision authority validates its durable identity: ${variant}`, async (t) => {
-		const { waitDecisionIntent } = await import("../dist/flow-control/wait-decisions.js");
-		const { context, attachment } = await fixture(t);
-		const wait = {
-			token: "wait",
-			scope: attachment.ledger.scope,
-			workId: "work",
-			state: "expired",
-			createdAt: 0,
-			endedAt: 1,
+test("returning from a completed task refuses to cross a branch change", async (t) => {
+	const f = await fixture(t);
+	const replacement = await fixture(t);
+	await f.context.run(work, async () => {
+		await f.attachment.waits.changeWork("work", "lane", 1, "completed", "Done", 1);
+		const original = f.attachment.waits.authoritySnapshot.bind(f.attachment.waits);
+		f.attachment.waits.authoritySnapshot = async () => {
+			const state = await original();
+			f.changeBranch(replacement.attachment);
+			return state;
 		};
-		const intent = waitDecisionIntent(wait);
-		if (variant === "foreign-work") intent.workId = "other";
-		if (variant === "foreign-branch")
-			intent.id = waitDecisionIntent({ ...wait, scope: { ...wait.scope, branchId: "elsewhere" } }).id;
-		attachment.waits.snapshot = async () => [wait];
-		attachment.ledger.snapshot = async () => ({
-			activeAttemptId: "attempt",
-			attempts: [{ id: "attempt", phase: "queued", admission: { choice: { intent } } }],
-		});
-		if (["paused", "completed"].includes(variant))
-			await attachment.waits.changeWork("work", "lane", 1, variant, "Lifecycle test", 1);
-		const invoke = () =>
-			context.runSelected("attempt", async () => {
-				assert.throws(() => context.authorize("other"), { code: "identity" });
-				if (variant === "valid") assert.equal(context.authorize("work").actor, "lane");
-				else assert.equal(context.current(), undefined);
-			});
-		if (variant.startsWith("foreign")) await assert.rejects(invoke(), { code: "stale" });
-		else await invoke();
-	});
-
-for (const change of ["none", "revision", "paused", "branch", "revoked", "consumed"])
-	test(`completed child returns only to retained live authority: ${change}`, async (t) => {
-		const { context, attachment, changeBranch } = await fixture(t);
-		await context.run(work, async () => {
-			await context.runTool(async () => context.selectToolWork(otherWork, true));
-			await context.runTool(async () => {
-				assert.equal(await context.returnFromToolWork(), false, "active child cannot return");
-				await attachment.waits.changeWork("other", "lane", 1, "completed", "Done", 1);
-				if (change === "revision") await attachment.waits.shareWork("work", "lane", 1, "bg", 2);
-				if (change === "paused") await attachment.waits.changeWork("work", "lane", 1, "paused", "Pause", 2);
-				if (change === "branch") changeBranch();
-				if (change === "revoked") context.revoke();
-				if (change === "consumed") {
-					await context.selectToolWork(work);
-					assert.equal(await context.returnFromToolWork(), false);
-				} else if (change !== "none") await assert.rejects(context.returnFromToolWork(), { code: "stale" });
-				else assert.equal(await context.returnFromToolWork(), true);
-			});
-			if (["none", "consumed"].includes(change))
-				await context.runTool(async () => assert.equal(context.current().id, "work"));
-		});
-	});
-
-test("nested task selections return one authorized scope at a time", async (t) => {
-	const { context, attachment } = await fixture(t);
-	await attachment.waits.registerWork("nested", "lane", 0);
-	await context.run(work, async () => {
-		await context.runTool(async () => context.selectToolWork(otherWork, true));
-		await context.runTool(async () => context.selectToolWork({ ...work, id: "nested" }, true));
-		await context.runTool(async () => {
-			await attachment.waits.changeWork("nested", "lane", 1, "completed", "Done", 1);
-			assert.equal(await context.returnFromToolWork(), true);
-		});
-		await context.runTool(async () => {
-			assert.equal(context.current().id, "other");
-			await attachment.waits.changeWork("other", "lane", 1, "completed", "Done", 2);
-			assert.equal(await context.returnFromToolWork(), true);
-		});
-		await context.runTool(async () => assert.equal(context.current().id, "work"));
+		await assert.rejects(f.context.returnFromToolWork(), { code: "stale" });
 	});
 });
 
-test("an admitted task releases completed authority without adopting another work", async (t) => {
-	const { context, attachment } = await fixture(t);
-	await context.run(otherWork, async () => {
-		await context.runTool(async () => {
-			await attachment.waits.changeWork("other", "lane", 1, "completed", "Done", 1);
-			assert.equal(await context.returnFromToolWork(), true);
-		});
-		await context.runTool(async () => {
-			assert.equal(context.current(), undefined);
-			assert.throws(() => context.authorize("other"), { code: "identity" });
-			assert.throws(() => context.authorize("work"), { code: "identity" });
-		});
-	});
-});
-
-for (const change of ["none", "revision", "paused", "completed", "missing", "branch", "revoked"])
-	test(`a completed continuation returns only to its exact live creation origin: ${change}`, async (t) => {
-		const { context, attachment, changeBranch } = await fixture(t);
+for (const change of ["none", "revision", "paused", "completed", "revoked"])
+	test(`completed task tools stay available after origin ${change}`, async (t) => {
+		const { context, attachment } = await fixture(t, { automatic: true });
 		await attachment.waits.shareWork("work", "lane", 1, "tasks", 1);
-		const origin = { id: "work", revision: 2 };
 		const child = await attachment.waits.deriveWorkBinding(
 			{ producer: "tasks", key: ["continuation"] },
 			"1",
-			origin,
+			{ id: "work", revision: 2 },
 			2,
 			["bg", "tasks"],
 		);
 		await context.run({ id: child.id, actor: "tasks", revision: child.revision }, async () => {
-			await context.runTool(async () => {
-				await attachment.waits.changeWork(child.id, "tasks", child.revision, "completed", "Done", 3);
-				if (change === "revision") await attachment.waits.shareWork("work", "lane", 2, "bg", 4);
-				if (["paused", "completed"].includes(change))
-					await attachment.waits.changeWork("work", "lane", 2, change, "Origin changed", 4);
-				if (change === "missing") {
-					const snapshot = attachment.waits.authoritySnapshot.bind(attachment.waits);
-					attachment.waits.authoritySnapshot = async () => {
-						const state = await snapshot();
-						return { ...state, work: state.work.filter((item) => item.id !== "work") };
-					};
-				}
-				if (change === "branch") changeBranch();
-				if (change === "revoked") context.revoke();
-				if (["branch", "revoked"].includes(change))
-					await assert.rejects(context.returnFromToolWork(), { code: "stale" });
-				else assert.equal(await context.returnFromToolWork(), true);
-			});
-			if (!["branch", "revoked"].includes(change))
-				await context.runTool(async () => {
-					assert.deepEqual(context.current(), change === "none" ? origin : undefined);
-					assert.throws(() => context.authorize(child.id), { code: "identity" });
-					assert.throws(() => context.authorize("other"), { code: "identity" });
-				});
+			await attachment.waits.changeWork(child.id, "tasks", child.revision, "completed", "Done", 3);
+			if (change === "revision") await attachment.waits.shareWork("work", "lane", 2, "bg", 4);
+			if (["paused", "completed"].includes(change))
+				await attachment.waits.changeWork("work", "lane", 2, change, "Origin changed", 4);
+			if (change === "revoked") context.revoke();
+			await context.returnFromToolWork();
+			const current = context.current();
+			assert.equal(current.id, automaticWorkId(attachment.ledger.scope));
+			assert.deepEqual(attachment.waits.captureExecutionWork(current.id, current.revision, "bg"), current);
 		});
 	});
 
@@ -373,37 +178,28 @@ const selectedAttempt = (attachment, intent) => {
 	});
 };
 
-test("result delivery runs on the work that owns its execution", async (t) => {
+test("result delivery attributes the work that owns its execution", async (t) => {
 	const { context, attachment } = await fixture(t);
 	await attachment.waits.shareWork("work", "lane", 1, "bg", 1);
 	selectedAttempt(attachment, resultIntent("work"));
 	await context.runSelected("attempt", async () => {
 		assert.deepEqual(context.current(), { id: "work", revision: 2 });
-		assert.equal(context.authorize("work").actor, "lane");
-		// The spawn path captures exactly this authority before any process starts.
+		// The spawn path captures exactly this attribution before any process starts.
 		assert.deepEqual(attachment.waits.captureExecutionWork("work", 2, "bg"), { id: "work", revision: 2 });
 	});
 });
 
-for (const variant of ["paused", "completed", "unshared", "missing", "absent"])
-	test(`result delivery without live owning work still keeps its tools: ${variant}`, async (t) => {
+for (const variant of ["paused", "completed", "missing", "absent"])
+	test(`result delivery without live owning work keeps its tools: ${variant}`, async (t) => {
 		const { context, attachment } = await fixture(t, { automatic: true });
-		if (variant !== "unshared") await attachment.waits.shareWork("work", "lane", 1, "bg", 1);
+		await attachment.waits.shareWork("work", "lane", 1, "bg", 1);
 		if (["paused", "completed"].includes(variant))
 			await attachment.waits.changeWork("work", "lane", 2, variant, "Lifecycle test", 2);
-		selectedAttempt(
-			attachment,
-			resultIntent(variant === "absent" ? undefined : variant === "missing" ? "elsewhere" : "work"),
-		);
+		selectedAttempt(attachment, resultIntent(variant === "absent" ? undefined : "elsewhere"));
 		await context.runSelected("attempt", async () => {
 			const current = context.current();
 			assert.equal(current.id, automaticWorkId(attachment.ledger.scope));
-			const authority = await attachment.waits.authoritySnapshot();
-			assert.deepEqual(
-				authority.work.find((item) => item.id === current.id).participants,
-				["host-automatic", "bg", "tasks", "subagent", "schedule"],
-				"a wake turn can start background jobs and derive task work",
-			);
+			// The fallback identity is registered and usable for a derived producer origin.
 			assert.deepEqual(attachment.waits.captureExecutionWork(current.id, current.revision, "bg"), {
 				id: current.id,
 				revision: current.revision,
@@ -419,18 +215,39 @@ for (const variant of ["paused", "completed", "unshared", "missing", "absent"])
 		});
 	});
 
+test("result delivery attributes exact work even without a producer grant", async (t) => {
+	const { context, attachment } = await fixture(t);
+	selectedAttempt(attachment, resultIntent("work"));
+	await context.runSelected("attempt", async () => assert.deepEqual(context.current(), { id: "work", revision: 1 }));
+});
+
+test("a task chain does not leak between invocations", async (t) => {
+	const { context, attachment } = await fixture(t);
+	await attachment.waits.registerWork("nested", "lane", 0);
+	await context.run(work, async () => {
+		await context.selectToolWork(otherWork, true);
+		await context.selectToolWork({ id: "nested", actor: "lane", revision: 1 }, true);
+	});
+	// A later invocation starts with no retained parent from the previous chain.
+	await context.run(otherWork, async () => {
+		await attachment.waits.changeWork("other", "lane", 1, "completed", "Done", 1);
+		assert.equal(await context.returnFromToolWork(), true);
+		assert.equal(context.current(), undefined, "no parent leaks from the earlier turn");
+	});
+});
+
 for (const rank of [2, 3, 6])
-	test(`automated rank ${rank} falls back to host work only when the host supplies it`, async (t) => {
+	test(`automated rank ${rank} falls back to branch work only when the host supplies it`, async (t) => {
 		const plain = await fixture(t);
 		await plain.attachment.waits.shareWork("work", "lane", 1, "bg", 1);
 		selectedAttempt(plain.attachment, { ...resultIntent("work"), rank });
 		await plain.context.runSelected("attempt", async () => {
 			if (rank === 6) assert.deepEqual(plain.context.current(), { id: "work", revision: 2 });
-			else assert.equal(plain.context.current(), undefined, "no owning work is invented without a host supplier");
+			else assert.equal(plain.context.current(), undefined, "no branch identity is invented without a host supplier");
 		});
 	});
 
-test("producer-bound attempts never borrow host automatic work", async (t) => {
+test("producer-bound attempts never borrow branch host work", async (t) => {
 	const { context, attachment } = await fixture(t, { automatic: true });
 	selectedAttempt(attachment, {
 		id: "task-continuation",
@@ -443,7 +260,9 @@ test("producer-bound attempts never borrow host automatic work", async (t) => {
 		workId: "elsewhere",
 		workRevision: "1",
 	});
-	await context.runSelected("attempt", async () => assert.equal(context.current(), undefined));
+	await context.runSelected("attempt", async () =>
+		assert.equal(context.current().id, automaticWorkId(attachment.ledger.scope)),
+	);
 });
 
 for (const boundary of ["attempt", "authority"])
@@ -469,31 +288,9 @@ for (const boundary of ["attempt", "authority"])
 		assert.equal(invoked, false);
 	});
 
-test("automatic work preparation cannot migrate a selected turn to another attachment", async (t) => {
-	const first = await fixture(t);
-	const second = await fixture(t);
-	let attachment = first.attachment;
-	selectedAttempt(attachment, { ...resultIntent(undefined), rank: 2 });
-	const context = new FlowWorkContext(
-		() => attachment,
-		async () => {
-			attachment = second.attachment;
-			return work;
-		},
-	);
-	let invoked = false;
-	await assert.rejects(
-		context.runSelected("attempt", async () => {
-			invoked = true;
-		}),
-		{ code: "stale" },
-	);
-	assert.equal(invoked, false);
-});
-
 for (const rank of [4, 5])
 	for (const state of ["paused", "completed", "stopped"])
-		test(`producer rank ${rank} rejects ${state} work without borrowing host authority`, async (t) => {
+		test(`producer rank ${rank} refuses ${state} work without borrowing branch authority`, async (t) => {
 			const { context, attachment } = await fixture(t, { automatic: true });
 			await attachment.waits.changeWork("work", "lane", 1, state, "Lifecycle fixture", 1);
 			selectedAttempt(attachment, { ...resultIntent("work"), producer: "lane", rank });
@@ -508,7 +305,39 @@ for (const rank of [4, 5])
 			assert.equal(context.busy, false);
 		});
 
-test("a wait decision for finished work keeps its tools through host work", async (t) => {
+for (const variant of ["valid", "foreign-work", "foreign-branch", "paused", "completed"])
+	test(`wait-decision attribution validates its durable identity: ${variant}`, async (t) => {
+		const { waitDecisionIntent } = await import("../dist/flow-control/wait-decisions.js");
+		const { context, attachment } = await fixture(t, { automatic: true });
+		const wait = {
+			token: "wait",
+			scope: attachment.ledger.scope,
+			workId: "work",
+			state: "expired",
+			createdAt: 0,
+			endedAt: 1,
+		};
+		const intent = waitDecisionIntent(wait);
+		if (variant === "foreign-work") intent.workId = "other";
+		if (variant === "foreign-branch")
+			intent.id = waitDecisionIntent({ ...wait, scope: { ...wait.scope, branchId: "elsewhere" } }).id;
+		attachment.waits.snapshot = async () => [wait];
+		attachment.ledger.snapshot = async () => ({
+			activeAttemptId: "attempt",
+			attempts: [{ id: "attempt", phase: "queued", admission: { choice: { intent } } }],
+		});
+		if (["paused", "completed"].includes(variant))
+			await attachment.waits.changeWork("work", "lane", 1, variant, "Lifecycle test", 1);
+		const invoke = () =>
+			context.runSelected("attempt", async () => {
+				if (variant === "valid") assert.equal(context.current().id, "work");
+				else assert.equal(context.current().id, automaticWorkId(attachment.ledger.scope));
+			});
+		if (variant === "foreign-branch" || variant === "foreign-work") await assert.rejects(invoke(), { code: "stale" });
+		else await invoke();
+	});
+
+test("a wait decision for finished work keeps its tools through branch work", async (t) => {
 	const { waitDecisionIntent } = await import("../dist/flow-control/wait-decisions.js");
 	const { context, attachment } = await fixture(t, { automatic: true });
 	const wait = {

@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { automaticWorkId } from "../dist/flow-control/automatic-work.js";
 import { PiFlowAttachment } from "../dist/flow-control/pi-attachment.js";
 
 const scope = { sessionId: "session", branchId: "branch" };
@@ -444,10 +445,8 @@ async function ownedFixture(t) {
 	return { ...f, store };
 }
 
-test("owned waits require explicit work participants and exact execution predicates", async (t) => {
+test("owned waits attribute by registered work and require exact execution predicates", async (t) => {
 	const { store } = await ownedFixture(t);
-	await assert.rejects(store.declareOwned("stranger", 2, request(), 10, 100), { code: "identity" });
-	await assert.rejects(store.declareOwned("lane", 1, request(), 10, 100), { code: "stale" });
 	for (const changed of [
 		{ execution: "new-exec" },
 		{ producer: "other" },
@@ -464,11 +463,24 @@ test("owned waits require explicit work participants and exact execution predica
 	);
 	await assert.rejects(store.declare(request(), observations(), 10, 100), { code: "identity" });
 	assert.deepEqual(await store.snapshot(), []);
-	const wait = await store.declareOwned("lane", 2, request(), 10, 100);
+	// Producer and revision attribution are evidence, not permission: an unrelated actor and a stale
+	// revision still resolve the registered work and its exact execution.
+	const wait = await store.declareOwned("stranger", 99, request(), 10, 100);
 	assert.equal(wait.state, "waiting");
 	await assert.rejects(store.reconcile(wait.token, observations("satisfied"), 20), { code: "identity" });
 	await assert.rejects(store.cancel(wait.token, "unowned", 20), { code: "identity" });
 	assert.deepEqual(await store.snapshot(), [wait]);
+});
+
+test("unrelated work can wait on an exact execution handle it does not own", async (t) => {
+	const { store } = await ownedFixture(t);
+	await store.registerWork("observer", "observer-owner", 20);
+	const wait = await store.declareOwned("observer-owner", 1, request("observer-wait", "observer"), 20, 100);
+	assert.equal(wait.state, "waiting");
+	await store.observeExecution(handle, 2, [{ until: "exit", state: "satisfied" }], 30);
+	const [resolved] = await store.snapshot();
+	assert.equal(resolved.state, "resolved");
+	assert.equal((await store.authoritySnapshot()).executions[0].workId, "work");
 });
 
 for (const order of ["before", "after", "concurrent"]) {
@@ -575,7 +587,10 @@ test("a reused display handle never transfers completion or work ownership", asy
 		),
 		{ code: "identity" },
 	);
-	await assert.rejects(store.declareOwned("bg", 1, request("foreign", "other-work"), 20, 100), { code: "identity" });
+	// An unrelated work may still wait on the exact handle, but the handle keeps its original owner.
+	const wait = await store.declareOwned("bg", 1, request("foreign", "other-work"), 20, 100);
+	assert.equal(wait.state, "waiting");
+	assert.equal((await store.authoritySnapshot()).executions.find((item) => item.execution === "exec").workId, "work");
 	assert.equal((await store.snapshot())[0].state, "waiting");
 });
 
@@ -617,20 +632,17 @@ for (const status of ["stopped", "completed"]) {
 		await assert.rejects(store.changeWork("work", "lane", 3, "active", "resume", 40), { code: "transition" });
 		await assert.rejects(store.declareOwned("lane", 3, request("replayed"), 40, 100), { code: "transition" });
 		await assert.rejects(store.shareWork("work", "lane", 3, "another", 40), { code: "transition" });
-		await assert.rejects(
-			store.registerExecution(
-				{
-					producer: "bg",
-					handle: "display",
-					execution: "new",
-					workId: "work",
-					revision: 1,
-					predicates: [{ until: "exit", state: "pending" }],
-				},
-				3,
-				40,
-			),
-			{ code: "transition" },
+		await store.registerExecution(
+			{
+				producer: "bg",
+				handle: "display",
+				execution: "new",
+				workId: "work",
+				revision: 1,
+				predicates: [{ until: "exit", state: "pending" }],
+			},
+			3,
+			40,
 		);
 		await store.observeExecution(handle, 2, [{ until: "exit", state: "satisfied" }], 50);
 		assert.equal((await store.snapshot())[0].state, "cancelled");
@@ -673,16 +685,18 @@ test("cancelling a wait keeps work active and a stop at expiry preserves the exp
 	assert.deepEqual(store.gate().inactiveWorkIds, ["work"]);
 });
 
-test("execution work capture uses committed participation and refuses changing, stale, or inactive ownership", async (t) => {
+test("execution work capture attributes to registered work and refuses an unregistered identity", async (t) => {
 	const f = await fixture(t),
 		store = f.attachment.waits;
 	await store.registerWork("work", "lane", 0);
 	const sharing = store.shareWork("work", "lane", 1, "bg", 1);
-	assert.throws(() => store.captureExecutionWork("work", 1, "lane"), { code: "busy" });
+	assert.deepEqual(store.captureExecutionWork("work", 1, "lane"), { id: "work", revision: 1 });
 	await sharing;
 	assert.deepEqual(store.captureExecutionWork("work", 2, "bg"), { id: "work", revision: 2 });
-	assert.throws(() => store.captureExecutionWork("work", 1, "bg"), { code: "stale" });
-	assert.throws(() => store.captureExecutionWork("work", 2, "other"), { code: "identity" });
+	// Stale revisions and unrelated producers are attribution, not permission.
+	assert.deepEqual(store.captureExecutionWork("work", 1, "bg"), { id: "work", revision: 2 });
+	assert.deepEqual(store.captureExecutionWork("work", 2, "other"), { id: "work", revision: 2 });
+	assert.throws(() => store.captureExecutionWork("missing", 0, "bg"), { code: "identity" });
 	await store.changeWork("work", "lane", 2, "paused", "pause", 2);
 	assert.throws(() => store.captureExecutionWork("work", 3, "bg"), { code: "transition" });
 	await store.changeWork("work", "lane", 3, "active", "resume", 3);
@@ -691,6 +705,18 @@ test("execution work capture uses committed participation and refuses changing, 
 	assert.throws(() => store.captureExecutionWork("work", 5, "bg"), { code: "transition" });
 	const restored = await f.reopen();
 	assert.throws(() => restored.captureExecutionWork("work", 5, "bg"), { code: "transition" });
+});
+
+test("execution work capture falls back to the registered branch default", async (t) => {
+	const f = await fixture(t),
+		store = f.attachment.waits,
+		automatic = automaticWorkId(scope);
+	await store.registerWork(automatic, "host-automatic", 0);
+	assert.deepEqual(store.captureExecutionWork("missing", 0, "bg"), { id: automatic, revision: 1 });
+	await store.registerWork("work", "lane", 1);
+	assert.deepEqual(store.captureExecutionWork("work", 1, "bg"), { id: "work", revision: 1 });
+	await store.changeWork("work", "lane", 1, "paused", "pause", 2);
+	assert.deepEqual(store.captureExecutionWork("work", 2, "bg"), { id: automatic, revision: 1 });
 });
 
 test("a monitored wait persists its policy and check time and still validates after reopen", async (t) => {
@@ -745,7 +771,7 @@ test("a monitored wait persists its policy and check time and still validates af
 	);
 });
 
-test("derived work can observe only its own or its direct origin's execution across reopen", async (t) => {
+test("work waits resolve exact executions without ancestry restrictions across reopen", async (t) => {
 	const f = await fixture(t);
 	const store = f.attachment.waits;
 	await store.registerWork("parent", "host-user", 0);
@@ -781,32 +807,27 @@ test("derived work can observe only its own or its direct origin's execution acr
 		sibling.revision,
 		4,
 	);
-	await assert.rejects(
-		store.declareOwned(
-			"tasks",
-			child.revision,
-			{ ...request("foreign", child.id), on: [{ ...handle, execution: "sibling-exec" }] },
-			5,
-			100,
-		),
-		{ code: "identity" },
+	// The child waits on the sibling's exact execution handle; the execution keeps its own owner.
+	const wait = await store.declareOwned(
+		"tasks",
+		child.revision,
+		{ ...request("foreign", child.id), on: [{ ...handle, execution: "sibling-exec" }] },
+		5,
+		100,
 	);
-	await assert.rejects(
-		store.declareOwned(
-			"host-user",
-			3,
-			{ ...request("reverse", "parent"), on: [{ ...handle, execution: "sibling-exec" }] },
-			5,
-			100,
-		),
-		{ code: "identity" },
-	);
-	const wait = await store.declareOwned("tasks", child.revision, request("child-wait", child.id), 5, 100);
 	assert.equal(wait.state, "waiting");
 	const reopened = await f.reopen();
-	await reopened.observeExecution(handle, 2, [{ until: "exit", state: "satisfied" }], 6);
+	await reopened.observeExecution(
+		{ ...handle, execution: "sibling-exec" },
+		2,
+		[{ until: "exit", state: "satisfied" }],
+		6,
+	);
 	assert.equal((await reopened.snapshot())[0].state, "resolved");
-	assert.equal((await reopened.authoritySnapshot()).executions[0].workId, "parent");
+	assert.equal(
+		(await reopened.authoritySnapshot()).executions.find((item) => item.execution === "sibling-exec").workId,
+		sibling.id,
+	);
 });
 
 test("a live token from another work is described accurately without changing it", async (t) => {

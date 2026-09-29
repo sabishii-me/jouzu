@@ -11,7 +11,6 @@ import { recoverPiHistory } from "./pi-history-recovery.js";
 import { PiNativeDispatch } from "./pi-native-dispatch.js";
 import { type NativeContextDecorator, PiNativeRequests } from "./pi-native-requests.js";
 import { PiFlowSessionRegistry } from "./pi-session-registry.js";
-import { PiWorkTools } from "./pi-work-tools.js";
 import { FlowLedgerError, type FlowScope } from "./receipt-ledger.js";
 import { cancellationSettledSubmission, type FlowNativeInput, type RetainedSubmission } from "./submission-store.js";
 import { captureUserWorkParticipants, consumedUserWork, userWorkId } from "./user-work.js";
@@ -58,7 +57,6 @@ export interface PiFlowBranchResources {
 	host: PiControllerHost;
 	controller: SessionFlowController;
 	workContext: FlowWorkContext;
-	workTools: PiWorkTools;
 	native: PiNativeDispatch;
 	requests: PiNativeRequests;
 	recovery: { recovered: number; unresolved: number };
@@ -74,7 +72,6 @@ export class PiFlowSessionService {
 		host?: PiControllerHost;
 		native?: PiNativeDispatch;
 		requests?: PiNativeRequests;
-		workTools?: PiWorkTools;
 	};
 	private transitionId?: string;
 	private closing = false;
@@ -187,7 +184,9 @@ export class PiFlowSessionService {
 			this.opening.requests = requests;
 			const workContext = new FlowWorkContext(
 				() => this.branch().attachment,
-				() => retainAutomaticWork(this.branch().attachment),
+				// Capture this branch's attachment directly: `this.branch()` is unavailable while a
+				// navigation transition is still open during `branchChanged`.
+				() => retainAutomaticWork(attachment),
 			);
 			const host = new PiControllerHost(
 				this.session,
@@ -223,8 +222,6 @@ export class PiFlowSessionService {
 				},
 			);
 			this.opening.host = host;
-			const workTools = new PiWorkTools(this.session, workContext);
-			this.opening.workTools = workTools;
 			// One observer wraps the transport and records both projections, so there is no second
 			// wrapper to order against and the guarded transport is stable as soon as it is installed.
 			requests.attachComposition(host.requests);
@@ -243,13 +240,15 @@ export class PiFlowSessionService {
 				host,
 				controller,
 				workContext,
-				workTools,
 				native,
 				requests,
 				recovery,
 				sourceRecovery,
 				waitSourceRecovery,
 			};
+			// Register the branch host identity before producers can start, so a producer that runs
+			// without a selected work still has a registered default to attribute to.
+			await workContext.attach();
 			this.opening = undefined;
 		} catch (error) {
 			// A failed host close must retain its storage ownership.
@@ -650,13 +649,11 @@ export class PiFlowSessionService {
 		const branch = this.current;
 		if (branch) {
 			await branch.controller.close();
-			branch.workTools.close();
 			await branch.requests.close();
 			await branch.native.close();
 			await branch.attachment.close();
 		} else if (this.opening) {
 			await this.opening.host?.close();
-			this.opening.workTools?.close();
 			await this.opening.requests?.close();
 			await this.opening.native?.close();
 			await this.opening.attachment.close();

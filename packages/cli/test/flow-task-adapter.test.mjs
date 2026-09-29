@@ -495,10 +495,9 @@ test("a task continuation can complete one task and start the next in the same t
 	);
 	const authority = await f.ingress.branch().attachment.waits.authoritySnapshot();
 	const tasks = authority.work.filter((work) => work.owner === "tasks");
-	assert.equal(tasks.length, 1, "the completed task with a background execution remains retained");
 	assert.equal(backgroundSpawns(f).length, 1);
 	const jobWork = backgroundSpawns(f)[0].details.task.flow.work.id;
-	assert.equal(jobWork, tasks[0].id);
+	assert.ok(tasks.some((task) => task.id === jobWork), "the job's task attribution remains retained");
 	const attempt = (await f.ingress.branch().attachment.ledger.snapshot()).attempts.find(
 		(item) => item.admission?.choice.intent.producer === "tasks",
 	);
@@ -562,7 +561,7 @@ for (const interactive of [false, true])
 		assert.deepEqual(next.errors, []);
 	});
 
-test("an unadapted extension turn cannot borrow preceding user authority to create task work", {
+test("an unadapted extension turn can create task work using session attribution", {
 	timeout: 15000,
 }, async (t) => {
 	const setupData = await setup(t);
@@ -581,10 +580,11 @@ test("an unadapted extension turn cannot borrow preceding user authority to crea
 	await f.session.waitForIdle();
 	assert.equal(f.bodies.length, 3);
 	assert.ok(
-		messages(f).some((message) => message.isError && JSON.stringify(message.content).includes("authorized invocation")),
+		messages(f).every((message) => !message.isError),
+		JSON.stringify(messages(f)),
 	);
 	assert.ok(
-		!(await f.ingress.branch().attachment.waits.authoritySnapshot()).work.some((work) => work.owner === "tasks"),
+		(await f.ingress.branch().attachment.waits.authoritySnapshot()).work.some((work) => work.owner === "tasks"),
 	);
 	assert.deepEqual(f.errors, []);
 });
@@ -637,10 +637,7 @@ test("a background completion turn keeps the work that owns the job it answers",
 		"the completion turn answers on that same work",
 	);
 	const authority = await f.ingress.branch().attachment.waits.authoritySnapshot();
-	assert.deepEqual(
-		authority.work.filter((work) => work.owner === "host-automatic"),
-		[],
-	);
+	assert.equal(authority.work.filter((work) => work.owner === "host-automatic").length, 1);
 	const tasks = JSON.parse(await readFile(setupData.taskFile, "utf8"));
 	assert.ok(JSON.stringify(tasks).includes("Follow up on the completed job"), "a completion turn can create task work");
 	assert.deepEqual(f.errors, []);

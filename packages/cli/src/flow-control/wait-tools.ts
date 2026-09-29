@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { InlineExtension, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { retainAutomaticWork } from "./automatic-work.js";
 import { FLOW_OFF_MESSAGE } from "./flow-off-message.js";
 import type { PiFlowAttachment } from "./pi-attachment.js";
 import { FlowLedgerError } from "./receipt-ledger.js";
@@ -8,7 +9,7 @@ import { WAIT_ADJUSTMENT_NOTICES, waitToolResponse } from "./wait-tool-response.
 
 export const FLOW_WAIT_GUIDANCE = [
 	"Flow control coordinates automated continuations, dependency waits, and completion notifications. Workflow tools track the requested work; a wait holds its next automatic turn while a dependency runs. Ending your turn leaves that work and its background jobs in place.",
-	"Continue independent work while dependencies run. When remaining work depends on asynchronous execution, copy the producer's waitDependency object unchanged into agent_wait.on and supply reason and deadline. Preserve any health, work, and scope it contains; do not invent missing metadata. Omit unused optional fields or use null if the interface requires them. Omit top-level work (or pass null) to wait as the current task or invocation. Nested on[].work identifies the dependency's owner, not the work to suspend; copy work and scope only when returned by the producer. Never substitute a child/job ID, flowInput message ID, or placeholder for top-level work. A task may also wait on a job owned by its direct parent invocation. If a corrected call still fails ownership checks, report the blocker instead of retrying invented IDs.",
+	"Continue independent work while dependencies run. When remaining work depends on asynchronous execution, copy the producer's waitDependency into agent_wait.on and supply a bounded deadline. Omit work to suspend the current task or session; dependency work metadata does not restrict which task can wait on it.",
 	"State the dependency in the reason and choose a hard deadline with bounded slack for its expected duration. The returned expiresAt is the effective deadline after the session cap; expiry is a decision point, not proof the job stopped.",
 	"Request health only with a policy name offered for that execution. Otherwise omit health and checkAfter (or pass null); the wait is deadline-only. The until predicate, such as terminal, is not a health policy. checkAfter needs a monitored dependency. Health may end a wait early as unhealthy or health-unknown; it never extends the deadline.",
 	"After agent_wait returns waiting and no independent work remains, briefly state what is running, what will unblock you, and what you will verify, then end the turn. Trust completion delivery; do not poll status, add timer-based checks, or create extra continuations merely to stay active. Inspect logs for a concrete diagnostic question or an explicit user request.",
@@ -44,10 +45,8 @@ export function flowWaitGuidance(activeTools: readonly string[]): string[] {
 
 export interface FlowWaitToolOptions {
 	attachment(): PiFlowAttachment;
-	/** The work selected by the host for this tool invocation. */
+	/** Optional attribution for the task whose continuation should wait. */
 	currentWork?(): { id: string; revision: number } | undefined;
-	/** Host authority for the requested work, captured for this tool invocation. */
-	authorize(workId: string): { actor: string; revision: number; assertActive(): void };
 	enabled?(): boolean;
 	maxDurationMs: number;
 	now?(): number;
@@ -72,7 +71,7 @@ const waitSchema = {
 			...string,
 			type: ["string", "null"],
 			description:
-				"Work to suspend. Omit or pass null to use the current task or invocation. If supplied, must exactly match its work ID; never use a child/job ID, dependency owner, message ID, or placeholder.",
+				"Work to suspend. Omit or pass null to use the current task or session. This is attribution, not permission to use a dependency.",
 		},
 		reason,
 		deadline: { type: "string", pattern: "^[1-9][0-9]*(ms|s|m|h|d)$" },
@@ -229,15 +228,21 @@ export function createFlowWaitExtension(options: FlowWaitToolOptions): InlineExt
 	const requireEnabled = () => {
 		if (options.enabled && !options.enabled()) throw new FlowLedgerError("stale", FLOW_OFF_MESSAGE);
 	};
-	function access(attachment: PiFlowAttachment, work: string, signal?: AbortSignal) {
-		const authority = options.authorize(work);
+	async function access(attachment: PiFlowAttachment, work: string | undefined, signal?: AbortSignal) {
+		const snapshot = await attachment.waits.authoritySnapshot();
+		const live = (item: { lifecycle?: { state: string } }) => (item.lifecycle?.state ?? "active") === "active";
+		const retained =
+			snapshot.work.find((item) => item.id === work && live(item)) ??
+			snapshot.work.find((item) => item.id === options.currentWork?.()?.id && live(item));
+		const attribution = retained
+			? { id: retained.id, actor: retained.owner, revision: retained.revision }
+			: await retainAutomaticWork(attachment);
 		const check = () => {
 			signal?.throwIfAborted();
 			if (options.attachment() !== attachment) throw new FlowLedgerError("stale", "Wait tool attachment changed.");
-			authority.assertActive();
 		};
 		check();
-		return { ...authority, check };
+		return { ...attribution, check };
 	}
 	return {
 		name: "jouzu-flow-waits",
@@ -272,19 +277,8 @@ export function createFlowWaitExtension(options: FlowWaitToolOptions): InlineExt
 						attachment = options.attachment();
 					if (attachment.ledger.scope.sessionId !== ctx.sessionManager.getSessionId())
 						throw new FlowLedgerError("scope", "Wait tool belongs to another session.");
-					const currentWork = options.currentWork?.();
-					const workId = args.work ?? currentWork?.id;
-					if (!workId || (options.currentWork && !currentWork))
-						throw new FlowLedgerError(
-							"identity",
-							"Waiting requires a current authorized work invocation. Omit work or pass null to use the current invocation; do not invent an ID. If no invocation is available, report the blocker. No wait was installed.",
-						);
-					if (currentWork && workId !== currentWork.id)
-						throw new FlowLedgerError(
-							"identity",
-							"Requested work does not belong to this invocation. agent_wait.work selects the work to suspend. Omit work or pass null to use the current task or invocation. Do not use a child/job ID, on[].work, message ID, or placeholder. Copy the producer's waitDependency into on unchanged. No wait was installed.",
-						);
-					const authority = access(attachment, workId, signal);
+					const authority = await access(attachment, args.work ?? options.currentWork?.()?.id, signal);
+					const workId = authority.id;
 					for (const handle of args.on) {
 						if (
 							handle.scope &&
@@ -299,7 +293,7 @@ export function createFlowWaitExtension(options: FlowWaitToolOptions): InlineExt
 					const expiresAt = now() + Math.min(duration(args.deadline), maxDurationMs);
 					if (!Number.isSafeInteger(expiresAt))
 						throw new FlowLedgerError("schema", "Wait expiry exceeds the supported time range.");
-					// Resolve ownership before subscribing; policy checks use the captured execution evidence.
+					// Resolve exact executions before subscribing; work labels are attribution only.
 					const monitored = args.on.filter((handle) => handle.health !== undefined);
 					const owners = new Map<string, string>();
 					for (const handle of args.on) {
@@ -394,7 +388,7 @@ export function createFlowWaitExtension(options: FlowWaitToolOptions): InlineExt
 				name: "agent_wait_cancel",
 				label: "Cancel dependency wait",
 				description:
-					"Idempotently remove an authorized wait gate by token and reason. This leaves its process and requested work active.",
+					"Idempotently remove a wait gate by token and reason. This leaves its process and requested work active.",
 				promptSnippet: "agent_wait_cancel: remove a dependency gate without stopping its job or completing its work.",
 				parameters: cancelSchema,
 				async execute(toolCallId, raw, signal, _update, ctx) {
@@ -412,7 +406,7 @@ export function createFlowWaitExtension(options: FlowWaitToolOptions): InlineExt
 							"identity",
 							"Wait token is not registered in this branch. Copy the token returned by agent_wait in this branch; do not use a job ID or a token from another session.",
 						);
-					const authority = access(attachment, wait.workId, signal);
+					const authority = await access(attachment, wait.workId, signal);
 					return waitToolResponse(
 						await attachment.waits.cancelOwned(
 							authority.actor,

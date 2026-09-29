@@ -37,8 +37,7 @@ export function attachBackgroundWaitSource(
 		throw new FlowLedgerError("schema", "Background flow source is unavailable.");
 	const source = api.activate({ ...attachment.ledger.scope }, () => {
 		const work = currentWork();
-		if (!work) throw new FlowLedgerError("identity", "Background execution requires current owning work.");
-		return attachment.waits.captureExecutionWork(work.id, work.revision, "bg");
+		return attachment.waits.captureExecutionWork(work?.id, work?.revision, "bg");
 	});
 	try {
 		return attachment.waitProducers.register(source, onError);

@@ -150,11 +150,15 @@ test("pending schedule subscriptions restore and receive a trigger", async (t) =
 	assert.equal((await f.attachment.waits.snapshot())[0].state, "resolved");
 	assert.deepEqual(f.errors, []);
 });
-test("authority is captured before add and errors or other actions return no receipt", async (t) => {
+test("schedule creation works without invocation attribution", async (t) => {
 	const f = await fixture(t);
 	f.setCurrent(undefined);
-	assert.throws(() => f.call(), /owning work/);
-	f.setCurrent({ id: "work", revision: 2 });
+	await f.call();
+	assert.equal((await f.result()).details.waitDependency.producer, "schedule");
+	assert.deepEqual(f.errors, []);
+});
+test("errors or other actions return no receipt and attribution survives the call", async (t) => {
+	const f = await fixture(t);
 	f.call();
 	assert.equal(await f.result(true), undefined);
 	f.call("call", "list");

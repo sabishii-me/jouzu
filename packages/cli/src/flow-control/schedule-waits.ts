@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ExtensionAPI, InlineExtension } from "@earendil-works/pi-coding-agent";
+import { retainAutomaticWork } from "./automatic-work.js";
 import type { PiFlowAttachment } from "./pi-attachment.js";
 import type { PiSessionFlowIngress } from "./pi-session-ingress.js";
 import { FlowLedgerError } from "./receipt-ledger.js";
@@ -155,17 +156,12 @@ export function createScheduleWaitExtension(options: {
 		name: "jouzu-schedule-waits",
 		factory(pi) {
 			events = pi.events;
-			pi.on("tool_call", (event) => {
+			pi.on("tool_call", async (event) => {
 				if (event.toolName !== "schedule_prompt" || event.input.action !== "add" || !options.enabled() || !registration)
 					return;
 				const branch = options.ingress().branch();
 				if (branch.attachment !== attached) throw new FlowLedgerError("stale", "Scheduled prompt wait branch changed.");
-				const current = branch.workContext.current();
-				if (!current)
-					throw new FlowLedgerError(
-						"identity",
-						"Scheduling a prompt requires current owning work. Continue from an authorized user or task turn.",
-					);
+				const current = branch.workContext.current() ?? (await retainAutomaticWork(branch.attachment));
 				calls.set(event.toolCallId, {
 					attachment: branch.attachment,
 					work: branch.attachment.waits.captureExecutionWork(current.id, current.revision, "schedule"),

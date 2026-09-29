@@ -123,7 +123,7 @@ test("user history retirement observes native input and fences replay after reop
 	await f.session.prompt("finish this input");
 	const attachment = f.ingress.branch().attachment;
 	const [record] = await attachment.submissions.snapshot();
-	const [work] = (await attachment.waits.authoritySnapshot()).work;
+	const work = (await attachment.waits.authoritySnapshot()).work.find((item) => item.owner === "host-user");
 	assert.deepEqual(work.userInputs, [{ id: record.id, revision: record.revision }]);
 	assert.deepEqual(await f.ingress.retireWaitHistory(true), { work: 1, waits: 0, executions: 0 });
 	assert.deepEqual(await f.ingress.retireWaitHistory(true), { work: 0, waits: 0, executions: 0 });
@@ -136,14 +136,18 @@ test("user history retirement observes native input and fences replay after reop
 	await assert.rejects(retainUserWork(next.ingress.branch().attachment, record.id, record.revision), { code: "stale" });
 	await next.session.prompt("new input");
 	assert.equal(next.sent.length, 1);
-	assert.equal((await next.ingress.branch().attachment.waits.authoritySnapshot()).work.length, 1);
+	assert.equal(
+		(await next.ingress.branch().attachment.waits.authoritySnapshot()).work.filter((item) => item.owner === "host-user")
+			.length,
+		1,
+	);
 });
 
 test("user retirement preserves pause, execution references, and unobserved source claims", async (t) => {
 	const f = await fixture(t, { provider: true });
 	await f.session.prompt("finished");
 	const attachment = f.ingress.branch().attachment;
-	const [work] = (await attachment.waits.authoritySnapshot()).work;
+	const work = (await attachment.waits.authoritySnapshot()).work.find((item) => item.owner === "host-user");
 	const records = await attachment.submissions.snapshot();
 	const requests = await attachment.nativeRequests.snapshot();
 	assert.deepEqual(finishedUserWork([work], records, requests, new Set()), [work]);
@@ -206,14 +210,14 @@ test("automatic user history cleanup runs once after settled host input", async 
 		provider: true,
 		autoRelease: { retireHistory: true, onError: (error) => errors.push(error) },
 	});
+	const userWork = async () =>
+		(await f.ingress.branch().attachment.waits.authoritySnapshot()).work.filter((item) => item.owner === "host-user");
 	await f.session.prompt("first");
-	for (let i = 0; i < 100 && (await f.ingress.branch().attachment.waits.authoritySnapshot()).work.length; i++)
-		await new Promise((resolve) => setTimeout(resolve, 10));
-	assert.equal((await f.ingress.branch().attachment.waits.authoritySnapshot()).work.length, 0);
+	for (let i = 0; i < 100 && (await userWork()).length; i++) await new Promise((resolve) => setTimeout(resolve, 10));
+	assert.equal((await userWork()).length, 0);
 	await f.session.prompt("second");
-	for (let i = 0; i < 100 && (await f.ingress.branch().attachment.waits.authoritySnapshot()).work.length; i++)
-		await new Promise((resolve) => setTimeout(resolve, 10));
-	assert.equal((await f.ingress.branch().attachment.waits.authoritySnapshot()).work.length, 0);
+	for (let i = 0; i < 100 && (await userWork()).length; i++) await new Promise((resolve) => setTimeout(resolve, 10));
+	assert.equal((await userWork()).length, 0);
 	assert.equal(f.sent.length, 2);
 	assert.deepEqual(errors, []);
 });
@@ -222,7 +226,7 @@ test("user retirement retains dormant producer work and rejects changed snapshot
 	const f = await fixture(t, { provider: true });
 	await f.session.prompt("producer-owned follow-through");
 	const branch = f.ingress.branch();
-	const [work] = (await branch.attachment.waits.authoritySnapshot()).work;
+	const work = (await branch.attachment.waits.authoritySnapshot()).work.find((item) => item.owner === "host-user");
 	let items = [
 		{
 			id: "intent",
@@ -253,7 +257,10 @@ test("user retirement retains dormant producer work and rejects changed snapshot
 		return retire(...args);
 	});
 	await assert.rejects(f.ingress.retireWaitHistory(true), { code: "stale" });
-	assert.equal((await branch.attachment.waits.authoritySnapshot()).work.length, 1);
+	assert.equal(
+		(await branch.attachment.waits.authoritySnapshot()).work.filter((item) => item.owner === "host-user").length,
+		1,
+	);
 	t.mock.restoreAll();
 	assert.equal((await f.ingress.retireWaitHistory(true)).work, 1);
 	assert.equal(f.sent.length, 1);

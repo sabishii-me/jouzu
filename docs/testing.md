@@ -159,9 +159,9 @@ The minimal wait is:
 
 Use the actual returned IDs. If the interface requires every field, set top-level `work`, `mode`, `replaceToken`, and `checkAfter` to `null`, and add `health`, `work`, and `scope` as `null` inside the dependency. `until: "terminal"` is a completion condition, not a health policy.
 
-An ownership error for `agent_wait.work` installs no wait. Correct that field to omission or `null`; do not cycle through guessed IDs. If ownership still fails, report the blocker. The regression tests cover nullable registration and provider payloads, rejected placeholders, unchanged live waits after refused calls, and child completion/deadline wakes with nullable arguments. Pi's strict-schema converter does not support nullable objects; `strict: "prefer"` falls back to the registered non-strict schema without dropping nullability. Local validation and execution ownership checks still apply.
+Work labels associate a wait with a task or session; they do not grant permission to use a dependency. Omit `agent_wait.work` or set it to `null` to use the current task or session. Missing or stale attribution must not prevent a valid tool call. Dependencies still require exact producer, handle, and execution identities so a wait cannot observe the wrong job. Pi's strict-schema converter does not support nullable objects; `strict: "prefer"` falls back to the registered non-strict schema without dropping nullability.
 
-The standalone wait-decision case in `flow-assembly-pair.test.mjs` starts another background job, declares a wait, and cancels it from a decision turn. Context tests reject a foreign work or branch and preserve paused/completed work states.
+The standalone wait-decision case in `flow-assembly-pair.test.mjs` starts another background job, declares a wait, and cancels it from a decision turn. Availability tests cover missing attribution and session transitions; scheduler tests preserve explicit pause, stop, completion, and cancellation behavior.
 
 ### Task continuation integration
 
