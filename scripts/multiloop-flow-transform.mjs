@@ -110,6 +110,24 @@ export function driveMultiloopOnGateChange(source) {
 	);
 }
 
+export function driveMultiloopAfterOtherTurns(source) {
+	source = replace(
+		source,
+		"        loopTurnActive = false;\n        loopTurnReason = undefined;",
+		'        loopTurnActive = false;\n        loopTurnReason = "user-suppressed";',
+	);
+	source = replace(
+		source,
+		"    if (!endedLoopTurn) return;",
+		'    if (!endedLoopTurn && (endedLoopReason === "user-suppressed" || !multiloopFlowDriving(ctx.sessionManager.getSessionId()))) return;',
+	);
+	return replace(
+		source,
+		"    if (continuationsQueued > 0 && toolCallsSinceContinuation === 0) {",
+		"    if (endedLoopTurn && continuationsQueued > 0 && toolCallsSinceContinuation === 0) {",
+	);
+}
+
 export function notifyMultiloopLabels(source) {
 	for (const name of ["startLoop", "resumeLoop"]) {
 		const start = source.indexOf(`  async function ${name}(`);
@@ -181,9 +199,11 @@ export function transformMultiloopFlow(source) {
 		"  function updateStatus(ctx: ExtensionContext | ExtensionCommandContext) {",
 		"  function updateStatus(ctx: ExtensionContext | ExtensionCommandContext) {\n    multiloopFlow(ctx.sessionManager.getSessionId())?.changed(runningStates().map((state) => ({ lane: state.lane, runTag: state.runTag })));",
 	);
-	return notifyMultiloopLabels(
-		driveMultiloopOnGateChange(
-			gateMultiloopFlowDriving(transformMultiloopStatus(transformGoalResume(transformMultiloopLifecycle(source)))),
+	return driveMultiloopAfterOtherTurns(
+		notifyMultiloopLabels(
+			driveMultiloopOnGateChange(
+				gateMultiloopFlowDriving(transformMultiloopStatus(transformGoalResume(transformMultiloopLifecycle(source)))),
+			),
 		),
 	);
 }

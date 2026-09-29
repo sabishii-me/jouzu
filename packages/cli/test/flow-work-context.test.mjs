@@ -21,8 +21,8 @@ async function fixture(t, options = {}) {
 	return {
 		attachment,
 		context: new FlowWorkContext(() => current, options.automatic ? () => retainAutomaticWork(current) : undefined),
-		changeBranch: () => {
-			current = undefined;
+		changeBranch: (replacement) => {
+			current = replacement;
 		},
 	};
 }
@@ -445,6 +445,68 @@ test("producer-bound attempts never borrow host automatic work", async (t) => {
 	});
 	await context.runSelected("attempt", async () => assert.equal(context.current(), undefined));
 });
+
+for (const boundary of ["attempt", "authority"])
+	test(`unclassified selected work cannot cross a branch change during ${boundary} read`, async (t) => {
+		const f = await fixture(t);
+		const replacement = await fixture(t);
+		selectedAttempt(f.attachment, { ...resultIntent("missing"), rank: 4 });
+		const source = boundary === "attempt" ? f.attachment.ledger : f.attachment.waits;
+		const method = boundary === "attempt" ? "snapshot" : "authoritySnapshot";
+		const original = source[method].bind(source);
+		source[method] = async () => {
+			const state = await original();
+			f.changeBranch(replacement.attachment);
+			return state;
+		};
+		let invoked = false;
+		await assert.rejects(
+			f.context.runSelected("attempt", async () => {
+				invoked = true;
+			}),
+			{ code: "stale" },
+		);
+		assert.equal(invoked, false);
+	});
+
+test("automatic work preparation cannot migrate a selected turn to another attachment", async (t) => {
+	const first = await fixture(t);
+	const second = await fixture(t);
+	let attachment = first.attachment;
+	selectedAttempt(attachment, { ...resultIntent(undefined), rank: 2 });
+	const context = new FlowWorkContext(
+		() => attachment,
+		async () => {
+			attachment = second.attachment;
+			return work;
+		},
+	);
+	let invoked = false;
+	await assert.rejects(
+		context.runSelected("attempt", async () => {
+			invoked = true;
+		}),
+		{ code: "stale" },
+	);
+	assert.equal(invoked, false);
+});
+
+for (const rank of [4, 5])
+	for (const state of ["paused", "completed", "stopped"])
+		test(`producer rank ${rank} rejects ${state} work without borrowing host authority`, async (t) => {
+			const { context, attachment } = await fixture(t, { automatic: true });
+			await attachment.waits.changeWork("work", "lane", 1, state, "Lifecycle fixture", 1);
+			selectedAttempt(attachment, { ...resultIntent("work"), producer: "lane", rank });
+			let invoked = false;
+			await assert.rejects(
+				context.runSelected("attempt", async () => {
+					invoked = true;
+				}),
+				{ code: "transition" },
+			);
+			assert.equal(invoked, false);
+			assert.equal(context.busy, false);
+		});
 
 test("a wait decision for finished work keeps its tools through host work", async (t) => {
 	const { waitDecisionIntent } = await import("../dist/flow-control/wait-decisions.js");
