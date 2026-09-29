@@ -167,6 +167,41 @@ test("installed multiloop submits lazy per-lane continuations and preserves live
 	assert.throws(() => first.admitted(), /no longer active/);
 });
 
+test("installed multiloop re-drives a running goal after a task or native continuation turn", async (t) => {
+	const f = await fixture(t),
+		intents = [];
+	const detach = f.attachMultiloopFlow("session", {
+		version: 1,
+		submit: (intent) => intents.push(intent),
+		waiting: () => false,
+		changed() {},
+	});
+	t.after(detach);
+	await f.command("goal", "Complete all experiments");
+	intents.at(-1).admitted();
+	await f.emit("agent_start");
+	await f.emit("tool_call");
+	await f.emit("agent_end");
+	const before = intents.length;
+	// A task or native compaction continuation wins the next turn. It does not call
+	// the multiloop admission callback or any multiloop tool.
+	await f.emit("agent_start");
+	await f.emit("tool_call");
+	await f.emit("agent_end");
+	assert.equal(intents.length, before + 1);
+	assert.match(intents.at(-1).build(), /Complete all experiments/);
+	assert.deepEqual(f.sends, []);
+	await f.emit("input", { source: "interactive", text: "Do not continue" });
+	await f.emit("agent_start");
+	await f.emit("agent_end");
+	assert.equal(intents.length, before + 1, "user suppression must not submit a new continuation");
+	await f.command("goal", "pause");
+	await f.emit("agent_start");
+	await f.emit("tool_call");
+	await f.emit("agent_end");
+	assert.equal(intents.length, before + 1, "a paused goal must not restart");
+});
+
 test("installed multiloop keeps explicit pause authoritative while waiting", async (t) => {
 	const f = await fixture(t),
 		changes = [];
@@ -349,6 +384,18 @@ test("installed multiloop gate-change upgrade replaces only the pinned preceding
 	const installed = join(root, "packages/cli/node_modules/pi-multiloop/extensions/pi-multiloop/index.ts");
 	const source = await readFile(installed, "utf8");
 	const previous = source
+		.replace(
+			'        loopTurnActive = false;\n        loopTurnReason = "user-suppressed";',
+			"        loopTurnActive = false;\n        loopTurnReason = undefined;",
+		)
+		.replace(
+			'    if (!endedLoopTurn && (endedLoopReason === "user-suppressed" || !multiloopFlowDriving(ctx.sessionManager.getSessionId()))) return;',
+			"    if (!endedLoopTurn) return;",
+		)
+		.replace(
+			"    if (endedLoopTurn && continuationsQueued > 0 && toolCallsSinceContinuation === 0) {",
+			"    if (continuationsQueued > 0 && toolCallsSinceContinuation === 0) {",
+		)
 		.replaceAll(
 			'    pi.events.emit("jouzu:workflow-start", { session: ctx.sessionManager.getSessionId(), objective: state.goal, identity: stateKey(state) });\n',
 			"",

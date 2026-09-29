@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
+import { deferred } from "../../../scripts/fixtures/pi-flow-session.mjs";
 import {
 	COMPACTION_CONTINUE_CUSTOM_TYPE,
 	COMPACTION_TOOL_DESCRIPTION,
@@ -14,11 +15,16 @@ import {
 	registerCompactionRequest,
 } from "../dist/compaction-request.js";
 
-function installTool() {
+function installTool(resume) {
 	const handlers = new Map();
 	const tools = new Map();
 	const sent = [];
 	const pi = {
+		events: {
+			emit: (_event, request) => {
+				request.resume = resume;
+			},
+		},
 		on: (event, handler) => handlers.set(event, handler),
 		registerTool: (tool) => tools.set(tool.name, tool),
 		sendMessage: async (message, options) => {
@@ -65,6 +71,28 @@ test("headless idle waiters join compaction through completion and failure", asy
 		assert.equal(idle, true);
 		assert.equal(sent.length, outcome === "complete" ? 1 : 0);
 	}
+});
+
+test("headless idle waiters join continuation registration after compaction", async () => {
+	const registered = deferred();
+	const { handlers, tools, controller, sent } = installTool(async () => {
+		await registered.promise;
+		return true;
+	});
+	await tools.get(COMPACTION_TOOL_NAME).execute();
+	const first = settledContext();
+	await handlers.get("agent_settled")({ type: "agent_settled" }, first.ctx);
+	first.compactCalls[0].onComplete({});
+	let idle = false;
+	const joined = controller.waitForIdle().then(() => {
+		idle = true;
+	});
+	await Promise.resolve();
+	assert.equal(idle, false);
+	registered.resolve();
+	await joined;
+	assert.equal(idle, true);
+	assert.deepEqual(sent, []);
 });
 
 test("a request is held until the run settles, then dispatched once", async () => {

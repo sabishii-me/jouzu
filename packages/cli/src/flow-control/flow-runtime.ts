@@ -1,6 +1,7 @@
 import type { InlineExtension, SessionManager } from "@earendil-works/pi-coding-agent";
 import type { BackgroundJobSnapshot } from "./background-adapter.js";
 import { createBackgroundControllerExtension } from "./background-extension.js";
+import { createCompactionControllerExtension } from "./compaction-extension.js";
 import type { FlowStatus } from "./flow-status.js";
 import { projectFlowStatus } from "./flow-status.js";
 import { captureFlowStatusContext } from "./flow-status-context.js";
@@ -119,6 +120,7 @@ export function createFlowControlRuntime(options: FlowControlRuntimeOptions): Fl
 	});
 	return {
 		extensions: [
+			createCompactionControllerExtension({ ingress, enabled, onError: options.onError }),
 			tasks,
 			multiloop,
 			background,

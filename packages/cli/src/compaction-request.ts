@@ -14,6 +14,12 @@ export const PI_VCC_COMPACT_MARKER = "__pi_vcc__";
  * remains in model context so flow can verify delivery of the continuation.
  */
 export const COMPACTION_CONTINUE_CUSTOM_TYPE = "jouzu-compaction-continue";
+export const COMPACTION_CONTINUE_TEXT = "Continue the current work from the compaction summary.";
+export const COMPACTION_FLOW_EVENT = "jouzu:compaction-continuation";
+export interface CompactionFlowRequest {
+	/** A trusted flow adapter supplies the continuation while the requesting tool still owns work. */
+	resume?: () => Promise<boolean>;
+}
 
 export const COMPACTION_TOOL_NAME = "compact_context";
 
@@ -44,11 +50,13 @@ export type CompactionRequestState = "idle" | "requested" | "dispatching";
  */
 export class CompactionRequestController {
 	private state: CompactionRequestState = "idle";
+	private continuation?: CompactionFlowRequest["resume"];
 	private readonly idleWaiters = new Set<() => void>();
+	private readonly continuations = new Set<Promise<void>>();
 
 	/** Join a request already accepted by the controller before closing a headless session. */
 	waitForIdle(): Promise<void> {
-		if (this.state === "idle") return Promise.resolve();
+		if (this.state === "idle" && this.continuations.size === 0) return Promise.resolve();
 		return new Promise((resolve) => this.idleWaiters.add(resolve));
 	}
 
@@ -57,8 +65,9 @@ export class CompactionRequestController {
 	}
 
 	/** Record a request. Returns the text handed back to the model. */
-	request(): string {
+	request(continuation?: CompactionFlowRequest["resume"]): string {
 		if (this.state !== "idle") return REQUEST_ALREADY_PENDING_MESSAGE;
+		this.continuation = continuation;
 		this.state = "requested";
 		return REQUEST_ACCEPTED_MESSAGE;
 	}
@@ -75,8 +84,28 @@ export class CompactionRequestController {
 		this.state = "dispatching";
 	}
 
-	settle(): void {
+	takeContinuation(): CompactionFlowRequest["resume"] {
+		const continuation = this.continuation;
+		this.continuation = undefined;
+		return continuation;
+	}
+
+	settle(continuation?: Promise<void>): void {
+		this.continuation = undefined;
 		this.state = "idle";
+		if (continuation) {
+			this.continuations.add(continuation);
+			const finish = () => {
+				this.continuations.delete(continuation);
+				this.notifyIdle();
+			};
+			void continuation.then(finish, finish);
+		}
+		this.notifyIdle();
+	}
+
+	private notifyIdle(): void {
+		if (this.state !== "idle" || this.continuations.size > 0) return;
 		for (const resolve of this.idleWaiters) resolve();
 		this.idleWaiters.clear();
 	}
@@ -128,7 +157,9 @@ export function registerCompactionRequest(
 		promptSnippet: COMPACTION_TOOL_PROMPT_SNIPPET,
 		parameters: NO_PARAMETERS,
 		async execute() {
-			return { content: [{ type: "text", text: controller.request() }], details: undefined };
+			const request: CompactionFlowRequest = {};
+			if (controller.getState() === "idle") pi.events?.emit(COMPACTION_FLOW_EVENT, request);
+			return { content: [{ type: "text", text: controller.request(request.resume) }], details: undefined };
 		},
 	});
 
@@ -152,9 +183,12 @@ function dispatchCompaction(pi: ExtensionAPI, ctx: ExtensionContext, controller:
 		ctx.compact({
 			customInstructions: PI_VCC_COMPACT_MARKER,
 			onComplete: (result) => {
-				controller.settle();
+				const continuation = controller.takeContinuation();
 				notify(ctx, describeCompactionOutcome(result?.details), "info");
-				resumeAfterCompaction(pi);
+				const resumed = resumeAfterCompaction(pi, continuation).catch((error) => {
+					notify(ctx, `Could not continue after compaction: ${asError(error).message}`, "warning");
+				});
+				controller.settle(resumed);
 			},
 			onError: (error) => {
 				// Deliberately no resume here. Resuming after a failed compaction
@@ -183,20 +217,15 @@ function notify(ctx: ExtensionContext, message: string, level: "info" | "warning
 }
 
 /** Resume the agent after a requested compaction with an admitted instruction. */
-function resumeAfterCompaction(pi: ExtensionAPI): void {
-	try {
-		void Promise.resolve(
-			pi.sendMessage(
-				{
-					customType: COMPACTION_CONTINUE_CUSTOM_TYPE,
-					content: "Continue the current work from the compaction summary.",
-					display: false,
-					details: undefined,
-				},
-				{ triggerTurn: true, deliverAs: "followUp" },
-			),
-		).catch(() => {});
-	} catch {
-		// Resuming is best effort; the user can always continue manually.
-	}
+async function resumeAfterCompaction(pi: ExtensionAPI, continuation?: CompactionFlowRequest["resume"]): Promise<void> {
+	if (continuation && (await continuation())) return;
+	await pi.sendMessage(
+		{
+			customType: COMPACTION_CONTINUE_CUSTOM_TYPE,
+			content: COMPACTION_CONTINUE_TEXT,
+			display: false,
+			details: undefined,
+		},
+		{ triggerTurn: true, deliverAs: "followUp" },
+	);
 }

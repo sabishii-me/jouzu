@@ -3,6 +3,7 @@ import { readFile, realpath, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
+	driveMultiloopAfterOtherTurns,
 	driveMultiloopOnGateChange,
 	extensionPath,
 	notifyMultiloopLabels,
@@ -53,16 +54,23 @@ export async function applyMultiloopWaitSkill(packageRoot, checkOnly = false) {
 		const extensionDigest = sha(extension);
 		if (
 			checkOnly ||
-			![lock.extension.before, lock.extension.previousAfter, lock.extension.labelsPreviousAfter].includes(
-				extensionDigest,
-			)
+			![
+				lock.extension.before,
+				lock.extension.previousAfter,
+				lock.extension.labelsPreviousAfter,
+				lock.extension.continuationPreviousAfter,
+			].includes(extensionDigest)
 		)
 			throw new Error("Multiloop extension source hash differs.");
 		const changed =
 			extensionDigest === lock.extension.before
 				? transformMultiloopFlow(extension)
-				: notifyMultiloopLabels(
-						extensionDigest === lock.extension.previousAfter ? driveMultiloopOnGateChange(extension) : extension,
+				: driveMultiloopAfterOtherTurns(
+						extensionDigest === lock.extension.continuationPreviousAfter
+							? extension
+							: notifyMultiloopLabels(
+									extensionDigest === lock.extension.previousAfter ? driveMultiloopOnGateChange(extension) : extension,
+								),
 					);
 		if (sha(changed) !== lock.extension.after) throw new Error("Multiloop extension transform differs.");
 		writes.push([join(packageRoot, extensionPath), changed]);
