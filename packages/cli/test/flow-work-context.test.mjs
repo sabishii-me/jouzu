@@ -122,6 +122,28 @@ test("task selection returns to the retained parent, or to branch attribution", 
 	});
 });
 
+test("completing an earlier task does not overwrite a newer task selection", async (t) => {
+	const { context, attachment } = await fixture(t, { automatic: true });
+	await context.run(work, async () => {
+		await attachment.waits.changeWork("work", "lane", 1, "completed", "Done", 1);
+		const snapshot = attachment.waits.authoritySnapshot.bind(attachment.waits);
+		const reading = deferred(),
+			resume = deferred();
+		attachment.waits.authoritySnapshot = async () => {
+			const state = await snapshot();
+			reading.resolve();
+			await resume.promise;
+			return state;
+		};
+		const returning = context.returnFromToolWork();
+		await reading.promise;
+		await context.selectToolWork(otherWork, true);
+		resume.resolve();
+		await returning;
+		assert.equal(context.current().id, "other", "following jobs and waits belong to the newly selected task");
+	});
+});
+
 test("returning from a completed task refuses to cross a branch change", async (t) => {
 	const f = await fixture(t);
 	const replacement = await fixture(t);

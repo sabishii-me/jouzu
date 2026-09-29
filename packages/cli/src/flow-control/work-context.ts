@@ -129,6 +129,9 @@ export class FlowWorkContext {
 		const authority = await attachment.waits.authoritySnapshot();
 		if (this.attachment() !== attachment)
 			throw new FlowLedgerError("stale", "Task selection changed before returning from completed work.");
+		// Another task operation may have selected newer attribution during the read.
+		// Keep that selection rather than sending its jobs and waits back to an older task.
+		if (this.selected !== selected) return false;
 		const completed = authority.work.find((item) => item.id === selected.id);
 		if (completed?.lifecycle?.state !== "completed") return false;
 		const parent = this.returnWork.pop();

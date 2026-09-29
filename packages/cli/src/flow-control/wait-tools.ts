@@ -230,10 +230,11 @@ export function createFlowWaitExtension(options: FlowWaitToolOptions): InlineExt
 	};
 	async function access(attachment: PiFlowAttachment, work: string | undefined, signal?: AbortSignal) {
 		const snapshot = await attachment.waits.authoritySnapshot();
-		const live = (item: { lifecycle?: { state: string } }) => (item.lifecycle?.state ?? "active") === "active";
+		const unfinished = (item: { lifecycle?: { state: string } }) =>
+			!["stopped", "completed"].includes(item.lifecycle?.state ?? "active");
 		const retained =
-			snapshot.work.find((item) => item.id === work && live(item)) ??
-			snapshot.work.find((item) => item.id === options.currentWork?.()?.id && live(item));
+			snapshot.work.find((item) => item.id === work && unfinished(item)) ??
+			snapshot.work.find((item) => item.id === options.currentWork?.()?.id && unfinished(item));
 		const attribution = retained
 			? { id: retained.id, actor: retained.owner, revision: retained.revision }
 			: await retainAutomaticWork(attachment);

@@ -451,14 +451,12 @@ export class FlowWaitStore {
 		// every field. Tolerating a token that names no live wait keeps the invariant that a live wait
 		// is never replaced without its exact token, and declares the wait the caller asked for.
 		const matched = state.waits.find((wait) => wait.token === replaceToken);
-		if (replaceToken !== undefined && !active && matched)
+		if (replaceToken !== undefined && !active && matched && matched.state !== "waiting")
 			throw new FlowLedgerError(
 				"stale",
-				matched.workId !== next.workId
-					? `That token belongs to another work's ${matched.state} wait. To wait for the current work, omit replaceToken or pass null or 'none'.`
-					: "That token belongs to a finished wait. To declare a new wait, omit replaceToken or pass null or 'none'; do not reuse the finished token.",
+				"That token belongs to a finished wait. To declare a new wait, omit replaceToken or pass null or 'none'; do not reuse the finished token.",
 			);
-		if (replaceToken !== undefined && !active && !tolerateUnmatchedToken)
+		if (replaceToken !== undefined && !active && !matched && !tolerateUnmatchedToken)
 			throw new FlowLedgerError(
 				"stale",
 				"Wait replacement requires an active wait. Omit replaceToken for a new wait; to replace a live wait, copy its returned token. Do not supply a placeholder.",
@@ -468,7 +466,10 @@ export class FlowWaitStore {
 				"transition",
 				`Work already has a live wait. Its token is ${active.token}: keep that wait, or copy that token into replaceToken to change it; do not redeclare it to check status.`,
 			);
-		if (active) state.waits[state.waits.indexOf(active)] = cancelFlowWait(active, "Replaced by a new wait.", now);
+		// The exact token selects the wait to replace even if task attribution changed.
+		// A different live wait on the destination work was already rejected above.
+		const replaced = active ?? matched;
+		if (replaced) state.waits[state.waits.indexOf(replaced)] = cancelFlowWait(replaced, "Replaced by a new wait.", now);
 		state.waits.push(next);
 		return next;
 	}
@@ -710,7 +711,8 @@ export class FlowWaitStore {
 			assertActive?.();
 			const authority = state.authority ?? emptyWaitAuthority();
 			const requested = requireAttributedWork(authority, captured.workId);
-			if ((requested.lifecycle?.state ?? "active") !== "active") {
+			// Paused work retains its wait so resumption and stop controls still name it.
+			if (["stopped", "completed"].includes(requested.lifecycle?.state ?? "active")) {
 				const fallback = authority.work.find((work) => work.id === automaticWorkId(this.ownership.scope));
 				if (fallback) captured.workId = fallback.id;
 			}

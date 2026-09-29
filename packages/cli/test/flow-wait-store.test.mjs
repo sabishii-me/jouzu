@@ -830,7 +830,7 @@ test("work waits resolve exact executions without ancestry restrictions across r
 	);
 });
 
-test("a live token from another work is described accurately without changing it", async (t) => {
+test("an exact live token replaces a wait across attribution changes", async (t) => {
 	const f = await fixture(t);
 	const original = await f.attachment.waits.declare(
 		request("other-token", "other-work"),
@@ -838,9 +838,21 @@ test("a live token from another work is described accurately without changing it
 		0,
 		100,
 	);
+	const replacement = await f.attachment.waits.declare(request(), observations(), 1, 100, "other-token");
+	const waits = await f.attachment.waits.snapshot();
+	assert.equal(waits.find((wait) => wait.token === original.token).state, "cancelled");
+	assert.equal(waits.find((wait) => wait.token === replacement.token).state, "waiting");
+	assert.equal(waits.filter((wait) => wait.state === "waiting").length, 1);
+});
+
+test("cross-attribution replacement cannot displace a second live destination wait", async (t) => {
+	const f = await fixture(t);
+	await f.attachment.waits.declare(request("other-token", "other-work"), observations("pending", "other-work"), 0, 100);
+	await f.attachment.waits.declare(request(), observations(), 0, 100);
+	const before = await f.attachment.waits.snapshot();
 	await assert.rejects(
-		f.attachment.waits.declare(request(), observations(), 1, 100, "other-token"),
-		/another work's waiting wait/,
+		f.attachment.waits.declare(request("replacement"), observations(), 1, 100, "other-token"),
+		/Wait replacement requires the active token/,
 	);
-	assert.deepEqual(await f.attachment.waits.snapshot(), [original]);
+	assert.deepEqual(await f.attachment.waits.snapshot(), before);
 });

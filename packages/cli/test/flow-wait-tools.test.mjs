@@ -209,6 +209,42 @@ test("a wait without invocation attribution uses session attribution", async (t)
 	);
 });
 
+for (const timing of ["before", "during"])
+	test(`a wait declared ${timing} a pause retains task cancellation and replacement`, async (t) => {
+		const f = await fixture(t);
+		const { retainAutomaticWork } = await import("../dist/flow-control/automatic-work.js");
+		await retainAutomaticWork(f.attachment);
+		if (timing === "before") await f.attachment.waits.changeWork("work", "lane", 2, "paused", "Pause", f.now);
+		else {
+			const declare = f.attachment.waits.declareOwned.bind(f.attachment.waits);
+			f.attachment.waits.declareOwned = async (...args) => {
+				f.attachment.waits.declareOwned = declare;
+				await f.attachment.waits.changeWork("work", "lane", 2, "paused", "Pause", f.now);
+				return declare(...args);
+			};
+		}
+		const first = await f.call("agent_wait", request());
+		assert.equal(first.details.work, "work");
+		assert.deepEqual(f.attachment.waits.gate().waitingWorkIds, ["work"]);
+		await f.attachment.waits.changeWork("work", "lane", 3, "active", "Resume", f.now);
+		await assert.rejects(f.call("agent_wait", request()), /already has a live wait/);
+		await f.call("agent_wait", { ...request(), replaceToken: first.details.token });
+		assert.equal((await f.attachment.waits.snapshot()).filter((wait) => wait.state === "waiting").length, 1);
+		await f.attachment.waits.changeWork("work", "lane", 4, "stopped", "Stop", f.now);
+		assert.ok((await f.attachment.waits.snapshot()).every((wait) => wait.state === "cancelled"));
+	});
+
+test("a copied live replacement token works after task attribution changes", async (t) => {
+	const f = await fixture(t);
+	const first = await f.call("agent_wait", request());
+	await f.attachment.waits.registerWork("next-task", "tasks", f.now);
+	const second = await f.call("agent_wait", { ...request(), work: "next-task", replaceToken: first.details.token });
+	assert.equal(second.details.work, "next-task");
+	const waits = await f.attachment.waits.snapshot();
+	assert.equal(waits.find((wait) => wait.token === first.details.token).state, "cancelled");
+	assert.equal(waits.filter((wait) => wait.state === "waiting").length, 1);
+});
+
 test("task completion during wait setup falls back to session attribution", async (t) => {
 	const f = await fixture(t);
 	const { retainAutomaticWork } = await import("../dist/flow-control/automatic-work.js");

@@ -497,7 +497,10 @@ test("a task continuation can complete one task and start the next in the same t
 	const tasks = authority.work.filter((work) => work.owner === "tasks");
 	assert.equal(backgroundSpawns(f).length, 1);
 	const jobWork = backgroundSpawns(f)[0].details.task.flow.work.id;
-	assert.ok(tasks.some((task) => task.id === jobWork), "the job's task attribution remains retained");
+	assert.ok(
+		tasks.some((task) => task.id === jobWork),
+		"the job's task attribution remains retained",
+	);
 	const attempt = (await f.ingress.branch().attachment.ledger.snapshot()).attempts.find(
 		(item) => item.admission?.choice.intent.producer === "tasks",
 	);
