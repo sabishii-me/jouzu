@@ -138,7 +138,9 @@ export function projectFlowStatus(
 	// Work with source submissions is one user turn's identity, not a campaign a user would pause,
 	// and a session accumulates one per turn. Only registered producer work is offered as a target.
 	const active = work.flatMap((record) =>
-		(record.lifecycle?.state ?? "active") === "active" && record.userInputs === undefined
+		(record.lifecycle?.state ?? "active") === "active" &&
+		record.userInputs === undefined &&
+		record.owner !== "host-automatic"
 			? [
 					{
 						id: record.id,

@@ -48,7 +48,9 @@ test("a shared root does not leak waits or work between assemblies", async (t) =
 	const firstAuthority = await first.ingress.branch().attachment.waits.authoritySnapshot();
 	const secondAuthority = await second.ingress.branch().attachment.waits.authoritySnapshot();
 	assert.ok(firstAuthority.work.length > 0, "the first assembly registered user work");
-	assert.deepEqual(secondAuthority.work, [], "the second assembly sees none of it");
+	assert.equal(secondAuthority.work.length, 1, "the second assembly has only its own session attribution");
+	assert.equal(secondAuthority.work[0].owner, "host-automatic");
+	assert.ok(!firstAuthority.work.some((work) => work.id === secondAuthority.work[0].id));
 	assert.deepEqual(await second.ingress.branch().attachment.submissions.snapshot(), []);
 });
 

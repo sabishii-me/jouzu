@@ -310,7 +310,7 @@ test("a legacy lane record with an unpaused hold still reports waiting work afte
 });
 
 for (const variant of ["valid", "unshared", "stale", "paused", "foreign"])
-	test(`derived producer work requires an authorized origin: ${variant}`, async (t) => {
+	test(`derived producer work attributes its origin: ${variant}`, async (t) => {
 		const f = await fixture(t);
 		let parent = await f.store.registerWork("origin", "host-user", 1, [{ id: "input", revision: 1 }]);
 		if (variant !== "unshared") parent = await f.store.shareWork(parent.id, parent.owner, parent.revision, "tasks", 2);
@@ -322,14 +322,15 @@ for (const variant of ["valid", "unshared", "stale", "paused", "foreign"])
 			revision: variant === "stale" ? 1 : parent.revision,
 		};
 		const derive = () => f.store.deriveWorkBinding(binding, "task-revision", origin, 4, ["bg"]);
-		if (variant !== "valid") {
+		// Origin metadata must reference a record, but is not a permission to create another task.
+		if (variant === "foreign") {
 			await assert.rejects(derive());
 			assert.equal(f.store.boundWork(binding), undefined);
 			return;
 		}
 		const work = await derive();
 		origin.id = "mutated";
-		assert.deepEqual(work.origin, { id: parent.id, revision: parent.revision });
+		assert.deepEqual(work.origin, { id: parent.id, revision: origin.revision });
 		assert.deepEqual(work.participants, ["tasks", "bg"]);
 		await f.reopen();
 		assert.deepEqual(f.store.boundWork(binding), work);

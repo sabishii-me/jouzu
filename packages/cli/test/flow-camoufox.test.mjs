@@ -21,11 +21,10 @@ for (const [label, calls, outcome] of [
 		let active = 0;
 		let peak = 0;
 		const started = [],
-			authorities = [],
 			workIds = [];
 		const entered = deferred();
 		const escaped = deferred();
-		const staleChecks = [];
+		const availability = [];
 		async function execute(id, _args, signal) {
 			active++;
 			peak = Math.max(peak, active);
@@ -34,9 +33,10 @@ for (const [label, calls, outcome] of [
 			const work = context.current();
 			assert.ok(work?.id, "each tool receives the native turn's work scope");
 			workIds.push(work.id);
-			const authority = context.authorize(work.id);
-			authorities.push(authority);
-			staleChecks.push(escaped.promise.then(() => assert.throws(() => context.current(), { code: "stale" })));
+			// Attribution survives the turn: tools keep a usable branch identity rather than refusing.
+			availability.push(
+				escaped.promise.then(() => assert.ok(context.current()?.id, "tools retain attribution after the turn")),
+			);
 			try {
 				entered.resolve();
 				if (outcome === "abort" && id === "call-0") {
@@ -47,7 +47,6 @@ for (const [label, calls, outcome] of [
 					throw new Error("fixture browser cancelled");
 				}
 				await new Promise((resolve) => setImmediate(resolve));
-				authority.assertActive();
 				if (outcome === "failure" && id === "call-0") throw new Error("fixture browser failure");
 				return { content: [{ type: "text", text: id }], details: {} };
 			} finally {
@@ -94,9 +93,8 @@ for (const [label, calls, outcome] of [
 		assert.equal(peak, calls.every((call) => call.name === "probe") ? 2 : 1);
 		assert.deepEqual(started, outcome === "abort" ? ["call-0"] : calls.map((_call, i) => `call-${i}`));
 		assert.equal(new Set(workIds).size, 1);
-		for (const authority of authorities) assert.throws(() => authority.assertActive(), { code: "stale" });
 		escaped.resolve();
-		await Promise.all(staleChecks);
+		await Promise.all(availability);
 		const firstResult = f.session.agent.state.messages.find(
 			(m) => m.role === "toolResult" && m.toolCallId === "call-0",
 		);

@@ -39,19 +39,9 @@ async function fixture(t, snapshot, healthPolicies) {
 		errors = [];
 	const extension = createFlowWaitExtension({
 		attachment: () => attachment,
-		currentWork: () => ({ id: "work", revision }),
+		currentWork: () => (active ? { id: "work", revision } : undefined),
 		maxDurationMs: 5000,
 		now: () => clock,
-		authorize(work) {
-			if (work !== "work") throw new Error("unauthorized work");
-			return {
-				actor: "lane",
-				revision,
-				assertActive() {
-					if (!active) throw new Error("invocation retired");
-				},
-			};
-		},
 	});
 	const { session, requests } = await createFlowSession(t, {
 		persist: true,
@@ -206,23 +196,46 @@ test("wait registration exposes nullable optional fields before provider convers
 	assert.deepEqual((await f.attachment.waits.snapshot())[0].on, [handle]);
 });
 
-test("foreign work and placeholder IDs explain recovery without installing a wait", async (t) => {
+test("a wait without invocation attribution uses session attribution", async (t) => {
+	const f = await fixture(t);
+	f.retire();
+	const { work: _work, ...args } = request();
+	const result = await f.preparedCall(args);
+	assert.equal(result.details.state, "waiting");
+	assert.match(result.details.work, /^automatic:/);
+	assert.equal(
+		(await f.call("agent_wait_cancel", { token: result.details.token, reason: "Done" })).details.state,
+		"cancelled",
+	);
+});
+
+test("task completion during wait setup falls back to session attribution", async (t) => {
+	const f = await fixture(t);
+	const { retainAutomaticWork } = await import("../dist/flow-control/automatic-work.js");
+	await retainAutomaticWork(f.attachment);
+	const declare = f.attachment.waits.declareOwned.bind(f.attachment.waits);
+	f.attachment.waits.declareOwned = async (...args) => {
+		await f.attachment.waits.changeWork("work", "lane", 2, "completed", "Finished", f.now);
+		return declare(...args);
+	};
+	const result = (await f.preparedCall(request())).details;
+	assert.equal(result.state, "waiting");
+	assert.match(result.work, /^automatic:/);
+});
+
+test("unknown work labels do not block waiting on an exact execution", async (t) => {
 	const f = await fixture(t);
 	for (const work of ["child-run-id", "none", "current", "/", "/current", "foreign"]) {
-		await assert.rejects(f.preparedCall({ ...request(), work }), {
-			code: "identity",
-			message: /agent_wait\.work.*Omit work or pass null.*Do not use a child\/job ID/,
-		});
+		const result = (await f.preparedCall({ ...request(), work })).details;
+		assert.equal(result.state, "waiting");
+		assert.equal(result.work, "work");
+		await f.call("agent_wait_cancel", { token: result.token, reason: "Next attribution case" });
 	}
-	assert.deepEqual(await f.attachment.waits.snapshot(), []);
-	assert.equal(f.listeners.size, 0);
-	assert.equal((await f.preparedCall({ ...request(), work: null })).details.state, "waiting");
 });
 
 test("invented dependency metadata names the field to correct without parking a wait", async (t) => {
 	const f = await fixture(t);
 	for (const [metadata, message] of [
-		[{ work: { id: "child-run-id", revision: 1 } }, /Omit on\[\]\.work or pass null unless the producer returned it/],
 		[
 			{ scope: { sessionId: "invented", branchId: "invented" } },
 			/Omit on\[\]\.scope or pass null unless the producer returned it/,
@@ -237,6 +250,12 @@ test("invented dependency metadata names the field to correct without parking a 
 		assert.equal(f.listeners.size, 0);
 	}
 	assert.equal((await f.preparedCall(request())).details.state, "waiting");
+});
+
+test("dependency work hints do not restrict an exact execution", async (t) => {
+	const f = await fixture(t);
+	const result = await f.preparedCall({ ...request(), on: [{ ...handle, work: { id: "unrelated", revision: 99 } }] });
+	assert.equal(result.details.state, "waiting");
 });
 
 test("wait tool subscribes exact executions, caps expiry, rejects accidental renewal, and cancels only its gate", async (t) => {
@@ -460,31 +479,28 @@ test("required wait fields stay required and unknown fields fail before a wait i
 	assert.deepEqual(await f.attachment.waits.snapshot(), []);
 });
 
-test("wait tool rejects unsupported health, malformed dependencies, and foreign ownership without creating waits", async (t) => {
+test("wait tool rejects unsupported health and malformed dependencies without creating waits", async (t) => {
 	const f = await fixture(t);
 	for (const args of [
 		{ ...request(), checkAfter: "8h" },
 		{ ...request(), on: [{ ...handle, health: "heartbeat" }] },
 		{ ...request(), on: [] },
 		{ ...request(), on: [handle, handle] },
-		{ ...request(), work: "foreign" },
 		{ ...request(), deadline: "0s" },
 		{ ...request(), deadline: "999999999999999999999h" },
 		{ ...request(), on: [{ ...handle, handle: "unknown" }] },
 		{ ...request(), mode: "none" },
-		{ ...request(), on: [{ ...handle, work: { id: "foreign", revision: 1 } }] },
 		{ ...request(), on: [{ ...handle, work: { id: "work", revision: 0 } }] },
 		{ ...request(), on: [{ ...handle, scope: { sessionId: "foreign", branchId: "branch" } }] },
 	])
 		await assert.rejects(f.call("agent_wait", args));
-	f.revision = 1;
-	await assert.rejects(f.call("agent_wait", request()), { code: "stale" });
 	assert.deepEqual(await f.attachment.waits.snapshot(), []);
-	assert.equal(f.listeners.size, 0);
+	f.revision = 1;
+	assert.equal((await f.call("agent_wait", request())).details.state, "waiting");
 });
 
 for (const abort of [false, true])
-	test(`late wait invocation cannot register after ${abort ? "abort" : "work context retirement"}`, async (t) => {
+	test(`wait registration ${abort ? "honors abort" : "survives attribution retirement"}`, async (t) => {
 		const entered = deferred(),
 			proceed = deferred();
 		const f = await fixture(t, async () => {
@@ -497,19 +513,22 @@ for (const abort of [false, true])
 		if (abort) signal.abort();
 		else f.retire();
 		proceed.resolve();
-		await assert.rejects(declaring);
-		assert.deepEqual(await f.attachment.waits.snapshot(), []);
+		if (abort) {
+			await assert.rejects(declaring);
+			assert.deepEqual(await f.attachment.waits.snapshot(), []);
+		} else {
+			assert.equal((await declaring).details.state, "waiting");
+		}
 	});
 
-test("authorization is rechecked inside the serialized declaration and cancellation mutation", async (t) => {
+test("attribution retirement does not block declaration or cancellation", async (t) => {
 	const f = await fixture(t);
 	const original = f.attachment.waits.declareOwned.bind(f.attachment.waits);
 	f.attachment.waits.declareOwned = (...args) => {
 		f.retire();
 		return original(...args);
 	};
-	await assert.rejects(f.call("agent_wait", request()), /retired/);
-	assert.deepEqual(await f.attachment.waits.snapshot(), []);
+	assert.equal((await f.call("agent_wait", request())).details.state, "waiting");
 	const second = await fixture(t);
 	const wait = (await second.call("agent_wait", request())).details;
 	const cancel = second.attachment.waits.cancelOwned.bind(second.attachment.waits);
@@ -517,8 +536,11 @@ test("authorization is rechecked inside the serialized declaration and cancellat
 		second.retire();
 		return cancel(...args);
 	};
-	await assert.rejects(second.call("agent_wait_cancel", { token: wait.token, reason: "cancel" }), /retired/);
-	assert.equal((await second.attachment.waits.snapshot())[0].state, "waiting");
+	assert.equal(
+		(await second.call("agent_wait_cancel", { token: wait.token, reason: "cancel" })).details.state,
+		"cancelled",
+	);
+	assert.equal((await second.attachment.waits.snapshot())[0].state, "cancelled");
 });
 
 test("active wait tools add session guidance and a simulated model invokes the registered tool", async (t) => {

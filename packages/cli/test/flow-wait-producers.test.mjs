@@ -288,7 +288,7 @@ test("buffered stale pending events are compatible but contradictory terminal ev
 	}
 });
 
-test("ownership changes during snapshot prevent binding stale work", async (t) => {
+test("stopping work during snapshot still records its already started execution", async (t) => {
 	const f = await fixture(t),
 		entered = deferred(),
 		proceed = deferred();
@@ -301,9 +301,11 @@ test("ownership changes during snapshot prevent binding stale work", async (t) =
 	await entered.promise;
 	await f.attachment.waits.changeWork("work", "lane", 2, "stopped", "user stop", Date.now());
 	proceed.resolve();
-	await assert.rejects(starting, { code: "stale" });
-	assert.equal(producer.listeners, 0);
-	assert.deepEqual((await f.attachment.waits.authoritySnapshot()).executions, []);
+	await starting;
+	assert.equal(producer.listeners, 1);
+	const authority = await f.attachment.waits.authoritySnapshot();
+	assert.equal(authority.executions.length, 1);
+	assert.equal(authority.work.find((work) => work.id === "work").lifecycle.state, "stopped");
 });
 
 test("active notification floods report a bounded queue failure without unhandled rejections", async (t) => {

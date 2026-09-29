@@ -1,4 +1,5 @@
 import type { InlineExtension } from "@earendil-works/pi-coding-agent";
+import { retainAutomaticWork } from "./automatic-work.js";
 import type { PiSessionFlowIngress } from "./pi-session-ingress.js";
 import { type FlowAttempt, FlowLedgerError } from "./receipt-ledger.js";
 import { installTaskContextGuard } from "./task-context-guard.js";
@@ -115,8 +116,7 @@ export function createTaskControllerExtension(options: {
 							invoke: () => Promise<T>,
 						): Promise<T> {
 							assertActive();
-							const origin = branch.workContext.current();
-							const originCheck = origin && branch.workContext.authorize(origin.id);
+							const origin = branch.workContext.current() ?? (await retainAutomaticWork(branch.attachment));
 							const before = next.inventory();
 							let result: T;
 							try {
@@ -127,7 +127,6 @@ export function createTaskControllerExtension(options: {
 								changed();
 								throw error;
 							}
-							originCheck?.assertActive();
 							assertActive();
 							const after = next.inventory();
 							const selected =
@@ -141,12 +140,9 @@ export function createTaskControllerExtension(options: {
 									(["TaskCreate", "TaskCreateMany"].includes(name) && !before.some((old) => old.key === task.key)) ||
 									selected.includes(task.taskId),
 							);
-							if (targets.some((task) => !branch.attachment.waits.boundWork(taskWorkBinding(task.key))) && !origin)
-								throw new FlowLedgerError("identity", "Starting task work requires an authorized invocation.");
 							for (const task of targets) {
 								if (task.state === "completed") continue;
 								if (!branch.attachment.waits.boundWork(taskWorkBinding(task.key))) {
-									if (!origin) throw new FlowLedgerError("identity", "Task origin is unavailable.");
 									await branch.attachment.waits.deriveWorkBinding(
 										taskWorkBinding(task.key),
 										task.revision,
@@ -161,11 +157,6 @@ export function createTaskControllerExtension(options: {
 							const target = selected.length === 1 ? after.find((task) => task.taskId === selected[0]) : undefined;
 							const work = target && branch.attachment.waits.boundWork(taskWorkBinding(target.key));
 							if (origin && work && target?.state === "active") {
-								const source = (await branch.attachment.waits.authoritySnapshot()).work.find(
-									(item) => item.id === origin.id,
-								);
-								if (source?.owner !== "host-user" && origin.id !== work.id && origin.id !== work.origin?.id)
-									throw new FlowLedgerError("identity", "Task selection belongs to another work invocation.");
 								await branch.workContext.selectToolWork({ id: work.id, actor: "tasks", revision: work.revision }, true);
 							} else if (origin) {
 								// Refresh this task's revision for following tools after its own metadata changes.

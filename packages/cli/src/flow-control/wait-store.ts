@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { BACKGROUND_CONTEXT, type Session, type SessionReader, setValue, value } from "@earendil-works/pi-agent-core";
+import { automaticWorkId } from "./automatic-work.js";
 import type { FlowOwnership } from "./ownership.js";
 import { FlowLedgerError, type FlowScope } from "./receipt-ledger.js";
 import { MAX_RETIRED_FLOW_IDENTITIES, retiredIdentityHash, validRetiredIdentityHash } from "./retired-identities.js";
 import {
 	authorityObservations,
-	canObserveExecution,
 	captureWorkBinding,
 	changeAuthorityWork,
 	emptyWaitAuthority,
@@ -20,7 +20,7 @@ import {
 	observeAuthorityExecution,
 	registerAuthorityExecution,
 	registerAuthorityWork,
-	requireAuthorityWork,
+	requireAttributedWork,
 	requireOpenAuthorityWork,
 	shareAuthorityWork,
 	validateWaitAuthority,
@@ -181,19 +181,21 @@ export class FlowWaitStore {
 			updating: !this.initialized || this.mutations > 0,
 		};
 	}
-	/** Capture ownership synchronously immediately before a producer starts an execution. */
-	captureExecutionWork(id: string, revision: number, producer: string): { id: string; revision: number } {
+	/**
+	 * Capture the work a producer will attribute its execution to. Attribution fields are evidence,
+	 * not permission: an unknown, stale, or inactive hint falls back to the branch's registered
+	 * default work so a live producer can still start. Never invents an unregistered identity.
+	 */
+	captureExecutionWork(id?: string, _revision?: number, _producer?: string): { id: string; revision: number } {
 		this.ownership.assertActive();
-		if (!this.initialized || this.mutations > 0) throw new FlowLedgerError("busy", "Work ownership is changing.");
-		const work = requireAuthorityWork(
-			{ version: 1, work: this.work, executions: [], waitTokens: [] },
-			id,
-			producer,
-			revision,
-		);
-		if ((work.lifecycle?.state ?? "active") !== "active")
-			throw new FlowLedgerError("transition", "Inactive work cannot start another execution.");
-		return { id: work.id, revision: work.revision };
+		if (!this.initialized) throw new FlowLedgerError("busy", "Work attribution is not initialized.");
+		const active = (work: FlowAuthorityWork) => (work.lifecycle?.state ?? "active") === "active";
+		const requested = id === undefined ? undefined : this.work.find((work) => work.id === id);
+		if (requested && active(requested)) return { id: requested.id, revision: requested.revision };
+		const fallback = this.work.find((work) => work.id === automaticWorkId(this.ownership.scope));
+		if (fallback && active(fallback)) return { id: fallback.id, revision: fallback.revision };
+		if (requested) throw new FlowLedgerError("transition", "Inactive work cannot start another execution.");
+		throw new FlowLedgerError("identity", "Work identity is not registered.");
 	}
 	private deadlines?: FlowWaitDeadlines;
 	private schedulingClosed = false;
@@ -544,9 +546,8 @@ export class FlowWaitStore {
 			parent = { id: origin.id, revision: origin.revision },
 			shared = [...participants];
 		return this.authorityChange(now, (authority) => {
-			const source = requireAuthorityWork(authority, parent.id, captured.producer, parent.revision);
-			if ((source.lifecycle?.state ?? "active") !== "active")
-				throw new FlowLedgerError("stale", "Task origin is no longer active.");
+			requireAttributedWork(authority, parent.id);
+
 			const existing = findLiveBoundWork(authority, captured);
 			if (existing) return existing;
 			const work = registerAuthorityWork(
@@ -605,7 +606,7 @@ export class FlowWaitStore {
 		const captured = structuredClone(input);
 		return this.authorityChange(now, async (authority, state, reader) => {
 			await this.requireUnretiredExecution(state, captured, reader);
-			requireAuthorityWork(authority, captured.workId, captured.producer, workRevision);
+			requireAttributedWork(authority, captured.workId);
 			const existing = authority.executions.find(
 				(execution) => execution.producer === captured.producer && execution.execution === captured.execution,
 			);
@@ -681,14 +682,7 @@ export class FlowWaitStore {
 			const execution = state.authority.executions.find(
 				(item) => item.producer === handle.producer && item.execution === handle.execution,
 			);
-			if (
-				index < 0 ||
-				!handle.health ||
-				!execution ||
-				!canObserveExecution(state.authority, wait.workId, execution.workId) ||
-				!isDeepStrictEqual(execution, captured.expected)
-			)
-				return false;
+			if (index < 0 || !handle.health || !execution || !isDeepStrictEqual(execution, captured.expected)) return false;
 			const observations = ownedWaitObservations(state.authority, wait);
 			if (observations[index].state !== "pending") return false;
 			observations[index].state = verdict;
@@ -698,8 +692,8 @@ export class FlowWaitStore {
 	}
 
 	declareOwned(
-		producer: string,
-		workRevision: number,
+		_producer: string,
+		_workRevision: number,
 		request: Declaration,
 		now: number,
 		maxDurationMs: number,
@@ -715,7 +709,12 @@ export class FlowWaitStore {
 		return this.update(async (state, reader) => {
 			assertActive?.();
 			const authority = state.authority ?? emptyWaitAuthority();
-			requireOpenAuthorityWork(requireAuthorityWork(authority, captured.workId, producer, workRevision));
+			const requested = requireAttributedWork(authority, captured.workId);
+			if ((requested.lifecycle?.state ?? "active") !== "active") {
+				const fallback = authority.work.find((work) => work.id === automaticWorkId(this.ownership.scope));
+				if (fallback) captured.workId = fallback.id;
+			}
+			requireOpenAuthorityWork(requireAttributedWork(authority, captured.workId));
 			if (
 				replaceToken !== undefined &&
 				(state.retired?.waits.includes(retiredIdentityHash(replaceToken)) ||
@@ -748,8 +747,8 @@ export class FlowWaitStore {
 		}, assertActive);
 	}
 	cancelOwned(
-		producer: string,
-		workRevision: number,
+		_producer: string,
+		_workRevision: number,
 		token: string,
 		reason: string,
 		now: number,
@@ -762,7 +761,7 @@ export class FlowWaitStore {
 			const authority = state.authority ?? emptyWaitAuthority();
 			const index = state.waits.findIndex((wait) => wait.token === token && authority.waitTokens.includes(token));
 			if (index < 0) throw new FlowLedgerError("identity", "Owned wait token is not registered.");
-			requireAuthorityWork(authority, state.waits[index].workId, producer, workRevision);
+			requireAttributedWork(authority, state.waits[index].workId);
 			state.waits[index] = cancelFlowWait(state.waits[index], reason, now);
 			this.recordToolResponse(state, state.waits[index], response);
 			return state.waits[index];

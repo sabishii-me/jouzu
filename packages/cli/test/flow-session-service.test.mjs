@@ -6,6 +6,7 @@ import { test } from "node:test";
 import { getCurrentSystemPrompt } from "@earendil-works/pi-ai";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { createFlowSession, deferred } from "../../../scripts/fixtures/pi-flow-session.mjs";
+import { automaticWorkId } from "../dist/flow-control/automatic-work.js";
 import { FlowModelInput } from "../dist/flow-control/model-input.js";
 import { PiFlowSessionService } from "../dist/flow-control/pi-session-service.js";
 import { legacyPathDigest, pathDigest } from "../dist/path-digest.js";
@@ -729,7 +730,14 @@ test("repeated unsummarized rewinds exclude work declared after the selected ent
 	for (let visit = 0; visit < 3; visit++) {
 		await f.session.navigateTree(early);
 		assert.notEqual(f.service.branch().scope.branchId, original.scope.branchId);
-		assert.deepEqual((await f.service.branch().attachment.waits.authoritySnapshot()).work, []);
+		// The branch registers its own host identity at attachment; nothing declared after the
+		// selected entry leaks into the rewound branch.
+		const scope = f.service.branch().scope;
+		const work = (await f.service.branch().attachment.waits.authoritySnapshot()).work;
+		assert.deepEqual(
+			work.map((item) => item.id),
+			[automaticWorkId(scope)],
+		);
 	}
 });
 
@@ -860,7 +868,7 @@ test("reopening reconciles retained executions before exposing the branch and ho
 
 for (const ownership of ["owned", "foreign", "unclassified"])
 	test(`session controller binds ${ownership} selected work through native execution`, async (t) => {
-		let branch, observed, authority;
+		let branch, observed;
 		const f = await fixture(t, {
 			host: {
 				maxPayloadBytes: 100000,
@@ -868,7 +876,6 @@ for (const ownership of ["owned", "foreign", "unclassified"])
 			},
 			onRequest() {
 				observed = branch.workContext.current();
-				if (observed) authority = branch.workContext.authorize(observed.id);
 			},
 		});
 		branch = f.service.branch();
@@ -900,23 +907,20 @@ for (const ownership of ["owned", "foreign", "unclassified"])
 				return { id: "instruction", revision: "1", kind: "work", text: "Perform the selected work" };
 			},
 		});
-		if (ownership === "foreign") {
-			await assert.rejects(branch.controller.wake(), { code: "identity" });
-			assert.equal(f.requests.length, 0);
-		} else {
-			await branch.controller.wake();
-			assert.equal(f.requests.length, 1);
-			assert.deepEqual(observed, ownership === "owned" ? { id: "selected-work", revision: 1 } : undefined);
-		}
-		assert.equal(branch.workContext.current(), undefined);
-		if (authority) assert.throws(() => authority.assertActive(), { code: "stale" });
+		await branch.controller.wake();
+		assert.equal(f.requests.length, 1);
+		// A registered work is attributed by identity alone; an unregistered one falls back to the branch host.
+		assert.equal(observed?.id, ownership === "unclassified" ? automaticWorkId(branch.scope) : "selected-work");
+		if (ownership !== "unclassified") assert.equal(observed.revision, 1);
+		// Tools stay usable after the turn on the branch host identity.
+		assert.equal(branch.workContext.current()?.id, automaticWorkId(branch.scope));
 	});
 
 for (const lane of ["steer", "followUp"])
-	test(`consumed ${lane} input revokes selected work authority during the same native run`, async (t) => {
+	test(`consumed ${lane} input reattributes tools to the branch host during the same native run`, async (t) => {
 		let branch,
-			calls = 0,
-			authority;
+			calls = 0;
+		const observed = [];
 		const f = await fixture(t, {
 			retainInputs: true,
 			host: {
@@ -925,13 +929,10 @@ for (const lane of ["steer", "followUp"])
 			},
 			async onRequest() {
 				calls++;
+				observed.push(branch.workContext.current()?.id);
 				if (calls === 1) {
-					authority = branch.workContext.authorize("selected-work");
 					await f.session.prompt("New user instructions", { streamingBehavior: lane });
-					authority.assertActive();
-				} else {
-					assert.throws(() => authority.assertActive(), { code: "stale" });
-					assert.throws(() => branch.workContext.current(), { code: "stale" });
+					observed.push(branch.workContext.current()?.id);
 				}
 			},
 		});
@@ -962,5 +963,8 @@ for (const lane of ["steer", "followUp"])
 		await branch.controller.wake();
 		assert.equal(calls, 2);
 		assert.equal(f.requests.length, 2);
-		assert.throws(() => authority.assertActive(), { code: "stale" });
+		// The consumed input ends the selected work; the turn keeps a usable attribution.
+		assert.equal(observed[0], "selected-work");
+		assert.ok(observed.at(-1), "tools keep an attribution after consumption");
+		assert.notEqual(observed.at(-1), "selected-work", "the consumed work is no longer selected");
 	});

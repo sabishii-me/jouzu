@@ -27,7 +27,6 @@ for (const recovery of ["threshold", "overflow", "retry"])
 									const branch = f.ingress.branch();
 									const work = branch.workContext.current();
 									assert.ok(work, "every authorized recovery tool must have owning work");
-									branch.workContext.authorize(work.id).assertActive();
 									assert.deepEqual(branch.attachment.waits.captureExecutionWork(work.id, work.revision, "bg"), work);
 									identities.push(work);
 									return {

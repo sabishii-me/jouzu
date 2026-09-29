@@ -524,7 +524,7 @@ for (const interactive of [false, true])
 		assert.deepEqual(next.errors, []);
 	});
 
-test("an unadapted extension turn cannot borrow preceding user authority to create task work", {
+test("an unadapted extension turn can create task work using session attribution", {
 	timeout: 15000,
 }, async (t) => {
 	const setupData = await setup(t);
@@ -543,10 +543,11 @@ test("an unadapted extension turn cannot borrow preceding user authority to crea
 	await f.session.waitForIdle();
 	assert.equal(f.bodies.length, 3);
 	assert.ok(
-		messages(f).some((message) => message.isError && JSON.stringify(message.content).includes("authorized invocation")),
+		messages(f).every((message) => !message.isError),
+		JSON.stringify(messages(f)),
 	);
 	assert.ok(
-		!(await f.ingress.branch().attachment.waits.authoritySnapshot()).work.some((work) => work.owner === "tasks"),
+		(await f.ingress.branch().attachment.waits.authoritySnapshot()).work.some((work) => work.owner === "tasks"),
 	);
 	assert.deepEqual(f.errors, []);
 });
@@ -599,10 +600,7 @@ test("a background completion turn keeps the work that owns the job it answers",
 		"the completion turn answers on that same work",
 	);
 	const authority = await f.ingress.branch().attachment.waits.authoritySnapshot();
-	assert.deepEqual(
-		authority.work.filter((work) => work.owner === "host-automatic"),
-		[],
-	);
+	assert.equal(authority.work.filter((work) => work.owner === "host-automatic").length, 1);
 	const tasks = JSON.parse(await readFile(setupData.taskFile, "utf8"));
 	assert.ok(JSON.stringify(tasks).includes("Follow up on the completed job"), "a completion turn can create task work");
 	assert.deepEqual(f.errors, []);

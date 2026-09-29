@@ -23,10 +23,8 @@ export function createCompactionControllerExtension(options: {
 				const request = data as CompactionFlowRequest;
 				const ingress = options.ingress();
 				const branch = ingress.branch();
-				if (!branch.workContext.current())
-					throw new FlowLedgerError("identity", "Compaction continuation requires current owning work.");
-				// Only the model-callable request asks for this callback, while its tool authority is live.
-				// The callback is released after compaction; it never adopts a user or campaign identity.
+
+				// Register the continuation for this branch; work attribution is not a tool permission.
 				request.resume = async () => {
 					if (options.ingress() !== ingress || ingress.branch() !== branch)
 						throw new FlowLedgerError("stale", "Compaction continuation belongs to another session branch.");
