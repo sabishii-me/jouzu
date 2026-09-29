@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.1.18 - 2026-09-30
+
+### Changed
+
+- Show background jobs in the work dashboard. The producer claims the dashboard before publishing rows and hides its native inline panel only while the claim is held, so a job appears once. `/bg` or `Alt+Shift+H` still opens the background-job manager, and `/bg watch <task>` opens it focused on a job. Loops keep their own panels. See [Interactive session UI](https://github.com/shisa-ai/jouzu/blob/v0.1.18/README.md#interactive-session-ui).
+- Treat work attribution as recorded evidence instead of a tool permission. A turn that carries no user or task work no longer refuses `bg_task`, `schedule_prompt`, a command the background extension would auto-background, or `subagent` launch and resume; each falls back to the host work registered when the branch attached. Exact producer, handle, and execution identities are still required, so a wait cannot observe the wrong job. This resolves the two flow-control refusals recorded in 0.1.17.
+
+### Fixed
+
+- Continue a running loop after a non-loop turn while preserving user suppression, and register a requested compaction's continuation as host work so the continuation's tools run.
+- Restore a completed task continuation's live creation origin, so the next task acquires execution authority without borrowing unrelated or stale work.
+- Replace a wait by its exact live token after task attribution changes. A paused task keeps its wait association, so resuming does not duplicate the wait and stopping the task cancels it, and a task can wait on any execution registered in the same branch.
+- Recheck work selection after attempt reads, before unclassified fallback, and after automatic authority preparation, so a selected turn cannot migrate between attachments, and keep a newer task selection when an older completion returns.
+- State the execution and recovery expectations in the model guidance: a failed check is an intermediate result, authorized in-scope repairs follow, the original deliverables stay active across prerequisites, a steering instruction is applied in the same turn, and a final report names any dependency that blocks progress.
+
+### Development
+
+- Delete the Pi tool-execution wrapper that refused a tool call outliving its invocation, and update the testing guidance to describe work labels as attribution rather than permission.
+- Add transition, recovery, attachment-race, and wait-control regressions, and migrate the installed background-flow patch from its previous pinned hash with the widget-claim change only.
+
+### Testing limits
+
+- Background-job dashboard rows are covered by fixtures and the bundled background extension's lifecycle regressions. Live background-job rendering in a terminal, loop rows, and macOS and Windows terminal behavior are unqualified.
+- The model guidance is verified to reach main and child sessions. Its effect on model behavior on a coding task is not measured.
+
 ## 0.1.17 - 2026-09-29
 
 ### Added
