@@ -78,6 +78,7 @@ export class FlowWorkContext {
 		if (this.active) throw new FlowLedgerError("busy", "Work invocation is already active.");
 		const attachment = this.attachment();
 		const state = await attachment.ledger.snapshot();
+		if (this.attachment() !== attachment) throw new FlowLedgerError("stale", "Selected attempt branch changed.");
 		const attempt = state.attempts.find((item) => item.id === attemptId);
 		if (state.activeAttemptId !== attemptId || !attempt || attempt.phase !== "queued")
 			throw new FlowLedgerError("stale", "Work invocation requires the active queued attempt.");
@@ -112,17 +113,19 @@ export class FlowWorkContext {
 		if (!intent.workId) return this.run(undefined, invoke);
 		const authority = await attachment.waits.authoritySnapshot();
 		const work = authority.work.find((item) => item.id === intent.workId);
+		if (this.attachment() !== attachment) throw new FlowLedgerError("stale", "Selected work branch changed.");
 		// Unclassified work retains ordinary admission but gains no execution authority.
 		if (!work) return this.run(undefined, invoke);
 		if (!work.participants.includes(intent.producer))
 			throw new FlowLedgerError("identity", "Selected producer does not own the requested work.");
-		if (this.attachment() !== attachment) throw new FlowLedgerError("stale", "Selected work branch changed.");
 		return this.run({ id: work.id, actor: intent.producer, revision: work.revision }, invoke);
 	}
 
 	/** Automated turns run on their own work when no producer owns them, so their tools stay usable. */
 	private async runAutomatic(invoke: () => Promise<void>): Promise<void> {
+		const attachment = this.attachment();
 		const work = this.automaticWork ? await this.automaticWork() : undefined;
+		if (this.attachment() !== attachment) throw new FlowLedgerError("stale", "Automatic work branch changed.");
 		return this.run(work, invoke);
 	}
 
