@@ -1,3 +1,5 @@
+import { claimBackgroundWidget } from "./background-widget-transform.mjs";
+
 export const paths = [
 	"extensions/background-tasks.ts",
 	"extensions/snapshot.ts",
@@ -178,7 +180,7 @@ export function transform(path, source) {
 			} catch (error) { if (task.flow?.result) task.flow.result.reads = prior; throw error; }
 		},`,
 		);
-		return replace(
+		source = replace(
 			source,
 			'\tpi.on("session_start", (_event, ctx) => {',
 			`
@@ -223,6 +225,7 @@ export function transform(path, source) {
 	});
 	pi.on("session_start", (_event, ctx) => {`,
 		);
+		return claimBackgroundWidget(source);
 	}
 	if (path === paths[1]) {
 		source = replace(

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -11,6 +12,7 @@ import { createFlowSession, deferred } from "../../../scripts/fixtures/pi-flow-s
 import { attachBackgroundWaitSource } from "../dist/flow-control/background-adapter.js";
 import { PiFlowAttachment } from "../dist/flow-control/pi-attachment.js";
 import { createFlowWaitExtension } from "../dist/flow-control/wait-tools.js";
+import { createClaimedWorkSource, jobWorkUnits } from "../dist/work-dashboard-sources.js";
 
 const root = resolve(import.meta.dirname, "../../.."),
 	installed = join(root, "packages/cli/node_modules/@vanillagreen/pi-background-tasks");
@@ -57,6 +59,191 @@ async function loadBackground(t) {
 	});
 	return import(pathToFileURL(output).href);
 }
+
+async function widgetFixture(t, hasUI = true) {
+	const directory = await mkdtemp(join(tmpdir(), "jouzu-bg-widget-"));
+	const handlers = new Map(),
+		commands = new Map(),
+		shortcuts = new Map(),
+		widgets = new Map();
+	const prior = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = directory;
+	t.after(async () => {
+		try {
+			handlers.get("session_shutdown")?.();
+		} finally {
+			if (prior === undefined) delete process.env.PI_CODING_AGENT_DIR;
+			else process.env.PI_CODING_AGENT_DIR = prior;
+			await rm(directory, { recursive: true, force: true });
+		}
+	});
+	const background = await loadBackground(t);
+	const bus = new EventEmitter();
+	const events = {
+		on(name, handler) {
+			bus.on(name, handler);
+			return () => bus.off(name, handler);
+		},
+		emit: (name, value) => bus.emit(name, value),
+	};
+	let sessionId = "widget-session",
+		popups = 0;
+	const task = {
+		id: "bg-1",
+		command: "echo done",
+		title: "Widget test",
+		status: "completed",
+		sessionId,
+		startedAt: Date.now(),
+		updatedAt: Date.now(),
+		exitCode: 0,
+		notifyOnExit: false,
+		exitNotified: true,
+		logFile: join(directory, "output.log"),
+	};
+	const ctx = {
+		hasUI,
+		mode: hasUI ? "tui" : "json",
+		cwd: directory,
+		isProjectTrusted: () => false,
+		isIdle: () => true,
+		sessionManager: {
+			getSessionId: () => sessionId,
+			getSessionFile: () => undefined,
+			getBranch: () => [
+				{ type: "custom", customType: "kendex-background-tasks:state", data: { tasks: [{ ...task, sessionId }] } },
+			],
+		},
+		ui: {
+			setWidget(key, value) {
+				widgets.get(key)?.dispose?.();
+				if (value) widgets.set(key, value({ requestRender() {}, terminal: { rows: 32 } }, {}));
+				else widgets.delete(key);
+			},
+			notify() {},
+			custom: async () => {
+				popups++;
+			},
+		},
+	};
+	background.default({
+		events,
+		on: (name, handler) => handlers.set(name, handler),
+		registerCommand: (name, command) => commands.set(name, command),
+		registerShortcut: (key, shortcut) => shortcuts.set(key, shortcut),
+		registerTool() {},
+		registerMessageRenderer() {},
+		appendEntry() {},
+	});
+	return {
+		ctx,
+		events,
+		widgets,
+		commands,
+		shortcuts,
+		popups: () => popups,
+		start(id = sessionId) {
+			sessionId = id;
+			handlers.get("session_start")({}, ctx);
+		},
+		refresh: () => handlers.get("before_agent_start")({}, ctx),
+		shutdown: () => handlers.get("session_shutdown")(),
+		claim() {
+			let release;
+			events.emit("background-tasks:widget:claim", {
+				version: 1,
+				respond: (value) => {
+					release = value;
+				},
+			});
+			return release;
+		},
+		source: background.backgroundFlowSource,
+	};
+}
+
+test("background widget hands rows to the dashboard and preserves native manager routes", async (t) => {
+	const f = await widgetFixture(t);
+	assert.equal(f.claim(), undefined, "no claim before a session attaches");
+	f.start();
+	assert.equal(f.widgets.size, 1);
+	const scope = { sessionId: "widget-session", branchId: "branch" };
+	const source = createClaimedWorkSource({
+		id: "jobs",
+		channel: { events: f.events, claim: "background-tasks:widget:claim", ready: "background-tasks:widget:ready" },
+		read: (current) => jobWorkUnits(current, f.source.inventory(current.sessionId)),
+	});
+	const detach = source.subscribe(() => {});
+	t.after(detach);
+	assert.equal(source.read(scope).units.length, 1);
+	assert.equal(f.widgets.size, 0);
+	for (let i = 0; i < 4; i++) {
+		await f.shortcuts.get("alt+h").handler(f.ctx);
+		f.refresh();
+		assert.equal(f.widgets.size, 0, "toggle and refresh cannot revive a claimed widget");
+	}
+	await f.commands.get("bg").handler("", f.ctx);
+	await f.commands.get("bg").handler("watch bg-1", f.ctx);
+	await f.shortcuts.get("alt+shift+h").handler(f.ctx);
+	assert.equal(f.popups(), 3, "native manager routes remain available while claimed");
+	detach();
+	assert.equal(f.widgets.size, 1, "release restores the native widget");
+	await f.shortcuts.get("alt+h").handler(f.ctx);
+	assert.equal(f.widgets.size, 0, "native visibility is hidden");
+	const release = f.claim();
+	release();
+	assert.equal(f.widgets.size, 0, "claim never changes the native visibility preference");
+});
+
+test("background widget claims are independent, reset per session, and release safely", async (t) => {
+	const f = await widgetFixture(t);
+	let ready = 0;
+	f.events.on("background-tasks:widget:ready", () => ready++);
+	f.start();
+	const first = f.claim(),
+		second = f.claim();
+	first();
+	first();
+	assert.equal(f.widgets.size, 0, "one release does not release another claim");
+	f.start("next-widget-session");
+	assert.equal(ready, 2);
+	assert.equal(f.widgets.size, 1, "session start drops old claims");
+	const current = f.claim();
+	second();
+	assert.equal(f.widgets.size, 0, "stale release does not affect the new session claim");
+	current();
+	assert.equal(f.widgets.size, 1);
+	assert.throws(
+		() =>
+			f.events.emit("background-tasks:widget:claim", {
+				version: 1,
+				respond() {
+					throw new Error("rejected");
+				},
+			}),
+		/rejected/,
+	);
+	assert.equal(f.widgets.size, 1, "failed handoff restores the widget");
+	f.events.emit("background-tasks:widget:claim", {
+		version: 2,
+		respond() {
+			assert.fail();
+		},
+	});
+	f.events.emit("background-tasks:widget:claim", null);
+	const last = f.claim();
+	f.shutdown();
+	last();
+	assert.equal(f.widgets.size, 0);
+	assert.equal(f.claim(), undefined);
+});
+
+test("background widget does not acknowledge claims without a UI", async (t) => {
+	const f = await widgetFixture(t, false);
+	f.start();
+	assert.equal(f.claim(), undefined);
+	assert.equal(f.widgets.size, 0);
+});
 
 for (const outcome of ["success", "failure", "stop"]) {
 	test(`real background ${outcome} returns exact identity and settles its owned wait`, {

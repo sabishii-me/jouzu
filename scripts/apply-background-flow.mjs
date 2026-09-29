@@ -3,6 +3,7 @@ import { readFile, realpath, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { paths, transform } from "./background-flow-transform.mjs";
+import { claimBackgroundWidget } from "./background-widget-transform.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const sha = (text) => createHash("sha256").update(text).digest("hex");
@@ -32,9 +33,12 @@ export async function applyBackgroundFlow(packageRoot, checkOnly = false) {
 	for (const path of paths) {
 		const original = await readFile(join(packageRoot, path), "utf8"),
 			hashes = lock.files[path];
-		if (sha(original) === hashes.after) continue;
-		if (checkOnly || sha(original) !== hashes.before) throw new Error(`Background flow hash mismatch: ${path}`);
-		const changed = transform(path, original);
+		const digest = sha(original);
+		if (digest === hashes.after) continue;
+		const upgradeWidget = path === paths[0] && digest === hashes.previousAfter;
+		if (checkOnly || (digest !== hashes.before && !upgradeWidget))
+			throw new Error(`Background flow hash mismatch: ${path}`);
+		const changed = upgradeWidget ? claimBackgroundWidget(original) : transform(path, original);
 		if (sha(changed) !== hashes.after) throw new Error(`Background flow transform mismatch: ${path}`);
 		writes.push([join(packageRoot, path), changed]);
 	}
