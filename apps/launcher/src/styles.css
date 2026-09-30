@@ -1,0 +1,17 @@
+@import "tailwindcss";
+@theme inline {
+  --color-background: #fafafa;
+  --color-foreground: #171717;
+  --color-primary: #155e75;
+  --color-primary-foreground: #ffffff;
+  --color-muted: #f0f0f0;
+  --color-muted-foreground: #525252;
+  --color-border: #d4d4d4;
+  --color-ring: #0891b2;
+}
+@layer base {
+  body { @apply m-0 bg-background text-foreground antialiased; font-family: system-ui, sans-serif; }
+  button { cursor: pointer; }
+  button:disabled { cursor: default; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; } }
