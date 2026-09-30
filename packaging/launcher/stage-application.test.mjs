@@ -78,3 +78,10 @@ test("rejects linked directories without following them", t => {
     assert.throws(() => stageApplication(options), /Linked entries/);
     assert.equal(existsSync(options.output), false);
 });
+
+test("rejects provenance that conflicts with published gitHead", t => {
+    const options = fixture(t);
+    writeFileSync(join(options.source, "node_modules", "jouzu", "package.json"), JSON.stringify({ name: "jouzu", version: "0.1.18", gitHead: "b".repeat(40) }));
+    assert.throws(() => stageApplication(options), /does not match package gitHead/);
+    assert.equal(existsSync(options.output), false);
+});

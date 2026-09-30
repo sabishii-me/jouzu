@@ -20,7 +20,7 @@ output/
 
 The report includes file hashes, unpacked sizes, duplicate-content groups and the largest package trees. File paths in the inventory are relative to `app/`; `entrypoint` is relative to the output directory. Nested dependency bytes are attributed to the closest package tree. Duplicate reports are informational: files are not automatically deduplicated. The application source tree is not modified.
 
-The report is not signed release metadata or a compatibility certificate. Verify startup and native dependencies on the target platform before distributing an application archive. Compression, archive signatures, supporting-tool provisioning and launcher activation are separate operations. The source commit is supplied by the caller, not inferred or authenticated by this tool.
+The report is not signed release metadata or a compatibility certificate. When the package supplies `gitHead`, staging rejects a different caller-supplied source commit. Verify startup and native dependencies on the target platform before distributing an application archive. Compression, archive signatures, supporting-tool provisioning and launcher activation are separate operations. The source commit is supplied by the caller, not inferred or authenticated by this tool.
 
 Run focused tests through the repository runner:
 

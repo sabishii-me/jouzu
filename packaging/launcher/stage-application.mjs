@@ -64,6 +64,7 @@ export function stageApplication({ source, output, target, sourceCommit }) {
 	const packagePath = join(input, "node_modules", "jouzu", "package.json");
 	const pkg = JSON.parse(readFileSync(packagePath, "utf8"));
 	if (pkg.name !== "jouzu" || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(pkg.version)) throw new Error("Invalid Jouzu package metadata");
+	if (pkg.gitHead && pkg.gitHead !== sourceCommit) throw new Error("Source commit does not match package gitHead");
 	if (!existsSync(join(input, "node_modules", "jouzu", "dist", "cli.js"))) throw new Error("Missing Jouzu CLI entrypoint");
 	if (!existsSync(join(input, "package-lock.json"))) throw new Error("Prepared application lockfile is required");
 	const temporary = `${destination}.staging-${process.pid}`;
