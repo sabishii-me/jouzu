@@ -27,3 +27,17 @@ Run focused tests through the repository runner:
 ```sh
 npm run test:node -- packaging/launcher/stage-application.test.mjs
 ```
+
+## Offline starter preparation
+
+`prepare-starter.mjs` runs at build time, not first launch. It copies the supplied Node distribution and private pnpm package, installs a recipe from a prepopulated store with network fallback disabled, and runs Jouzu's version check before making output available:
+
+```sh
+node packaging/launcher/prepare-starter.mjs <recipe> <node-runtime> <pnpm-package> <seeded-store> <new-output>
+```
+
+The recipe contains `package.json`, `pnpm-lock.yaml`, and optional `patches/`. Pin `packageManager` to `pnpm@10.21.0`. The supplied pnpm package must match. Build on the target OS/architecture using qualified, authenticated inputs. The script does not download or authenticate those inputs itself.
+
+The resulting directory contains `node/`, `pnpm/`, and installed `app/`. Installation uses a frozen lock, production dependencies, disabled lifecycle scripts, a hoisted layout and copied package content. The source store is not copied: shipping a second copy of package content is not required for startup. Packages requiring build scripts must be explicitly prepared and qualified separately; this command does not silently enable scripts.
+
+This is a build primitive, not a complete installer. A real release recipe, native-feature checks, relocation/offline acceptance, starter import into the managed installation, and updater integration are still required. A version check alone does not qualify all features.
