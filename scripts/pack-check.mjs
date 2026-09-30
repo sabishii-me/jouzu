@@ -6,6 +6,7 @@ import { homedir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isPrunedDependencyMetadata } from "./configure-release-packlists.mjs";
+import { assertPortableBundledPackages } from "./portable-package-boundary.mjs";
 import { assertVoiceBundlePresent } from "./voice-package-boundary.mjs";
 
 export function assertExternalWebTransport(files, packageJson, record) {
@@ -286,6 +287,7 @@ for (const directory of executedDirectly ? packageDirectories : []) {
 				throw new Error(`jouzu tarball is missing bundled package ${name}`);
 			}
 		}
+		assertPortableBundledPackages(directory, packed.files);
 		assertLicenseFilesPresent(packed.files, deriveRequiredLicenseFiles(directory, packed.files));
 		for (const record of releasePackages.filter((candidate) => candidate.bundled === false)) {
 			if (packed.bundled?.includes(record.name)) throw new Error(`jouzu tarball unexpectedly bundles ${record.name}`);
