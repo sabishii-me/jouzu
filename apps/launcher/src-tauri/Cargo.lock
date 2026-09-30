@@ -1608,11 +1608,13 @@ dependencies = [
 name = "jouzu-launcher"
 version = "0.1.0"
 dependencies = [
+ "semver",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
+ "url",
 ]
 
 [[package]]
