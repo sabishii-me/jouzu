@@ -60,7 +60,7 @@ test("Astra guidance follows the selected model on every turn without accumulati
 	assert.match(first.systemPrompt, /repeat or broaden testing only/);
 	assert.doesNotMatch(first.systemPrompt, /Use `subagent`/);
 	const other = await before(event, { model: { id: "gpt-5.6-sol" } });
-	assert.doesNotMatch(other.systemPrompt, /Jouzu guidance for GPT-6 Astra/);
+	assert.doesNotMatch(other.systemPrompt, /carry authorized work through implementation/);
 	assert.deepEqual(await before(event, astra), first);
 	assert.equal(await before({ ...event, systemPrompt: first.systemPrompt }, astra), undefined);
 });
@@ -90,7 +90,7 @@ test("child sessions receive the same model guidance as main sessions", async (t
 	assertRecoveryGuidance(astraPrompt.join("\n"));
 	const other = (await childResourceLoader(launch("gpt-5.6-sol"))).getAppendSystemPrompt();
 	assert.ok(other.includes("Review the change."));
-	assert.doesNotMatch(other.join("\n"), /Jouzu guidance for GPT-6 Astra/);
+	assert.doesNotMatch(other.join("\n"), /carry authorized work through implementation/);
 });
 
 test("explicit custom system prompts remain user-owned", async () => {
