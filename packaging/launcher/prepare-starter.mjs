@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { assertInstalledTarget } from "./installed-target.mjs";
 import { fileURLToPath } from "node:url";
 
 export const PNPM_VERSION = "10.21.0";
@@ -61,6 +62,7 @@ export function prepareStarter({ recipe, nodeRuntime, pnpmPackage, store, output
 		execute(node, [pnpm, ...installArguments(app, resolve(store))], temporary, env);
 		const cli = join(app, "node_modules", "jouzu", "dist", "cli.js");
 		if (!existsSync(cli)) throw new Error("Installed Jouzu CLI is missing");
+		assertInstalledTarget(app);
 		execute(node, [cli, "--version"], app, env);
 		renameSync(temporary, destination);
 		return { directory: destination, node: join("node", nodeRelative), pnpm: "pnpm/bin/pnpm.cjs", cli: "app/node_modules/jouzu/dist/cli.js" };
