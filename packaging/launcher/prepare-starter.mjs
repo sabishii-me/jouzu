@@ -54,6 +54,7 @@ export function prepareStarter({ recipe, nodeRuntime, pnpmPackage, store, output
 		const app = join(temporary, "app");
 		mkdirSync(app);
 		for (const file of ["package.json", "pnpm-lock.yaml"]) cpSync(join(recipe, file), join(app, file));
+		if (existsSync(join(recipe, "artifacts"))) cpSync(join(recipe, "artifacts"), join(app, "artifacts"), { recursive: true });
 		if (existsSync(join(recipe, "patches"))) cpSync(join(recipe, "patches"), join(app, "patches"), { recursive: true });
 		const node = join(temporary, "node", nodeRelative);
 		const pnpm = join(temporary, "pnpm", "bin", "pnpm.cjs");

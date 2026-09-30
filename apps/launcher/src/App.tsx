@@ -4,7 +4,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { FolderOpen, Terminal, ArrowUpRight } from "lucide-react";
 import { Button } from "./components/ui/button";
 import { environmentLabel, type Workspace } from "./history";
-interface LauncherState { platform: "windows" | "macos" | "linux"; recent: Workspace[] }
+interface LauncherState { platform: "windows" | "macos" | "linux"; recent: Workspace[]; ready: boolean; bash: boolean }
 export function App() {
   const [state, setState] = useState<LauncherState | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -22,6 +22,17 @@ export function App() {
       if (typeof path === "string") setSelected(path);
     } catch (error) { setError(String(error)); }
     finally { setBusy(false); }
+  }
+  async function launch() {
+    if (!selected) return;
+    setBusy(true); setError(null);
+    try { await invoke("launch_jouzu", { path: selected }); setState(await invoke<LauncherState>("launcher_state")); }
+    catch (error) { setError(String(error)); } finally { setBusy(false); }
+  }
+  async function prepareGit() {
+    setBusy(true); setError(null);
+    try { await invoke("install_git"); setState(await invoke<LauncherState>("launcher_state")); }
+    catch (error) { setError(String(error)); } finally { setBusy(false); }
   }
   return <main className="mx-auto max-w-4xl px-6 py-10 sm:px-10">
     <header className="mb-10 flex items-center gap-3">
@@ -47,8 +58,9 @@ export function App() {
     <section aria-labelledby="launch-heading" className="mt-6 rounded-xl border border-border p-5">
       <h2 id="launch-heading" className="font-semibold">Launch Jouzu TUI</h2>
       <p className="mt-2 break-all text-sm" aria-live="polite">{selected ?? "Select a working folder to get started."}</p>
-      <p id="runtime-status" className="mt-2 text-sm text-muted-foreground">Runtime setup and launching are not connected in this development build.</p>
-      <Button className="mt-4" disabled aria-describedby="runtime-status"><Terminal aria-hidden="true"/>Launch Jouzu</Button>
+      <p id="runtime-status" className="mt-2 text-sm text-muted-foreground">{!state?.ready ? "Starter application is not included in this build." : !state.bash ? "Git Bash is needed for command tools. Download the verified official Git for Windows package to continue." : "Jouzu is ready. It opens in a separate terminal window."}</p>
+      {state?.ready && !state.bash && <Button className="mt-4 mr-3" onClick={prepareGit} disabled={busy}>{busy ? "Preparing Git Bash…" : "Prepare Git Bash"}</Button>}
+      <Button className="mt-4" onClick={launch} disabled={busy || !selected || !state?.ready || !state.bash} aria-describedby="runtime-status"><Terminal aria-hidden="true"/>Launch Jouzu</Button>
     </section>
     <footer className="mt-8 text-xs text-muted-foreground">Jouzu Launcher · Development build</footer>
   </main>;
