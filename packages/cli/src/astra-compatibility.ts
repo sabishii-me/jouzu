@@ -44,7 +44,7 @@ function supportsExplicitPromptCacheMode(model: Pick<Model<Api>, "compat">): boo
 export function normalizeAstraPayload(
 	model: PayloadModel,
 	payload: unknown,
-	options: { subscription?: boolean } = {},
+	options: { subscription?: boolean; preserveCacheOmission?: boolean } = {},
 ): unknown {
 	if (!isOfficialAstra(model) || !payload || typeof payload !== "object" || Array.isArray(payload)) return payload;
 	const result = { ...(payload as Record<string, unknown>) };
@@ -63,9 +63,10 @@ export function normalizeAstraPayload(
 	if (cache && typeof cache === "object" && !Array.isArray(cache)) {
 		result.prompt_cache_options = { ...cache };
 	} else if (
-		supportsExplicitPromptCacheMode(model) ||
-		result.prompt_cache_key !== undefined ||
-		result.prompt_cache_retention !== undefined
+		!options.preserveCacheOmission &&
+		(supportsExplicitPromptCacheMode(model) ||
+			result.prompt_cache_key !== undefined ||
+			result.prompt_cache_retention !== undefined)
 	) {
 		// Upstream short mode omits cache options; prepared API-key requests use Astra's 30m default.
 		result.prompt_cache_options = { ttl: "30m" };
@@ -168,6 +169,7 @@ export function createAstraCompatibilityExtension(): InlineExtension {
 				if (!event.request) return;
 				return normalizeAstraPayload(event.request.model, event.payload, {
 					subscription: event.request.isChatGPTSignIn,
+					preserveCacheOmission: !event.request.hasApiKey,
 				});
 			});
 		},

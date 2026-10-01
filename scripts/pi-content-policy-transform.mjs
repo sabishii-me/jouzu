@@ -53,6 +53,7 @@ function attachPreparedPayloadMetadata(prepared) {
     const apiKey = prepared.options.apiKey;
     const request = Object.freeze({
         model,
+        hasApiKey: apiKey !== undefined,
         isChatGPTSignIn: api === "openai-responses" && provider === "openai" &&
             baseUrl === "https://api.openai.com/v1" && apiKey !== undefined && !apiKey.startsWith("sk-"),
     });
@@ -503,6 +504,7 @@ export function sessionEntryToContextMessages(entry) {`,
         readonly model: Readonly<Pick<Model<Api>, "id" | "api" | "provider" | "baseUrl">> & {
             readonly compat: Readonly<{ supportsExplicitPromptCacheMode: boolean }>;
         };
+        readonly hasApiKey: boolean;
         readonly isChatGPTSignIn: boolean;
     };
 }`,

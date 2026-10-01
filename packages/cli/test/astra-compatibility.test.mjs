@@ -81,6 +81,7 @@ async function request(selected, options = {}, simple = true) {
 						? {
 								request: {
 									model: requestModel,
+									hasApiKey: true,
 									isChatGPTSignIn:
 										requestModel.provider === "openai" &&
 										requestModel.baseUrl === "https://api.openai.com/v1" &&

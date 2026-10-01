@@ -364,6 +364,13 @@ for (const scenario of [
 		failLaterAuth: true,
 	},
 	{ name: "API key survives a later auth failure", apiKey: "sk-fixture-key", failLaterAuth: true },
+	{ name: "header-only authentication preserves cache omission", apiKey: "sk-fixture-key", headerOnly: true },
+	{
+		name: "header-only authentication preserves explicit disable",
+		apiKey: "sk-fixture-key",
+		headerOnly: true,
+		cacheRetention: "none",
+	},
 ]) {
 	test(`official Astra keeps prepared request identity with a receipt: ${scenario.name}`, async (t) => {
 		const { apiKey } = scenario;
@@ -393,7 +400,18 @@ for (const scenario of [
 		f.runtime.getAuth = async (...args) => {
 			if (authFailed) throw new Error("fixture later auth failure");
 			const resolved = await getAuth(...args);
-			return resolved ? { ...resolved, auth: { ...resolved.auth, baseUrl } } : resolved;
+			return resolved
+				? {
+						...resolved,
+						auth: {
+							...resolved.auth,
+							baseUrl,
+							...(scenario.headerOnly
+								? { apiKey: undefined, headers: { Authorization: "Bearer fixture-header-credential" } }
+								: {}),
+						},
+					}
+				: resolved;
 		};
 		const snapshots = [];
 		const loader = new DefaultResourceLoader({
@@ -440,6 +458,7 @@ for (const scenario of [
 		const streamFn = (selected, context, options) =>
 			nativeStream(selected, context, {
 				...options,
+				...(scenario.cacheRetention ? { cacheRetention: scenario.cacheRetention } : {}),
 				fetch: async (_url, init) => {
 					bodies.push(JSON.parse(init.body));
 					const item = {
@@ -485,7 +504,14 @@ for (const scenario of [
 		assert.equal(bodies.length, 1);
 		const subscription = initialBaseUrl === "https://api.openai.com/v1" && !apiKey.startsWith("sk-");
 		const custom = initialBaseUrl !== "https://api.openai.com/v1";
-		assert.deepEqual(bodies[0].prompt_cache_options, subscription || custom ? undefined : { ttl: "30m" });
+		assert.deepEqual(
+			bodies[0].prompt_cache_options,
+			scenario.cacheRetention === "none"
+				? { mode: "explicit" }
+				: subscription || custom || scenario.headerOnly
+					? undefined
+					: { ttl: "30m" },
+		);
 		if (subscription) assert.equal(bodies[0].max_output_tokens, undefined);
 		else assert.ok(bodies[0].max_output_tokens > 0);
 		if (!custom) assert.equal(bodies[0].reasoning?.effort, "low");
@@ -493,7 +519,8 @@ for (const scenario of [
 		assert.equal(snapshots.length, 1);
 		assert.equal(snapshots[0].model.baseUrl, initialBaseUrl);
 		assert.equal(snapshots[0].isChatGPTSignIn, subscription);
-		assert.deepEqual(Object.keys(snapshots[0]).sort(), ["isChatGPTSignIn", "model"]);
+		assert.equal(snapshots[0].hasApiKey, !scenario.headerOnly);
+		assert.deepEqual(Object.keys(snapshots[0]).sort(), ["hasApiKey", "isChatGPTSignIn", "model"]);
 		assert.deepEqual(Object.keys(snapshots[0].model).sort(), ["api", "baseUrl", "compat", "id", "provider"]);
 		assert.equal(JSON.stringify(snapshots).includes(apiKey), false);
 		assert.ok(Object.isFrozen(snapshots[0]));
