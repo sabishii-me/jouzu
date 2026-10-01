@@ -71,7 +71,16 @@ async function request(selected, options = {}, simple = true) {
 		...options,
 		onPayload: async (payload, requestModel) => {
 			const chained = (await options.onPayload?.(payload, requestModel)) ?? payload;
-			const replaced = handlers.get("before_provider_request")({ payload: chained }, { model: sessionModel });
+			const replaced = handlers.get("before_provider_request")(
+				{ payload: chained },
+				{
+					model: sessionModel,
+					modelRegistry: {
+						isUsingOAuth: () => options.subscription ?? false,
+						getProvider: () => ({ auth: { oauth: { isSubscription: true } } }),
+					},
+				},
+			);
 			return replaced ?? chained;
 		},
 		fetch: async (_url, init) => {
@@ -125,6 +134,22 @@ test("cache disable and auxiliary complete requests preserve explicit settings",
 	const auxiliary = await request(model, { reasoningEffort: "max", cacheRetention: "long" }, false);
 	assert.equal(auxiliary.reasoning.effort, "max");
 	assert.deepEqual(auxiliary.prompt_cache_options, { ttl: "30m" });
+});
+
+test("ChatGPT sign-in does not regain unsupported cache or token-limit fields after adaptation", async () => {
+	for (const cacheRetention of ["none", "short", "long"]) {
+		const body = await request(model, {
+			apiKey: "fixture-subscription-token",
+			subscription: true,
+			cacheRetention,
+			onPayload: (payload) => ({ ...payload, prompt_cache_options: { ttl: "30m" }, max_output_tokens: 2048 }),
+		});
+		assert.equal(body.prompt_cache_options, undefined);
+		assert.equal(body.prompt_cache_retention, undefined);
+		assert.equal(body.max_output_tokens, undefined);
+		assert.equal(body.reasoning.effort, "low");
+		assert.equal(body.prompt_cache_key, cacheRetention === "none" ? undefined : "fixture");
+	}
 });
 
 test("custom endpoints, provider aliases, and Codex retain their metadata and payload settings", async () => {

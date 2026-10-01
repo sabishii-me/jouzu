@@ -39,7 +39,11 @@ function supportsExplicitPromptCacheMode(model: Model<Api>): boolean {
 }
 
 /** Normalize the final official Astra payload after Pi's converter and extension transforms. */
-export function normalizeAstraPayload(model: Model<Api>, payload: unknown): unknown {
+export function normalizeAstraPayload(
+	model: Model<Api>,
+	payload: unknown,
+	options: { subscription?: boolean } = {},
+): unknown {
 	if (!isOfficialAstra(model) || !payload || typeof payload !== "object" || Array.isArray(payload)) return payload;
 	const result = { ...(payload as Record<string, unknown>) };
 	if (result.model !== model.id) return payload;
@@ -68,6 +72,11 @@ export function normalizeAstraPayload(model: Model<Api>, payload: unknown): unkn
 		result.prompt_cache_options = { ttl: "30m" };
 	}
 	delete result.prompt_cache_retention;
+	if (options.subscription) {
+		// ChatGPT sign-in rejects these fields even though it shares the Responses API.
+		delete result.prompt_cache_options;
+		delete result.max_output_tokens;
+	}
 	return result;
 }
 
@@ -156,7 +165,11 @@ export function createAstraCompatibilityExtension(): InlineExtension {
 			});
 			pi.on("before_provider_request", (event, ctx) => {
 				if (!ctx.model || !isOfficialAstra(ctx.model)) return;
-				return normalizeAstraPayload(ctx.model, event.payload);
+				return normalizeAstraPayload(ctx.model, event.payload, {
+					subscription:
+						ctx.modelRegistry.isUsingOAuth(ctx.model) &&
+						ctx.modelRegistry.getProvider("openai")?.auth.oauth?.isSubscription === true,
+				});
 			});
 		},
 	};
