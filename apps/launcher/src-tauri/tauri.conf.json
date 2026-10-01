@@ -25,6 +25,17 @@
     }
   },
   "bundle": {
-    "active": false
+    "active": false,
+    "windows": {
+      "nsis": {
+        "languages": [
+          "English",
+          "Japanese",
+          "SimpChinese",
+          "TradChinese"
+        ],
+        "displayLanguageSelector": true
+      }
+    }
   }
 }

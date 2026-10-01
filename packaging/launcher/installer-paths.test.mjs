@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const template = readFileSync(new URL("./installer.nsi", import.meta.url), "utf8");
+const messages = readFileSync(new URL("./installer-messages.nsh", import.meta.url), "utf8");
 const hooks = readFileSync(new URL("./installer-hooks.nsh", import.meta.url), "utf8");
 test("organization default is set only while install location is unset", () => {
   const initialization = template.slice(template.indexOf('Function .onInit'), template.indexOf('Function un.onInit'));
@@ -26,12 +27,12 @@ test("uninstall removes installation metadata independently of user-data choice"
 test("destructive data removal requires explicit confirmation and reports leftovers", () => {
   const confirm = template.slice(template.indexOf('Function un.ConfirmLeave'), template.indexOf('!insertmacro MUI_UNPAGE_CONFIRM'));
   assert.match(confirm, /MB_YESNO\|MB_DEFBUTTON2/);
-  assert.match(confirm, /cannot be undone/);
-  assert.match(confirm, /custom JOUZU_HOME/);
-  assert.match(confirm, /Project files.*NOT deleted/);
+  assert.match(messages, /cannot be undone/);
+  assert.match(messages, /custom JOUZU_HOME/);
+  assert.match(messages, /Project files.*NOT deleted/);
   const removal = template.slice(template.indexOf('Section Uninstall'));
   assert.match(removal, /SetErrorLevel 1/);
-  assert.match(removal, /User-data deletion is incomplete/);
+  assert.match(removal, /jouzuDeleteFailed/);
 });
 
 test("data removal uses extended Windows paths for deep session trees", () => {
@@ -43,9 +44,21 @@ test("data removal uses extended Windows paths for deep session trees", () => {
 
 test("data failure aborts before program and registration removal", () => {
   const section = template.slice(template.indexOf("Section Uninstall"));
-  const cleanup = section.indexOf("User-data deletion is incomplete");
+  const cleanup = section.indexOf("$(jouzuDeleteFailed)");
   assert.ok(cleanup > 0);
   assert.ok(cleanup < section.indexOf('Delete "$INSTDIR'));
   assert.ok(cleanup < section.indexOf('DeleteRegKey'));
   assert.match(section.slice(0, section.indexOf('Delete "$INSTDIR')), /SetErrorLevel 1[\s\S]*Abort/);
+});
+
+test("all four installer locales contain the same custom message keys", () => {
+  const languages = ["ENGLISH", "JAPANESE", "SIMPCHINESE", "TRADCHINESE"];
+  const entries = [...messages.matchAll(/LangString (\w+) \$\{LANG_(\w+)\} "(.+)"/g)];
+  const keys = ["jouzuCloseSessions", "jouzuCloseFailed", "jouzuDeleteData", "jouzuDeleteFailed"].sort();
+  for (const language of languages) {
+    assert.deepEqual(entries.filter(entry => entry[2] === language).map(entry => entry[1]).sort(), keys);
+  }
+  const config = JSON.parse(readFileSync(new URL("../../apps/launcher/src-tauri/tauri.conf.json", import.meta.url)));
+  assert.deepEqual(config.bundle.windows.nsis.languages, ["English", "Japanese", "SimpChinese", "TradChinese"]);
+  assert.equal(config.bundle.windows.nsis.displayLanguageSelector, true);
 });

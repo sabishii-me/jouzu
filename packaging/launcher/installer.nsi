@@ -462,7 +462,7 @@ FunctionEnd
 Function un.ConfirmLeave
   SendMessage $DeleteAppDataCheckbox ${BM_GETCHECK} 0 0 $DeleteAppDataCheckboxState
   ${If} $DeleteAppDataCheckboxState = 1
-    MessageBox MB_YESNO|MB_DEFBUTTON2|MB_ICONEXCLAMATION "Permanently delete this launcher's saved sign-ins/API keys, settings, conversations, sessions, and recent-folder history?$\r$\n$\r$\nLocation: $LOCALAPPDATA\Shisa.ai\Jouzu\data (and recent.json).$\r$\nThis cannot be undone. Back up anything you need before continuing.$\r$\n$\r$\nProject files and remote accounts are NOT deleted. Separate npm CLI data and custom JOUZU_HOME locations are NOT deleted. Other Jouzu launcher installations using this shared data will also lose access to it." IDYES jouzu_delete_confirmed
+    MessageBox MB_YESNO|MB_DEFBUTTON2|MB_ICONEXCLAMATION "$(jouzuDeleteData)" IDYES jouzu_delete_confirmed
     Abort
     jouzu_delete_confirmed:
   ${EndIf}
@@ -481,6 +481,8 @@ FunctionEnd
 {{#each language_files}}
   !include "{{this}}"
 {{/each}}
+
+!include "${JOUZU_HOOK_DIRECTORY}\installer-messages.nsh"
 
 Function .onInit
   ${GetOptions} $CMDLINE "/P" $PassiveMode
@@ -803,7 +805,7 @@ Section Uninstall
       ${OrIf} ${FileExists} "$APPDATA\${BUNDLEID}"
       ${OrIf} ${FileExists} "$LOCALAPPDATA\${BUNDLEID}"
         SetErrorLevel 1
-        MessageBox MB_OK|MB_ICONSTOP "User-data deletion is incomplete. Program files and the uninstaller have been kept so you can retry. Some data may already have been deleted. Close applications using the remaining files, then run uninstall again."
+        MessageBox MB_OK|MB_ICONSTOP "$(jouzuDeleteFailed)"
         Abort
       ${EndIf}
     ${EndIf}
