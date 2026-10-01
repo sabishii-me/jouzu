@@ -64,6 +64,7 @@ export function prepareStarter({ recipe, nodeRuntime, pnpmPackage, store, output
 		const cli = join(app, "node_modules", "jouzu", "dist", "cli.js");
 		if (!existsSync(cli)) throw new Error("Installed Jouzu CLI is missing");
 		assertInstalledTarget(app);
+		execute(node, [fileURLToPath(new URL("./verify-runtime.mjs", import.meta.url)), app], app, env);
 		execute(node, [cli, "--version"], app, env);
 		renameSync(temporary, destination);
 		return { directory: destination, node: join("node", nodeRelative), pnpm: "pnpm/bin/pnpm.cjs", cli: "app/node_modules/jouzu/dist/cli.js" };

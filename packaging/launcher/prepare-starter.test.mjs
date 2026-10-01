@@ -38,7 +38,7 @@ test("materializes starter before publishing output", t => {
 		}
 		return args[0].endsWith("pnpm.cjs") && args.includes("--version") ? PNPM_VERSION : "jouzu 0.1.18";
 	});
-	assert.equal(calls.length, 3);
+	assert.equal(calls.length, 4);
 	assert.ok(existsSync(join(result.directory, result.cli)));
 	assert.equal(existsSync(join(result.directory, "store")), false);
 });

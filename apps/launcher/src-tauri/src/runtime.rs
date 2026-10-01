@@ -82,7 +82,7 @@ pub fn launch(app: &tauri::AppHandle, path: &str) -> Result<(), String> {
         .ok_or("Git Bash is required for this preview. Select Prepare Git Bash first.")?;
     let mut command = Command::new(root.join("node/node.exe"));
     command
-        .arg(root.join("bootstrap.mjs"))
+        .arg(root.join("console.mjs"))
         .current_dir(path)
         .env("JOUZU_LAUNCHER_BASH", bash);
     #[cfg(windows)]

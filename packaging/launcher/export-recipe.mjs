@@ -1,12 +1,19 @@
 import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { packageRootFromConsumer } from "./package-root.mjs";
+import { dirname, basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** Export curated package content without its installed dependency tree.
  * Source must have completed Jouzu's exact patch/build qualification first.
  * Outputs are private build inputs, never automatically published to a registry.
  */
+export const REQUIRED_PATCHED_TRANSITIVES = ["@earendil-works/pi-agent-core"];
+
+export function exportPackageNames(manifest) {
+	return [...new Set(["jouzu", ...(manifest.bundleDependencies ?? []), ...REQUIRED_PATCHED_TRANSITIVES])];
+}
+
 export function exportRecipe(source, output) {
 	const root = realpathSync(source);
 	const destination = resolve(output);
@@ -14,12 +21,13 @@ export function exportRecipe(source, output) {
 	const jouzu = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 	if (jouzu.name !== "jouzu") throw new Error("Expected built Jouzu package");
 	if (!existsSync(join(root, "dist", "cli.js"))) throw new Error("Build Jouzu before exporting a recipe");
-	const names = ["jouzu", ...(jouzu.bundleDependencies ?? [])];
+	const names = exportPackageNames(jouzu);
+
 	mkdirSync(destination, { recursive: true });
 	const artifacts = join(destination, "artifacts"); mkdirSync(artifacts);
 	const overrides = {};
 	for (const name of names) {
-		const input = name === "jouzu" ? root : realpathSync(join(root, "node_modules", name));
+		const input = name === "jouzu" ? root : packageRootFromConsumer(root, name);
 		const metadata = JSON.parse(readFileSync(join(input, "package.json"), "utf8"));
 		if (metadata.name !== name) throw new Error(`Unexpected package at ${name}`);
 		const prepared = join(destination, "sources", name.replaceAll("/", "__"));
