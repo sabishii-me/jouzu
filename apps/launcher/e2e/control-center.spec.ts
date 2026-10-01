@@ -10,10 +10,10 @@ for (const legacy of [false,true]) {
    (window as any).__TAURI_INTERNALS__ = {
     metadata:{currentWindow:{label:'main'},currentWebview:{label:'main'}},
     transformCallback:()=>1, unregisterCallback:()=>{},
-    invoke:async (command:string) => {
+    invoke:async (command:string, args?:any) => {
      if(command==='launcher_state') return {ready:true,bash:true,recent:[],platform:'windows'};
      if(command==='component_versions') return {jouzu:'0.1.18',development:true};
-     if(command==='control_request') {const result={...state};if(legacy)delete (result as any).customProviders;return result;}
+     if(command==='control_request') {if(args?.request?.action==='profile')state.profile=args.request.profile;const result={...state};if(legacy)delete (result as any).customProviders;return result;}
      if(command==='environment_read') return [];
      if(command.includes('version'))return '0.1.0';
      return 1;
@@ -37,6 +37,14 @@ for (const legacy of [false,true]) {
   await expect(dialog.getByLabel('Value',{exact:true})).toHaveValue('fixture-secret');
   await dialog.getByRole('tab',{name:'Language',exact:true}).click();
   await expect(dialog.getByRole('combobox',{name:'Launcher interface language'})).toBeVisible();
+  await expect(dialog.getByRole('combobox')).toHaveCount(1);
+  const toggle=dialog.getByRole('switch',{name:'Japanese-first mode',exact:true});
+  if(!legacy) {
+   await expect(toggle).not.toBeChecked();
+   await toggle.click(); await expect(toggle).toBeChecked();
+   await toggle.click(); await expect(toggle).not.toBeChecked();
+  } else await expect(toggle).toBeDisabled();
+  await expect(dialog.getByText(/Changing the launcher language does not turn this off/)).toBeVisible();
   expect(errors).toEqual([]);
  });
 }

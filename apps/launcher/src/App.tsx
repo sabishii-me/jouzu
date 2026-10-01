@@ -177,8 +177,12 @@ export function App() {
                 <TabsContent value="general" className="m-0 space-y-4">
                   <Card className="border-border shadow-none"><CardHeader><CardTitle>{t.language}</CardTitle><CardDescription>{t.languageHint}</CardDescription></CardHeader><CardContent>
                     <Select value={locale} onValueChange={value => setLocale(value as Locale)}><SelectTrigger aria-label={t.language} className="w-full"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(locales).map(([key,label]) => <SelectItem key={key} value={key}>{label}</SelectItem>)}</SelectContent></Select>
+                    <div className="mt-6 space-y-3 border-t border-border pt-5">
+                      <div className="flex items-center justify-between gap-4"><Label htmlFor="japanese-first">{t.profile}</Label><Switch id="japanese-first" disabled={busy || !setup} checked={setup?.profile === "ja"} aria-describedby="japanese-first-description" onCheckedChange={enabled => void configure({ action: "profile", profile: enabled ? "ja" : "core" })} /></div>
+                      <p id="japanese-first-description" className="text-sm leading-relaxed text-muted-foreground">{t.profileHint}</p>
+                      <p className="text-sm leading-relaxed text-muted-foreground">{t.profileOffHint}</p>
+                    </div>
                   </CardContent></Card>
-                  <Card className="border-border shadow-none"><CardHeader><CardTitle>{t.profile}</CardTitle><CardDescription>{t.profileHint}</CardDescription></CardHeader><CardContent><Select disabled={busy || !setup} value={setup?.profile ?? ""} onValueChange={profile => void configure({ action: "profile", profile })}><SelectTrigger className="w-full" aria-label={t.profile}><SelectValue placeholder={t.chooseProfile} /></SelectTrigger><SelectContent><SelectItem value="core">{t.coreProfile}</SelectItem><SelectItem value="ja">{t.jaProfile}</SelectItem></SelectContent></Select></CardContent></Card>
 
                 </TabsContent>
                 <TabsContent value="about" className="m-0 space-y-4">
