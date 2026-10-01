@@ -1,7 +1,6 @@
 import { UpdatePreview } from "./update-preview";
 import { useJouzuUpdate } from "./use-jouzu-update";
 import { useLauncherUpdate } from "./use-launcher-update";
-import { Progress } from "./components/ui/progress";
 import { Label } from "./components/ui/label";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { parseControlState, type ControlState } from "./control-state";
@@ -193,16 +192,16 @@ export function App() {
 
                 </TabsContent>
                 <TabsContent value="about" className="m-0 space-y-4">
-                  {import.meta.env.DEV ? <UpdatePreview locale={locale}/> : <>
-
-                  <p className="flex justify-between text-sm text-muted-foreground"><span>{t.tools}</span><span>{state?.bash ? t.available : t.firstUse}</span></p>
-                  <Card><CardHeader><CardTitle className="flex items-center justify-between gap-4"><span>Jouzu</span><span className="text-sm font-normal text-muted-foreground">{components?.jouzu ?? t.unavailable}{jouzuUpdater.version ? ` → ${jouzuUpdater.version}` : ""}</span></CardTitle><CardDescription>{!components?.jouzuUpdaterConfigured ? t.jouzuUpdatePending : jouzuUpdater.version ? `${t.updateAvailable}: ${jouzuUpdater.version}` : ['current','complete'].includes(jouzuUpdater.phase) ? t.upToDate : t.checkUpdates}</CardDescription></CardHeader><CardContent className="space-y-3">
-                    {jouzuUpdater.error && <p role="alert" className="text-sm text-destructive">{jouzuUpdater.error}</p>}
-                    {jouzuUpdater.busy && <div role="status"><p>{jouzuUpdater.phase === 'checking' ? t.checking : jouzuUpdater.phase === 'downloading' ? t.downloadingUpdate : t.installingUpdate}</p><Progress value={jouzuUpdater.progress} /></div>}
-                    <div className="flex gap-2">{!jouzuUpdater.version && <Button disabled={!components?.jouzuUpdaterConfigured || jouzuUpdater.busy || updater.busy} onClick={()=>void jouzuUpdater.check()}>{jouzuUpdater.phase === "checking" ? t.checking : t.checkUpdates}</Button>}{jouzuUpdater.version && <Button disabled={jouzuUpdater.busy || updater.busy} onClick={()=>void jouzuUpdater.install()}>Jouzu → {jouzuUpdater.version}</Button>}</div>
-                  </CardContent></Card>
-                  <Card className="border-border shadow-none"><CardHeader><CardTitle className="flex items-center justify-between gap-4"><span>{t.launcher}</span><span className="text-sm font-normal text-muted-foreground">{development ? `${t.development} · ${version ?? ""}` : version ?? t.unavailable}{updater.version ? ` → ${updater.version}` : ""}</span></CardTitle><CardDescription>{components?.launcherUpdaterConfigured ? updater.version ? `${t.updateAvailable}: ${updater.version}` : updater.phase === "current" ? t.upToDate : t.updateCheckHint : t.updaterUnconfigured}</CardDescription></CardHeader><CardContent className="space-y-3">{updater.error && <p role="alert" className="text-sm text-destructive">{updater.error}</p>}{(updater.phase === "downloading" || updater.phase === "installing") && <div role="status"><p className="mb-2 text-sm">{updater.phase === "installing" ? t.installingUpdate : t.downloadingUpdate}</p><Progress value={updater.progress} /></div>}<div className="flex flex-wrap gap-2">{!updater.version && <Button disabled={!components?.launcherUpdaterConfigured || updater.busy || jouzuUpdater.busy} onClick={() => void updater.refresh()}>{updater.phase === "checking" ? t.checking : t.checkUpdates}</Button>}{updater.version && <Button disabled={development || updater.busy || jouzuUpdater.busy} onClick={async () => {if(await confirm(t.restartUpdateHint,{title:t.launcher,kind:"warning"})) await updater.install();}}>{t.installUpdate}</Button>}</div></CardContent></Card>
-                </>}
+                  <UpdatePreview locale={locale} live={import.meta.env.DEV ? undefined : {
+                    phases:[jouzuUpdater.phase === 'preparing' || jouzuUpdater.phase === 'verifying' || jouzuUpdater.phase === 'activating' || jouzuUpdater.phase === 'staged' ? 'installing' : jouzuUpdater.phase as 'idle'|'checking'|'available'|'current'|'downloading'|'installing'|'complete'|'error', updater.phase],
+                    versions:[components?.jouzu ?? t.unavailable, version ?? t.unavailable],
+                    targets:[jouzuUpdater.version,updater.version],
+                    progress:jouzuUpdater.busy?jouzuUpdater.progress:updater.progress,
+                    configured:[!!components?.jouzuUpdaterConfigured,!!components?.launcherUpdaterConfigured],
+                    errors:[jouzuUpdater.error,updater.error],
+                    check:()=>{void jouzuUpdater.check();void updater.refresh();},
+                    install:index=>{if(index===0)void jouzuUpdater.install();else void updater.install();}
+                  }}/>
                 </TabsContent>
               </div>
             </ScrollArea>
