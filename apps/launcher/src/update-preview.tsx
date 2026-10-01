@@ -28,11 +28,11 @@ export function UpdatePreview({locale}:{locale:Locale}) {
  const busy=phases.some(p=>['checking','downloading','installing'].includes(p));
  return <div className="space-y-6">
   <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-lg font-semibold">{t[0]}</h2><p className="mt-1 text-sm text-muted-foreground">{t[1]}</p></div><Button variant="outline" className="text-sm" disabled={busy} onClick={check}>{phases.includes('checking')?t[9]:t[2]}</Button></div>
-  <div className="divide-y divide-border rounded-lg border border-border px-5">{phases.map((p,i)=><section key={i} className="flex h-52 flex-col justify-between py-5 sm:h-48">
+  <div className="divide-y divide-border rounded-lg border border-border px-5">{phases.map((p,i)=><section key={i} className="flex h-40 flex-col gap-2 py-4 sm:h-32">
    <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-medium">{i===0?'Jouzu':t[3]}</h3><p className="mt-1 text-sm text-muted-foreground">{t[4]} {versions[i]}</p></div>
     {p==='available'?<Button disabled={busy} onClick={()=>install(i)}>{i===0?t[7]:t[8]}</Button>:p==='error'?<Button variant="outline" disabled={busy} onClick={()=>scenario==='fail'?install(i):check()}>{t[14]}</Button>:<span role="status" className="text-sm text-muted-foreground">{p==='current'?t[6]:p==='complete'?t[12]:p==='checking'?t[9]:p==='downloading'?t[10]:t[11]}</span>}
    </div>
-   <div className="min-h-16 space-y-3">
+   <div className="min-h-8 space-y-2">
    {p==='available'&&<p className="text-sm text-muted-foreground">{t[5]} {targets[i]}{i===1?` · ${t[15]}`:''}</p>}
    {p==='error'&&<p role="alert" className="text-sm text-destructive">{scenario==='fail'?({en:'Download failed. Your current version is unchanged.',ja:'ダウンロードに失敗しました。現在のバージョンは変更されていません。','zh-Hans':'下载失败，当前版本未改变。','zh-Hant':'下載失敗，目前版本未變更。'}[locale]):t[13]}</p>}
    {(p==='downloading'||p==='installing')&&<Progress value={p==='downloading'?progress:undefined}/>}
