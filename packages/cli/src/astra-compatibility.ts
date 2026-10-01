@@ -42,7 +42,7 @@ function supportsExplicitPromptCacheMode(model: Model<Api>): boolean {
 export function normalizeAstraPayload(
 	model: Model<Api>,
 	payload: unknown,
-	options: { subscription?: boolean } = {},
+	options: { subscription?: boolean; preserveCacheOmission?: boolean } = {},
 ): unknown {
 	if (!isOfficialAstra(model) || !payload || typeof payload !== "object" || Array.isArray(payload)) return payload;
 	const result = { ...(payload as Record<string, unknown>) };
@@ -61,14 +61,13 @@ export function normalizeAstraPayload(
 	if (cache && typeof cache === "object" && !Array.isArray(cache)) {
 		result.prompt_cache_options = { ...cache };
 	} else if (
-		supportsExplicitPromptCacheMode(model) ||
-		result.prompt_cache_key !== undefined ||
-		result.prompt_cache_retention !== undefined
+		!options.preserveCacheOmission &&
+		(supportsExplicitPromptCacheMode(model) ||
+			result.prompt_cache_key !== undefined ||
+			result.prompt_cache_retention !== undefined)
 	) {
-		// The adapted model emits explicit disable for cacheRetention "none"; every
-		// other Astra request uses 30m. Without the explicit-mode marker, only a live
-		// cache key or retention proves caching was requested, so an unadapted
-		// payload must not turn an explicit disable into a 30m cache.
+		// Upstream short mode omits cache options; known API keys use Astra's 30m default.
+		// If request authentication cannot be re-read, preserve upstream's omission.
 		result.prompt_cache_options = { ttl: "30m" };
 	}
 	delete result.prompt_cache_retention;
@@ -78,6 +77,29 @@ export function normalizeAstraPayload(
 		delete result.max_output_tokens;
 	}
 	return result;
+}
+
+/** Match the builtin Responses transport's credential and exact endpoint predicate. */
+function isChatGPTSignInRequest(model: Pick<Model<Api>, "provider" | "baseUrl">, apiKey: string | undefined): boolean {
+	return (
+		model.provider === "openai" &&
+		model.baseUrl === "https://api.openai.com/v1" &&
+		apiKey !== undefined &&
+		!apiKey.startsWith("sk-")
+	);
+}
+
+/** Re-read resolved authentication, including runtime overrides, without reporting credentials. */
+async function resolvedRequestAuth(
+	ctx: ExtensionContext,
+	model: Model<Api>,
+): Promise<{ apiKey?: string; baseUrl?: string } | undefined> {
+	try {
+		const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+		return auth.ok ? auth : undefined;
+	} catch {
+		return undefined;
+	}
 }
 
 type SavedThinkingLevel = NonNullable<ExtensionContext["thinkingLevel"]>;
@@ -163,12 +185,14 @@ export function createAstraCompatibilityExtension(): InlineExtension {
 				const thinking = savedThinkingLevel(ctx) ?? ctx.thinkingLevel;
 				if (thinking) pi.setThinkingLevel(thinking);
 			});
-			pi.on("before_provider_request", (event, ctx) => {
-				if (!ctx.model || !isOfficialAstra(ctx.model)) return;
-				return normalizeAstraPayload(ctx.model, event.payload, {
-					subscription:
-						ctx.modelRegistry.isUsingOAuth(ctx.model) &&
-						ctx.modelRegistry.getProvider("openai")?.auth.oauth?.isSubscription === true,
+			pi.on("before_provider_request", async (event, ctx) => {
+				const model = ctx.model;
+				if (!model || !isOfficialAstra(model)) return;
+				const auth = await resolvedRequestAuth(ctx, model);
+				const requestModel = auth?.baseUrl ? { ...model, baseUrl: auth.baseUrl } : model;
+				return normalizeAstraPayload(requestModel, event.payload, {
+					subscription: isChatGPTSignInRequest(requestModel, auth?.apiKey),
+					preserveCacheOmission: auth?.apiKey === undefined,
 				});
 			});
 		},
