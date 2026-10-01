@@ -49,7 +49,7 @@ for (const legacy of [false,true]) {
  });
 }
 
-test('known Jouzu update opens directly to install without rechecking', async ({page}) => {
+test('development update preview never invokes real update commands', async ({page}) => {
  await page.addInitScript(() => {
   (window as any).isTauri = true;
   (window as any).__TAURI_EVENT_PLUGIN_INTERNALS__ = {unregisterListener:()=>{}};
@@ -77,12 +77,12 @@ test('known Jouzu update opens directly to install without rechecking', async ({
  await page.goto('http://localhost:1420');
  await page.getByRole('button',{name:'Update available',exact:true}).click();
  const dialog=page.getByRole('dialog');
- const install=dialog.getByRole('button',{name:'Jouzu → 0.1.18',exact:true});
+ const install=dialog.getByRole('button',{name:'Update Jouzu',exact:true});
  await expect(install).toBeVisible();
- expect(await page.evaluate(()=>(window as any).updateChecks)).toBe(1);
+ expect(await page.evaluate(()=>(window as any).updateChecks)).toBe(0);
  await install.click();
  await expect(install).toHaveCount(0);
- await expect(dialog.getByText('Up to date',{exact:true})).toBeVisible();
- expect(await page.evaluate(()=>(window as any).updateInstalls)).toBe(1);
- expect(await page.evaluate(()=>(window as any).updateChecks)).toBe(1);
+ await expect(dialog.getByText('Updated',{exact:true})).toBeVisible();
+ expect(await page.evaluate(()=>(window as any).updateInstalls)).toBe(0);
+ expect(await page.evaluate(()=>(window as any).updateChecks)).toBe(0);
 });
