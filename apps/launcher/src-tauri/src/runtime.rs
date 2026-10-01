@@ -8,8 +8,16 @@ pub fn managed_root() -> Result<PathBuf, String> {
     Ok(PathBuf::from(local).join("Shisa.ai").join("Jouzu"))
 }
 
+pub fn install_root_for_executable(executable: &Path) -> Result<PathBuf, String> {
+    executable
+        .parent()
+        .map(Path::to_path_buf)
+        .ok_or_else(|| "Executable has no parent directory".into())
+}
+
 pub fn application_root(_app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    let root = managed_root()?;
+    let executable = std::env::current_exe().map_err(|e| e.to_string())?;
+    let root = install_root_for_executable(&executable)?;
     if !root.join("runtime/node/node.exe").is_file() || !root.join("app/bootstrap.mjs").is_file() {
         return Err("Jouzu application files are missing. Please repair the installation.".into());
     }
@@ -98,4 +106,17 @@ pub fn launch(app: &tauri::AppHandle, path: &str) -> Result<(), String> {
         let _ = child.wait();
     });
     Ok(())
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::*;
+    #[test]
+    fn program_location_follows_executable_not_default_data_root() {
+        let directory = std::env::temp_dir().join("custom Jouzu install");
+        assert_eq!(
+            install_root_for_executable(&directory.join("jouzu-launcher.exe")).unwrap(),
+            directory
+        );
+    }
 }
