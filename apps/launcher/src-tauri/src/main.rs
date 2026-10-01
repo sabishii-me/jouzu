@@ -118,6 +118,31 @@ fn launch_jouzu(app: tauri::AppHandle, path: String) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn forget_workspace(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    let mut state = launcher_state(app)?;
+    state.recent.retain(|item| item.id != id);
+    let data = runtime::managed_root()?;
+    std::fs::create_dir_all(&data).map_err(|e| e.to_string())?;
+    let mut file = tempfile::NamedTempFile::new_in(&data).map_err(|e| e.to_string())?;
+    serde_json::to_writer(&mut file, &state.recent).map_err(|e| e.to_string())?;
+    file.persist(data.join("recent.json"))
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn component_versions(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    let root = runtime::application_root(&app)?;
+    let package = root.join("app/node_modules/jouzu/package.json");
+    let value: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(package).map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?;
+    Ok(
+        serde_json::json!({ "jouzu": value.get("version").and_then(|v| v.as_str()), "development": cfg!(debug_assertions) }),
+    )
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -140,6 +165,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             launcher_state,
             launch_jouzu,
+            forget_workspace,
+            component_versions,
             runtime::install_git
         ])
         .run(tauri::generate_context!())
