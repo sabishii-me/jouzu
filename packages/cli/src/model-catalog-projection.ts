@@ -96,7 +96,7 @@ function clampProviderModels(
 	if (clamp === undefined) return { models: [...models], clampedModelIds: [] };
 	const clampedModelIds: string[] = [];
 	const clamped = models.map((model) => {
-		if (model.contextWindow <= clamp) return model;
+		if (!("contextWindow" in model) || model.contextWindow <= clamp) return model;
 		clampedModelIds.push(model.id);
 		return { ...model, contextWindow: clamp };
 	});

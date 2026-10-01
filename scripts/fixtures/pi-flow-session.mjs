@@ -60,6 +60,7 @@ export async function createFlowSession(
 	{
 		ingress,
 		extensions = [],
+		additionalExtensionPaths = [],
 		checkpoints,
 		policy,
 		persist = false,
@@ -97,6 +98,7 @@ export async function createFlowSession(
 		noSkills: true,
 		contentPolicy: policy,
 		extensionFactories: extensions,
+		additionalExtensionPaths,
 	});
 	await loader.reload();
 	({ session } = await createAgentSession({

@@ -62,7 +62,11 @@ test("patch is locked and idempotent; modified input never gets overwritten", as
 	try {
 		await writeFile(
 			join(directory, "package.json"),
-			JSON.stringify({ name: "@earendil-works/pi-coding-agent", version: "0.87.1" }),
+			JSON.stringify({
+				name: "@earendil-works/pi-coding-agent",
+				version: JSON.parse(await readFile(new URL("../upstream/pi-content-policy/patch.lock.json", import.meta.url)))
+					.version,
+			}),
 		);
 		await mkdir(join(directory, "dist"));
 		await writeFile(join(directory, "dist/main.js"), "unrecognized");
@@ -386,13 +390,19 @@ test("final tool policy sees extension output and errors remove text and structu
 		throw new Error("PRIVATE BODY");
 	};
 	const fake = {
+		_afterToolCall: AgentSession.prototype._afterToolCall,
+		_limitsModel: () => undefined,
 		agent: {},
 		resourceLoader: { contentPolicy: policy },
 		settingsManager: { getImageAutoResize: () => false },
 		_extensionRunner: {
 			hasHandlers: () => true,
 			async emitToolResult() {
-				return { content: [{ type: "text", text: "EXTENSION BODY" }], details: { secret: "EXTENSION DETAIL" } };
+				return {
+					content: [{ type: "text", text: "EXTENSION BODY" }],
+					details: { secret: "EXTENSION DETAIL" },
+					structuredContent: { secret: "EXTENSION STRUCTURED" },
+				};
 			},
 		},
 	};
@@ -405,6 +415,7 @@ test("final tool policy sees extension output and errors remove text and structu
 	});
 	assert.equal(seen.result.content[0].text, "EXTENSION BODY");
 	assert.equal(seen.result.details.secret, "EXTENSION DETAIL");
+	assert.equal(seen.result.structuredContent.secret, "EXTENSION STRUCTURED");
 	assert.deepEqual(result.details, {});
 	assert.equal(result.isError, true);
 	assert.equal(JSON.stringify(result).includes("PRIVATE"), false);
@@ -430,9 +441,11 @@ test("final tool policy sees extension output and errors remove text and structu
 		isError: false,
 	});
 	assert.equal(seen, undefined, "cancelled checks must not invoke the policy");
-	assert.equal(cancelled.content[0].text, "EXTENSION BODY");
-	assert.equal(cancelled.details.secret, "EXTENSION DETAIL");
-	assert.equal(cancelled.isError, false);
+	assert.match(cancelled.content[0].text, /withheld after cancellation/);
+	assert.deepEqual(cancelled.details, {});
+	assert.equal(cancelled.structuredContent, undefined);
+	assert.equal(cancelled.isError, true);
+	assert.equal(cancelled.terminate, false);
 });
 
 test("SDK final context errors stop delivery after ordinary extension handlers", async () => {

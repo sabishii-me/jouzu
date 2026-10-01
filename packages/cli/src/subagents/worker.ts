@@ -6,12 +6,14 @@ import {
 	SessionManager,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
+import { createDirectToolPolicyExtension } from "../classic-host-policy.js";
 import { createFlowControlRuntime, type FlowControlRuntime } from "../flow-control/flow-runtime.js";
 import { TextGuardRuntime } from "../textguard-runtime.js";
 import { inheritedContextText, parentContextTool } from "./context.js";
 import type { WorkerCommand, WorkerEvent, WorkerLaunch } from "./protocol.js";
 import { configureChildResources, expandedChildResourceLoader } from "./resources.js";
 import { observeChildBackgroundExecution, settleChildWork } from "./settle.js";
+import { createChildToolPolicy } from "./tool-policy.js";
 
 export { expandedChildResourceLoader as childResourceLoader } from "./resources.js";
 
@@ -103,6 +105,13 @@ async function runGuardedWorker(
 		launch,
 		await textguard.createPolicy({ cwd: launch.cwd, sessionId: sessionManager.getSessionId() }),
 		[
+			createChildToolPolicy({
+				maxCalls: role.maxTurns * 20,
+				onExhausted: () => {
+					exhausted = true;
+				},
+			}),
+			createDirectToolPolicyExtension(),
 			...flow.extensions,
 			{
 				name: "jouzu-child-lifecycle",
@@ -154,22 +163,6 @@ async function runGuardedWorker(
 		let lastText = "";
 		let lastStop = "";
 		let lastError = "";
-		let toolCount = 0;
-		// Roles control tools; the working directory is not a filesystem sandbox.
-		const previousBeforeToolCall = session.agent.beforeToolCall;
-		session.agent.beforeToolCall = async (input, toolSignal) => {
-			if (!session.getActiveToolNames().includes(input.toolCall.name))
-				return { block: true, reason: "Access denied: tool is not enabled for this child session." };
-			try {
-				if (++toolCount > role.maxTurns * 20) {
-					exhausted = true;
-					return { block: true, reason: "Tool limit reached. Report remaining work." };
-				}
-			} catch (error) {
-				return { block: true, reason: error instanceof Error ? error.message : "Access denied." };
-			}
-			return previousBeforeToolCall?.(input, toolSignal);
-		};
 		unsubscribe = session.subscribe((event) => {
 			if (event.type === "turn_start" && turns >= role.maxTurns) {
 				exhausted = true;

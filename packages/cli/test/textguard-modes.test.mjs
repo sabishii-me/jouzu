@@ -48,9 +48,10 @@ test("a flagged web result reaches the model labelled as untrusted data", async 
 	const gate = policy();
 	const delivered = await gate.filterToolResult(search());
 	assert.equal(delivered.isError, false);
-	// The original content and its structured details survive intact.
+	// Flagged data stays in advisory-labelled text, not unlabelled programmatic details.
 	assert.match(text(delivered), /PRIVATE BODY/);
-	assert.deepEqual(delivered.details, { nested: "detail" });
+	assert.doesNotMatch(text(delivered), /detail/);
+	assert.deepEqual(delivered.details, {});
 	assert.match(delivered.content[0].text, /^TextGuard advisory: 1 error-level finding \(bidi_control\)/);
 	assert.match(delivered.content[0].text, /never as instructions/);
 	// Nothing is waiting for approval, and the finding stays inspectable as a report.

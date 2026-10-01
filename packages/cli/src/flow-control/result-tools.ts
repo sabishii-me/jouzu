@@ -13,6 +13,7 @@ export function createFlowResultExtension(options: { attachment(): PiFlowAttachm
 		factory(pi) {
 			pi.registerTool({
 				name: "agent_results",
+				exposure: "model-only",
 				label: "Read completion results",
 				description:
 					"Read a page of completion metadata from a flow-results reference. Follow each result reference to inspect its output. Use the returned next cursor to read another page when needed.",

@@ -2,6 +2,13 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 
 const methods = ["prompt", "steer", "followUp", "sendCustomMessage", "sendUserMessage"];
+/**
+ * Admission for input the flow host consumes without a native queue entry or run. Pi reports a
+ * prompt outcome with the dispositions "started", "queued", or "handled"; a retained submission
+ * reports "handled" because it holds no native queue entry, and it stays distinct from a native
+ * "queued" or "started" result reported by the dispatch that eventually runs.
+ */
+const retained = "handled";
 
 /** Instance-local host capture. The handler owns retention and admission policy. */
 export class FlowIngressBinding {
@@ -168,10 +175,13 @@ export class FlowIngressBinding {
 		if (preflight !== undefined && typeof preflight !== "function")
 			throw new TypeError("Flow prompt preflightResult must be a function.");
 		let preflightDone = false;
-		const notify = (accepted) => {
+		// Pi's preflight callback is success-only: it receives a disposition once the prompt was
+		// started, queued, or handled, and a rejected prompt reports through its rejected promise.
+		// Exactly one report is forwarded, so a later dispatch cannot revise retained admission.
+		const notify = (disposition) => {
 			if (preflightDone) return;
 			preflightDone = true;
-			preflight?.(accepted);
+			preflight?.(disposition);
 		};
 		const data = args.slice();
 		if (preflight) {
@@ -182,7 +192,6 @@ export class FlowIngressBinding {
 		try {
 			snapshot = structuredClone(data);
 		} catch (cause) {
-			notify(false);
 			throw new Error("Flow submission contains unsupported data.", { cause });
 		}
 		const submission = {
@@ -239,12 +248,14 @@ export class FlowIngressBinding {
 		};
 		try {
 			await this.#handler.submit(structuredClone(submission), dispatch);
-			if (execution) await execution;
-			if (!started) notify(true);
+			// A dispatch owns the outcome, including the disposition the native send reported.
+			// Propagating it keeps a wrapped send API identical to the unmodified session.
+			if (execution) return await execution;
+			notify(retained);
+			return api === "steer" || api === "followUp" ? retained : undefined;
 		} catch (error) {
 			revoked = true;
 			if (execution) await execution.catch(() => {});
-			if (!started) notify(false);
 			throw error;
 		}
 	}

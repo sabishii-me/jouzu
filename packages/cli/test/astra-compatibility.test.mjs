@@ -65,7 +65,7 @@ async function request(selected, options = {}, simple = true) {
 	const handlers = astraHarness().handlers;
 	const p = provider([sessionModel]);
 	await p[simple ? "streamSimple" : "stream"](sessionModel, context, {
-		apiKey: "fixture",
+		apiKey: "sk-fixture",
 		maxTokens: 2048,
 		sessionId: "fixture",
 		...options,
@@ -167,7 +167,7 @@ test("registry overlay keeps the contract across provider refresh and auxiliary 
 		runtime.registerProvider("openai", {
 			api: model.api,
 			baseUrl: model.baseUrl,
-			apiKey: "fixture",
+			apiKey: "sk-fixture",
 			models: [{ ...model, samplingParams: { temperature: 0.5 } }],
 		});
 		const { handlers, registrations } = astraHarness({
@@ -196,7 +196,7 @@ test("registry overlay keeps the contract across provider refresh and auxiliary 
 		// alone must keep explicit cache disable and drop unsupported sampling.
 		await runtime
 			.streamSimple(adapted, context, {
-				apiKey: "fixture",
+				apiKey: "sk-fixture",
 				cacheRetention: "none",
 				sessionId: "fixture",
 				fetch: async (_url, init) => {

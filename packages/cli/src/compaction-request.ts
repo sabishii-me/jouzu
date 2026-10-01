@@ -152,6 +152,7 @@ export function registerCompactionRequest(
 ): CompactionRequestController {
 	pi.registerTool({
 		name: COMPACTION_TOOL_NAME,
+		exposure: "model-only",
 		label: "Compact Context",
 		description: COMPACTION_TOOL_DESCRIPTION,
 		promptSnippet: COMPACTION_TOOL_PROMPT_SNIPPET,

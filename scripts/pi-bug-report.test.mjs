@@ -492,8 +492,9 @@ test("crash hints and the builtin command describe a reviewable draft", async ()
 		ui: { requestRender() {} },
 	});
 	assert.equal(hints.length, 1);
-	assert.match(hints[0].text, /drafts a report/);
-	assert.doesNotMatch(hints[0].text, /attached|archive|export|zip/i);
+	const renderedHint = hints[0].render(120).join("\n");
+	assert.match(renderedHint, /drafts a report/);
+	assert.doesNotMatch(renderedHint, /attached|archive|export|zip/i);
 
 	const source = await readFile(join(piRoot, "dist/modes/interactive/interactive-mode.js"), "utf8");
 	assert.match(source, /Run \/bug to draft a report/);

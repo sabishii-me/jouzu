@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { formatHelp, isBlockedPiSelfUpdate, parseJouzuArgs, UsageError } from "./args.js";
 import { createAstraCompatibilityExtension } from "./astra-compatibility.js";
 import { catalogStatus, formatCatalogStatus, validateCatalogFile } from "./catalog-command.js";
+import { classicHostBuiltinOverrides, createDirectToolPolicyExtension } from "./classic-host-policy.js";
 import { DashboardVisibility, loadDashboardPolicy } from "./dashboard-policy.js";
 import { createDoctorReport } from "./doctor.js";
 import { isInteractivePiStartup, usesMachineReadableStdout } from "./interactive-startup.js";
@@ -487,7 +488,9 @@ export async function runMainCli(args: string[]): Promise<void> {
 			contentPolicyFactory: nativeTextguard.createPolicy,
 			...(flow ? { flowIngressFactory: flow.flowIngressFactory } : {}),
 			extensionFactories: [
-				// First, so every later handler and the tool itself see the arguments that will run.
+				...classicHostBuiltinOverrides(),
+				createDirectToolPolicyExtension(),
+				// First argument handler, so later handlers and the tool see normalized input.
 				createToolArgumentExtension(),
 				{
 					name: "jouzu-dashboard-events",

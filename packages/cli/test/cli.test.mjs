@@ -248,6 +248,7 @@ test("a prompt sent with flow control keeps its acceptance when input ends at on
 				type: "response",
 				command: "prompt",
 				success: true,
+				data: { disposition: "handled" },
 			});
 		}
 	} finally {

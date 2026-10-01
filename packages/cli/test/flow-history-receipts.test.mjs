@@ -27,11 +27,16 @@ async function rootFor(t) {
 	return root;
 }
 
-test("an append return does not acknowledge buffered or in-memory history", async (t) => {
+test("history receipts require complete on-disk entries even when append persists eagerly", async (t) => {
 	const root = await rootFor(t);
 	const manager = SessionManager.create(root, join(root, "history"));
 	const id = manager.appendMessage(user("initial"));
+	const file = manager.getSessionFile();
+	const bytes = await readFile(file);
+	assert.equal((await verifyPiHistoryEntry(manager, id)).kind, "persisted");
+	await truncate(file, bytes.length - 1);
 	assert.deepEqual(await verifyPiHistoryEntry(manager, id), { kind: "buffered" });
+	await appendFile(file, "\n");
 	manager.appendMessage(assistant());
 	assert.deepEqual(await verifyPiHistoryEntry(manager, id), {
 		kind: "persisted",

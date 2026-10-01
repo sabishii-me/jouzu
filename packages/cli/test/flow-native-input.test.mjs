@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { fork } from "node:child_process";
 import { createHash } from "node:crypto";
 import { once } from "node:events";
+import { truncateSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -416,6 +417,13 @@ test("native history does not acknowledge a message changed after message_start"
 test("buffered transcript input cannot become a native history receipt", async (t) => {
 	const f = await fixture(t);
 	t.mock.method(f.session.sessionManager, "flush", () => {});
+	const append = f.session.sessionManager.appendMessage.bind(f.session.sessionManager);
+	t.mock.method(f.session.sessionManager, "appendMessage", (...args) => {
+		const id = append(...args);
+		// Pi writes eagerly; model missing disk persistence before the receipt check.
+		if (args[0].role === "user") truncateSync(f.session.sessionManager.getSessionFile(), 0);
+		return id;
+	});
 	await f.session.followUp("buffered");
 	await f.session.continueQueued();
 	assert.equal(f.requests.length, 0);

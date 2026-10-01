@@ -260,6 +260,7 @@ export function createFlowWaitExtension(options: FlowWaitToolOptions): InlineExt
 			});
 			pi.registerTool({
 				name: "agent_wait",
+				exposure: "model-only",
 				label: "Wait for dependencies",
 				description:
 					"Wait for asynchronous dependencies as the current task or invocation. Copy each producer's waitDependency into on and supply reason and deadline. Omit optional fields, or use null if the interface requires them. Top-level work selects the work to suspend, not the child/job to wait for; normally omit it or pass null. Never invent dependency metadata or use until as a health policy. A waiting result holds this work until completion, failure, cancellation, a health decision, or the capped deadline. Replacing a live wait requires its exact replaceToken.",
@@ -387,6 +388,7 @@ export function createFlowWaitExtension(options: FlowWaitToolOptions): InlineExt
 			});
 			pi.registerTool({
 				name: "agent_wait_cancel",
+				exposure: "model-only",
 				label: "Cancel dependency wait",
 				description:
 					"Idempotently remove a wait gate by token and reason. This leaves its process and requested work active.",

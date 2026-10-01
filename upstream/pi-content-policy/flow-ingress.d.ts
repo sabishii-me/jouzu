@@ -23,6 +23,11 @@ export interface FlowIngress {
 	beforeBranchChange?(previous: FlowSubmission["scope"]): void | Promise<void>;
 	/** Attach new branch resources before session_tree handlers run. Failure keeps ingress fenced. Do not await session disposal here. */
 	branchChanged?(current: FlowSubmission["scope"]): void | Promise<void>;
-	/** Retain before returning, dispatch once, or throw to reject. */
+	/**
+	 * Retain before returning, dispatch once, or throw to reject. A retained submission is admitted
+	 * as "handled": a prompt's preflightResult callback receives it and steer/followUp resolve with
+	 * it, because the host holds the input without a native queue entry. A dispatch reports its own
+	 * native disposition instead, and a rejection rejects the send promise without reporting one.
+	 */
 	submit(submission: FlowSubmission, dispatch: () => Promise<void>): void | Promise<void>;
 }

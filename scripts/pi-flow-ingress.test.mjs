@@ -1,3 +1,4 @@
+import "./pi-flow-rpc.test.mjs";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
@@ -261,8 +262,8 @@ test("every AgentSession send API can be retained without native queue, history,
 	const held = inbox();
 	const { session, requests } = await createFlowSession(t, { ingress: held.handler });
 	const image = { type: "image", data: "aGVsbG8=", mimeType: "image/png" };
-	const preflight = [];
-	await session.prompt("manual", { images: [image], preflightResult: (accepted) => preflight.push(accepted) });
+	const dispositions = [];
+	await session.prompt("manual", { images: [image], preflightResult: (value) => dispositions.push(value) });
 	await session.steer("steer", [image]);
 	await session.followUp("follow-up", [image]);
 	await session.sendCustomMessage(
@@ -282,7 +283,7 @@ test("every AgentSession send API can be retained without native queue, history,
 	);
 	assert.equal(held.entries[0].input.args[1].preflightResult, undefined);
 	assert.deepEqual(held.entries[0].input.args[1].images, [image]);
-	assert.deepEqual(preflight, [true]);
+	assert.deepEqual(dispositions, ["handled"]);
 	assert.equal(requests.length, 0);
 	assert.deepEqual(session.agent.inspectQueuedMessages(), []);
 	assert.equal(
@@ -308,11 +309,87 @@ test("retained dispatch uses captured bytes once and sendUserMessage forwarding 
 
 test("held prompt calls its preflight callback once across later dispatch", async (t) => {
 	const held = inbox();
-	const { session } = await createFlowSession(t, { ingress: held.handler });
+	const { session, requests } = await createFlowSession(t, { ingress: held.handler });
 	const results = [];
 	await session.prompt("held", { preflightResult: (value) => results.push(value) });
+	assert.deepEqual(results, ["handled"]);
 	await held.entries[0].dispatch();
-	assert.deepEqual(results, [true]);
+	assert.deepEqual(results, ["handled"]);
+	assert.equal(requests.length, 1);
+});
+
+for (const disposition of ["started", "handled"])
+	test(`a dispatched prompt reports the native ${disposition} disposition through preflightResult`, async (t) => {
+		const held = inbox((input, dispatch) => (input.api === "prompt" ? dispatch() : undefined));
+		const { session, requests } = await createFlowSession(t, {
+			ingress: held.handler,
+			extensions: disposition === "handled" ? [(pi) => pi.on("input", () => ({ action: "handled" }))] : [],
+		});
+		const reported = [];
+		await session.prompt("immediate", { preflightResult: (value) => reported.push(value) });
+		assert.deepEqual(reported, [disposition]);
+		assert.equal(requests.length, disposition === "started" ? 1 : 0);
+	});
+
+test("a prompt queued during streaming reports the native queued disposition", async (t) => {
+	const held = inbox((input, dispatch) => (input.api === "prompt" ? dispatch() : undefined));
+	const { session } = await createFlowSession(t, { ingress: held.handler });
+	const entered = deferred(),
+		release = deferred();
+	t.after(() => release.resolve());
+	const native = session.agent.streamFunction;
+	let calls = 0;
+	session.agent.streamFunction = async (...args) => {
+		if (++calls === 1) {
+			entered.resolve();
+			await release.promise;
+		}
+		return native(...args);
+	};
+	const running = session.prompt("busy");
+	await entered.promise;
+	const queued = [];
+	await session.prompt("queued", { streamingBehavior: "followUp", preflightResult: (value) => queued.push(value) });
+	assert.deepEqual(queued, ["queued"]);
+	release.resolve();
+	await running;
+});
+
+test("steer and followUp return the native queue disposition when dispatched", async (t) => {
+	const held = inbox((_input, dispatch) => dispatch());
+	const { session } = await createFlowSession(t, { ingress: held.handler });
+	assert.equal(await session.steer("steer"), "queued");
+	assert.equal(await session.followUp("follow-up"), "queued");
+	assert.equal(session.agent.hasQueuedMessages(), true);
+	session.clearQueue();
+});
+
+test("steer and followUp resolve as handled while the flow host retains them", async (t) => {
+	const held = inbox();
+	const { session, requests } = await createFlowSession(t, { ingress: held.handler });
+	assert.equal(await session.steer("retained steer"), "handled");
+	assert.equal(await session.followUp("retained follow-up"), "handled");
+	assert.equal(session.agent.hasQueuedMessages(), false);
+	assert.deepEqual(session.getSteeringMessages(), []);
+	assert.deepEqual(session.getFollowUpMessages(), []);
+	assert.equal(requests.length, 0);
+	assert.equal(await held.entries[0].dispatch(), "queued");
+	assert.equal(await held.entries[1].dispatch(), "queued");
+	assert.equal(session.agent.hasQueuedMessages(), true);
+	session.clearQueue();
+});
+
+test("unsupported submission bytes reject without reporting a disposition", async (t) => {
+	const held = inbox();
+	const { session, requests } = await createFlowSession(t, { ingress: held.handler });
+	const dispositions = [];
+	await assert.rejects(
+		session.prompt("unsupported", { preflightResult: (value) => dispositions.push(value), callback: () => {} }),
+		/unsupported data/,
+	);
+	assert.deepEqual(dispositions, []);
+	assert.equal(held.entries.length, 0);
+	assert.equal(requests.length, 0);
 });
 
 test("handler rejection revokes its dispatch permit and never restores direct sending", async (t) => {
@@ -326,7 +403,8 @@ test("handler rejection revokes its dispatch permit and never restores direct se
 		/Controller unavailable/,
 	);
 	await assert.rejects(held.entries[0].dispatch(), /rejected/);
-	assert.deepEqual(preflight, [false]);
+	// Pi's preflight callback is success-only, so a rejected prompt reports no disposition.
+	assert.deepEqual(preflight, []);
 	assert.equal(requests.length, 0);
 });
 
@@ -448,8 +526,14 @@ test("disposed attachment rejects retained dispatch while another session remain
 	const first = await createFlowSession(t, { ingress: held.handler });
 	const second = await createFlowSession(t, { ingress: { version: 1, submit: (_input, dispatch) => dispatch() } });
 	await first.session.sendUserMessage("old");
-	first.session.dispose();
+	await first.session.dispose();
 	await assert.rejects(held.entries[0].dispatch(), /closed/);
+	const dispositions = [];
+	await assert.rejects(
+		first.session.prompt("after disposal", { preflightResult: (value) => dispositions.push(value) }),
+		/closed/,
+	);
+	assert.deepEqual(dispositions, []);
 	await second.session.prompt("new");
 	assert.equal(first.requests.length, 0);
 	assert.equal(second.requests.length, 1);

@@ -10,6 +10,7 @@ type Policy = Awaited<ReturnType<NonNullable<MainOptions["contentPolicyFactory"]
 type ToolEvent = Parameters<Policy["filterToolResult"]>[0];
 type ToolResult = ToolEvent["result"];
 type Messages = Parameters<Policy["filterContext"]>[0];
+type CheckedToolResult = ToolResult & Pick<Extract<Messages[number], { role: "toolResult" }>, "nestedCalls">;
 type Scanner = ConstructorParameters<typeof TextGuardAdmission>[0];
 export const TEXTGUARD_WEB_TOOLS = new Set([
 	"web_fetch",
@@ -25,6 +26,8 @@ export const TEXTGUARD_WEB_TOOLS = new Set([
 	"aio-webquery",
 	"aio-webresearch",
 ]);
+const isExternalTool = (name: string): boolean =>
+	TEXTGUARD_WEB_TOOLS.has(name) || name.startsWith("mcp__") || name === "read_mcp_resource" || name === "codemode";
 const LIMIT = 128;
 const digest = (text: string) => createHash("sha256").update(text).digest("hex");
 
@@ -61,6 +64,7 @@ export interface PolicyNotice {
 }
 interface CheckedPayload<T> {
 	value?: T;
+	snapshot?: T;
 	review?: ContentReview;
 }
 
@@ -193,7 +197,7 @@ export class NativeContentPolicy implements Policy {
 	}
 	shouldInspectTool(name: string, input: unknown): boolean {
 		if (this.mode === "off") return false;
-		if (TEXTGUARD_WEB_TOOLS.has(name)) return true;
+		if (isExternalTool(name)) return true;
 		if (name !== "read") return false;
 		const path = input && typeof input === "object" && "path" in input ? input.path : undefined;
 		return this.files || typeof path !== "string" || this.skills.isSkillPath(path);
@@ -246,6 +250,7 @@ export class NativeContentPolicy implements Policy {
 			],
 			details: {},
 			isError: true,
+			terminate: false,
 		};
 	}
 	/** Flagged data the model may read, labelled so it is treated as data rather than as instructions. */
@@ -259,7 +264,7 @@ export class NativeContentPolicy implements Policy {
 	/** Web results and ordinary file reads are data; skills and skill files are instructions the agent runs. */
 	private advisoryApplies(source: RequestSource): boolean {
 		if (this.mode !== "guarded") return false;
-		if (TEXTGUARD_WEB_TOOLS.has(source.name)) return true;
+		if (isExternalTool(source.name)) return true;
 		return source.name === "read" && source.path !== undefined && !this.skills.isSkillPath(source.path);
 	}
 	private async checkPayload<T>(
@@ -294,7 +299,7 @@ export class NativeContentPolicy implements Policy {
 		// Content that is blocked and cannot be approved would otherwise leave no trace at all.
 		if (!this.admission.reviews().some((item) => item.id === review.id))
 			this.notice(review.evidence.reason ?? "protocol");
-		return { review };
+		return { review, snapshot: snapshot.value };
 	}
 	private record(review: ContentReview): void {
 		this.reports.delete(review.id);
@@ -305,7 +310,11 @@ export class NativeContentPolicy implements Policy {
 		this.notices.push({ reason });
 		this.notices = this.notices.slice(-LIMIT);
 	}
-	private async checkResult(source: RequestSource, result: ToolResult, signal?: AbortSignal): Promise<ToolResult> {
+	private async checkResult(
+		source: RequestSource,
+		result: CheckedToolResult,
+		signal?: AbortSignal,
+	): Promise<CheckedToolResult> {
 		if (!source.source) {
 			this.notice("protocol");
 			return this.withheld();
@@ -317,6 +326,8 @@ export class NativeContentPolicy implements Policy {
 			details: result.details ?? {},
 			isError: result.isError ?? false,
 			...(result.usage === undefined ? {} : { usage: result.usage }),
+			...(result.structuredContent === undefined ? {} : { structuredContent: result.structuredContent }),
+			...(result.nestedCalls === undefined ? {} : { nestedCalls: result.nestedCalls }),
 		};
 		const checked = await this.checkPayload(
 			source.source,
@@ -328,12 +339,18 @@ export class NativeContentPolicy implements Policy {
 		const review = checked.review;
 		if (!review) return this.withheld();
 		const detail = describeEvidence(review.evidence);
-		if (this.advisoryApplies(source)) {
-			// Delivered, so there is nothing left to approve; the report keeps it inspectable.
+		if (this.advisoryApplies(source) && checked.snapshot) {
+			// Use the scanned snapshot, not references the tool can mutate while scanning.
+			// Flagged metadata and structured values have no programmatic advisory channel, so omit them.
+			const { details: _details, structuredContent: _structured, nestedCalls: _nested, ...admitted } = checked.snapshot;
 			this.admission.discard(review.id);
 			this.record(review);
 			this.alert(review.id, { kind: "advisory", source: review.displaySource, detail, approvable: false });
-			return { ...value, content: [{ type: "text", text: this.advisory(review) }, ...content] };
+			return {
+				...admitted,
+				details: {},
+				content: [{ type: "text", text: this.advisory(review) }, ...admitted.content],
+			};
 		}
 		this.alert(review.id, {
 			kind: "withheld",
@@ -378,7 +395,7 @@ export class NativeContentPolicy implements Policy {
 			if (message.role === "toolResult") {
 				const source = this.requests.get(message.toolCallId);
 				const inspect =
-					TEXTGUARD_WEB_TOOLS.has(message.toolName) ||
+					isExternalTool(message.toolName) ||
 					(message.toolName === "read" &&
 						(!source || source.inspect || (source.path && this.skills.isSkillPath(source.path))));
 				if (inspect) {
@@ -397,6 +414,8 @@ export class NativeContentPolicy implements Policy {
 						details: result.details as typeof message.details,
 						isError: result.isError ?? false,
 						...(result.usage === undefined ? {} : { usage: result.usage }),
+						...(result.structuredContent === undefined ? {} : { structuredContent: result.structuredContent }),
+						...(result.nestedCalls === undefined ? {} : { nestedCalls: result.nestedCalls }),
 					});
 				} else admitted.push(message);
 				continue;

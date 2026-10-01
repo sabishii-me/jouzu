@@ -65,7 +65,7 @@ export function transform(path, source) {
 			"    _persist(entry) {",
 			"    flush() {\n        if (!this.persist || !this.sessionFile || this.flushed) return;\n        this._persist(this.fileEntries[this.fileEntries.length - 1], true);\n    }\n    _persist(entry, force = false) {",
 		);
-		change("        if (!hasAssistant) {", "        if (!hasAssistant && !force) {");
+		change("            if (!this._hasConversation())", "            if (!this._hasConversation() && !force)");
 		// Observe every persistence boundary, including rewrites and failed/partial writes.
 		// Consumers may reuse a verified prefix only across these known writer operations.
 		for (const [method, args, call, kind] of [
@@ -228,9 +228,9 @@ export function sessionEntryToContextMessages(entry) {`,
 		);
 	} else if (path === "dist/modes/interactive/interactive-mode.js") {
 		change(
-			"        this.chatContainer.addChild(new Text(info, 1, 0));",
+			"            return info;\n        };\n        this.chatContainer.addChild(new Spacer(1));\n        this.chatContainer.addChild(new ThemedText(renderInfo, 1, 0));",
 			// biome-ignore lint/suspicious/noTemplateCurlyInString: This is source code for the pinned runtime.
-			'        const footer = this.options.sessionInfoFooter?.();\n        if (footer) info += `\\n\\n${theme.fg("dim", footer)}`;\n        this.chatContainer.addChild(new Text(info, 1, 0));',
+			'            const footer = this.options.sessionInfoFooter?.();\n            if (footer) info += `\\n\\n${theme.fg("dim", footer)}`;\n            return info;\n        };\n        this.chatContainer.addChild(new Spacer(1));\n        this.chatContainer.addChild(new ThemedText(renderInfo, 1, 0));',
 		);
 		change(
 			// biome-ignore lint/suspicious/noTemplateCurlyInString: This is source code for the pinned runtime.
@@ -246,9 +246,9 @@ export function sessionEntryToContextMessages(entry) {`,
 		);
 		change(
 			// biome-ignore lint/suspicious/noTemplateCurlyInString: This is source code for the pinned runtime.
-			'        this.chatContainer.addChild(new Text(theme.fg("muted", `If this looks like a ${APP_NAME} bug, /bug sends a report to the developers.`), this.outputPad, 0));',
+			'        this.chatContainer.addChild(new ThemedText(() => theme.fg("muted", `If this looks like a ${APP_NAME} bug, /bug sends a report to the developers.`), this.outputPad, 0));',
 			// biome-ignore lint/suspicious/noTemplateCurlyInString: This is source code for the pinned runtime.
-			'        this.chatContainer.addChild(new Text(theme.fg("muted", `If this looks like a ${APP_NAME} bug, /bug drafts a report you can review before posting.`), this.outputPad, 0));',
+			'        this.chatContainer.addChild(new ThemedText(() => theme.fg("muted", `If this looks like a ${APP_NAME} bug, /bug drafts a report you can review before posting.`), this.outputPad, 0));',
 		);
 		change(
 			"    async handleBugCommand(hint) {\n        await reportBug({\n            session: this.session,",
@@ -496,6 +496,19 @@ export function sessionEntryToContextMessages(entry) {`,
         this._refreshFinalizedContext();`,
 		);
 		change(
+			"    async _getSummarizationRequestAuth(selectedModel, signal) {",
+			`    async _getSummarizationRequestAuth(selectedModel, signal) {
+        if ((this._flowBinding || this.resourceLoader.contentPolicy) && isVirtualModel(selectedModel))
+            throw new Error("Request checks require a physical model for summaries. Select a provider model and retry.");`,
+		);
+		change(
+			"            if (!isVirtualModel(model))\n                return { ...previous, context, model, thinkingLevel };",
+			`            if (!isVirtualModel(model))
+                return { ...previous, context, model, thinkingLevel };
+            if (this._flowBinding || this.resourceLoader.contentPolicy)
+                throw new Error("Request checks require a physical model. Select a provider model and retry.");`,
+		);
+		change(
 			"                entryId = this.sessionManager.appendCustomMessageEntry(event.message.customType, event.message.content, event.message.display, event.message.details);",
 			`                entryId = this.sessionManager.appendCustomMessageEntry(event.message.customType, event.message.content, event.message.display, event.message.details);
                 const entry = this.sessionManager.getEntry(entryId);
@@ -653,8 +666,8 @@ export function sessionEntryToContextMessages(entry) {`,
     /** Generate Pi's built-in compaction summary for manual and automatic compaction. */`,
 		);
 		change(
-			"            const { model: requestModel, apiKey, headers, env, } = await this._getSummarizationRequestAuth(model, this._compactionAbortController.signal);\n            const pathEntries = this.sessionManager.getBranch();",
-			'            const { model: requestModel, apiKey, headers, env, } = await this._getSummarizationRequestAuth(model, this._compactionAbortController.signal);\n            const pathEntries = await this._filterSummarizationEntries(this.sessionManager.getBranch(), this._compactionAbortController.signal, "compaction");',
+			"            const settings = this.settingsManager.getCompactionSettings(model);\n            const pathEntries = this.sessionManager.getBranch();",
+			'            const settings = this.settingsManager.getCompactionSettings(model);\n            const pathEntries = await this._filterSummarizationEntries(this.sessionManager.getBranch(), this._compactionAbortController.signal, "compaction");',
 		);
 		change(
 			"            const pathEntries = this.sessionManager.getBranch();\n            const preparation = prepareCompaction(pathEntries, settings);\n            if (!preparation) {\n                return false;\n            }\n            abortController = new AbortController();\n            this._autoCompactionAbortController = abortController;",
@@ -687,32 +700,41 @@ export function sessionEntryToContextMessages(entry) {`,
 			"if (!this.resourceLoader.contentPolicy && !hookResult && normalizedContent === content)",
 		);
 		change(
-			`            return {
-                content: normalizedContent,
-                details: hookResult?.details,
-                isError: hookResult?.isError ?? isError,
-                usage: hookResult?.usage,
-            };`,
-			`            const finalResult = {
-                content: normalizedContent,
-                details: hookResult?.details ?? result.details,
-                isError: hookResult?.isError ?? isError,
-                usage: hookResult?.usage ?? result.usage,
-            };
-            if (!this.resourceLoader.contentPolicy || this.agent.signal?.aborted) return finalResult;
-            try {
-                const admitted = await this.resourceLoader.contentPolicy.filterToolResult({
-                    toolName: toolCall.name, toolCallId: toolCall.id, input: args,
-                    result: finalResult, signal: this.agent.signal,
-                });
-                if (!admitted || !Array.isArray(admitted.content)) throw new Error("Invalid content-policy result");
-                return { ...admitted, details: admitted.details ?? {} };
-            } catch {
-                // A source the policy does not inspect must keep its result rather than turn a
-                // successful tool call into a TextGuard failure for a check that never ran.
-                if (!this.resourceLoader.contentPolicy.shouldInspectTool?.(toolCall.name, args)) return finalResult;
-                return { content: [{ type: "text", text: "TextGuard could not check this result; content withheld." }], details: {}, isError: true };
-            }`,
+			`        return {
+            content: normalizedContent,
+            details: hookResult?.details,
+            structuredContent: hookResult ? hookResult.structuredContent : result.structuredContent,
+            isError: hookResult?.isError ?? isError,
+            usage: hookResult?.usage,
+        };`,
+			`        const finalResult = {
+            content: normalizedContent,
+            details: hookResult?.details ?? result.details,
+            structuredContent: hookResult ? hookResult.structuredContent : result.structuredContent,
+            isError: hookResult?.isError ?? isError,
+            usage: hookResult?.usage ?? result.usage,
+        };
+        if (!this.resourceLoader.contentPolicy) return finalResult;
+        if (this.agent.signal?.aborted && this.resourceLoader.contentPolicy.shouldInspectTool?.(toolCall.name, args))
+            return { content: [{ type: "text", text: "Tool result withheld after cancellation." }], details: {}, isError: true, terminate: false };
+        try {
+            const admitted = await this.resourceLoader.contentPolicy.filterToolResult({
+                toolName: toolCall.name, toolCallId: toolCall.id, input: args,
+                result: finalResult, signal: this.agent.signal,
+            });
+            if (!admitted || !Array.isArray(admitted.content)) throw new Error("Invalid content-policy result");
+            return { ...admitted, details: admitted.details ?? {} };
+        } catch {
+            // Uninspected sources retain their native result when no policy check ran.
+            if (!this.resourceLoader.contentPolicy.shouldInspectTool?.(toolCall.name, args)) return finalResult;
+            return { content: [{ type: "text", text: "TextGuard could not check this result; content withheld." }], details: {}, isError: true, terminate: false };
+        }`,
+		);
+		change(
+			"    async _executeNestedToolCall(parentToolCallId, name, args, options) {",
+			`    async _executeNestedToolCall(parentToolCallId, name, args, options) {
+        if (options?.onUpdate && this.resourceLoader.contentPolicy?.shouldInspectTool?.(name, args))
+            throw new Error("Checked nested tool calls do not expose progress callbacks. Use the final result instead.");`,
 		);
 		change(
 			"        // Emit to extensions first, then notify public listeners.\n        await this._emitExtensionEvent(event);\n",
@@ -759,7 +781,7 @@ export function sessionEntryToContextMessages(entry) {`,
             } catch { return; }
         }
         if (event.type === "tool_execution_end" && this.resourceLoader.contentPolicy) {
-            event = { ...event, result: { content: event.result.content, details: event.result.details, usage: event.result.usage, terminate: event.result.terminate } };
+            event = { ...event, result: { content: event.result.content, details: event.result.details, structuredContent: event.result.structuredContent, usage: event.result.usage, terminate: event.result.terminate } };
         }`,
 		);
 	} else if (path === "dist/core/agent-session.d.ts") {
@@ -817,15 +839,11 @@ export function sessionEntryToContextMessages(entry) {`,
 				"                void session\n",
 		);
 		change(
-			"                        if (didSucceed) {\n" +
-				"                            preflightSucceeded = true;\n" +
-				'                            output(success(id, "prompt"));\n' +
-				"                        }\n" +
+			"                        preflightSucceeded = true;\n" +
+				'                        output(success(id, "prompt", { disposition }));\n' +
 				"                    },\n",
-			"                        if (didSucceed) {\n" +
-				"                            preflightSucceeded = true;\n" +
-				'                            output(success(id, "prompt"));\n' +
-				"                        }\n" +
+			"                        preflightSucceeded = true;\n" +
+				'                        output(success(id, "prompt", { disposition }));\n' +
 				"                        accept();\n" +
 				"                    },\n",
 		);

@@ -19,7 +19,9 @@ const alignedRuntimePackageNames = [
 	chordPackageName,
 	"@earendil-works/pi-agent-core",
 	"@earendil-works/pi-ai",
+	"@earendil-works/pi-codemode",
 	packageName,
+	"@earendil-works/pi-mcp",
 	"@earendil-works/pi-protocol",
 	serverPackageName,
 	"@earendil-works/pi-telemetry",
@@ -27,7 +29,9 @@ const alignedRuntimePackageNames = [
 ];
 const directRuntimePackageNames = [
 	"@earendil-works/pi-ai",
+	"@earendil-works/pi-codemode",
 	packageName,
+	"@earendil-works/pi-mcp",
 	serverPackageName,
 	"@earendil-works/pi-telemetry",
 	tuiPackageName,

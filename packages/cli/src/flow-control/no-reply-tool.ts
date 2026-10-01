@@ -35,6 +35,7 @@ export function createFlowNoReplyExtension(options: FlowNoReplyOptions): InlineE
 		factory(pi) {
 			pi.registerTool({
 				name: "agent_no_reply",
+				exposure: "model-only",
 				label: "End the turn without replying",
 				description:
 					"End this turn without a reply, for a delivered result that needs no answer. Requires the exact permission that result carried. Refused for any run carrying user input, requested work, or a wait decision.",

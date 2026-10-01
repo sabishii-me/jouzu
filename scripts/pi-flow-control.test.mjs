@@ -100,7 +100,8 @@ test("unrecognized core bytes are refused without overwriting them", async (t) =
 		join(core, "package.json"),
 		JSON.stringify({
 			name: "@earendil-works/pi-agent-core",
-			version: "0.87.1",
+			version: JSON.parse(await readFile(new URL("../upstream/pi-flow-control/patch.lock.json", import.meta.url)))
+				.version,
 			exports: { "./package.json": "./package.json" },
 		}),
 	);

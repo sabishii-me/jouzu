@@ -1,7 +1,7 @@
 {
 	"schemaVersion": 1,
 	"package": "@earendil-works/pi-ai",
-	"version": "0.87.1",
+	"version": "0.99.2",
 	"files": {
 		"dist/api/transform-messages.js": {
 			"before": "9d747a3d64c533f7bfaf2a66e8446dc006086559d364a09d4c51d1c8c9c332e5",
@@ -12,40 +12,40 @@
 			"after": "2ec467e677671686920989db787fb750a9cb452ea1d8f40fa74aeba9928a8b3f"
 		},
 		"dist/api/openai-completions.js": {
-			"before": "a2397cb3114a3d1a05993f6f19671ecbcc85540d8f8c59a233808c717df2682c",
-			"after": "c78fdf0e4dba9679b364a981479963407b3f6f9fa55e26911ef6dad45cb7eaf6"
+			"before": "8167bfe47b0c9cc99a653d84f24ad055128e66888429f9f954e063918c074ea0",
+			"after": "c3470423c61cc88bdb2c4163b4bc4a2b6a8a9fe02f0c978f544c7059f0d5f36d"
 		},
 		"dist/api/openai-completions.d.ts": {
 			"before": "552baa4343275a20df53734e5aa12f46cb8648ca28421adf1318b199eae69a05",
 			"after": "b6eccdaa2d0b9796728d4f8c3b922713862dac056d331f3b0b530ea57d9cfd95"
 		},
 		"dist/types.d.ts": {
-			"before": "5e08c1db4740b95b7107d3c3540a6d0e414a82d9c75fab950150827c994e14a3",
-			"after": "0b31559dfb2a686e44feaa763eff22587da128efa6ffbc83f841514c7cdf38e1"
+			"before": "7e6a457a6f60029187b722456fa883d4eb6e5219f871c65bba323c1f8bb4eca2",
+			"after": "13bf8907477c10f4eeb77524cb27e4b524ed3d36db90e8e20758104463f23526"
 		},
 		"dist/api/simple-options.js": {
-			"before": "1caf860e028e22639578aba3ec8b79e5be9650c27bd3f19471c78502976555f3",
-			"after": "9b7045e501501a570b9b36904d159158cb7653cc9dfdb1d0320f861d450404f9"
+			"before": "36cec6b6c3c58a47ae2f902cc39e1601fdaf7ed5b0e99e3577089c036ad14805",
+			"after": "34083f839faee7e8d568ba42906e327acc312edfbba36f8006f6a283b5068e19"
 		},
 		"dist/api/openai-responses.js": {
-			"before": "3e95145f94ac2a255d1adc0ae65cf02c2e6d479f7a2dbf5c466db21885c29ec6",
-			"after": "ab39e6fcac5ebeef0138bf288bb9cd35a5687a3398b6bb7baa0e808a440d838e"
+			"before": "8a294f760ea70459c6d41c83878a8d0cda5dd4780c46b490c85e0d3495471e3e",
+			"after": "de0f7d146688bb3c844366974bcf38d02433bce6f3f9fdde30ad3177e15c7bc7"
 		},
 		"dist/api/openai-responses-shared.js": {
-			"before": "7846279b34c2a569bda2b0753c8b083f8b976204b4fdd7586095ebbb6a643410",
-			"after": "b759519ad09541cb0bbcd0a3bd838efd61e80819075c81e75529d8615f5461a5"
+			"before": "2eb01d2e82737150f582e78ebcda2dc0cf1083bf83e98432f97d9f3a80ff3f2f",
+			"after": "ae4c922aa0447b83c6fc2f502df36477ba3995571e4683283371b49f44e09fab"
 		},
 		"dist/api/openai-responses-shared.d.ts": {
-			"before": "b66172b3be20ee6fcea89b05b41a93fdaa6db963ecdc336e2a0ca0d78a1a9e1f",
-			"after": "83cceb0c6ad6b48103f349c6137e1f48c26a1fa7f6b9f240261aebb53bbc8817"
+			"before": "5457317a10e3e27e3e4e59672c9153eece30e82dcdd9f4e12904950d8e039fa2",
+			"after": "b55fa829a409c8715b1d44654e586257911150f948dd39fdf30534c6266c6685"
 		},
 		"dist/api/anthropic-messages.js": {
-			"before": "97de17d406264322ff7927fa0c20e1c61b46386b5e14f9c6e0012599c01664f7",
-			"after": "7cc2b81e7cdd5bb5b96b64cdd4bc74f858e7f3b364dd3b12d08c6d5d467cb055"
+			"before": "a0644ab05cf7ee3e4d566f21113d5b6c2361588237c999a45fa0d7935b68af10",
+			"after": "50de3b1855d1ff6a870117fb35a7ef602b0d1b32b9b19bd3c584d2055ee83ba5"
 		},
 		"dist/api/google-generative-ai.js": {
-			"before": "e2ebaeb55a99deded745b2ae0c8f3ca420c425d9cab0824ceb3b56224fe0efcf",
-			"after": "a4be5128bf881cbc545e3faa0df7f97eef8556a6a77e0d93a141f896c9fd7c07"
+			"before": "3a19fb56e96e60751a27a19f891264a3ab471cf4973307308ffdc8f8d2669397",
+			"after": "0a0df9974db0f5c3c7bbe35be4011386800a86a5d55f33082411520fc7929d5c"
 		},
 		"dist/api/google-shared.js": {
 			"before": "0254007d8b7f0ebeb2b00f6a940041012c45220369f604f999c8e7019d36972a",
@@ -56,28 +56,28 @@
 			"after": "a000a950e3079006febd260f7c716441c89e56f4fe8c15db24f58f13a2f33695"
 		},
 		"dist/api/openai-codex-responses.js": {
-			"before": "6e69310d77278231cfc87d7f03ee815d4a0f2ff273e6c43fcee6835e7df2b0c7",
-			"after": "6e095f240812e12ed525d5f20e7bee04df27f26406d848f38f808d6717bdf20d"
+			"before": "53b4abdad5f2af1e5e5c12605d96bf6651d4a4b847351d87898ebb67d04236f7",
+			"after": "6d77864668548fcdb270d234b3f443d29d9d976f6f0e388b0ebf2293bc6ef88a"
 		},
 		"dist/api/google-vertex.js": {
-			"before": "0d134350a3c0d669087e12ac0435aa48d558875342448ed91d2e840cd284e04c",
-			"after": "dc10a4d02ee4e17bba2a02e8409cccbaf89f40dc8d19f94174267174193ce4a0"
+			"before": "6f6c69ece547a7851a211aa7680e90edd93748992fbc78805918b73254f81b65",
+			"after": "23558cc26857c4a41e1e3a32f52f716ede8daefd1ab3c1fca7026891a95989e2"
 		},
 		"dist/api/azure-openai-responses.js": {
-			"before": "2cce830528a0d063cd76e9f234632637ed9782e12c687d3c5bc79f10483a7ff2",
-			"after": "49dfcd5673197e2d1f7f94b6bf57a38fe168447b7b3a71a16bb56c6d086eb089"
+			"before": "7bed0249992d0b8f88c33cb2a70c24d51ca7c301d722933db0043095bcb03684",
+			"after": "bb0e115b81f801475c7f81c1b7d63eae3af0ccc36d7faa946bebd6fb382d90f6"
 		},
 		"dist/api/mistral-conversations.js": {
-			"before": "beea0b191eaf33f0b412fb0c10219fac89a599fba9c4f215a1fcfd5ea8c3f46e",
-			"after": "41cb4b6e143f6a8fdccaeb53fe071e29d36a74bb44621377c56215a2b504f03a"
+			"before": "e043c1c06427a0384d6e7d416c8d019d6342fb6f729fa80430c7cff43fc82d25",
+			"after": "8bc6ddd1db661d111fc9930037b91c5c1f0c54c31bb88be6144641f982838875"
 		},
 		"dist/api/pi-messages.js": {
-			"before": "f88b2bca1317b6fc7600cad90900fb60483c18db4afa234928b3e08b121d36bd",
-			"after": "22f77608d2ac743080719c672a0b4cf1061746f5d52221582f2cc1dc7f611a7c"
+			"before": "33cd3a7adc48775c88474d3c68b51f33791dc6e5b315ab9f3a8fc67eee4d8696",
+			"after": "3862e261036bfda28d1281ad4046fd4593f78a2b7402dd9956dfcb6eb95bca2d"
 		},
 		"dist/api/bedrock-converse-stream.js": {
-			"before": "47d08990180cce57c49bdb5f81daa0971b13f5ce77fe5762d9d41ff0d0b9551d",
-			"after": "a7867a438bca33a2fab5eb0c7b9b81182df4ff0c4aa46bbf4e3e61a0d7de752d"
+			"before": "5156f5fe64b1a878c59458e5148748f02f9d736e68aa5aae0c2fcd720f528847",
+			"after": "1a5a48a0bd043860869530d944b29214e1ce0e3b8079c0dfca7e0331725a3e38"
 		},
 		"dist/compat.js": {
 			"before": "df55dca273cb2a7053187b7b29d0fe5b91966a5099ab02d2efe38bb31c3f9738",
