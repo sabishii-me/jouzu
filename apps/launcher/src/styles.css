@@ -1,5 +1,13 @@
 @import "tailwindcss";
 @theme inline {
+  --color-card: #ffffff;
+  --color-card-foreground: #171717;
+  --color-popover: #ffffff;
+  --color-popover-foreground: #171717;
+  --color-accent: #e8eef0;
+  --color-accent-foreground: #171717;
+  --color-input: #d4d4d4;
+  --color-destructive: #b91c1c;
   --color-background: #fafafa;
   --color-foreground: #171717;
   --color-primary: #155e75;
