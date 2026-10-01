@@ -61,7 +61,7 @@ try {
     const { ensurePrivateDirectory, writeFilePrivateAtomic } = await load('private-fs');
     ensurePrivateDirectory(paths.agentDir);
     const file = join(paths.agentDir, 'models.json');
-    const require = createRequire(join(root, 'app/node_modules/jouzu/package.json'));
+    const require = createRequire(join(appRoot, 'node_modules/jouzu/package.json'));
     const lock = require('proper-lockfile');
     const release = await lock.lock(file, { realpath: false, retries: 0 });
     const staged = join(paths.agentDir, 'models.launcher-validation.json');
