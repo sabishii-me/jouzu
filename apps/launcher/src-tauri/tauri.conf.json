@@ -10,8 +10,21 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "windows": [{ "title": "Jouzu", "width": 900, "height": 680, "minWidth": 560, "minHeight": 480 }],
-    "security": { "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data:" }
+    "windows": [
+      {
+        "title": "Jouzu",
+        "width": 900,
+        "height": 680,
+        "minWidth": 560,
+        "minHeight": 480,
+        "create": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data:"
+    }
   },
-  "bundle": { "active": false }
+  "bundle": {
+    "active": false
+  }
 }

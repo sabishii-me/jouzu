@@ -121,6 +121,22 @@ fn launch_jouzu(app: tauri::AppHandle, path: String) -> Result<(), String> {
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            let data = runtime::managed_root()
+                .map_err(std::io::Error::other)?
+                .join("cache/webview");
+            std::fs::create_dir_all(&data)?;
+            let config = app
+                .config()
+                .app
+                .windows
+                .first()
+                .ok_or("Missing window configuration")?;
+            tauri::WebviewWindowBuilder::from_config(app, config)?
+                .data_directory(data)
+                .build()?;
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             launcher_state,
             launch_jouzu,
