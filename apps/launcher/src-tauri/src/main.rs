@@ -3,7 +3,6 @@
 mod runtime;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-use tauri::Manager;
 
 #[derive(Serialize, Deserialize)]
 struct Environment {
@@ -69,11 +68,7 @@ fn read_legacy(path: &Path) -> Result<Vec<Workspace>, String> {
 
 #[tauri::command]
 fn launcher_state(app: tauri::AppHandle) -> Result<LauncherState, String> {
-    let history = app
-        .path()
-        .app_local_data_dir()
-        .map_err(|e| e.to_string())?
-        .join("recent.json");
+    let history = runtime::managed_root()?.join("recent.json");
     let recent = if cfg!(target_os = "windows") {
         match std::env::var_os("LOCALAPPDATA") {
             Some(root) => {
@@ -114,7 +109,7 @@ fn launch_jouzu(app: tauri::AppHandle, path: String) -> Result<(), String> {
         },
     );
     state.recent.truncate(20);
-    let data = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
+    let data = runtime::managed_root()?;
     std::fs::create_dir_all(&data).map_err(|e| e.to_string())?;
     let mut file = tempfile::NamedTempFile::new_in(&data).map_err(|e| e.to_string())?;
     serde_json::to_writer(&mut file, &state.recent).map_err(|e| e.to_string())?;

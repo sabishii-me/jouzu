@@ -2,23 +2,23 @@ use std::{
     path::{Path, PathBuf},
     process::Command,
 };
-use tauri::Manager;
 
-pub fn starter(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    let root = app
-        .path()
-        .resource_dir()
-        .map_err(|e| e.to_string())?
-        .join("starter");
+pub fn managed_root() -> Result<PathBuf, String> {
+    let local = std::env::var_os("LOCALAPPDATA").ok_or("LOCALAPPDATA is unavailable")?;
+    Ok(PathBuf::from(local).join("Shisa.ai").join("Jouzu"))
+}
+
+pub fn starter(_app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let root = managed_root()?.join("versions/0.1.18-preview3");
     if !root.join("node/node.exe").is_file() || !root.join("bootstrap.mjs").is_file() {
-        return Err("The starter application is missing. Please reinstall Jouzu Launcher.".into());
+        return Err("Jouzu application files are missing. Please repair the installation.".into());
     }
     Ok(root)
 }
 
-pub fn find_bash(app: &tauri::AppHandle) -> Option<PathBuf> {
+pub fn find_bash(_app: &tauri::AppHandle) -> Option<PathBuf> {
     let mut candidates = Vec::new();
-    if let Ok(data) = app.path().app_local_data_dir() {
+    if let Ok(data) = managed_root() {
         candidates.push(data.join("tools/git/bin/bash.exe"));
     }
     for key in ["ProgramFiles", "ProgramFiles(x86)"] {
@@ -38,11 +38,11 @@ pub fn find_bash(app: &tauri::AppHandle) -> Option<PathBuf> {
 }
 
 #[tauri::command]
-pub async fn install_git(app: tauri::AppHandle) -> Result<(), String> {
+pub async fn install_git(_app: tauri::AppHandle) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         use sha2::{Digest, Sha256};
         use std::io::{Read, Write};
-        let data = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
+        let data = managed_root().map_err(|e| e.to_string())?;
         let tools = data.join("tools");
         std::fs::create_dir_all(&tools).map_err(|e| e.to_string())?;
         let destination = tools.join("git");
@@ -80,9 +80,10 @@ pub fn launch(app: &tauri::AppHandle, path: &str) -> Result<(), String> {
     let root = starter(app)?;
     let bash = find_bash(app)
         .ok_or("Git Bash is required for this preview. Select Prepare Git Bash first.")?;
-    let mut command = Command::new(root.join("node/node.exe"));
+    let executable = std::env::current_exe().map_err(|e| e.to_string())?;
+    let mut command = Command::new(executable.with_file_name("jouzu-console.exe"));
     command
-        .arg(root.join("console.mjs"))
+        .arg(&root)
         .current_dir(path)
         .env("JOUZU_LAUNCHER_BASH", bash);
     #[cfg(windows)]
