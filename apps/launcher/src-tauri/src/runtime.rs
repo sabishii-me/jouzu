@@ -9,7 +9,8 @@ pub fn managed_root() -> Result<PathBuf, String> {
         return Ok(PathBuf::from(root));
     }
     let local = std::env::var_os("LOCALAPPDATA").ok_or("LOCALAPPDATA is unavailable")?;
-    Ok(PathBuf::from(local).join("Shisa.ai").join("Jouzu"))
+    let namespace = if cfg!(feature = "update-rehearsal") { "JouzuUpdateTest" } else { "Jouzu" };
+    Ok(PathBuf::from(local).join("Shisa.ai").join(namespace))
 }
 
 pub fn effective_home() -> Result<PathBuf, String> {

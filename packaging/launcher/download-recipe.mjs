@@ -23,10 +23,10 @@ async function boundedDownload(url, maxBytes, signal) {
 /** Download only signed, enumerated files. No archive extraction or active mutation.
  * URL and public key must be launcher-owned configuration, not renderer input.
  */
-export async function downloadRecipe({url,publicKey,expected,destination,signal,allowLoopbackHttp=false,onProgress=()=>{}}) {
+export async function downloadRecipe({url,publicKey,expected,destination,signal,allowLoopbackHttp=false,allowTestHttpHost=null,onProgress=()=>{}}) {
  const source=new URL(url);
  if(source.username || source.password || source.search || source.hash || !source.pathname.endsWith('/'))throw new Error('Invalid recipe base URL');
- if(source.protocol!=='https:' && !(allowLoopbackHttp && source.protocol==='http:' && ['127.0.0.1','[::1]'].includes(source.hostname)))throw new Error('Recipe requires HTTPS');
+ if(source.protocol!=='https:' && !(source.protocol==='http:' && ((allowLoopbackHttp && ['127.0.0.1','[::1]'].includes(source.hostname)) || (allowTestHttpHost && source.hostname===allowTestHttpHost))))throw new Error('Recipe requires HTTPS');
  const output=resolve(destination);
  if(existsSync(output))throw new Error('Recipe destination already exists');
  const timeout=AbortSignal.timeout(10*60*1000);

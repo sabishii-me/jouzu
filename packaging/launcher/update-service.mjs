@@ -10,7 +10,9 @@ try {
  if(!['check','install'].includes(action))throw Error('Invalid update action');
  const base=new URL(config.url);
  const local=config.allowLoopbackHttp===true && base.protocol==='http:' && ['127.0.0.1','[::1]'].includes(base.hostname);
- if(base.protocol!=='https:'&&!local)throw Error('Update source requires HTTPS');
+ const testHost=config.allowTestHttpHost;
+ const testHttp=base.protocol==='http:' && typeof testHost==='string' && base.hostname===testHost;
+ if(base.protocol!=='https:'&&!local&&!testHttp)throw Error('Update source requires HTTPS');
  if(base.username||base.password||base.search||base.hash||!base.pathname.endsWith('/'))throw Error('Invalid update source');
  async function fetchSmall(name,limit){
   const response=await fetch(new URL(name,base),{redirect:'error',signal:AbortSignal.timeout(20000)});
@@ -28,7 +30,7 @@ try {
  else{
   const requested=JSON.parse(readFileSync(0,'utf8'));
   if(requested.version!==version)throw Error('Release changed; check again');
-  const result=await installJouzuUpdate({managed,runtime:join(install,'runtime'),url:config.url,publicKey:config.publicKey,version,allowLoopbackHttp:local,onProgress:event=>process.stderr.write(JSON.stringify(event)+'\n')});
+  const result=await installJouzuUpdate({managed,runtime:join(install,'runtime'),url:config.url,publicKey:config.publicKey,version,allowLoopbackHttp:local,allowTestHttpHost:testHttp?testHost:null,onProgress:event=>process.stderr.write(JSON.stringify(event)+'\n')});
   console.log(JSON.stringify({version:result.version}));
  }
 }catch(error){

@@ -9,13 +9,13 @@ import { checkStagedHealth } from './check-update-health.mjs';
 /** A single process-owned lock spans download through activation. Caller config
  * (including expected release version) must come from a trusted release source.
  */
-export async function installJouzuUpdate({managed,runtime,url,publicKey,version,signal,allowLoopbackHttp=false,onProgress=()=>{}}) {
+export async function installJouzuUpdate({managed,runtime,url,publicKey,version,signal,allowLoopbackHttp=false,allowTestHttpHost=null,onProgress=()=>{}}) {
  return withUpdateTransaction(managed,async transaction=>{
   const slot=randomUUID();
   const versions=join(transaction.root,'versions');mkdirSync(versions,{recursive:true});
   const work=join(transaction.root,`recipe-${slot}`);
   try{
-   const {recipe}=await downloadRecipe({url,publicKey,expected:{version,platform:process.platform,arch:process.arch,maxBytes:512*1024*1024},destination:work,signal,allowLoopbackHttp,onProgress});
+   const {recipe}=await downloadRecipe({url,publicKey,expected:{version,platform:process.platform,arch:process.arch,maxBytes:512*1024*1024},destination:work,signal,allowLoopbackHttp,allowTestHttpHost,onProgress});
    await stageJouzuUpdate({recipe,runtime,store:join(transaction.root,'store'),destination:join(versions,slot),signal,onProgress});
    signal?.throwIfAborted();
    onProgress({phase:'verifying'});

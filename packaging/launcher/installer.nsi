@@ -778,7 +778,11 @@ Function .onInstSuccess
     ${GetOptions} $CMDLINE "/R" $R0
     ${IfNot} ${Errors}
       ${GetOptions} $CMDLINE "/ARGS" $R0
-      nsis_tauri_utils::RunAsUser "$INSTDIR\${MAINBINARYNAME}.exe" "$R0"
+      !if "${INSTALLMODE}" == "currentUser"
+        Exec '"$INSTDIR\${MAINBINARYNAME}.exe" $R0'
+      !else
+        nsis_tauri_utils::RunAsUser "$INSTDIR\${MAINBINARYNAME}.exe" "$R0"
+      !endif
     ${EndIf}
   ${EndIf}
 FunctionEnd
