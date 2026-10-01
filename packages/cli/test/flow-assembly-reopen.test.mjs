@@ -86,7 +86,14 @@ test("a shutdown-terminated dependency delivers one decision after reopen and ne
 
 	const delivered = next.bodies.length;
 	await idle(600);
-	assert.equal(next.bodies.length, delivered, "a delivered decision is not replayed on later turns");
+	assert.equal(
+		next.bodies.length,
+		delivered,
+		`a delivered decision is not replayed on later turns: ${JSON.stringify({
+			appended: next.bodies.map((body) => body.messages.at(-1)),
+			attempts: (await next.ingress.branch().attachment.ledger.snapshot()).attempts,
+		})}`,
+	);
 	assert.deepEqual(next.errors, []);
 });
 
