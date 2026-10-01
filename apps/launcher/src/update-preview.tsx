@@ -16,13 +16,15 @@ export function UpdatePreview({locale}:{locale:Locale}) {
  const [versions,setVersions]=useState(['0.1.17','0.1.20']);const targets=['0.1.18','0.1.21'];
  const [progress,setProgress]=useState(0);const timers=useRef<ReturnType<typeof setTimeout>[]>([]);
  const generation=useRef(0);
+ const failed=useRef(false);
+ const extras={en:['Jouzu only','Launcher only'],ja:['Jouzu のみ','ランチャーのみ'],'zh-Hans':['仅 Jouzu 有更新','仅启动器有更新'],'zh-Hant':['僅 Jouzu 有更新','僅啟動器有更新']}[locale];
  function clear(){generation.current++;timers.current.forEach(clearTimeout);timers.current=[];}
  useEffect(()=>()=>clear(),[]);
  function later(fn:()=>void,delay:number){const id=generation.current;timers.current.push(setTimeout(()=>{if(id===generation.current)fn();},delay));}
  function phase(index:number,p:Phase){setPhases(old=>old.map((v,i)=>i===index?p:v));}
- function reset(value:string){clear();setScenario(value);setVersions(['0.1.17','0.1.20']);setProgress(0);setPhases(value==='current'?['current','current']:value==='error'?['error','error']:['available','available']);}
- function check(){setPhases(['checking','checking']);later(()=>setPhases(scenario==='error'?['error','error']:versions.map((v,i)=>scenario==='current'||v===targets[i]?'current':'available')),850);}
- function install(index:number){phase(index,'downloading');setProgress(0);for(let step=1;step<=10;step++)later(()=>{setProgress(step*10);if(step===5&&scenario==='fail'){clear();phase(index,'error');}else if(step===10){phase(index,'installing');later(()=>{setVersions(old=>old.map((v,i)=>i===index?targets[i]:v));phase(index,'complete');},900);}},step*180);}
+ function reset(value:string){clear();failed.current=false;setScenario(value);setVersions(value==='current'?targets:value==='jouzu'?['0.1.17','0.1.21']:value==='launcher'?['0.1.18','0.1.20']:['0.1.17','0.1.20']);setProgress(0);setPhases(value==='current'?['current','current']:value==='error'?['error','error']:value==='jouzu'?['available','current']:value==='launcher'?['current','available']:['available','available']);}
+ function check(){setPhases(['checking','checking']);later(()=>setPhases(versions.map((v,i)=>v===targets[i]?'current':'available')),850);}
+ function install(index:number){phase(index,'downloading');setProgress(0);for(let step=1;step<=10;step++)later(()=>{setProgress(step*10);if(step===5&&scenario==='fail'&&!failed.current){failed.current=true;clear();phase(index,'error');}else if(step===10){phase(index,'installing');later(()=>{setVersions(old=>old.map((v,i)=>i===index?targets[i]:v));phase(index,'complete');},900);}},step*180);}
  const busy=phases.some(p=>['checking','downloading','installing'].includes(p));
  return <div className="space-y-6">
   <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-lg font-semibold">{t[0]}</h2><p className="mt-1 text-sm text-muted-foreground">{t[1]}</p></div><Button variant="outline" className="text-sm" disabled={busy} onClick={check}>{phases.includes('checking')?t[9]:t[2]}</Button></div>
@@ -34,6 +36,6 @@ export function UpdatePreview({locale}:{locale:Locale}) {
    {p==='error'&&<p role="alert" className="text-sm text-destructive">{scenario==='fail'?({en:'Download failed. Your current version is unchanged.',ja:'ダウンロードに失敗しました。現在のバージョンは変更されていません。','zh-Hans':'下载失败，当前版本未改变。','zh-Hant':'下載失敗，目前版本未變更。'}[locale]):t[13]}</p>}
    {(p==='downloading'||p==='installing')&&<Progress value={p==='downloading'?progress:undefined}/>}
   </section>)}</div>
-  <aside className="border-t border-dashed border-border pt-4 space-y-2"><p className="text-xs text-muted-foreground">{t[16]}</p><Select value={scenario} onValueChange={reset}><SelectTrigger className="w-56" aria-label={t[16]}><SelectValue/></SelectTrigger><SelectContent>{['available','current','error','fail'].map((value,i)=><SelectItem key={value} value={value}>{t[17+i]}</SelectItem>)}</SelectContent></Select></aside>
+  <aside className="border-t border-dashed border-border pt-4 space-y-2"><p className="text-xs text-muted-foreground">{t[16]}</p><Select value={scenario} onValueChange={reset}><SelectTrigger className="w-56" aria-label={t[16]}><SelectValue/></SelectTrigger><SelectContent>{['available','current','error','fail','jouzu','launcher'].map((value,i)=><SelectItem key={value} value={value}>{i<4?t[17+i]:extras[i-4]}</SelectItem>)}</SelectContent></Select></aside>
  </div>;
 }

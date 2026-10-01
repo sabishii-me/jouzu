@@ -86,3 +86,25 @@ test('development update preview never invokes real update commands', async ({pa
  expect(await page.evaluate(()=>(window as any).updateInstalls)).toBe(0);
  expect(await page.evaluate(()=>(window as any).updateChecks)).toBe(0);
 });
+
+test('update preview supports failed download, retry and independent components', async ({page}) => {
+ await page.addInitScript(()=>{localStorage.setItem('jouzu.ui.language','en');});
+ await page.goto('http://localhost:1420');
+ await page.getByRole('button',{name:'Update available',exact:true}).click();
+ const dialog=page.getByRole('dialog');
+ const scenarios=dialog.getByRole('combobox');
+ await scenarios.click();await page.getByRole('option',{name:'Download fails',exact:true}).click();
+ await dialog.getByRole('button',{name:'Update Jouzu',exact:true}).click();
+ await expect(dialog.getByRole('alert')).toContainText('Your current version is unchanged');
+ await expect(dialog.getByText('Current version 0.1.17',{exact:true})).toBeVisible();
+ await dialog.getByRole('button',{name:'Retry',exact:true}).click();
+ await expect(dialog.getByText('Updated',{exact:true})).toBeVisible();
+ await expect(dialog.getByText('Current version 0.1.18',{exact:true})).toBeVisible();
+ await scenarios.click();await page.getByRole('option',{name:'Launcher only',exact:true}).click();
+ await expect(dialog.getByRole('button',{name:'Update Jouzu',exact:true})).toHaveCount(0);
+ await expect(dialog.getByRole('button',{name:'Update and restart',exact:true})).toBeVisible();
+ await scenarios.click();await page.getByRole('option',{name:'Check failed',exact:true}).click();
+ await dialog.getByRole('button',{name:'Check for updates',exact:true}).click();
+ await expect(dialog.getByRole('alert')).toHaveCount(0);
+ await expect(dialog.getByRole('button',{name:'Update Jouzu',exact:true})).toBeVisible();
+});
