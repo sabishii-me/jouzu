@@ -5,10 +5,16 @@
   Abort
   InitPluginsDir
   File /oname=$PLUGINSDIR\stop-managed-processes.ps1 "${JOUZU_HOOK_DIRECTORY}\stop-managed-processes.ps1"
+  ${If} $UpdateMode = 1
+  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\stop-managed-processes.ps1" -RefuseActiveSessions -InstallRoot "$INSTDIR"'
+  ${Else}
   nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\stop-managed-processes.ps1" -InstallRoot "$INSTDIR"'
+  ${EndIf}
   Pop $0
   Pop $1
   ${If} $0 != 0
+    SetErrorLevel 1
+    IfSilent +2
     MessageBox MB_OK|MB_ICONSTOP "$(jouzuCloseFailed)"
     Abort
   ${EndIf}

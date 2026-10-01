@@ -73,3 +73,13 @@ test("language is remembered independently of installation location", () => {
   assert.ok(condition >= 0 && deletion > condition);
   assert.ok(template.indexOf('$(jouzuDeleteFailed)') < template.indexOf('; Installation metadata is not user data.'));
 });
+
+test('updater uses quiet NSIS and skips language UI with remembered fallback', () => {
+  const config = JSON.parse(readFileSync(new URL('../../apps/launcher/src-tauri/tauri.conf.json', import.meta.url)));
+  assert.equal(config.plugins.updater.windows.installMode, 'quiet');
+  const init = template.slice(template.indexOf('Function .onInit'), template.indexOf('!insertmacro SetContext', template.indexOf('Function .onInit')));
+  assert.match(init, /CreateMutexW/);
+  assert.match(init, /SetErrorLevel 1618/);
+  assert.match(init, /\$UpdateMode = 1[\s\S]*StrCpy \$LANGUAGE 1033[\s\S]*ReadRegStr[\s\S]*\$\{Else\}[\s\S]*MUI_LANGDLL_DISPLAY/);
+  assert.match(hooks, /\$UpdateMode = 1[\s\S]*-RefuseActiveSessions/);
+});

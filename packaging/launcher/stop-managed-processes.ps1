@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$InstallRoot)
+param([Parameter(Mandatory=$true)][string]$InstallRoot, [switch]$RefuseActiveSessions)
 $ErrorActionPreference = 'Stop'
 try {
     $directory = [IO.Path]::GetFullPath($InstallRoot).TrimEnd('\')
@@ -19,6 +19,13 @@ try {
     # Program metadata establishes that the selected directory belongs to Jouzu.
     $product = (Get-Item -LiteralPath $launcher).VersionInfo.ProductName
     if ($product -ne 'Jouzu Launcher') { throw 'Existing executable is not a Jouzu launcher.' }
+    if ($RefuseActiveSessions) {
+        $sessions = @(Get-CimInstance Win32_Process | Where-Object {
+            $_.ExecutablePath -and $_.ExecutablePath.StartsWith($root, [StringComparison]::OrdinalIgnoreCase) -and
+            $_.Name -match '^(console|node)\.exe$'
+        })
+        if ($sessions.Count -gt 0) { throw 'Close active Jouzu sessions before updating.' }
+    }
     for ($attempt = 0; $attempt -lt 3; $attempt++) {
         $owned = @(Get-CimInstance Win32_Process | Where-Object {
             $_.ExecutablePath -and $_.ExecutablePath.StartsWith($root, [StringComparison]::OrdinalIgnoreCase) -and

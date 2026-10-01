@@ -489,6 +489,13 @@ FunctionEnd
 !include "${JOUZU_HOOK_DIRECTORY}\installer-messages.nsh"
 
 Function .onInit
+  ; Hold the handle for this process lifetime, including language selection.
+  System::Call 'kernel32::CreateMutexW(p 0, i 0, w "Local\${BUNDLEID}-installer") p .r0 ?e'
+  Pop $1
+  ${If} $1 = 183
+    SetErrorLevel 1618
+    Quit
+  ${EndIf}
   ${GetOptions} $CMDLINE "/P" $PassiveMode
   ${IfNot} ${Errors}
     StrCpy $PassiveMode 1
@@ -504,9 +511,18 @@ Function .onInit
     StrCpy $UpdateMode 1
   ${EndIf}
 
-  !if "${DISPLAYLANGUAGESELECTOR}" == "true"
-    !insertmacro MUI_LANGDLL_DISPLAY
-  !endif
+  ${If} $UpdateMode = 1
+    ; Updates never prompt. English is the fallback for silent initial installs.
+    StrCpy $LANGUAGE 1033
+    ReadRegStr $0 HKCU "${JOUZU_PREFERENCES_KEY}" "Installer Language"
+    ${If} $0 != ""
+      StrCpy $LANGUAGE $0
+    ${EndIf}
+  ${Else}
+    !if "${DISPLAYLANGUAGESELECTOR}" == "true"
+      !insertmacro MUI_LANGDLL_DISPLAY
+    !endif
+  ${EndIf}
 
   !insertmacro SetContext
 
