@@ -20,7 +20,7 @@ test("installation hooks never replace the selected destination", () => {
 test("uninstall removes installation metadata independently of user-data choice", () => {
   const block = template.slice(template.indexOf("; Installation metadata is not user data."), template.indexOf("!ifmacrodef NSIS_HOOK_POSTUNINSTALL"));
   assert.ok(block.indexOf('DeleteRegKey SHCTX "${MANUPRODUCTKEY}"') >= 0);
-  assert.ok(!block.includes('$DeleteAppDataCheckboxState'));
+  assert.ok(block.indexOf('DeleteRegKey SHCTX "${MANUPRODUCTKEY}"') < block.indexOf('${If} $DeleteAppDataCheckboxState = 1'));
   assert.ok(block.indexOf('${If} $UpdateMode <> 1') < block.indexOf('DeleteRegKey SHCTX'));
 });
 
@@ -61,4 +61,15 @@ test("all four installer locales contain the same custom message keys", () => {
   const config = JSON.parse(readFileSync(new URL("../../apps/launcher/src-tauri/tauri.conf.json", import.meta.url)));
   assert.deepEqual(config.bundle.windows.nsis.languages, ["English", "Japanese", "SimpChinese", "TradChinese"]);
   assert.equal(config.bundle.windows.nsis.displayLanguageSelector, true);
+});
+
+test("language is remembered independently of installation location", () => {
+  assert.doesNotMatch(template, /!define MUI_LANGDLL_ALWAYSSHOW/);
+  assert.match(template, /!define MUI_LANGDLL_ALLLANGUAGES/);
+  assert.ok(template.includes('!define MUI_LANGDLL_REGISTRY_KEY "${JOUZU_PREFERENCES_KEY}"'));
+  const cleanup = template.slice(template.indexOf('; Installation metadata is not user data.'));
+  const condition = cleanup.indexOf('${If} $DeleteAppDataCheckboxState = 1');
+  const deletion = cleanup.indexOf('DeleteRegValue HKCU "${JOUZU_PREFERENCES_KEY}" "Installer Language"');
+  assert.ok(condition >= 0 && deletion > condition);
+  assert.ok(template.indexOf('$(jouzuDeleteFailed)') < template.indexOf('; Installation metadata is not user data.'));
 });

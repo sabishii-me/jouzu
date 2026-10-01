@@ -162,9 +162,13 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
   !define MUI_UNICON "${UNINSTALLERICON}"
 !endif
 
+; Offer all supported languages on first use; remember the user selection.
+!define MUI_LANGDLL_ALLLANGUAGES
+
 ; Define registry key to store installer language
 !define MUI_LANGDLL_REGISTRY_ROOT "HKCU"
-!define MUI_LANGDLL_REGISTRY_KEY "${MANUPRODUCTKEY}"
+!define JOUZU_PREFERENCES_KEY "Software\Shisa.ai\Jouzu\Preferences"
+!define MUI_LANGDLL_REGISTRY_KEY "${JOUZU_PREFERENCES_KEY}"
 !define MUI_LANGDLL_REGISTRY_VALUENAME "Installer Language"
 
 ; Installer pages, must be ordered as they appear
@@ -898,6 +902,12 @@ Section Uninstall
   ; Preserve it only for the installer-internal update transition.
   ${If} $UpdateMode <> 1
     DeleteRegKey SHCTX "${MANUPRODUCTKEY}"
+    ; Language is a user preference, not installation-location metadata.
+    ; This point is reached only after requested user-data deletion succeeded.
+    ${If} $DeleteAppDataCheckboxState = 1
+      DeleteRegValue HKCU "${JOUZU_PREFERENCES_KEY}" "Installer Language"
+      DeleteRegKey /ifempty HKCU "${JOUZU_PREFERENCES_KEY}"
+    ${EndIf}
     DeleteRegKey /ifempty SHCTX "${MANUKEY}"
     SetShellVarContext current
     RmDir /r "\\?\$LOCALAPPDATA\Shisa.ai\Jouzu\cache"
