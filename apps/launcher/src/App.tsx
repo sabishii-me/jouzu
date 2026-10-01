@@ -26,7 +26,9 @@ export function App() {
   const [version, setVersion] = useState<string | null>(null);
   const [components, setComponents] = useState<Components | null>(null);
   const [query, setQuery] = useState("");
-  const [setup, setSetup] = useState<{ profile: string | null; account: { signedIn: boolean } } | null>(null);
+  const [setup, setSetup] = useState<{ profile: string | null; account: { signedIn: boolean }; providers: {id:string;name:string}[]; credentials: {providerId:string}[]; models: {provider:string;id:string;name:string}[]; defaultProvider?:string; defaultModel?:string } | null>(null);
+  const [provider, setProvider] = useState("");
+  const [token, setToken] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [notice, setNotice] = useState<"requested" | "removed" | null>(null);
   const busy = operation !== null;
@@ -110,22 +112,30 @@ export function App() {
         <DialogContent showCloseButton={false} className="flex h-[min(560px,85dvh)] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl border-border p-0 sm:max-w-3xl">
           {error && <p role="alert" className="border-b border-border bg-red-50 px-4 py-2 text-sm text-red-900">{error}</p>}
           <DialogDescription className="sr-only">{t.preferences}</DialogDescription>
-          <Tabs defaultValue="general" orientation="vertical" className="min-h-0 flex-1 gap-0">
+          <Tabs defaultValue="providers" orientation="vertical" className="min-h-0 flex-1 gap-0">
             <aside className="w-36 shrink-0 border-r border-border bg-muted/60 p-3 sm:w-48">
               <DialogTitle className="mb-5 flex items-center gap-2 px-2 pt-2 text-sm font-semibold"><Settings className="size-4" />{t.settings}</DialogTitle>
               <TabsList aria-label={t.settings} className="h-auto w-full items-stretch gap-1 bg-transparent p-0">
+                <TabsTrigger value="providers" className="min-h-10 justify-start px-3">{t.providers}</TabsTrigger>
                 <TabsTrigger value="general" className="min-h-10 justify-start gap-2 px-3"><Languages className="size-4" />{t.general}</TabsTrigger>
                 <TabsTrigger value="about" className="min-h-10 justify-start whitespace-normal px-3 text-left">{t.versions}</TabsTrigger>
               </TabsList>
             </aside>
             <ScrollArea className="min-w-0 flex-1">
               <div className="px-5 pb-6 pt-14 sm:px-6">
+                <TabsContent value="providers" className="m-0 space-y-4">
+                  <Card className="border-border shadow-none"><CardHeader><CardTitle>{t.providers}</CardTitle></CardHeader><CardContent className="space-y-4">
+                    <Select value={provider} onValueChange={value => { setProvider(value); setToken(""); }}><SelectTrigger className="w-full" aria-label={t.providers}><SelectValue placeholder={t.providers} /></SelectTrigger><SelectContent>{setup?.providers.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent></Select>
+                    {provider && <><Input type="password" autoComplete="off" aria-label={t.apiKey} placeholder={t.apiKey} value={token} onChange={event => setToken(event.target.value)} /><div className="flex gap-2"><Button disabled={busy || !token.trim()} onClick={async () => { await configure({ action: "provider-key", provider, token }); setToken(""); }}>{t.save}</Button>{setup?.credentials.some(c => c.providerId === provider) && <Button variant="outline" disabled={busy} onClick={() => void configure({ action: "provider-remove", provider })}>{t.removeCredential}</Button>}</div>
+                    <Select value={setup?.defaultProvider === provider ? setup.defaultModel : ""} onValueChange={model => void configure({ action: "default-model", provider, model })}><SelectTrigger className="w-full" aria-label={t.defaultModel}><SelectValue placeholder={t.defaultModel} /></SelectTrigger><SelectContent>{setup?.models.filter(m => m.provider === provider).map(m => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}</SelectContent></Select></>}
+                  </CardContent></Card>
+                </TabsContent>
                 <TabsContent value="general" className="m-0 space-y-4">
                   <Card className="border-border shadow-none"><CardHeader><CardTitle>{t.language}</CardTitle></CardHeader><CardContent>
                     <Select value={locale} onValueChange={value => setLocale(value as Locale)}><SelectTrigger aria-label={t.language} className="w-full"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(locales).map(([key,label]) => <SelectItem key={key} value={key}>{label}</SelectItem>)}</SelectContent></Select>
                   </CardContent></Card>
                   <Card className="border-border shadow-none"><CardHeader><CardTitle>{t.profile}</CardTitle><CardDescription>{t.profileHint}</CardDescription></CardHeader><CardContent><Select disabled={busy || !setup} value={setup?.profile ?? ""} onValueChange={profile => void configure({ action: "profile", profile })}><SelectTrigger className="w-full" aria-label={t.profile}><SelectValue placeholder={t.chooseProfile} /></SelectTrigger><SelectContent><SelectItem value="core">{t.coreProfile}</SelectItem><SelectItem value="ja">{t.jaProfile}</SelectItem></SelectContent></Select></CardContent></Card>
-                  <Card className="border-border shadow-none"><CardHeader><CardTitle>{t.importTitle}</CardTitle><CardDescription>{t.importHint}</CardDescription></CardHeader><CardContent className="flex flex-wrap gap-2"><Button disabled={busy || !setup} onClick={() => void configure({ action: "import", accept: true })}>{t.importAccept}</Button><Button variant="outline" disabled={busy || !setup} onClick={() => void configure({ action: "import", accept: false })}>{t.importDecline}</Button></CardContent></Card>
+
                 </TabsContent>
                 <TabsContent value="about" className="m-0 space-y-4">
                   <Card className="border-border shadow-none"><CardHeader><CardTitle>{t.versions}</CardTitle></CardHeader><CardContent><dl className="divide-y divide-border text-sm"><div className="flex justify-between gap-4 py-3"><dt>{t.launcher}</dt><dd>{development ? t.development : version ?? t.unavailable}</dd></div><div className="flex justify-between gap-4 py-3"><dt>Jouzu</dt><dd>{components?.jouzu ?? t.unavailable}</dd></div><div className="flex justify-between gap-4 py-3"><dt>{t.tools}</dt><dd>{state?.bash ? t.available : t.firstUse}</dd></div></dl></CardContent></Card>
@@ -141,14 +151,15 @@ export function App() {
       </div>
     </header>
     {error && <div role="alert" className="mt-5 flex items-start justify-between gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-900"><div><p className="font-medium">{t.error}</p><details className="mt-2 break-all"><summary className="cursor-pointer">{t.details}</summary><p className="mt-2">{error}</p></details></div><button onClick={() => setError(null)} aria-label={t.dismiss}><X className="size-4" /></button></div>}
-    <section className="flex min-h-0 flex-1 flex-col gap-3 py-4" aria-label={t.home}>
-      <div className="flex items-center gap-2"><Search className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" /><Input aria-label={t.search} placeholder={t.search} value={query} onChange={event => setQuery(event.target.value)} /><span className="text-xs tabular-nums text-muted-foreground">{recent.length}</span></div>
-      <div ref={listRef} aria-busy={busy} className={`flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-card ${dragging ? "border-primary ring-2 ring-primary/30" : "border-border"}`}>
+    <section className="flex min-h-0 flex-1 flex-col py-4" aria-label={t.home}>
+      <div className="flex items-center gap-2 rounded-t-xl border border-b-0 border-border bg-card px-3 py-2"><Search className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" /><Input aria-label={t.search} placeholder={t.search} value={query} onChange={event => setQuery(event.target.value)} /></div>
+      <div ref={listRef} aria-busy={busy} className={`flex min-h-0 flex-1 flex-col overflow-hidden rounded-b-xl border bg-card ${dragging ? "border-primary ring-2 ring-primary/30" : "border-border"}`}>
         <ScrollArea className="min-h-0 flex-1">
           <ul className="divide-y divide-border">
             <li><Button variant="ghost" className="w-full justify-start rounded-none px-5 py-4" onClick={chooseFolder} disabled={!state || busy} aria-label={t.addFolder} title={t.addFolder}><Plus /><span>{t.addFolder}</span></Button></li>
-            {recent.map(workspace => <li key={workspace.id} className="flex items-center gap-1 px-2 hover:bg-muted/50"><Button variant="ghost" disabled={busy || !state?.ready} onClick={() => launch(workspace.path)} className="h-auto min-w-0 flex-1 justify-start rounded-none px-3 py-3 text-left" title={workspace.path}><FolderOpen className="shrink-0 text-primary" /><span className="min-w-0 flex-1"><span className="block truncate">{workspace.path.split(/[\/]/).filter(Boolean).at(-1) ?? workspace.path}</span><span className="mt-1 block truncate text-xs font-normal text-muted-foreground">{workspace.path}</span></span><ArrowUpRight className="shrink-0 text-muted-foreground" /></Button><Button variant="ghost" disabled={busy} onClick={() => forget(workspace)} title={t.remove} aria-label={`${t.remove}: ${workspace.path}`}><X /></Button></li>)}
+            {recent.map(workspace => <li key={workspace.id} className="flex items-center gap-1 px-2 hover:bg-muted/50"><Button variant="ghost" disabled={busy || !state?.ready} onClick={() => launch(workspace.path)} className="h-auto min-w-0 flex-1 justify-start rounded-none px-3 py-3 text-left" title={workspace.path}><FolderOpen className="shrink-0 text-primary" /><span className="min-w-0 flex-1"><span className="block truncate">{workspace.path.split(/[\/]/).filter(Boolean).at(-1) ?? workspace.path}</span><span className="mt-1 block truncate text-xs font-normal text-muted-foreground">{workspace.path}</span></span><span className="text-xs text-primary">{t.launch}</span><ArrowUpRight className="shrink-0 text-primary" /></Button><Button variant="ghost" disabled={busy} onClick={() => forget(workspace)} title={t.remove} aria-label={`${t.remove}: ${workspace.path}`}><X /></Button></li>)}
           </ul>
+          {!query && !recent.length && <p className="px-5 py-8 text-center text-sm text-muted-foreground">{t.dropHint}</p>}
           {query && !recent.length && <p className="p-5 text-sm text-muted-foreground">{t.noResults}</p>}
         </ScrollArea>
       </div>
