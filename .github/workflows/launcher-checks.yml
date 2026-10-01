@@ -1,0 +1,65 @@
+name: Launcher Windows checks
+
+# No signing identity, secrets or publication on pull requests.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'apps/launcher/**'
+      - 'packaging/launcher/**'
+      - '.github/workflows/launcher-checks.yml'
+permissions:
+  contents: read
+concurrency:
+  group: launcher-checks-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24.19.0'
+      - name: Install frontend dependencies
+        run: npm ci --prefix apps/launcher
+      - name: Frontend build and unit tests
+        run: |
+          npm --prefix apps/launcher run build
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          npm --prefix apps/launcher test
+      - name: Packaging and update fixtures
+        run: |
+          $tests = Get-ChildItem packaging/launcher -Filter '*.test.mjs' | ForEach-Object { $_.FullName }
+          npm run test:node -- @tests
+      - name: Rust toolchain
+        run: rustup show active-toolchain
+      - name: Native launcher tests
+        working-directory: apps/launcher/src-tauri
+        run: cargo test --locked --bins
+      - name: Build unsigned application binaries
+        working-directory: apps/launcher/src-tauri
+        run: cargo build --locked --release --bins
+      - name: Install browser test runner
+        working-directory: apps/launcher
+        run: npx playwright install chromium
+      - name: Mocked UI tests
+        working-directory: apps/launcher
+        run: |
+          $vite = Start-Process node -ArgumentList 'node_modules/vite/bin/vite.js' -PassThru -NoNewWindow
+          try {
+            $ready = $false
+            for ($i = 0; $i -lt 60; $i++) {
+              try { Invoke-WebRequest http://localhost:1420 -TimeoutSec 2 | Out-Null; $ready = $true; break } catch { Start-Sleep 1 }
+            }
+            if (-not $ready) { throw 'Vite did not become ready' }
+            npx playwright test e2e/control-center.spec.ts --reporter=line
+            $code = $LASTEXITCODE
+          } finally { if (-not $vite.HasExited) { Stop-Process -Id $vite.Id } }
+          exit $code
