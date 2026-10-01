@@ -1,6 +1,7 @@
 export const locales = { en: "English", ja: "日本語", "zh-Hans": "简体中文", "zh-Hant": "繁體中文" };
 export type Locale = keyof typeof locales;
 const en = {
+searchProviders: "Search services", credentialSaved: "Key saved", checkConnection: "Check", checking: "Checking…", checkReachable: "Model endpoint reachable", checkAuthFailed: "Authentication rejected", checkNetworkFailed: "Network failed", checkServerFailed: "Service error", checkUnsupported: "Check unsupported", checkMissing: "Credential required", checkHint: "Check requests the model list; it does not generate text or verify every model.",
  editValue: "Edit",
 connectionType: "Connection type", presetService: "Preset service", service: "Service", chooseService: "Choose a service", editConnection: "Configure connection",
  waitingAuthorization: "Waiting for browser authorization",
@@ -22,6 +23,7 @@ minimize: "Minimize", maximize: "Maximize or restore", closeWindow: "Close launc
 };
 type Messages = typeof en;
 const ja: Messages = {
+searchProviders: "サービスを検索", credentialSaved: "キー保存済み", checkConnection: "確認", checking: "確認中…", checkReachable: "モデル一覧に接続可能", checkAuthFailed: "認証拒否", checkNetworkFailed: "通信失敗", checkServerFailed: "サービスエラー", checkUnsupported: "確認非対応", checkMissing: "認証情報が必要", checkHint: "モデル一覧への接続を確認します。生成や全モデルの検証は行いません。",
  editValue: "編集",
 connectionType: "接続の種類", presetService: "プリセットサービス", service: "サービス", chooseService: "サービスを選択", editConnection: "接続を設定",
  waitingAuthorization: "ブラウザーでの認証を待っています",
@@ -42,6 +44,7 @@ minimize: "最小化", maximize: "最大化・元に戻す", closeWindow: "ラ�
  language: "表示言語", languageHint: "ランチャーの表示言語を変更します。モデルや日本語サポートの設定は変更しません。", versionsHint: "ランチャーと Jouzu は別々のコンポーネントです。", launcher: "ランチャー", unavailable: "取得できません", noUpdates: "アプリ内更新は準備中です。", devHint: "これは開発版です。インストール済みのリリース版ではありません。", tools: "コマンドツール", available: "利用可能", firstUse: "必要に応じて準備", back: "フォルダーに戻る", count: "最近使ったフォルダー", clear: "検索をクリア", preferences: "ランチャーを使いやすく設定しましょう。", refresh: "状態を更新"
 };
 const hans: Messages = {
+searchProviders: "搜索服务", credentialSaved: "密钥已保存", checkConnection: "检查连接", checking: "检查中…", checkReachable: "模型端点可访问", checkAuthFailed: "认证被拒绝", checkNetworkFailed: "网络连接失败", checkServerFailed: "服务端错误", checkUnsupported: "不支持此检查", checkMissing: "需要凭据", checkHint: "检查会请求模型列表，不生成内容，也不代表所有模型均可调用。",
  editValue: "编辑",
 connectionType: "连接类型", presetService: "预设服务", service: "服务", chooseService: "选择服务", editConnection: "配置连接",
  waitingAuthorization: "等待浏览器授权",
@@ -62,6 +65,7 @@ minimize: "最小化", maximize: "最大化或还原", closeWindow: "关闭启�
  language: "界面语言", languageHint: "仅更改启动器界面，不更改模型或日语支持配置。", versionsHint: "启动器与 Jouzu 是独立的组件。", launcher: "启动器", unavailable: "不可用", noUpdates: "应用内更新暂不可用。", devHint: "这是开发构建，不是已安装的发行版。", tools: "命令工具", available: "可用", firstUse: "需要时准备", back: "返回文件夹", count: "最近的文件夹", clear: "清除搜索", preferences: "按你的习惯设置启动器。", refresh: "刷新状态"
 };
 const hant: Messages = {
+searchProviders: "搜尋服務", credentialSaved: "金鑰已儲存", checkConnection: "檢查連接", checking: "檢查中…", checkReachable: "模型端點可存取", checkAuthFailed: "驗證被拒絕", checkNetworkFailed: "網路連接失敗", checkServerFailed: "伺服器錯誤", checkUnsupported: "不支援此檢查", checkMissing: "需要憑證", checkHint: "檢查會請求模型清單，不產生內容，也不代表所有模型皆可呼叫。",
  editValue: "編輯",
 connectionType: "連接類型", presetService: "預設服務", service: "服務", chooseService: "選擇服務", editConnection: "設定連接",
  waitingAuthorization: "等待瀏覽器授權",

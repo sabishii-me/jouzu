@@ -1,4 +1,5 @@
 export interface ControlState {
+  connectionCheck?: { provider: string; status: string };
   profile: string | null;
   account: { signedIn: boolean };
   customProviders: { id: string; url: string; model: string; editable: boolean }[];
@@ -22,5 +23,6 @@ export function parseControlState(value: unknown): ControlState {
     if (typeof row.editable !== "boolean" || (row.editable && (typeof row.url !== "string" || typeof row.model !== "string"))) return fail();
   }
   for (const key of ["defaultProvider", "defaultModel"]) if (value[key] !== undefined && typeof value[key] !== "string") return fail();
+  if (value.connectionCheck !== undefined && (!record(value.connectionCheck) || typeof value.connectionCheck.provider !== "string" || typeof value.connectionCheck.status !== "string")) return fail();
   return value as unknown as ControlState;
 }

@@ -32,6 +32,9 @@ export function App() {
   const [components, setComponents] = useState<Components | null>(null);
   const [sort, setSort] = useState(() => localStorage.getItem("jouzu.folder.sort") ?? "added");
   const [connectionMode, setConnectionMode] = useState<"builtin" | "custom">("builtin");
+  const [providerQuery, setProviderQuery] = useState("");
+  const [checks, setChecks] = useState<Record<string,string>>({});
+  const [checking, setChecking] = useState<string | null>(null);
   const [addingConnection, setAddingConnection] = useState(false);
   const [query, setQuery] = useState("");
   const [setup, setSetup] = useState<ControlState | null>(null);
@@ -88,9 +91,13 @@ export function App() {
   }, [settingsOpen]);
   async function configure(request: Record<string, unknown>) {
     setOperation("saving"); setError(null);
-    try { setSetup(parseControlState(await invoke<unknown>("control_request", { request }))); return true; }
+    if (request.action === "check-provider") setChecking(request.provider as string);
+    try { const next = parseControlState(await invoke<unknown>("control_request", { request })); setSetup(next);
+      if (next.connectionCheck) setChecks(values => ({...values,[next.connectionCheck!.provider]:next.connectionCheck!.status}));
+      else if (typeof request.provider === "string" && request.action !== "status") setChecks(values => { const result={...values}; delete result[request.provider as string]; return result; });
+      return true; }
     catch (error) { setError(String(error)); return false; }
-    finally { setOperation(null); setDevice(null); }
+    finally { setOperation(null); setDevice(null); setChecking(null); }
   }
   useEffect(() => { if (!notice) return; const timer = setTimeout(() => setNotice(null), 4000); return () => clearTimeout(timer); }, [notice]);
   useEffect(() => { if (settingsOpen && isTauri()) { void configure({ action: "status" }); void readEnvironment(); } }, [settingsOpen]);
@@ -129,6 +136,11 @@ export function App() {
       setNotice("removed");
     } catch (error) { setError(String(error)); } finally { setOperation(null); }
   }
+  const checkText = (id: string) => {
+    if(checking === id) return t.checking;
+    const labels: Record<string,string> = { reachable:t.checkReachable, "auth-failed":t.checkAuthFailed, "network-error":t.checkNetworkFailed, "server-error":t.checkServerFailed, unsupported:t.checkUnsupported, "missing-credential":t.checkMissing };
+    return labels[checks[id]];
+  };
   const recent = state?.recent.filter(item => item.path.toLocaleLowerCase().includes(query.toLocaleLowerCase())) ?? [];
   if (sort === "name") recent.sort((a,b) => a.path.replaceAll(String.fromCharCode(92), "/").split("/").at(-1)!.localeCompare(b.path.replaceAll(String.fromCharCode(92), "/").split("/").at(-1)!, locale));
   if (sort === "path") recent.sort((a,b) => a.path.localeCompare(b.path, locale));
@@ -155,10 +167,10 @@ export function App() {
               <div className="px-5 pb-6 pt-14 sm:px-6">
                 <TabsContent value="providers" className="m-0 space-y-4">
                   {!addingConnection && <><Card className="border-border shadow-none"><CardHeader><CardTitle>Shisa</CardTitle><CardDescription>{t.shisaHint}</CardDescription></CardHeader><CardContent className="space-y-3"><p className="text-sm text-muted-foreground">{device ? t.waitingAuthorization : setup?.account.signedIn ? t.credentialPresent : t.notConfigured}</p>{!device && <Button disabled={busy || !setup} onClick={() => void configure({ action: setup?.account.signedIn ? "shisa-logout" : "shisa-login" })}>{setup?.account.signedIn ? t.signOut : t.signIn}</Button>}{device && <div className="space-y-2"><Button onClick={async () => { try { const url = new URL(device.url); if (url.origin !== "https://platform.shisa.ai" || url.pathname !== "/connect" || url.username || url.password) throw new Error(t.loginUrl); await openUrl(url.href); } catch (error) { setError(String(error)); } }}><ArrowUpRight />{t.openBrowser}</Button><Input readOnly aria-label={t.loginUrl} value={device.url} onFocus={event => event.target.select()} /><Input readOnly aria-label={t.deviceCode} value={device.code} onFocus={event => event.target.select()} /><p className="text-xs text-muted-foreground">{t.loginHint}</p><Button variant="outline" onClick={() => void invoke("cancel_control")}>{t.cancel}</Button></div>}</CardContent></Card>
-                  <Card className="border-border shadow-none"><CardHeader><CardTitle>{t.connections}</CardTitle></CardHeader><CardContent className="space-y-2">{!addingConnection && setup && [...new Set([...setup.credentials.map(c => c.providerId), ...setup.customProviders.map(c => c.id)])].map(id => ({providerId:id})).map(c => <Button key={c.providerId} variant="outline" className="h-auto w-full justify-between py-3" onClick={() => { setProvider(c.providerId); setToken(""); const saved = setup?.customProviders.find(p => p.id === c.providerId); setConnectionMode(saved?.editable ? "custom" : "builtin"); setCustom(saved?.editable ? {provider:saved.id,url:saved.url,model:saved.model,edit:true} : {provider:"",url:"",model:"",edit:false}); setAddingConnection(true); }}><span>{setup.providers.find(p => p.id === c.providerId)?.name ?? c.providerId}</span><span className="text-xs text-muted-foreground">{setup.credentials.some(key => key.providerId === c.providerId) ? t.savedNotTested : t.configuredNoKey}</span></Button>)}<Button variant="outline" disabled={busy || !setup} onClick={() => { setProvider(""); setConnectionMode("builtin"); setCustom({provider:"",url:"",model:"",edit:false}); setAddingConnection(true); }}><Plus />{t.addConnection}</Button></CardContent></Card></>}
+                  <Card className="border-border shadow-none"><CardHeader><CardTitle>{t.connections}</CardTitle><CardDescription>{t.checkHint}</CardDescription></CardHeader><CardContent className="space-y-2"><Input aria-label={t.searchProviders} placeholder={t.searchProviders} value={providerQuery} onChange={event => setProviderQuery(event.target.value)} />{!addingConnection && setup && [...new Set([...setup.credentials.map(c => c.providerId), ...setup.customProviders.map(c => c.id)])].filter(id => `${id} ${setup.providers.find(p => p.id === id)?.name ?? ""}`.toLowerCase().includes(providerQuery.toLowerCase())).map(id => ({providerId:id})).map(c => <div key={c.providerId} className="flex items-center gap-2"><Button variant="outline" className="h-auto min-w-0 flex-1 justify-between gap-2 py-3" disabled={busy} onClick={() => { setProvider(c.providerId); setToken(""); const saved = setup?.customProviders.find(p => p.id === c.providerId); setConnectionMode(saved?.editable ? "custom" : "builtin"); setCustom(saved?.editable ? {provider:saved.id,url:saved.url,model:saved.model,edit:true} : {provider:"",url:"",model:"",edit:false}); setAddingConnection(true); }}><span>{setup.providers.find(p => p.id === c.providerId)?.name ?? c.providerId}</span><span className="text-xs text-muted-foreground">{checkText(c.providerId) ?? (setup.credentials.some(key => key.providerId === c.providerId) ? t.credentialSaved : t.configuredNoKey)}</span></Button><Button variant="outline" disabled={busy} onClick={() => void configure({action:"check-provider",provider:c.providerId})}>{checking === c.providerId ? t.checking : t.checkConnection}</Button></div>)}<Button variant="outline" disabled={busy || !setup} onClick={() => { setProviderQuery(""); setProvider(""); setConnectionMode("builtin"); setCustom({provider:"",url:"",model:"",edit:false}); setAddingConnection(true); }}><Plus />{t.addConnection}</Button></CardContent></Card></>}
                   {addingConnection && <>
                   <div className="flex items-center justify-between"><h2 className="font-semibold">{custom.edit || provider ? t.editConnection : t.addConnection}</h2><Button variant="ghost" disabled={busy} onClick={() => setAddingConnection(false)}>{t.backConnections}</Button></div>
-                  <Label>{t.service}</Label><Select value={connectionMode === "custom" ? "__custom__" : provider} disabled={busy || custom.edit} onValueChange={value => { setToken(""); if (value === "__custom__") { setConnectionMode("custom"); setProvider(""); } else { setConnectionMode("builtin"); setProvider(value); } }}><SelectTrigger className="w-full" aria-label={t.service}><SelectValue placeholder={t.chooseService} /></SelectTrigger><SelectContent>{setup?.providers.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}<SelectItem value="__custom__">{t.customProvider}</SelectItem></SelectContent></Select>
+                  <Label>{t.service}</Label><Input aria-label={t.searchProviders} placeholder={t.searchProviders} value={providerQuery} onChange={event => setProviderQuery(event.target.value)} /><Select value={connectionMode === "custom" ? "__custom__" : provider} disabled={busy || custom.edit} onValueChange={value => { setToken(""); if (value === "__custom__") { setConnectionMode("custom"); setProvider(""); } else { setConnectionMode("builtin"); setProvider(value); } }}><SelectTrigger className="w-full" aria-label={t.service}><SelectValue placeholder={t.chooseService} /></SelectTrigger><SelectContent>{setup?.providers.filter(p => `${p.name} ${p.id}`.toLowerCase().includes(providerQuery.toLowerCase())).map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}<SelectItem value="__custom__">{t.customProvider}</SelectItem></SelectContent></Select>
                   {connectionMode === "builtin" && provider &&
                   <Card className="border-border shadow-none"><CardContent className="space-y-4 pt-6">
 
