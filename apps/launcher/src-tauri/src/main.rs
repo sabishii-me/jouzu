@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod active_app;
 mod control;
 mod environment;
 mod runtime;
@@ -175,7 +176,7 @@ fn forget_workspace(app: tauri::AppHandle, id: String) -> Result<(), String> {
 #[tauri::command]
 fn component_versions(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
     let root = runtime::application_root(&app)?;
-    let package = root.join("app/node_modules/jouzu/package.json");
+    let package = active_app::resolve_app(&root, &runtime::managed_root()?)?.join("node_modules/jouzu/package.json");
     let value: serde_json::Value =
         serde_json::from_slice(&std::fs::read(package).map_err(|e| e.to_string())?)
             .map_err(|e| e.to_string())?;

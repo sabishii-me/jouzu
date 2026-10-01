@@ -5,7 +5,8 @@ import { pathToFileURL } from 'node:url';
 import { readFileSync, existsSync, unlinkSync } from 'node:fs';
 import { createRequire } from 'node:module';
 const root = process.argv[1]?.endsWith("control.mjs") ? process.argv[2] : process.argv[1];
-const load = name => import(pathToFileURL(join(root, 'app/node_modules/jouzu/dist', `${name}.js`)));
+const appRoot = process.argv[1]?.endsWith('control.mjs') ? (process.argv[3] || join(root, 'app')) : (process.argv[2] || join(root, 'app'));
+const load = name => import(pathToFileURL(join(appRoot, 'node_modules/jouzu/dist', `${name}.js`)));
 let action = "status";
 try {
   const request = JSON.parse(readFileSync(0, 'utf8'));
@@ -13,7 +14,7 @@ try {
   const { resolveJouzuPaths } = await load('paths');
   const paths = resolveJouzuPaths({ homeOverride: process.env.JOUZU_HOME });
   const { readProfileChoice, writeProfileChoice } = await load('profile-choice');
-  const agentRoot = join(root, 'app/node_modules/@earendil-works/pi-coding-agent/dist');
+  const agentRoot = join(appRoot, 'node_modules/@earendil-works/pi-coding-agent/dist');
   const pi = name => import(pathToFileURL(join(agentRoot, 'core', `${name}.js`)));
   const { AuthStorage } = await pi('auth-storage');
   const { ModelRuntime } = await pi('model-runtime');

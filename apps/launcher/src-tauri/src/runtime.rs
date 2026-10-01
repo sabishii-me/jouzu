@@ -116,6 +116,7 @@ pub fn launch(app: &tauri::AppHandle, path: &str) -> Result<(), String> {
     crate::environment::apply(&mut command)?;
     command
         .arg(&root)
+        .arg(managed_root()?)
         .current_dir(path)
         .env("JOUZU_LAUNCHER_BASH", bash);
     #[cfg(windows)]

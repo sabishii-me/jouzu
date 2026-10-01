@@ -40,6 +40,7 @@ pub async fn control_request(
             .arg(script)
             .arg("--")
             .arg(&root)
+            .arg(crate::active_app::resolve_app(&root, &runtime::managed_root()?)?)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
