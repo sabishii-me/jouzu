@@ -8,7 +8,7 @@ pub fn managed_root() -> Result<PathBuf, String> {
     Ok(PathBuf::from(local).join("Shisa.ai").join("Jouzu"))
 }
 
-pub fn starter(_app: &tauri::AppHandle) -> Result<PathBuf, String> {
+pub fn application_root(_app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let root = managed_root()?;
     if !root.join("runtime/node/node.exe").is_file() || !root.join("app/bootstrap.mjs").is_file() {
         return Err("Jouzu application files are missing. Please repair the installation.".into());
@@ -77,9 +77,9 @@ pub fn launch(app: &tauri::AppHandle, path: &str) -> Result<(), String> {
     if !Path::new(path).is_dir() {
         return Err("This folder is unavailable. Choose another folder.".into());
     }
-    let root = starter(app)?;
+    let root = application_root(app)?;
     let bash = find_bash(app)
-        .ok_or("Git Bash is required for this preview. Select Prepare Git Bash first.")?;
+        .ok_or("Git Bash is required for command tools. Select Prepare Git Bash first.")?;
     let executable = std::env::current_exe().map_err(|e| e.to_string())?;
     let mut command = Command::new(executable.with_file_name("jouzu-console.exe"));
     command

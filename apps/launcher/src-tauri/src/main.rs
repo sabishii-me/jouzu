@@ -87,7 +87,7 @@ fn launcher_state(app: tauri::AppHandle) -> Result<LauncherState, String> {
     };
     Ok(LauncherState {
         platform: platform().into(),
-        ready: runtime::starter(&app).is_ok(),
+        ready: runtime::application_root(&app).is_ok(),
         bash: runtime::find_bash(&app).is_some(),
         recent,
     })

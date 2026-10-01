@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { getName, getVersion } from "@tauri-apps/api/app";
 import { open } from "@tauri-apps/plugin-dialog";
 import { FolderOpen, Terminal, ArrowUpRight } from "lucide-react";
 import { Button } from "./components/ui/button";
@@ -10,6 +11,13 @@ export function App() {
   const [selected, setSelected] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [identity, setIdentity] = useState<string | null>(null);
+  useEffect(() => {
+    if (!isTauri()) return;
+    Promise.all([getName(), getVersion()])
+      .then(([name, version]) => setIdentity(`${name} · ${version}`))
+      .catch(error => setError(`Cannot read application version: ${String(error)}`));
+  }, []);
   useEffect(() => {
     if (!isTauri()) return;
     invoke<LauncherState>("launcher_state").then(setState).catch(error => setError(String(error)));
@@ -58,10 +66,10 @@ export function App() {
     <section aria-labelledby="launch-heading" className="mt-6 rounded-xl border border-border p-5">
       <h2 id="launch-heading" className="font-semibold">Launch Jouzu TUI</h2>
       <p className="mt-2 break-all text-sm" aria-live="polite">{selected ?? "Select a working folder to get started."}</p>
-      <p id="runtime-status" className="mt-2 text-sm text-muted-foreground">{!state?.ready ? "Starter application is not included in this build." : !state.bash ? "Git Bash is needed for command tools. Download the verified official Git for Windows package to continue." : "Jouzu is ready. It opens in a separate terminal window."}</p>
+      <p id="runtime-status" className="mt-2 text-sm text-muted-foreground">{!state?.ready ? "Jouzu application files are unavailable. Please repair the installation." : !state.bash ? "Git Bash is needed for command tools. Download the verified official Git for Windows package to continue." : "Jouzu is ready. It opens in a separate terminal window."}</p>
       {state?.ready && !state.bash && <Button className="mt-4 mr-3" onClick={prepareGit} disabled={busy}>{busy ? "Preparing Git Bash…" : "Prepare Git Bash"}</Button>}
       <Button className="mt-4" onClick={launch} disabled={busy || !selected || !state?.ready || !state.bash} aria-describedby="runtime-status"><Terminal aria-hidden="true"/>Launch Jouzu</Button>
     </section>
-    <footer className="mt-8 text-xs text-muted-foreground">Jouzu Launcher · Development build</footer>
+    <footer className="mt-8 text-xs text-muted-foreground">{identity ?? (isTauri() ? "Reading application version…" : "Browser preview")}</footer>
   </main>;
 }
