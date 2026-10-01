@@ -1,6 +1,7 @@
 export const locales = { en: "English", ja: "日本語", "zh-Hans": "简体中文", "zh-Hant": "繁體中文" };
 export type Locale = keyof typeof locales;
 const en = {
+connectionType: "Connection type", presetService: "Preset service", service: "Service", chooseService: "Choose a service", editConnection: "Configure connection",
  waitingAuthorization: "Waiting for browser authorization",
  openBrowser: "Open in browser",
  configuredNoKey: "Configured · no saved key",
@@ -20,6 +21,7 @@ minimize: "Minimize", maximize: "Maximize or restore", closeWindow: "Close launc
 };
 type Messages = typeof en;
 const ja: Messages = {
+connectionType: "接続の種類", presetService: "プリセットサービス", service: "サービス", chooseService: "サービスを選択", editConnection: "接続を設定",
  waitingAuthorization: "ブラウザーでの認証を待っています",
  openBrowser: "ブラウザーで開く",
  configuredNoKey: "設定済み・保存キーなし",
@@ -38,6 +40,7 @@ minimize: "最小化", maximize: "最大化・元に戻す", closeWindow: "ラ�
  language: "表示言語", languageHint: "ランチャーの表示言語を変更します。モデルや日本語サポートの設定は変更しません。", versionsHint: "ランチャーと Jouzu は別々のコンポーネントです。", launcher: "ランチャー", unavailable: "取得できません", noUpdates: "アプリ内更新は準備中です。", devHint: "これは開発版です。インストール済みのリリース版ではありません。", tools: "コマンドツール", available: "利用可能", firstUse: "必要に応じて準備", back: "フォルダーに戻る", count: "最近使ったフォルダー", clear: "検索をクリア", preferences: "ランチャーを使いやすく設定しましょう。", refresh: "状態を更新"
 };
 const hans: Messages = {
+connectionType: "连接类型", presetService: "预设服务", service: "服务", chooseService: "选择服务", editConnection: "配置连接",
  waitingAuthorization: "等待浏览器授权",
  openBrowser: "在浏览器中打开",
  configuredNoKey: "已配置 · 未保存密钥",
@@ -56,6 +59,7 @@ minimize: "最小化", maximize: "最大化或还原", closeWindow: "关闭启�
  language: "界面语言", languageHint: "仅更改启动器界面，不更改模型或日语支持配置。", versionsHint: "启动器与 Jouzu 是独立的组件。", launcher: "启动器", unavailable: "不可用", noUpdates: "应用内更新暂不可用。", devHint: "这是开发构建，不是已安装的发行版。", tools: "命令工具", available: "可用", firstUse: "需要时准备", back: "返回文件夹", count: "最近的文件夹", clear: "清除搜索", preferences: "按你的习惯设置启动器。", refresh: "刷新状态"
 };
 const hant: Messages = {
+connectionType: "連接類型", presetService: "預設服務", service: "服務", chooseService: "選擇服務", editConnection: "設定連接",
  waitingAuthorization: "等待瀏覽器授權",
  openBrowser: "在瀏覽器中開啟",
  configuredNoKey: "已設定 · 未儲存金鑰",
