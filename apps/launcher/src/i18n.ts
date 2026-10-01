@@ -1,6 +1,7 @@
 export const locales = { en: "English", ja: "日本語", "zh-Hans": "简体中文", "zh-Hant": "繁體中文" };
 export type Locale = keyof typeof locales;
 const en = {
+ cancel: "Cancel",
 customProvider: "Custom provider", customHint: "OpenAI-compatible chat API. Text only; 32K context, 4K output. Add a key above after saving.", providerId: "Provider ID", endpoint: "API base URL", modelId: "Model ID",
 environment: "Environment", envHint: "Applies to new sessions from this launcher. Removing an override restores inherited values.", variableName: "Name", variableValue: "Value", enabled: "Enabled", deleteEntry: "Remove entry", addEntry: "Add variable",
 signIn: "Sign in to Shisa", signOut: "Sign out", loginUrl: "Sign-in URL", deviceCode: "Device code", loginHint: "Open this URL in your browser and enter the code. Waiting up to 3 minutes.",
@@ -15,6 +16,7 @@ minimize: "Minimize", maximize: "Maximize or restore", closeWindow: "Close launc
 };
 type Messages = typeof en;
 const ja: Messages = {
+ cancel: "キャンセル",
 customProvider: "カスタムプロバイダー", customHint: "OpenAI 互換チャット API。テキストのみ、32K コンテキスト・4K 出力。保存後に上でキーを追加。", providerId: "プロバイダー ID", endpoint: "API ベース URL", modelId: "モデル ID",
 environment: "環境変数", envHint: "このランチャーから開く新しいセッションに適用。上書きを削除すると継承値に戻ります。", variableName: "名前", variableValue: "値", enabled: "有効", deleteEntry: "項目を削除", addEntry: "変数を追加",
 signIn: "Shisa にログイン", signOut: "ログアウト", loginUrl: "ログイン URL", deviceCode: "デバイスコード", loginHint: "ブラウザーで URL を開き、コードを入力してください。最大3分間待機します。",
@@ -28,6 +30,7 @@ minimize: "最小化", maximize: "最大化・元に戻す", closeWindow: "ラ�
  language: "表示言語", languageHint: "ランチャーの表示言語を変更します。モデルや日本語サポートの設定は変更しません。", versionsHint: "ランチャーと Jouzu は別々のコンポーネントです。", launcher: "ランチャー", unavailable: "取得できません", noUpdates: "アプリ内更新は準備中です。", devHint: "これは開発版です。インストール済みのリリース版ではありません。", tools: "コマンドツール", available: "利用可能", firstUse: "必要に応じて準備", back: "フォルダーに戻る", count: "最近使ったフォルダー", clear: "検索をクリア", preferences: "ランチャーを使いやすく設定しましょう。", refresh: "状態を更新"
 };
 const hans: Messages = {
+ cancel: "取消",
 customProvider: "自定义提供商", customHint: "OpenAI 兼容聊天 API。仅文本，32K 上下文、4K 输出。保存后在上方添加密钥。", providerId: "提供商 ID", endpoint: "API 基础地址", modelId: "模型 ID",
 environment: "环境变量", envHint: "仅用于此启动器打开的新会话。删除覆盖项后恢复继承值。", variableName: "变量名", variableValue: "值", enabled: "启用", deleteEntry: "移除条目", addEntry: "添加变量",
 signIn: "登录 Shisa", signOut: "退出登录", loginUrl: "登录地址", deviceCode: "设备码", loginHint: "在浏览器打开此地址并输入设备码，最多等待 3 分钟。",
@@ -41,6 +44,7 @@ minimize: "最小化", maximize: "最大化或还原", closeWindow: "关闭启�
  language: "界面语言", languageHint: "仅更改启动器界面，不更改模型或日语支持配置。", versionsHint: "启动器与 Jouzu 是独立的组件。", launcher: "启动器", unavailable: "不可用", noUpdates: "应用内更新暂不可用。", devHint: "这是开发构建，不是已安装的发行版。", tools: "命令工具", available: "可用", firstUse: "需要时准备", back: "返回文件夹", count: "最近的文件夹", clear: "清除搜索", preferences: "按你的习惯设置启动器。", refresh: "刷新状态"
 };
 const hant: Messages = {
+ cancel: "取消",
 customProvider: "自訂供應商", customHint: "OpenAI 相容聊天 API。僅文字，32K 上下文、4K 輸出。儲存後在上方新增金鑰。", providerId: "供應商 ID", endpoint: "API 基底網址", modelId: "模型 ID",
 environment: "環境變數", envHint: "僅用於此啟動器開啟的新工作階段。刪除覆寫項目後恢復繼承值。", variableName: "變數名稱", variableValue: "值", enabled: "啟用", deleteEntry: "移除項目", addEntry: "新增變數",
 signIn: "登入 Shisa", signOut: "登出", loginUrl: "登入網址", deviceCode: "裝置碼", loginHint: "在瀏覽器開啟此網址並輸入裝置碼，最多等候 3 分鐘。",

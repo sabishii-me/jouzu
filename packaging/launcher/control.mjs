@@ -78,7 +78,7 @@ try {
     }
   } else if (request.action === 'provider-key') {
     if (!runtime.getProvider(request.provider)) throw new Error('Unknown provider');
-    if (typeof request.token !== 'string' || !request.token.trim() || request.token.length > 8192 || [...request.token].some(c => c.charCodeAt(0) < 32)) throw new Error('Invalid key');
+    if (typeof request.token !== 'string' || !request.token.trim() || /^[!$]/.test(request.token.trim()) || request.token.length > 8192 || [...request.token].some(c => c.charCodeAt(0) < 32)) throw new Error('Invalid key');
     await auth.modify(request.provider, async () => ({ type: 'api_key', key: request.token.trim() }));
   } else if (request.action === 'provider-remove') {
     if (!runtime.getProvider(request.provider)) throw new Error('Unknown provider');

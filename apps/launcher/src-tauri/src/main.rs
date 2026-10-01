@@ -212,6 +212,7 @@ fn main() {
             add_workspaces,
             component_versions,
             control::control_request,
+            control::cancel_control,
             environment::environment_read,
             environment::environment_save,
             runtime::install_git
