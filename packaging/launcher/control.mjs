@@ -98,7 +98,7 @@ try {
     return { id, url: p.baseUrl, model: p.models?.[0]?.id, editable: p.api === 'openai-completions' && p.models?.length === 1 };
   });
   const { readShisaAccountStatus } = await load('shisa-link/account');
-  console.log(JSON.stringify({ profile: readProfileChoice(profilePath)?.profile ?? null, account: readShisaAccountStatus(paths), customProviders, providers: runtime.getProviders().map(p => ({ id: p.id, name: p.name ?? p.id })), credentials: await auth.list(), models: runtime.getModels().map(m => ({ provider: m.provider, id: m.id, name: m.name })), defaultProvider: settings.getDefaultProvider(), defaultModel: settings.getDefaultModel() }));
+  console.log(JSON.stringify({ schemaVersion: 1, profile: readProfileChoice(profilePath)?.profile ?? null, account: readShisaAccountStatus(paths), customProviders, providers: runtime.getProviders().map(p => ({ id: p.id, name: p.name ?? p.id })), credentials: await auth.list(), models: runtime.getModels().map(m => ({ provider: m.provider, id: m.id, name: m.name })), defaultProvider: settings.getDefaultProvider(), defaultModel: settings.getDefaultModel() }));
 } catch {
   // Do not relay raw upstream errors: they can contain credentials or server input.
   console.log(JSON.stringify({ error: 'Configuration operation failed. Check data permissions and configuration conflicts.' }));

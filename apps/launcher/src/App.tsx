@@ -1,3 +1,4 @@
+import { parseControlState, type ControlState } from "./control-state";
 import { Switch } from "./components/ui/switch";
 import { listen } from "@tauri-apps/api/event";
 import jouzuIcon from "./assets/jouzu.svg";
@@ -31,7 +32,7 @@ export function App() {
   const [connectionMode, setConnectionMode] = useState<"builtin" | "custom">("builtin");
   const [addingConnection, setAddingConnection] = useState(false);
   const [query, setQuery] = useState("");
-  const [setup, setSetup] = useState<{ profile: string | null; account: { signedIn: boolean }; customProviders: {id:string;url:string;model:string;editable:boolean}[]; providers: {id:string;name:string}[]; credentials: {providerId:string}[]; models: {provider:string;id:string;name:string}[]; defaultProvider?:string; defaultModel?:string } | null>(null);
+  const [setup, setSetup] = useState<ControlState | null>(null);
   const [device, setDevice] = useState<{url:string;code:string} | null>(null);
   useEffect(() => {
     if (!isTauri()) return;
@@ -84,7 +85,7 @@ export function App() {
   }, [settingsOpen]);
   async function configure(request: Record<string, unknown>) {
     setOperation("saving"); setError(null);
-    try { setSetup(await invoke("control_request", { request })); return true; }
+    try { setSetup(parseControlState(await invoke<unknown>("control_request", { request }))); return true; }
     catch (error) { setError(String(error)); return false; }
     finally { setOperation(null); setDevice(null); }
   }
@@ -151,7 +152,7 @@ export function App() {
               <div className="px-5 pb-6 pt-14 sm:px-6">
                 <TabsContent value="providers" className="m-0 space-y-4">
                   <Card className="border-border shadow-none"><CardHeader><CardTitle>Shisa</CardTitle><CardDescription>{t.shisaHint}</CardDescription></CardHeader><CardContent className="space-y-3"><p className="text-sm text-muted-foreground">{setup?.account.signedIn ? t.credentialPresent : t.notConfigured}</p><Button disabled={busy || !setup} onClick={() => void configure({ action: setup?.account.signedIn ? "shisa-logout" : "shisa-login" })}>{setup?.account.signedIn ? t.signOut : t.signIn}</Button>{device && <div className="space-y-2"><Input readOnly aria-label={t.loginUrl} value={device.url} onFocus={event => event.target.select()} /><Input readOnly aria-label={t.deviceCode} value={device.code} onFocus={event => event.target.select()} /><p className="text-xs text-muted-foreground">{t.loginHint}</p><Button variant="outline" onClick={() => void invoke("cancel_control")}>{t.cancel}</Button></div>}</CardContent></Card>
-                  <Card className="border-border shadow-none"><CardHeader><CardTitle>{t.connections}</CardTitle></CardHeader><CardContent className="space-y-2">{!addingConnection && setup && [...new Set([...setup.credentials.map(c => c.providerId), ...setup.customProviders.map(c => c.id)])].map(id => ({providerId:id})).map(c => <Button key={c.providerId} variant="outline" className="h-auto w-full justify-between py-3" onClick={() => { setProvider(c.providerId); setToken(""); const saved = setup?.customProviders.find(p => p.id === c.providerId); setConnectionMode(saved?.editable ? "custom" : "builtin"); setCustom(saved?.editable ? {provider:saved.id,url:saved.url,model:saved.model,edit:true} : {provider:"",url:"",model:"",edit:false}); setAddingConnection(true); }}><span>{setup.providers.find(p => p.id === c.providerId)?.name ?? c.providerId}</span><span className="text-xs text-muted-foreground">{setup.credentials.some(key => key.providerId === c.providerId) ? t.savedNotTested : t.configuredNoKey}</span></Button>)}<Button variant="outline" disabled={busy} onClick={() => { setProvider(""); setConnectionMode("builtin"); setCustom({provider:"",url:"",model:"",edit:false}); setAddingConnection(true); }}><Plus />{t.addConnection}</Button></CardContent></Card>
+                  <Card className="border-border shadow-none"><CardHeader><CardTitle>{t.connections}</CardTitle></CardHeader><CardContent className="space-y-2">{!addingConnection && setup && [...new Set([...setup.credentials.map(c => c.providerId), ...setup.customProviders.map(c => c.id)])].map(id => ({providerId:id})).map(c => <Button key={c.providerId} variant="outline" className="h-auto w-full justify-between py-3" onClick={() => { setProvider(c.providerId); setToken(""); const saved = setup?.customProviders.find(p => p.id === c.providerId); setConnectionMode(saved?.editable ? "custom" : "builtin"); setCustom(saved?.editable ? {provider:saved.id,url:saved.url,model:saved.model,edit:true} : {provider:"",url:"",model:"",edit:false}); setAddingConnection(true); }}><span>{setup.providers.find(p => p.id === c.providerId)?.name ?? c.providerId}</span><span className="text-xs text-muted-foreground">{setup.credentials.some(key => key.providerId === c.providerId) ? t.savedNotTested : t.configuredNoKey}</span></Button>)}<Button variant="outline" disabled={busy || !setup} onClick={() => { setProvider(""); setConnectionMode("builtin"); setCustom({provider:"",url:"",model:"",edit:false}); setAddingConnection(true); }}><Plus />{t.addConnection}</Button></CardContent></Card>
                   {addingConnection && <>
                   <Tabs value={connectionMode} onValueChange={value => setConnectionMode(value as "builtin" | "custom")}><TabsList className="w-full"><TabsTrigger value="builtin">{t.providers}</TabsTrigger><TabsTrigger value="custom">{t.customProvider}</TabsTrigger></TabsList></Tabs>
                   {connectionMode === "builtin" &&
