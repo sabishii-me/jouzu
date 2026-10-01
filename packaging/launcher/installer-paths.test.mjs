@@ -15,3 +15,21 @@ test("installation hooks never replace the selected destination", () => {
   assert.doesNotMatch(hooks, /StrCpy\s+\$INSTDIR/);
   assert.match(hooks, /-InstallRoot "\$INSTDIR"/);
 });
+
+test("uninstall removes installation metadata independently of user-data choice", () => {
+  const block = template.slice(template.indexOf("; Installation metadata is not user data."), template.indexOf("!ifmacrodef NSIS_HOOK_POSTUNINSTALL"));
+  assert.ok(block.indexOf('DeleteRegKey SHCTX "${MANUPRODUCTKEY}"') >= 0);
+  assert.ok(block.indexOf('DeleteRegKey SHCTX "${MANUPRODUCTKEY}"') < block.indexOf('${If} $DeleteAppDataCheckboxState = 1'));
+  assert.ok(block.indexOf('${If} $UpdateMode <> 1') < block.indexOf('DeleteRegKey SHCTX'));
+});
+
+test("destructive data removal requires explicit confirmation and reports leftovers", () => {
+  const confirm = template.slice(template.indexOf('Function un.ConfirmLeave'), template.indexOf('!insertmacro MUI_UNPAGE_CONFIRM'));
+  assert.match(confirm, /MB_YESNO\|MB_DEFBUTTON2/);
+  assert.match(confirm, /cannot be undone/);
+  assert.match(confirm, /custom JOUZU_HOME/);
+  assert.match(confirm, /Project files.*NOT deleted/);
+  const removal = template.slice(template.indexOf('; Installation metadata is not user data.'));
+  assert.match(removal, /SetErrorLevel 1/);
+  assert.match(removal, /User-data deletion is NOT complete/);
+});

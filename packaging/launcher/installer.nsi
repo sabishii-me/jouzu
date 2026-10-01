@@ -1,5 +1,5 @@
 ; Based on Tauri CLI 2.12.0, commit 447fa9f3f993fe77724189e355078b38ce20baea.
-; Upstream MIT OR Apache-2.0. Only the default per-user location is customized.
+; Upstream MIT OR Apache-2.0. Custom default location and uninstall ownership cleanup.
 Unicode true
 ManifestDPIAware true
 ; Add in `dpiAwareness` `PerMonitorV2` to manifest for Windows 10 1607+ (note this should not affect lower versions since they should be able to ignore this and pick up `dpiAware` `true` set by `ManifestDPIAware true`)
@@ -461,6 +461,11 @@ FunctionEnd
 !define MUI_PAGE_CUSTOMFUNCTION_LEAVE un.ConfirmLeave
 Function un.ConfirmLeave
   SendMessage $DeleteAppDataCheckbox ${BM_GETCHECK} 0 0 $DeleteAppDataCheckboxState
+  ${If} $DeleteAppDataCheckboxState = 1
+    MessageBox MB_YESNO|MB_DEFBUTTON2|MB_ICONEXCLAMATION "Permanently delete this launcher's saved sign-ins/API keys, settings, conversations, sessions, and recent-folder history?$\r$\n$\r$\nLocation: $LOCALAPPDATA\Shisa.ai\Jouzu\data (and recent.json).$\r$\nThis cannot be undone. Back up anything you need before continuing.$\r$\n$\r$\nProject files and remote accounts are NOT deleted. Separate npm CLI data and custom JOUZU_HOME locations are NOT deleted. Other Jouzu launcher installations using this shared data will also lose access to it." IDYES jouzu_delete_confirmed
+    Abort
+    jouzu_delete_confirmed:
+  ${EndIf}
 FunctionEnd
 !define MUI_PAGE_CUSTOMFUNCTION_PRE un.SkipIfPassive
 !insertmacro MUI_UNPAGE_CONFIRM
@@ -868,22 +873,32 @@ Section Uninstall
     DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "${PRODUCTNAME}"
   ${EndIf}
 
-  ; Delete app data if the checkbox is selected
-  ; and if not updating
-  ${If} $DeleteAppDataCheckboxState = 1
-  ${AndIf} $UpdateMode <> 1
-    ; Clear the install location $INSTDIR from registry
+  ; Installation metadata is not user data. Always remove it on uninstall.
+  ; Preserve it only for the installer-internal update transition.
+  ${If} $UpdateMode <> 1
     DeleteRegKey SHCTX "${MANUPRODUCTKEY}"
     DeleteRegKey /ifempty SHCTX "${MANUKEY}"
-
-    ; Clear the install language from registry
-    DeleteRegValue HKCU "${MANUPRODUCTKEY}" "Installer Language"
-    DeleteRegKey /ifempty HKCU "${MANUPRODUCTKEY}"
-    DeleteRegKey /ifempty HKCU "${MANUKEY}"
-
     SetShellVarContext current
-    RmDir /r "$APPDATA\${BUNDLEID}"
-    RmDir /r "$LOCALAPPDATA\${BUNDLEID}"
+    RmDir /r "$LOCALAPPDATA\Shisa.ai\Jouzu\cache"
+    RmDir /r "$LOCALAPPDATA\Shisa.ai\Jouzu\tools"
+    RmDir /r "$LOCALAPPDATA\Shisa.ai\Jouzu\logs"
+    ; Preferences and credentials are removed only by explicit opt-in.
+    ${If} $DeleteAppDataCheckboxState = 1
+      Delete "$LOCALAPPDATA\Shisa.ai\Jouzu\recent.json"
+      RmDir /r "$LOCALAPPDATA\Shisa.ai\Jouzu\data"
+      RmDir /r "$APPDATA\${BUNDLEID}"
+      RmDir /r "$LOCALAPPDATA\${BUNDLEID}"
+      ${If} ${FileExists} "$LOCALAPPDATA\Shisa.ai\Jouzu\data"
+      ${OrIf} ${FileExists} "$LOCALAPPDATA\Shisa.ai\Jouzu\recent.json"
+      ${OrIf} ${FileExists} "$APPDATA\${BUNDLEID}"
+      ${OrIf} ${FileExists} "$LOCALAPPDATA\${BUNDLEID}"
+        SetErrorLevel 1
+        MessageBox MB_OK|MB_ICONSTOP "Jouzu program removal finished, but some selected user data could not be deleted. Close applications using it and remove the remaining data manually. User-data deletion is NOT complete."
+        Abort
+      ${EndIf}
+    ${EndIf}
+    RmDir "$LOCALAPPDATA\Shisa.ai\Jouzu"
+    RmDir "$LOCALAPPDATA\Shisa.ai"
   ${EndIf}
 
   !ifmacrodef NSIS_HOOK_POSTUNINSTALL
