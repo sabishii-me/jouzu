@@ -187,6 +187,7 @@ fn component_versions(app: tauri::AppHandle) -> Result<serde_json::Value, String
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let data = runtime::managed_root()
                 .map_err(std::io::Error::other)?
