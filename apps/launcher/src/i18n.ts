@@ -1,6 +1,7 @@
 export const locales = { en: "English", ja: "日本語", "zh-Hans": "简体中文", "zh-Hant": "繁體中文" };
 export type Locale = keyof typeof locales;
 const en = {
+ configuredNoKey: "Configured · no saved key",
 sort: "Sort folders", sortAdded: "Added order", sortName: "Folder name", sortPath: "Full path", shisaHint: "Connect Shisa to use its coding models. Authorize this device in your browser.", credentialPresent: "Credential available locally", notConfigured: "Not connected", connections: "Connections", savedNotTested: "Saved · not tested", addConnection: "Add connection", backConnections: "Back to connections",
  cancel: "Cancel",
 customProvider: "Custom provider", customHint: "OpenAI-compatible chat API. Text only; 32K context, 4K output. Add a key above after saving.", providerId: "Provider ID", endpoint: "API base URL", modelId: "Model ID",
@@ -17,6 +18,7 @@ minimize: "Minimize", maximize: "Maximize or restore", closeWindow: "Close launc
 };
 type Messages = typeof en;
 const ja: Messages = {
+ configuredNoKey: "設定済み・保存キーなし",
 sort: "並び順", sortAdded: "追加順", sortName: "フォルダー名", sortPath: "パス", shisaHint: "Shisa のコーディングモデルを利用します。ブラウザーでこのデバイスを認証してください。", credentialPresent: "認証情報あり", notConfigured: "未接続", connections: "接続先", savedNotTested: "保存済み・未検証", addConnection: "接続先を追加", backConnections: "接続先に戻る",
  cancel: "キャンセル",
 customProvider: "カスタムプロバイダー", customHint: "OpenAI 互換チャット API。テキストのみ、32K コンテキスト・4K 出力。保存後に上でキーを追加。", providerId: "プロバイダー ID", endpoint: "API ベース URL", modelId: "モデル ID",
@@ -32,6 +34,7 @@ minimize: "最小化", maximize: "最大化・元に戻す", closeWindow: "ラ�
  language: "表示言語", languageHint: "ランチャーの表示言語を変更します。モデルや日本語サポートの設定は変更しません。", versionsHint: "ランチャーと Jouzu は別々のコンポーネントです。", launcher: "ランチャー", unavailable: "取得できません", noUpdates: "アプリ内更新は準備中です。", devHint: "これは開発版です。インストール済みのリリース版ではありません。", tools: "コマンドツール", available: "利用可能", firstUse: "必要に応じて準備", back: "フォルダーに戻る", count: "最近使ったフォルダー", clear: "検索をクリア", preferences: "ランチャーを使いやすく設定しましょう。", refresh: "状態を更新"
 };
 const hans: Messages = {
+ configuredNoKey: "已配置 · 未保存密钥",
 sort: "排序", sortAdded: "添加顺序", sortName: "文件夹名称", sortPath: "完整路径", shisaHint: "连接 Shisa 使用编程模型，在浏览器中授权此设备。", credentialPresent: "本地已有凭据", notConfigured: "未连接", connections: "模型连接", savedNotTested: "已保存 · 未验证", addConnection: "添加连接", backConnections: "返回连接列表",
  cancel: "取消",
 customProvider: "自定义提供商", customHint: "OpenAI 兼容聊天 API。仅文本，32K 上下文、4K 输出。保存后在上方添加密钥。", providerId: "提供商 ID", endpoint: "API 基础地址", modelId: "模型 ID",
@@ -47,6 +50,7 @@ minimize: "最小化", maximize: "最大化或还原", closeWindow: "关闭启�
  language: "界面语言", languageHint: "仅更改启动器界面，不更改模型或日语支持配置。", versionsHint: "启动器与 Jouzu 是独立的组件。", launcher: "启动器", unavailable: "不可用", noUpdates: "应用内更新暂不可用。", devHint: "这是开发构建，不是已安装的发行版。", tools: "命令工具", available: "可用", firstUse: "需要时准备", back: "返回文件夹", count: "最近的文件夹", clear: "清除搜索", preferences: "按你的习惯设置启动器。", refresh: "刷新状态"
 };
 const hant: Messages = {
+ configuredNoKey: "已設定 · 未儲存金鑰",
 sort: "排序", sortAdded: "新增順序", sortName: "資料夾名稱", sortPath: "完整路徑", shisaHint: "連接 Shisa 使用程式模型，在瀏覽器中授權此裝置。", credentialPresent: "本機已有憑證", notConfigured: "未連接", connections: "模型連接", savedNotTested: "已儲存 · 未驗證", addConnection: "新增連接", backConnections: "返回連接清單",
  cancel: "取消",
 customProvider: "自訂供應商", customHint: "OpenAI 相容聊天 API。僅文字，32K 上下文、4K 輸出。儲存後在上方新增金鑰。", providerId: "供應商 ID", endpoint: "API 基底網址", modelId: "模型 ID",
