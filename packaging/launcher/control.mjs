@@ -2,7 +2,8 @@
 // Requests arrive through stdin, never command-line arguments containing secrets.
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync, unlinkSync } from 'node:fs';
+import { createRequire } from 'node:module';
 const root = process.argv[1]?.endsWith("control.mjs") ? process.argv[2] : process.argv[1];
 const load = name => import(pathToFileURL(join(root, 'app/node_modules/jouzu/dist', `${name}.js`)));
 try {
@@ -49,6 +50,32 @@ try {
     const result = await logoutShisa({ paths });
     if (!result.localCleared) throw new Error('Local signout failed');
     if (result.revocation === 'unconfirmed') throw new Error('Remote revocation unconfirmed');
+  } else if (request.action === 'custom-provider') {
+    if (!/^[a-z][a-z0-9-]{0,63}$/.test(request.provider) || request.provider === 'shisa') throw new Error('Invalid provider');
+    const url = new URL(request.url);
+    if (url.username || url.password || !(['https:'].includes(url.protocol) || (url.protocol === 'http:' && ['localhost','127.0.0.1','[::1]'].includes(url.hostname)))) throw new Error('Invalid endpoint');
+    if (typeof request.model !== 'string' || !request.model.trim() || request.model.length > 256) throw new Error('Invalid model');
+    const { ensurePrivateDirectory, writeFilePrivateAtomic } = await load('private-fs');
+    ensurePrivateDirectory(paths.agentDir);
+    const file = join(paths.agentDir, 'models.json');
+    const require = createRequire(join(root, 'app/node_modules/jouzu/package.json'));
+    const lock = require('proper-lockfile');
+    const release = await lock.lock(file, { realpath: false, retries: 0 });
+    const staged = join(paths.agentDir, 'models.launcher-validation.json');
+    try {
+      const config = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : { providers: {} };
+      config.providers ??= {};
+      if (Object.hasOwn(config.providers, request.provider) || runtime.getProvider(request.provider)) throw new Error('Provider already exists');
+      config.providers[request.provider] = { baseUrl: url.href, api: 'openai-completions', authHeader: true, models: [{ id: request.model.trim(), name: request.model.trim(), reasoning: false, input: ['text'], cost: {input:0,output:0,cacheRead:0,cacheWrite:0}, contextWindow: 32768, maxTokens: 4096 }] };
+      writeFilePrivateAtomic(staged, JSON.stringify(config), paths.agentDir);
+      const { ModelConfig } = await pi('model-config');
+      const validated = await ModelConfig.load(staged);
+      if (validated.getError()) throw new Error('Invalid model configuration');
+      writeFilePrivateAtomic(file, JSON.stringify(config, null, 2), paths.agentDir);
+    } finally {
+      if (existsSync(staged)) unlinkSync(staged);
+      await release();
+    }
   } else if (request.action === 'provider-key') {
     if (!runtime.getProvider(request.provider)) throw new Error('Unknown provider');
     if (typeof request.token !== 'string' || !request.token.trim() || request.token.length > 8192 || [...request.token].some(c => c.charCodeAt(0) < 32)) throw new Error('Invalid key');
@@ -61,6 +88,7 @@ try {
     settings.setDefaultModelAndProvider(request.provider, request.model);
     await settings.flush();
   } else if (request.action !== 'status') throw new Error('Unsupported operation');
+  await runtime.refresh({ allowNetwork: false });
   const { readShisaAccountStatus } = await load('shisa-link/account');
   console.log(JSON.stringify({ profile: readProfileChoice(profilePath)?.profile ?? null, account: readShisaAccountStatus(paths), providers: runtime.getProviders().map(p => ({ id: p.id, name: p.name ?? p.id })), credentials: await auth.list(), models: runtime.getModels().map(m => ({ provider: m.provider, id: m.id, name: m.name })), defaultProvider: settings.getDefaultProvider(), defaultModel: settings.getDefaultModel() }));
 } catch {
