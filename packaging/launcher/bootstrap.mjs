@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { randomUUID } from "node:crypto";
 
 const root = dirname(fileURLToPath(import.meta.url));
-const app = join(root, "app", "node_modules", "jouzu");
+const app = join(root, "node_modules", "jouzu");
 const cli = join(app, "dist", "cli.js");
 const args = process.argv.slice(2);
 const { parseJouzuArgs } = await import(pathToFileURL(join(app, "dist", "args.js")));
@@ -16,7 +16,7 @@ const paths = resolveJouzuPaths({ homeOverride: parsed.options.home });
 const node = dirname(process.execPath);
 const npm = join(node, "node_modules", "npm", "bin", "npm-cli.js");
 const shell = process.env.JOUZU_LAUNCHER_BASH;
-process.env.PATH = [node, join(root, "tools"), ...(shell ? [dirname(shell), join(dirname(shell), "..", "cmd"), join(dirname(shell), "..", "usr", "bin")] : []), process.env.PATH || ""].join(delimiter);
+process.env.PATH = [node, join(root, "..", "tools"), ...(shell ? [dirname(shell), join(dirname(shell), "..", "cmd"), join(dirname(shell), "..", "usr", "bin")] : []), process.env.PATH || ""].join(delimiter);
 process.env.JOUZU_NO_UPDATE = "1";
 process.env.PI_SKIP_VERSION_CHECK = "1";
 process.env.NODE_USE_SYSTEM_CA = "1";

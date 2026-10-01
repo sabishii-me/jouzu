@@ -9,8 +9,8 @@ pub fn managed_root() -> Result<PathBuf, String> {
 }
 
 pub fn starter(_app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    let root = managed_root()?.join("versions/0.1.18-preview3");
-    if !root.join("node/node.exe").is_file() || !root.join("bootstrap.mjs").is_file() {
+    let root = managed_root()?;
+    if !root.join("runtime/node/node.exe").is_file() || !root.join("app/bootstrap.mjs").is_file() {
         return Err("Jouzu application files are missing. Please repair the installation.".into());
     }
     Ok(root)

@@ -34,8 +34,8 @@ fn main() {
                 .nth(1)
                 .ok_or("Missing application directory")?,
         );
-        let status = Command::new(root.join("node/node.exe"))
-            .arg(root.join("bootstrap.mjs"))
+        let status = Command::new(root.join("runtime/node/node.exe"))
+            .arg(root.join("app/bootstrap.mjs"))
             .stdin(Stdio::inherit())
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
