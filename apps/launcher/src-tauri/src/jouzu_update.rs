@@ -13,6 +13,7 @@ pub async fn jouzu_update(app: tauri::AppHandle, action: String, version: Option
   let _guard=guard;
   let root=crate::runtime::application_root(&app)?;
   let managed=crate::runtime::managed_root()?;
+  let _lease=crate::update_lock::lock(&managed, action=="install")?;
   let current_app=crate::active_app::resolve_app(&root,&managed)?;
   let package:serde_json::Value=serde_json::from_slice(&std::fs::read(current_app.join("node_modules/jouzu/package.json")).map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;
   let current=semver::Version::parse(package["version"].as_str().ok_or("Missing current version")?).map_err(|e|e.to_string())?;

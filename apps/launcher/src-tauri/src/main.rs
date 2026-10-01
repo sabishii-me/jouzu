@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod active_app;
+mod update_lock;
 mod jouzu_update;
 mod control;
 mod environment;

@@ -1,3 +1,5 @@
+#[path = "../update_lock.rs"]
+mod update_lock;
 #[path = "../active_app.rs"]
 mod active_app;
 use std::{
@@ -37,6 +39,7 @@ fn main() {
                 .ok_or("Missing application directory")?,
         );
         let managed = std::env::args_os().nth(2).map(PathBuf::from).or_else(|| std::env::var_os("LOCALAPPDATA").map(|p| PathBuf::from(p).join("Shisa.ai/Jouzu"))).ok_or("Missing managed directory")?;
+        let _lease = update_lock::lock(&managed, false)?;
         let app = active_app::resolve_app(&root, &managed)?;
         let status = Command::new(root.join("runtime/node/node.exe"))
             .arg(app.join("bootstrap.mjs"))

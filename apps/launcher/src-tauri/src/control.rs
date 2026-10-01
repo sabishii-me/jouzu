@@ -31,6 +31,7 @@ pub async fn control_request(
     CANCEL.store(false, Ordering::SeqCst);
     tauri::async_runtime::spawn_blocking(move || {
         let _guard = guard;
+        let _lease = crate::update_lock::lock(&runtime::managed_root()?, false)?;
         let root = runtime::application_root(&app)?;
         let script = include_str!("../../../../packaging/launcher/control.mjs");
         let mut command = Command::new(root.join("runtime/node/node.exe"));

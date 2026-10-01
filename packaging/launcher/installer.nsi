@@ -815,6 +815,17 @@ Section Uninstall
 
   !insertmacro CheckIfAppIsRunning "$INSTDIR\${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
 
+  ; Downloaded program versions are not user settings. Keep during upgrade only.
+  ${If} $UpdateMode <> 1
+      RmDir /r "\\?\$LOCALAPPDATA\Shisa.ai\Jouzu\updates"
+    ${If} ${FileExists} "$LOCALAPPDATA\Shisa.ai\Jouzu\updates"
+      SetErrorLevel 1
+      IfSilent +2
+      MessageBox MB_OK|MB_ICONSTOP "$(jouzuDeleteFailed)"
+      Abort
+    ${EndIf}
+  ${EndIf}
+
   ; Finish requested user-data deletion before removing the repair/retry path.
   SetShellVarContext current
     ; Preferences and credentials are removed only by explicit opt-in.

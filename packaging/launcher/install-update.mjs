@@ -1,3 +1,4 @@
+import { pruneUpdates } from './prune-updates.mjs';
 import { join } from 'node:path';
 import { mkdirSync,rmSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
@@ -11,6 +12,7 @@ import { checkStagedHealth } from './check-update-health.mjs';
  */
 export async function installJouzuUpdate({managed,runtime,url,publicKey,version,signal,allowLoopbackHttp=false,allowTestHttpHost=null,onProgress=()=>{}}) {
  return withUpdateTransaction(managed,async transaction=>{
+  pruneUpdates(transaction.root);
   const slot=randomUUID();
   const versions=join(transaction.root,'versions');mkdirSync(versions,{recursive:true});
   const work=join(transaction.root,`recipe-${slot}`);
@@ -24,6 +26,6 @@ export async function installJouzuUpdate({managed,runtime,url,publicKey,version,
     await checkStagedHealth({node,app,version,signal});signal?.throwIfAborted();onProgress({phase:'activating'});
    }},transaction);
    onProgress({phase:'complete',version});return result;
-  }finally{rmSync(work,{recursive:true,force:true});}
+  }finally{rmSync(work,{recursive:true,force:true});pruneUpdates(transaction.root);}
  });
 }

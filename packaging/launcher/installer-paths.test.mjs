@@ -83,3 +83,12 @@ test('updater uses quiet NSIS and skips language UI with remembered fallback', (
   assert.match(init, /\$UpdateMode = 1[\s\S]*StrCpy \$LANGUAGE 1033[\s\S]*ReadRegStr[\s\S]*\$\{Else\}[\s\S]*MUI_LANGDLL_DISPLAY/);
   assert.match(hooks, /\$UpdateMode = 1[\s\S]*-RefuseActiveSessions/);
 });
+
+test('ordinary uninstall removes managed program versions before user-data decision',()=>{
+ const section=template.slice(template.indexOf('Section Uninstall'));
+ const cleanup=section.indexOf('Jouzu'+String.fromCharCode(92)+'updates'+String.fromCharCode(34));
+ assert.ok(cleanup>0);
+ assert.ok(section.lastIndexOf('${If} $UpdateMode <> 1',cleanup)>=0);
+ assert.ok(cleanup<section.indexOf('${If} $DeleteAppDataCheckboxState = 1'));
+ assert.ok(cleanup<section.indexOf('Delete "$INSTDIR'));
+});
