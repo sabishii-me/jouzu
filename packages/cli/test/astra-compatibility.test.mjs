@@ -64,9 +64,8 @@ async function request(selected, options = {}, simple = true) {
 	const sessionModel = withAstraMetadata(selected);
 	const handlers = astraHarness().handlers;
 	const p = provider([sessionModel]);
-	// The registry mock resolves the same credential the transport sends, so token
-	// shape and OAuth status are independent inputs, as they are at runtime.
-	const { oauth, authResolution, resolveAuth, ...streamOptions } = options;
+	// Supply the prepared transport snapshot; registry lookups may describe later state.
+	const { oauth, authResolution, resolveAuth, requestMetadata = true, ...streamOptions } = options;
 	const transportModel = authResolution?.baseUrl ? { ...sessionModel, baseUrl: authResolution.baseUrl } : sessionModel;
 	await p[simple ? "streamSimple" : "stream"](transportModel, context, {
 		apiKey: "sk-fixture",
@@ -76,7 +75,20 @@ async function request(selected, options = {}, simple = true) {
 		onPayload: async (payload, requestModel) => {
 			const chained = (await options.onPayload?.(payload, requestModel)) ?? payload;
 			const replaced = await handlers.get("before_provider_request")(
-				{ payload: chained },
+				{
+					payload: chained,
+					...(requestMetadata
+						? {
+								request: {
+									model: requestModel,
+									isChatGPTSignIn:
+										requestModel.provider === "openai" &&
+										requestModel.baseUrl === "https://api.openai.com/v1" &&
+										!(streamOptions.apiKey ?? "sk-fixture").startsWith("sk-"),
+								},
+							}
+						: {}),
+				},
 				{
 					model: sessionModel,
 					modelRegistry: {
@@ -200,7 +212,7 @@ test("subscription restrictions require the exact upstream sign-in endpoint", as
 	assert.deepEqual(body.reasoning, { effort: "low" });
 });
 
-test("unresolved request credentials preserve upstream cache presence or omission", async () => {
+test("prepared credentials remain valid when later registry lookups would fail", async () => {
 	for (const resolution of [
 		{ authResolution: { ok: false, error: 'No API key found for "openai"' } },
 		{ authResolution: { ok: true } },
@@ -215,6 +227,21 @@ test("unresolved request credentials preserve upstream cache presence or omissio
 			assert.deepEqual(body.prompt_cache_options, apiKey.startsWith("sk-") ? { ttl: "30m" } : undefined);
 			assert.equal(body.max_output_tokens, apiKey.startsWith("sk-") ? 2048 : undefined);
 		}
+	}
+});
+
+test("payloads without a prepared snapshot retain the converter's output", async () => {
+	for (const apiKey of ["fixture-subscription-token", "sk-fixture"]) {
+		const body = await request(model, {
+			apiKey,
+			requestMetadata: false,
+			resolveAuth: async () => {
+				throw new Error("must not re-read authentication");
+			},
+			cacheRetention: "short",
+		});
+		assert.equal(body.prompt_cache_options, undefined);
+		assert.equal(body.max_output_tokens, apiKey.startsWith("sk-") ? 2048 : undefined);
 	}
 });
 
@@ -253,6 +280,9 @@ test("runtime API-key overrides resolve through the real registry independently 
 	for (const apiKey of ["fixture-subscription-token", "sk-fixture"]) {
 		await runtime.setRuntimeApiKey("openai", apiKey);
 		assert.equal(registry.isUsingOAuth(model), false);
+		const auth = await registry.getApiKeyAndHeaders(model);
+		assert.equal(auth.ok, true);
+		assert.equal(auth.apiKey, apiKey);
 		const body = await request(model, {
 			apiKey,
 			resolveAuth: (selected) => registry.getApiKeyAndHeaders(selected),

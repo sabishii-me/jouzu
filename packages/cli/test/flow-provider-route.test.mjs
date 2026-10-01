@@ -341,8 +341,32 @@ test("Astra compatibility composition keeps the OpenAI route admitted with a rec
 	assert.equal(records[0].outcome, "success");
 });
 
-for (const apiKey of ["sk-fixture-key", "fixture-subscription-token"]) {
-	test(`official Astra keeps the OpenAI route admitted with a normalized receipt: ${apiKey.startsWith("sk-") ? "API key" : "subscription token"}`, async (t) => {
+for (const scenario of [
+	{ name: "API key", apiKey: "sk-fixture-key" },
+	{ name: "subscription token", apiKey: "fixture-subscription-token" },
+	{ name: "subscription changes to API key", apiKey: "fixture-subscription-token", nextKey: "sk-replacement" },
+	{ name: "API key changes to subscription", apiKey: "sk-fixture-key", nextKey: "replacement-token" },
+	{
+		name: "custom endpoint changes to official",
+		apiKey: "fixture-subscription-token",
+		baseUrl: "https://custom.example/v1",
+		nextBaseUrl: "https://api.openai.com/v1",
+	},
+	{
+		name: "official endpoint changes to custom",
+		apiKey: "fixture-subscription-token",
+		nextBaseUrl: "https://custom.example/v1",
+	},
+	{
+		name: "custom endpoint survives a later auth failure",
+		apiKey: "fixture-subscription-token",
+		baseUrl: "https://custom.example/v1",
+		failLaterAuth: true,
+	},
+	{ name: "API key survives a later auth failure", apiKey: "sk-fixture-key", failLaterAuth: true },
+]) {
+	test(`official Astra keeps prepared request identity with a receipt: ${scenario.name}`, async (t) => {
+		const { apiKey } = scenario;
 		const f = await fixture(t);
 		f.runtime.registerProvider("openai", {
 			api: "openai-responses",
@@ -362,12 +386,33 @@ for (const apiKey of ["sk-fixture-key", "fixture-subscription-token"]) {
 			],
 		});
 		const model = f.runtime.getModel("openai", "gpt-6-astra");
+		const initialBaseUrl = scenario.baseUrl ?? model.baseUrl;
+		let baseUrl = initialBaseUrl;
+		let authFailed = false;
+		const getAuth = f.runtime.getAuth.bind(f.runtime);
+		f.runtime.getAuth = async (...args) => {
+			if (authFailed) throw new Error("fixture later auth failure");
+			const resolved = await getAuth(...args);
+			return resolved ? { ...resolved, auth: { ...resolved.auth, baseUrl } } : resolved;
+		};
+		const snapshots = [];
 		const loader = new DefaultResourceLoader({
 			cwd: f.root,
 			agentDir: f.root,
 			noExtensions: true,
 			noSkills: true,
-			extensionFactories: [createAstraCompatibilityExtension()],
+			extensionFactories: [
+				(pi) => {
+					pi.on("before_provider_request", async (event) => {
+						snapshots.push(event.request);
+						if (scenario.nextKey) await f.runtime.setRuntimeApiKey("openai", scenario.nextKey);
+						if (scenario.nextBaseUrl) baseUrl = scenario.nextBaseUrl;
+						if (scenario.failLaterAuth) authFailed = true;
+						return { ...event.payload, temperature: 0.8 };
+					});
+				},
+				createAstraCompatibilityExtension(),
+			],
 		});
 		await loader.reload();
 		const { session } = await createAgentSession({
@@ -438,9 +483,22 @@ for (const apiKey of ["sk-fixture-key", "fixture-subscription-token"]) {
 		await session.prompt("hello");
 		const records = await attachment.nativeRequests.snapshot();
 		assert.equal(bodies.length, 1);
-		assert.deepEqual(bodies[0].prompt_cache_options, apiKey.startsWith("sk-") ? { ttl: "30m" } : undefined);
-		assert.equal(bodies[0].reasoning?.effort, "low");
-		assert.equal(bodies[0].temperature, undefined);
+		const subscription = initialBaseUrl === "https://api.openai.com/v1" && !apiKey.startsWith("sk-");
+		const custom = initialBaseUrl !== "https://api.openai.com/v1";
+		assert.deepEqual(bodies[0].prompt_cache_options, subscription || custom ? undefined : { ttl: "30m" });
+		if (subscription) assert.equal(bodies[0].max_output_tokens, undefined);
+		else assert.ok(bodies[0].max_output_tokens > 0);
+		if (!custom) assert.equal(bodies[0].reasoning?.effort, "low");
+		assert.equal(bodies[0].temperature, custom ? 0.8 : undefined);
+		assert.equal(snapshots.length, 1);
+		assert.equal(snapshots[0].model.baseUrl, initialBaseUrl);
+		assert.equal(snapshots[0].isChatGPTSignIn, subscription);
+		assert.deepEqual(Object.keys(snapshots[0]).sort(), ["isChatGPTSignIn", "model"]);
+		assert.deepEqual(Object.keys(snapshots[0].model).sort(), ["api", "baseUrl", "compat", "id", "provider"]);
+		assert.equal(JSON.stringify(snapshots).includes(apiKey), false);
+		assert.ok(Object.isFrozen(snapshots[0]));
+		assert.ok(Object.isFrozen(snapshots[0].model));
+		assert.ok(Object.isFrozen(snapshots[0].model.compat));
 		assert.equal(records.length, 1);
 		assert.equal(records[0].outcome, "success");
 	});

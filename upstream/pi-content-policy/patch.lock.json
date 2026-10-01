@@ -29,7 +29,7 @@
 		},
 		"dist/core/sdk.js": {
 			"before": "fe643170de3d259c7e06179d9e18270a009dfb54df915f6e3de515425b8d009b",
-			"after": "dd21ee6d60432b90d1406724e4c8f55fe7f6e2cf5924cd99daccb2eb44ddbb91"
+			"after": "f562d9f4fba7dcbd87ce998bfe2789e6a808b0a3a2c65e6443ef4366bee4e9a6"
 		},
 		"dist/core/sdk.d.ts": {
 			"before": "3996770d9332e2b290e7b8908dc7b24b0a99a49c9f498fc0b0771f4a5268b0c0",
@@ -81,11 +81,11 @@
 		},
 		"dist/core/extensions/runner.js": {
 			"before": "7583772d6d29a23c06496b6e0b4764ace220fb4289d5523916323642efa50306",
-			"after": "ceb59b1ffec3df70d31bc5788c090882e819406e388ebb5861c33a669916aee2"
+			"after": "52db9f7afa271e620b5fa603af5dadb385abd8a083fefe5ee77c9a296398343c"
 		},
 		"dist/core/extensions/runner.d.ts": {
 			"before": "7e2003af1df247c938704f913e08835a71a3ae11783215a0b9c9832400684044",
-			"after": "33ae607e05fda53f985523120338490b6a27bcdff3db4ca340bde2ac611413ca"
+			"after": "220cfc2eff7ea57c9d17abcc0924fdc61e1704ff57131e3bbbf8a626028ef97c"
 		},
 		"dist/core/messages.js": {
 			"before": "8688b3f6eb28865f779cac998bd4754d1a4f08703200dfe0dd5a799aa0d42ef6",
@@ -109,7 +109,7 @@
 		},
 		"dist/core/model-runtime.js": {
 			"before": "da26f76339a031456f6d239a249159231776f760ab4ac538c6b54c417dea6f67",
-			"after": "89005133e4662434a2d0dc6ae2acabe56795207cf0409d310d36946611707cf7"
+			"after": "2dff17648099aa55ab897902f3a994c171691ab3aa40403a4815b0b798067ffe"
 		},
 		"dist/core/model-runtime.d.ts": {
 			"before": "5a7aac47a83c20316f593c74798f60ec4e521a0fddff03a0608dbc5514012bf5",
@@ -130,6 +130,10 @@
 		"dist/modes/interactive/bug-report.js": {
 			"before": "a367a8873f46cffba53868b314d34cc013269c0d6f2efda62893e8de57c6693e",
 			"after": "8d6c43f56046a442a1a4b62b4f646854c5373f56af39c507a2785d7baffb881b"
+		},
+		"dist/core/extensions/types.d.ts": {
+			"before": "6c78c89ad1ffb421e81ff0ad11ceff1a635b21fd818a32aa3e87009392298d9f",
+			"after": "37f7d0756879f3b345af9af587a93c6d5a08db90f118ff18f18508d9f16e7ac0"
 		}
 	},
 	"types": "14e9fb4505bf13670b82e12a72fb589d8a2c1142ecab5e1615ab2a5dba774863",
