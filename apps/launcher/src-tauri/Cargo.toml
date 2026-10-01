@@ -25,7 +25,3 @@ reqwest = { version = "0.12", default-features = false, features = ["blocking", 
 tempfile = "3"
 tauri-plugin-opener = "2"
 tauri-plugin-updater = "2"
-
-[features]
-# Isolated identity/data for local update lifecycle qualification, never production.
-update-rehearsal = []
