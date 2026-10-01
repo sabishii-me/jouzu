@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod control;
 mod runtime;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -171,6 +172,7 @@ fn main() {
             launch_jouzu,
             forget_workspace,
             component_versions,
+            control::control_request,
             runtime::install_git
         ])
         .run(tauri::generate_context!())

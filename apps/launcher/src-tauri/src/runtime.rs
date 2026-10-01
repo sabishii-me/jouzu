@@ -12,6 +12,17 @@ pub fn managed_root() -> Result<PathBuf, String> {
     Ok(PathBuf::from(local).join("Shisa.ai").join("Jouzu"))
 }
 
+pub fn effective_home() -> Result<PathBuf, String> {
+    #[cfg(debug_assertions)]
+    if std::env::var_os("JOUZU_LAUNCHER_DEV_HOME").is_some() {
+        return Ok(managed_root()?.join("data"));
+    }
+    if let Some(home) = std::env::var_os("JOUZU_HOME").filter(|value| !value.is_empty()) {
+        return Ok(PathBuf::from(home));
+    }
+    Ok(managed_root()?.join("data"))
+}
+
 pub fn install_root_for_executable(executable: &Path) -> Result<PathBuf, String> {
     executable
         .parent()
@@ -101,10 +112,7 @@ pub fn launch(app: &tauri::AppHandle, path: &str) -> Result<(), String> {
         .ok_or("Git Bash is required for command tools. Select Prepare Git Bash first.")?;
     let executable = std::env::current_exe().map_err(|e| e.to_string())?;
     let mut command = Command::new(executable.with_file_name("console.exe"));
-    #[cfg(debug_assertions)]
-    if std::env::var_os("JOUZU_LAUNCHER_DEV_HOME").is_some() {
-        command.env("JOUZU_HOME", managed_root()?.join("data"));
-    }
+    command.env("JOUZU_HOME", effective_home()?);
     command
         .arg(&root)
         .current_dir(path)

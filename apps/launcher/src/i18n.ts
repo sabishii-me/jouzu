@@ -1,6 +1,7 @@
 export const locales = { en: "English", ja: "日本語", "zh-Hans": "简体中文", "zh-Hant": "繁體中文" };
 export type Locale = keyof typeof locales;
 const en = {
+minimize: "Minimize", maximize: "Maximize or restore", closeWindow: "Close launcher", profile: "Japanese support", profileHint: "Optional Japanese-focused instructions and skills. Saving applies the profile for console startup too.", chooseProfile: "Choose a profile", coreProfile: "Core", jaProfile: "Japanese support", importTitle: "Existing configuration", importHint: "Import existing Pi model and authentication settings if available. An existing import decision will be respected.", importAccept: "Import if available", importDecline: "Do not import",
   home: "Folders", settings: "Settings", general: "General", versions: "Versions & updates", development: "Development",
   heading: "Where will you work?", intro: "Open a folder to start or return to your work.", open: "Open folder…", search: "Find a recent folder…",
   loading: "Loading your folders…", preview: "Browser preview. Use the desktop app to open folders.", empty: "Start with a folder", emptyHint: "Choose an existing project or any folder you want to work in. It will appear here next time.", noResults: "No folders match your search.", remove: "Remove from recents — files are kept", removed: "Removed from recent folders. Your files were not changed.", requested: "Launch requested. Jouzu opens in a separate terminal.", dismiss: "Dismiss", retry: "Retry", error: "Something went wrong", details: "Technical details",
@@ -9,6 +10,7 @@ const en = {
 };
 type Messages = typeof en;
 const ja: Messages = {
+minimize: "最小化", maximize: "最大化・元に戻す", closeWindow: "ランチャーを閉じる", profile: "日本語サポート", profileHint: "日本語向けの指示とスキルを追加します。保存した設定はコンソールにも適用されます。", chooseProfile: "プロファイルを選択", coreProfile: "基本", jaProfile: "日本語サポート", importTitle: "既存の設定", importHint: "既存の Pi モデル・認証設定を取り込みます。以前の選択がある場合は尊重されます。", importAccept: "設定を取り込む", importDecline: "取り込まない",
  home: "フォルダー", settings: "設定", general: "一般", versions: "バージョンと更新", development: "開発版",
  heading: "どこで作業しますか？", intro: "フォルダーを開いて、作業を開始・再開できます。", open: "フォルダーを開く…", search: "最近使ったフォルダーを検索…",
  loading: "フォルダーを読み込み中…", preview: "ブラウザープレビューです。フォルダーはデスクトップアプリで開いてください。", empty: "フォルダーから始めましょう", emptyHint: "既存のプロジェクトや作業用フォルダーを選択すると、次回ここに表示されます。", noResults: "一致するフォルダーはありません。", remove: "履歴から削除 — ファイルは保持されます", removed: "履歴から削除しました。ファイルは変更されていません。", requested: "起動を要求しました。Jouzu は別のターミナルで開きます。", dismiss: "閉じる", retry: "再試行", error: "問題が発生しました", details: "技術情報",
@@ -16,6 +18,7 @@ const ja: Messages = {
  language: "表示言語", languageHint: "ランチャーの表示言語を変更します。モデルや日本語サポートの設定は変更しません。", versionsHint: "ランチャーと Jouzu は別々のコンポーネントです。", launcher: "ランチャー", unavailable: "取得できません", noUpdates: "このビルドではアプリ内更新を利用できません。更新の確認は行っていません。", devHint: "これは開発版です。インストール済みのリリース版ではありません。", tools: "コマンドツール", available: "利用可能", firstUse: "必要に応じて準備", back: "フォルダーに戻る", count: "最近使ったフォルダー", clear: "検索をクリア", preferences: "ランチャーを使いやすく設定しましょう。", refresh: "状態を更新"
 };
 const hans: Messages = {
+minimize: "最小化", maximize: "最大化或还原", closeWindow: "关闭启动器", profile: "日语支持", profileHint: "可选的日语指令与技能。保存后也用于 console 启动，不会再次询问。", chooseProfile: "选择配置", coreProfile: "基础配置", jaProfile: "日语支持", importTitle: "已有配置", importHint: "导入已有 Pi 模型与认证设置（如果存在）。已有的导入决定不会被覆盖。", importAccept: "导入已有设置", importDecline: "不导入",
  home: "文件夹", settings: "设置", general: "通用", versions: "版本与更新", development: "开发版",
  heading: "从哪里开始工作？", intro: "打开文件夹，开始或继续你的工作。", open: "打开文件夹…", search: "搜索最近的文件夹…",
  loading: "正在读取文件夹…", preview: "浏览器预览。请使用桌面应用打开文件夹。", empty: "从一个文件夹开始", emptyHint: "选择现有项目或工作文件夹，下次可以在这里直接打开。", noResults: "没有匹配的文件夹。", remove: "从最近记录中移除，不删除文件", removed: "已移除记录，项目文件未更改。", requested: "已请求启动，Jouzu 将在独立终端中打开。", dismiss: "关闭提示", retry: "重试", error: "操作未完成", details: "技术详情",
@@ -23,6 +26,7 @@ const hans: Messages = {
  language: "界面语言", languageHint: "仅更改启动器界面，不更改模型或日语支持配置。", versionsHint: "启动器与 Jouzu 是独立的组件。", launcher: "启动器", unavailable: "不可用", noUpdates: "当前构建尚不支持应用内更新，未执行更新检查。", devHint: "这是开发构建，不是已安装的发行版。", tools: "命令工具", available: "可用", firstUse: "需要时准备", back: "返回文件夹", count: "最近的文件夹", clear: "清除搜索", preferences: "按你的习惯设置启动器。", refresh: "刷新状态"
 };
 const hant: Messages = {
+minimize: "最小化", maximize: "最大化或還原", closeWindow: "關閉啟動器", profile: "日語支援", profileHint: "可選的日語指令與技能。儲存後也用於 console 啟動，不會再次詢問。", chooseProfile: "選擇設定", coreProfile: "基本設定", jaProfile: "日語支援", importTitle: "既有設定", importHint: "匯入既有 Pi 模型與驗證設定（如果存在）。不覆寫既有的匯入決定。", importAccept: "匯入既有設定", importDecline: "不匯入",
  home: "資料夾", settings: "設定", general: "一般", versions: "版本與更新", development: "開發版",
  heading: "從哪裡開始工作？", intro: "開啟資料夾，開始或繼續你的工作。", open: "開啟資料夾…", search: "搜尋最近的資料夾…",
  loading: "正在讀取資料夾…", preview: "瀏覽器預覽。請使用桌面應用程式開啟資料夾。", empty: "從一個資料夾開始", emptyHint: "選擇現有專案或工作資料夾，下次可以在這裡直接開啟。", noResults: "沒有符合的資料夾。", remove: "從最近記錄中移除，不刪除檔案", removed: "已移除記錄，專案檔案未變更。", requested: "已要求啟動，Jouzu 將在獨立終端機中開啟。", dismiss: "關閉提示", retry: "重試", error: "操作未完成", details: "技術詳情",
