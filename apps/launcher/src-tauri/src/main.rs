@@ -19,6 +19,7 @@ struct LauncherState {
     platform: String,
     ready: bool,
     bash: bool,
+    bundled_git: bool,
     recent: Vec<Workspace>,
 }
 #[derive(Deserialize)]
@@ -89,6 +90,9 @@ fn launcher_state(app: tauri::AppHandle) -> Result<LauncherState, String> {
         platform: platform().into(),
         ready: runtime::application_root(&app).is_ok(),
         bash: runtime::find_bash(&app).is_some(),
+        bundled_git: runtime::application_root(&app)
+            .map(|root| root.join("runtime/git/PortableGit.exe").is_file())
+            .unwrap_or(false),
         recent,
     })
 }

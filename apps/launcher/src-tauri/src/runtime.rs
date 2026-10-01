@@ -54,7 +54,8 @@ pub fn find_bash(_app: &tauri::AppHandle) -> Option<PathBuf> {
 }
 
 #[tauri::command]
-pub async fn install_git(_app: tauri::AppHandle) -> Result<(), String> {
+pub async fn install_git(app: tauri::AppHandle) -> Result<(), String> {
+    let bundled = application_root(&app)?.join("runtime/git/PortableGit.exe");
     tauri::async_runtime::spawn_blocking(move || {
         use sha2::{Digest, Sha256};
         use std::io::{Read, Write};
@@ -66,7 +67,9 @@ pub async fn install_git(_app: tauri::AppHandle) -> Result<(), String> {
         let stage = tempfile::tempdir_in(&tools).map_err(|e| e.to_string())?;
         let archive = stage.path().join("PortableGit.exe");
         let client = reqwest::blocking::Client::builder().timeout(std::time::Duration::from_secs(300)).build().map_err(|e| e.to_string())?;
-        let mut response = client.get("https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.5/PortableGit-2.55.0.5-64-bit.7z.exe").send().and_then(|r| r.error_for_status()).map_err(|e| format!("Git download failed: {e}"))?;
+        let mut response: Box<dyn Read> = if bundled.is_file() {
+            Box::new(std::fs::File::open(&bundled).map_err(|e| e.to_string())?)
+        } else { Box::new(client.get("https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.5/PortableGit-2.55.0.5-64-bit.7z.exe").send().and_then(|r| r.error_for_status()).map_err(|e| format!("Git download failed: {e}"))?) };
         let mut file = std::fs::File::create(&archive).map_err(|e| e.to_string())?;
         let mut hash = Sha256::new(); let mut total = 0_u64; let mut buffer = [0_u8; 65536];
         loop {
