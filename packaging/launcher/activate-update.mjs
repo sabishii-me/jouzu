@@ -27,6 +27,14 @@ export async function withUpdateLock(managed, operation) {
  finally {closeSync(descriptor);rmSync(lock,{force:true});}
 }
 
+const transactionTokens = new WeakSet();
+export async function withUpdateTransaction(managed, operation) {
+ return withUpdateLock(managed,async root=>{
+  const token={root};transactionTokens.add(token);
+  try{return await operation(token);}finally{transactionTokens.delete(token);}
+ });
+}
+
 function validateSlot(root,selection) {
  if(selection.schemaVersion!==1 || typeof selection.slot!=='string' || !/^[a-zA-Z0-9-]{1,100}$/.test(selection.slot)
   || typeof selection.version!=='string' || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(selection.version))throw new Error('Invalid version selection');
@@ -42,9 +50,9 @@ function validateSlot(root,selection) {
 /** The caller supplies a real target/runtime/startup health check; no default
  * success check is allowed. Selected/previous slots are never deleted here.
  */
-export async function activateJouzu({managed,slot,version,healthCheck}) {
+export async function activateJouzu({managed,slot,version,healthCheck}, transaction) {
  if(typeof healthCheck!=='function')throw new Error('Activation health check required');
- return withUpdateLock(managed,async root=>{
+ const activate = async root=>{
   const selection={schemaVersion:1,slot,version};
   const app=validateSlot(root,selection);
   await healthCheck(app,version);
@@ -53,7 +61,12 @@ export async function activateJouzu({managed,slot,version,healthCheck}) {
   else atomicWrite(join(root,'previous.json'),Buffer.from('null'));
   atomicWrite(active,Buffer.from(JSON.stringify(selection)+'\n'));
   return {app,version};
- });
+ };
+ if(transaction) {
+  if(transaction.root !== join(managed,'updates') || !transactionTokens.has(transaction))throw new Error('Invalid update transaction');
+  return activate(transaction.root);
+ }
+ return withUpdateLock(managed,activate);
 }
 
 export async function rollbackJouzu({managed,healthCheck}) {

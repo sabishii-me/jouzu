@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod active_app;
+mod jouzu_update;
 mod control;
 mod environment;
 mod runtime;
@@ -181,7 +182,7 @@ fn component_versions(app: tauri::AppHandle) -> Result<serde_json::Value, String
         serde_json::from_slice(&std::fs::read(package).map_err(|e| e.to_string())?)
             .map_err(|e| e.to_string())?;
     Ok(
-        serde_json::json!({ "jouzu": value.get("version").and_then(|v| v.as_str()), "development": cfg!(debug_assertions), "launcherUpdaterConfigured": app.config().plugins.0.get("updater").map(|v| v["pubkey"].as_str().is_some_and(|s| !s.is_empty()) && v["endpoints"].as_array().is_some_and(|a| !a.is_empty())).unwrap_or(false) }),
+        serde_json::json!({ "jouzuUpdaterConfigured": root.join("jouzu-update.json").is_file() && root.join("runtime/launcher-update/update-service.mjs").is_file(), "jouzu": value.get("version").and_then(|v| v.as_str()), "development": cfg!(debug_assertions), "launcherUpdaterConfigured": app.config().plugins.0.get("updater").map(|v| v["pubkey"].as_str().is_some_and(|s| !s.is_empty()) && v["endpoints"].as_array().is_some_and(|a| !a.is_empty())).unwrap_or(false) }),
     )
 }
 
@@ -212,6 +213,7 @@ fn main() {
             forget_workspace,
             add_workspaces,
             component_versions,
+            jouzu_update::jouzu_update,
             control::control_request,
             control::cancel_control,
             environment::environment_read,

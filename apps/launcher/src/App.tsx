@@ -1,3 +1,4 @@
+import { useJouzuUpdate } from "./use-jouzu-update";
 import { useLauncherUpdate } from "./use-launcher-update";
 import { Progress } from "./components/ui/progress";
 import { Label } from "./components/ui/label";
@@ -22,7 +23,7 @@ import { Button } from "./components/ui/button";
 import { messages, locales, resolveLocale, type Locale } from "./i18n";
 import { type Workspace } from "./history";
 interface LauncherState { platform: "windows" | "macos" | "linux"; recent: Workspace[]; ready: boolean; bash: boolean; bundled_git: boolean }
-interface Components { jouzu: string | null; development: boolean; launcherUpdaterConfigured?: boolean }
+interface Components { jouzu: string | null; development: boolean; launcherUpdaterConfigured?: boolean; jouzuUpdaterConfigured?: boolean }
 export function App() {
   const [locale, setLocale] = useState<Locale>(() => resolveLocale(localStorage.getItem("jouzu.ui.language") ?? navigator.language));
   const t = messages[locale];
@@ -32,6 +33,7 @@ export function App() {
   const [operation, setOperation] = useState<"choosing" | "launching" | "preparing" | "saving" | null>(null);
   const [version, setVersion] = useState<string | null>(null);
   const [components, setComponents] = useState<Components | null>(null);
+  const jouzuUpdater = useJouzuUpdate(() => {void invoke<Components>("component_versions").then(setComponents).catch(error => setError(String(error)));});
   const updater = useLauncherUpdate(components?.launcherUpdaterConfigured === true);
   const [settingsTab,setSettingsTab] = useState("providers");
   const [sort, setSort] = useState(() => localStorage.getItem("jouzu.folder.sort") ?? "added");
@@ -191,7 +193,12 @@ export function App() {
                 </TabsContent>
                 <TabsContent value="about" className="m-0 space-y-4">
                   <Card className="border-border shadow-none"><CardHeader><CardTitle>{t.versions}</CardTitle></CardHeader><CardContent><dl className="divide-y divide-border text-sm"><div className="flex justify-between gap-4 py-3"><dt>{t.launcher}</dt><dd>{development ? t.development : version ?? t.unavailable}</dd></div><div className="flex justify-between gap-4 py-3"><dt>Jouzu</dt><dd>{components?.jouzu ?? t.unavailable}</dd></div><div className="flex justify-between gap-4 py-3"><dt>{t.tools}</dt><dd>{state?.bash ? t.available : t.firstUse}</dd></div></dl></CardContent></Card>
-                  <Card className="border-border shadow-none"><CardHeader><CardTitle>{t.versions}</CardTitle><CardDescription>{components?.launcherUpdaterConfigured ? updater.version ? `${t.updateAvailable}: ${updater.version}` : updater.phase === "current" ? t.upToDate : t.updateCheckHint : t.updaterUnconfigured}</CardDescription></CardHeader><CardContent className="space-y-3">{updater.error && <p role="alert" className="text-sm text-destructive">{updater.error}</p>}{(updater.phase === "downloading" || updater.phase === "installing") && <div role="status"><p className="mb-2 text-sm">{updater.phase === "installing" ? t.installingUpdate : t.downloadingUpdate}</p><Progress value={updater.progress} /></div>}<div className="flex flex-wrap gap-2"><Button disabled={!components?.launcherUpdaterConfigured || updater.busy} onClick={() => void updater.refresh()}>{updater.phase === "checking" ? t.checking : t.checkUpdates}</Button>{updater.version && <Button disabled={updater.busy} onClick={async () => {if(await confirm(t.restartUpdateHint,{title:t.launcher,kind:"warning"})) await updater.install();}}>{t.installUpdate}</Button>}</div><p className="text-sm text-muted-foreground">{t.jouzuUpdatePending}</p><Button variant="outline" disabled={busy || !isTauri()} onClick={() => { refresh().catch(error => setError(String(error))); invoke<Components>("component_versions").then(setComponents).catch(error => setError(String(error))); }}><RefreshCw />{t.refresh}</Button></CardContent></Card>
+                  <Card><CardHeader><CardTitle>Jouzu</CardTitle><CardDescription>{!components?.jouzuUpdaterConfigured ? t.jouzuUpdatePending : jouzuUpdater.version ? `${t.updateAvailable}: ${jouzuUpdater.version}` : ['current','complete'].includes(jouzuUpdater.phase) ? t.upToDate : t.checkUpdates}</CardDescription></CardHeader><CardContent className="space-y-3">
+                    {jouzuUpdater.error && <p role="alert" className="text-sm text-destructive">{jouzuUpdater.error}</p>}
+                    {jouzuUpdater.busy && <div role="status"><p>{jouzuUpdater.phase === 'checking' ? t.checking : jouzuUpdater.phase === 'downloading' ? t.downloadingUpdate : t.installingUpdate}</p><Progress value={jouzuUpdater.progress} /></div>}
+                    <div className="flex gap-2"><Button disabled={!components?.jouzuUpdaterConfigured || jouzuUpdater.busy || updater.busy} onClick={()=>void jouzuUpdater.check()}>{t.checkUpdates}</Button>{jouzuUpdater.version && <Button disabled={jouzuUpdater.busy || updater.busy} onClick={async()=>{if(await confirm(`${t.updateAvailable}: Jouzu ${jouzuUpdater.version}`,{title:'Jouzu',kind:'info'}))await jouzuUpdater.install();}}>Jouzu → {jouzuUpdater.version}</Button>}</div>
+                  </CardContent></Card>
+                  <Card className="border-border shadow-none"><CardHeader><CardTitle>{t.versions}</CardTitle><CardDescription>{components?.launcherUpdaterConfigured ? updater.version ? `${t.updateAvailable}: ${updater.version}` : updater.phase === "current" ? t.upToDate : t.updateCheckHint : t.updaterUnconfigured}</CardDescription></CardHeader><CardContent className="space-y-3">{updater.error && <p role="alert" className="text-sm text-destructive">{updater.error}</p>}{(updater.phase === "downloading" || updater.phase === "installing") && <div role="status"><p className="mb-2 text-sm">{updater.phase === "installing" ? t.installingUpdate : t.downloadingUpdate}</p><Progress value={updater.progress} /></div>}<div className="flex flex-wrap gap-2"><Button disabled={!components?.launcherUpdaterConfigured || updater.busy || jouzuUpdater.busy} onClick={() => void updater.refresh()}>{updater.phase === "checking" ? t.checking : t.checkUpdates}</Button>{updater.version && <Button disabled={updater.busy || jouzuUpdater.busy} onClick={async () => {if(await confirm(t.restartUpdateHint,{title:t.launcher,kind:"warning"})) await updater.install();}}>{t.installUpdate}</Button>}</div><Button variant="outline" disabled={busy || !isTauri()} onClick={() => { refresh().catch(error => setError(String(error))); invoke<Components>("component_versions").then(setComponents).catch(error => setError(String(error))); }}><RefreshCw />{t.refresh}</Button></CardContent></Card>
                 </TabsContent>
               </div>
             </ScrollArea>
