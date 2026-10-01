@@ -118,16 +118,29 @@ Building also requires Go (for [textguard-go](https://github.com/shisa-ai/textgu
 
 ## Documentation
 
-More documentation is in [`docs/`](https://github.com/shisa-ai/jouzu/tree/main/docs):
+| Page | Covers |
+| --- | --- |
+| [Models](https://github.com/shisa-ai/jouzu/blob/main/docs/models.md) | Models view, defaults, thinking levels, context ceiling |
+| [Shisa AI account](https://github.com/shisa-ai/jouzu/blob/main/docs/shisa.md) | Sign-in, sign-out, credentials |
+| [Model catalogs](https://github.com/shisa-ai/jouzu/blob/main/docs/catalogs.md) | Catalog sources, refresh, publishing a catalog |
+| [Flow control](https://github.com/shisa-ai/jouzu/blob/main/docs/flow-control.md) | `/flow` commands, pausing and resuming automatic work |
+| [Built-in tools](https://github.com/shisa-ai/jouzu/blob/main/docs/tools.md) | Tools, goals and loops, compaction |
+| [Web tools](https://github.com/shisa-ai/jouzu/blob/main/docs/web.md) | Fetch and browser tools, limits, browser settings |
+| [Agents and runs](https://github.com/shisa-ai/jouzu/blob/main/docs/subagents.md) | Child agents and roles |
+| [TextGuard](https://github.com/shisa-ai/jouzu/blob/main/docs/textguard.md) | Content scanning and approvals |
+| [Voice input](https://github.com/shisa-ai/jouzu/blob/main/docs/voice.md) | Dictation setup and commands |
+| [Session interface](https://github.com/shisa-ai/jouzu/blob/main/docs/interface.md) | Dashboard, Session Line, Status Bar |
+| [Session labels](https://github.com/shisa-ai/jouzu/blob/main/docs/session-labels.md) | Automatic session naming |
+| [Profiles](https://github.com/shisa-ai/jouzu/blob/main/docs/profiles.md) | `core` and `ja`, bundled skills, conflicts |
+| [Keybindings](https://github.com/shisa-ai/jouzu/blob/main/docs/keybindings.md) | Default keys and terminal support |
+| [Configuration](https://github.com/shisa-ai/jouzu/blob/main/docs/configuration.md) | Locations, Pi import, environment variables |
+| [Updates](https://github.com/shisa-ai/jouzu/blob/main/docs/updates.md) | Automatic updates and policies |
+| [Diagnostics](https://github.com/shisa-ai/jouzu/blob/main/docs/diagnostics.md) | `jz doctor`, runtime info, Pi passthrough |
+| [Report a bug](https://github.com/shisa-ai/jouzu/blob/main/docs/bug-reporting.md) | `/bug` and startup failures |
+| [Windows](https://github.com/shisa-ai/jouzu/blob/main/docs/windows.md) | Windows prerequisites |
+| [Development](https://github.com/shisa-ai/jouzu/blob/main/docs/development.md) | Building from source |
 
-- [Agents and runs](https://github.com/shisa-ai/jouzu/blob/main/docs/subagents.md)
-- [TextGuard](https://github.com/shisa-ai/jouzu/blob/main/docs/textguard.md)
-- [Voice input](https://github.com/shisa-ai/jouzu/blob/main/docs/voice.md)
-- [Session labels](https://github.com/shisa-ai/jouzu/blob/main/docs/session-labels.md)
-- [Windows](https://github.com/shisa-ai/jouzu/blob/main/docs/windows.md)
-- [Bug reporting](https://github.com/shisa-ai/jouzu/blob/main/docs/bug-reporting.md)
-- [Architecture](https://github.com/shisa-ai/jouzu/blob/main/docs/architecture.md)
-- [Testing](https://github.com/shisa-ai/jouzu/blob/main/docs/testing.md)
+The [documentation index](https://github.com/shisa-ai/jouzu/blob/main/docs/README.md) also lists release notes and contributor docs.
 
 ## License
 

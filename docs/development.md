@@ -1,0 +1,60 @@
+# Development
+
+## Requirements
+
+- Node.js 22.19 or newer, npm, Git, and Bash on `PATH`
+- Go. The build downloads the exact toolchain pinned in `upstream/textguard/source.lock.json` for [textguard-go](https://github.com/shisa-ai/textguard-go).
+- For the full `npm test` suite: `uv` and Python 3.10 or newer
+
+## Build and run
+
+```bash
+npm run dev:setup                     # install, check, build, and smoke-test
+node packages/cli/dist/cli.js         # run this checkout
+npm run dev:link                      # optional: point global jz/jouzu at this checkout
+```
+
+- `dev:setup` installs dependencies with install scripts disabled, and reinstalls when manifests, lockfiles, or pinned patches change.
+- Builds in one clone take turns through a lock, so they cannot overwrite each other's dependencies.
+- No provider key is needed.
+- `dev:setup` does not change global commands or install Git hooks. If global commands already point here, rebuilding updates them.
+
+## Version identifiers
+
+Development builds record build time (UTC), Git commit, and uncommitted changes:
+
+```text
+0.1.7-dev.20260905-010203+g215b2188        # clean checkout
+0.1.7-dev.20260905-010203+g215b2188.dirty  # uncommitted changes
+```
+
+`npm run build` drops this information for release packages.
+
+## Rebuild after Git operations
+
+```bash
+./dev-build.sh install-hooks
+./dev-build.sh uninstall-hooks        # removes only these hooks
+```
+
+- Hooks rebuild without changing global links, keep existing hooks, and report build failures without failing the Git command.
+- They apply only to the checkout that installed them. Set `JOUZU_REPO` to use another local checkout.
+- Tested on Linux. The test suite, `npm run test:dev-build`, also needs Python 3.
+
+## Windows
+
+- Close Jouzu sessions and test processes from this checkout before rebuilding. Windows locks loaded native modules.
+- Archive extraction uses Windows' built-in `tar.exe`.
+- Without Bash:
+
+```bash
+npm ci --ignore-scripts
+npm run build:dev
+node packages/cli/dist/cli.js
+npm link --workspace packages/cli --ignore-scripts   # optional global link
+```
+
+## Tests and release checks
+
+- `npm run release:check` runs the full release gate.
+- See [Testing](testing.md) for test suites and [Architecture](architecture.md) for the module map.
