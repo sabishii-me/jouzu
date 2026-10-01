@@ -19,6 +19,7 @@
           "url": "https://platform.shisa.ai/connect*"
         }
       ]
-    }
+    },
+    "updater:default"
   ]
 }

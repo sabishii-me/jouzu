@@ -180,7 +180,7 @@ fn component_versions(app: tauri::AppHandle) -> Result<serde_json::Value, String
         serde_json::from_slice(&std::fs::read(package).map_err(|e| e.to_string())?)
             .map_err(|e| e.to_string())?;
     Ok(
-        serde_json::json!({ "jouzu": value.get("version").and_then(|v| v.as_str()), "development": cfg!(debug_assertions) }),
+        serde_json::json!({ "jouzu": value.get("version").and_then(|v| v.as_str()), "development": cfg!(debug_assertions), "launcherUpdaterConfigured": app.config().plugins.0.get("updater").map(|v| v["pubkey"].as_str().is_some_and(|s| !s.is_empty()) && v["endpoints"].as_array().is_some_and(|a| !a.is_empty())).unwrap_or(false) }),
     )
 }
 
@@ -188,6 +188,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let data = runtime::managed_root()
                 .map_err(std::io::Error::other)?

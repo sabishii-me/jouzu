@@ -1,3 +1,5 @@
+import { useLauncherUpdate } from "./use-launcher-update";
+import { Progress } from "./components/ui/progress";
 import { Label } from "./components/ui/label";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { parseControlState, type ControlState } from "./control-state";
@@ -20,7 +22,7 @@ import { Button } from "./components/ui/button";
 import { messages, locales, resolveLocale, type Locale } from "./i18n";
 import { type Workspace } from "./history";
 interface LauncherState { platform: "windows" | "macos" | "linux"; recent: Workspace[]; ready: boolean; bash: boolean; bundled_git: boolean }
-interface Components { jouzu: string | null; development: boolean }
+interface Components { jouzu: string | null; development: boolean; launcherUpdaterConfigured?: boolean }
 export function App() {
   const [locale, setLocale] = useState<Locale>(() => resolveLocale(localStorage.getItem("jouzu.ui.language") ?? navigator.language));
   const t = messages[locale];
@@ -30,6 +32,8 @@ export function App() {
   const [operation, setOperation] = useState<"choosing" | "launching" | "preparing" | "saving" | null>(null);
   const [version, setVersion] = useState<string | null>(null);
   const [components, setComponents] = useState<Components | null>(null);
+  const updater = useLauncherUpdate(components?.launcherUpdaterConfigured === true);
+  const [settingsTab,setSettingsTab] = useState("providers");
   const [sort, setSort] = useState(() => localStorage.getItem("jouzu.folder.sort") ?? "added");
   const [connectionMode, setConnectionMode] = useState<"builtin" | "custom">("builtin");
   const [providerQuery, setProviderQuery] = useState("");
@@ -140,11 +144,11 @@ export function App() {
       <div className="absolute left-0 right-0 top-0 h-2" data-tauri-drag-region />
       <div className="flex items-center gap-3"><img src={jouzuIcon} alt="" className="size-9" /><h1 data-tauri-drag-region className="min-w-16 flex-1 text-lg font-semibold tracking-tight">Jouzu</h1></div>
       <div className="flex items-center gap-1"><Dialog open={settingsOpen} onOpenChange={value => { if (!value && device) void invoke("cancel_control"); setSettingsOpen(value); }}>
-        <DialogTrigger asChild><Button variant="ghost" aria-label={t.settings} title={t.settings}><Settings /></Button></DialogTrigger>
+        <>{updater.version && <Button variant="outline" onClick={() => {setSettingsTab("about");setSettingsOpen(true);}}>{t.updateAvailable}</Button>}</><DialogTrigger asChild><Button variant="ghost" aria-label={t.settings} title={t.settings}><Settings /></Button></DialogTrigger>
         <DialogContent showCloseButton={false} className="flex h-[min(560px,85dvh)] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl border-border p-0 sm:max-w-3xl">
           {error && <p role="alert" className="border-b border-border bg-red-50 px-4 py-2 text-sm text-red-900">{error}</p>}
           <DialogDescription className="sr-only">{t.preferences}</DialogDescription>
-          <Tabs defaultValue="providers" orientation="vertical" className="min-h-0 flex-1 gap-0">
+          <Tabs value={settingsTab} onValueChange={setSettingsTab} orientation="vertical" className="min-h-0 flex-1 gap-0">
             <aside className="w-36 shrink-0 border-r border-border bg-muted/60 p-3 sm:w-48">
               <DialogTitle className="mb-5 flex items-center gap-2 px-2 pt-2 text-sm font-semibold"><Settings className="size-4" />{t.settings}</DialogTitle>
               <TabsList aria-label={t.settings} className="h-auto w-full items-stretch gap-1 bg-transparent p-0">
@@ -187,7 +191,7 @@ export function App() {
                 </TabsContent>
                 <TabsContent value="about" className="m-0 space-y-4">
                   <Card className="border-border shadow-none"><CardHeader><CardTitle>{t.versions}</CardTitle></CardHeader><CardContent><dl className="divide-y divide-border text-sm"><div className="flex justify-between gap-4 py-3"><dt>{t.launcher}</dt><dd>{development ? t.development : version ?? t.unavailable}</dd></div><div className="flex justify-between gap-4 py-3"><dt>Jouzu</dt><dd>{components?.jouzu ?? t.unavailable}</dd></div><div className="flex justify-between gap-4 py-3"><dt>{t.tools}</dt><dd>{state?.bash ? t.available : t.firstUse}</dd></div></dl></CardContent></Card>
-                  <Card className="border-border shadow-none"><CardHeader><CardTitle>{t.versions}</CardTitle><CardDescription>{t.noUpdates}</CardDescription></CardHeader><CardContent><Button variant="outline" disabled={busy || !isTauri()} onClick={() => { refresh().catch(error => setError(String(error))); invoke<Components>("component_versions").then(setComponents).catch(error => setError(String(error))); }}><RefreshCw />{t.refresh}</Button></CardContent></Card>
+                  <Card className="border-border shadow-none"><CardHeader><CardTitle>{t.versions}</CardTitle><CardDescription>{components?.launcherUpdaterConfigured ? updater.version ? `${t.updateAvailable}: ${updater.version}` : updater.phase === "current" ? t.upToDate : t.updateCheckHint : t.updaterUnconfigured}</CardDescription></CardHeader><CardContent className="space-y-3">{updater.error && <p role="alert" className="text-sm text-destructive">{updater.error}</p>}{(updater.phase === "downloading" || updater.phase === "installing") && <div role="status"><p className="mb-2 text-sm">{updater.phase === "installing" ? t.installingUpdate : t.downloadingUpdate}</p><Progress value={updater.progress} /></div>}<div className="flex flex-wrap gap-2"><Button disabled={!components?.launcherUpdaterConfigured || updater.busy} onClick={() => void updater.refresh()}>{updater.phase === "checking" ? t.checking : t.checkUpdates}</Button>{updater.version && <Button disabled={updater.busy} onClick={async () => {if(await confirm(t.restartUpdateHint,{title:t.launcher,kind:"warning"})) await updater.install();}}>{t.installUpdate}</Button>}</div><p className="text-sm text-muted-foreground">{t.jouzuUpdatePending}</p><Button variant="outline" disabled={busy || !isTauri()} onClick={() => { refresh().catch(error => setError(String(error))); invoke<Components>("component_versions").then(setComponents).catch(error => setError(String(error))); }}><RefreshCw />{t.refresh}</Button></CardContent></Card>
                 </TabsContent>
               </div>
             </ScrollArea>
