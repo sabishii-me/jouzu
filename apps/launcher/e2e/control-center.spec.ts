@@ -27,6 +27,14 @@ for (const legacy of [false,true]) {
   else { await dialog.getByRole('button',{name:'Add connection',exact:true}).click(); await expect(dialog.getByRole('combobox',{name:'Service',exact:true})).toBeVisible(); await expect(dialog.getByRole('button',{name:'Add connection',exact:true})).toHaveCount(0); await expect(dialog.getByRole('combobox')).toHaveCount(1); await dialog.getByRole('combobox',{name:'Service',exact:true}).click(); await page.getByRole('option',{name:'Custom provider',exact:true}).click(); await expect(dialog.getByRole('textbox',{name:'API base URL'})).toBeVisible(); }
   await dialog.getByRole('tab',{name:'Environment',exact:true}).click();
   await expect(dialog.getByRole('button',{name:'Add variable',exact:true})).toBeVisible();
+  await dialog.getByRole('button',{name:'Add variable',exact:true}).click();
+  await dialog.getByRole('textbox',{name:'Name',exact:true}).fill('TEST_TOKEN');
+  await dialog.getByLabel('Value',{exact:true}).fill('fixture-secret');
+  await dialog.getByRole('button',{name:'Save',exact:true}).click();
+  await expect(dialog.getByLabel('Value',{exact:true})).toHaveCount(0);
+  await expect(dialog.getByText('TEST_TOKEN',{exact:true})).toBeVisible();
+  await dialog.getByRole('button',{name:'Edit',exact:true}).click();
+  await expect(dialog.getByLabel('Value',{exact:true})).toHaveValue('fixture-secret');
   await dialog.getByRole('tab',{name:'General',exact:true}).click();
   await expect(dialog.getByRole('combobox',{name:'Interface language'})).toBeVisible();
   expect(errors).toEqual([]);

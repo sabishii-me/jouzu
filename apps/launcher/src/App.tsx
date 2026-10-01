@@ -42,14 +42,15 @@ export function App() {
     return () => { pending.then(unlisten => unlisten()).catch(() => {}); };
   }, []);
   const [envRows, setEnvRows] = useState<{name:string;value:string;enabled:boolean}[]>([]);
+  const [editingEnv, setEditingEnv] = useState<number | null>(null);
   const [envLoaded, setEnvLoaded] = useState(false);
   async function readEnvironment() {
-    try { setEnvRows(await invoke("environment_read")); setEnvLoaded(true); }
+    try { setEnvRows(await invoke("environment_read")); setEnvLoaded(true); setEditingEnv(null); }
     catch (error) { setError(String(error)); }
   }
   async function saveEnvironment() {
     setOperation("saving"); setError(null);
-    try { await invoke("environment_save", { entries: envRows }); }
+    try { await invoke("environment_save", { entries: envRows }); setEditingEnv(null); }
     catch (error) { setError(String(error)); }
     finally { setOperation(null); }
   }
@@ -168,8 +169,8 @@ export function App() {
                   </>}
                 </TabsContent>
                 <TabsContent value="environment" className="m-0 space-y-4"><Card className="border-border shadow-none"><CardHeader><CardTitle>{t.environment}</CardTitle><CardDescription>{t.envHint}</CardDescription></CardHeader><CardContent className="space-y-3">
-                  {envRows.map((row,index) => <div key={index} className="space-y-2 rounded-lg border border-border p-3"><div className="flex items-center gap-2"><Input aria-label={t.variableName} placeholder={t.variableName} value={row.name} disabled={busy} onChange={event => setEnvRows(rows => rows.map((r,i) => i === index ? {...r,name:event.target.value} : r))} /><Switch aria-label={t.enabled} checked={row.enabled} disabled={busy} onCheckedChange={enabled => setEnvRows(rows => rows.map((r,i) => i === index ? {...r,enabled} : r))} /><Button variant="ghost" disabled={busy} aria-label={t.deleteEntry} onClick={() => setEnvRows(rows => rows.filter((_,i) => i !== index))}><X /></Button></div><Input type="password" autoComplete="off" aria-label={t.variableValue} placeholder={t.variableValue} value={row.value} disabled={busy} onChange={event => setEnvRows(rows => rows.map((r,i) => i === index ? {...r,value:event.target.value} : r))} /></div>)}
-                  <div className="flex gap-2"><Button variant="outline" disabled={!envLoaded || busy} onClick={() => setEnvRows(rows => [...rows,{name:"",value:"",enabled:true}])}><Plus />{t.addEntry}</Button><Button disabled={!envLoaded || busy} onClick={saveEnvironment}>{t.save}</Button></div>
+                  {envRows.map((row,index) => <div key={index} className="space-y-2 rounded-lg border border-border p-3"><div className="flex items-center gap-2">{editingEnv === index ? <Input aria-label={t.variableName} placeholder={t.variableName} value={row.name} disabled={busy} onChange={event => setEnvRows(rows => rows.map((r,i) => i === index ? {...r,name:event.target.value} : r))} /> : <span className="min-w-0 flex-1 truncate text-sm font-medium" title={row.name}>{row.name}</span>}<Button variant="ghost" disabled={busy} onClick={() => setEditingEnv(index)}>{t.editValue}</Button><Switch aria-label={t.enabled} checked={row.enabled} disabled={busy} onCheckedChange={enabled => setEnvRows(rows => rows.map((r,i) => i === index ? {...r,enabled} : r))} /><Button variant="ghost" disabled={busy} aria-label={t.deleteEntry} onClick={() => { setEnvRows(rows => rows.filter((_,i) => i !== index)); setEditingEnv(null); }}><X /></Button></div>{editingEnv === index && <Input type="password" autoComplete="off" aria-label={t.variableValue} placeholder={t.variableValue} value={row.value} disabled={busy} onChange={event => setEnvRows(rows => rows.map((r,i) => i === index ? {...r,value:event.target.value} : r))} />}</div>)}
+                  <div className="flex gap-2"><Button variant="outline" disabled={!envLoaded || busy} onClick={() => { setEditingEnv(envRows.length); setEnvRows(rows => [...rows,{name:"",value:"",enabled:true}]); }}><Plus />{t.addEntry}</Button><Button disabled={!envLoaded || busy} onClick={saveEnvironment}>{t.save}</Button></div>
                 </CardContent></Card></TabsContent>
                 <TabsContent value="general" className="m-0 space-y-4">
                   <Card className="border-border shadow-none"><CardHeader><CardTitle>{t.language}</CardTitle></CardHeader><CardContent>
