@@ -89,7 +89,7 @@ pub fn launch(app: &tauri::AppHandle, path: &str) -> Result<(), String> {
     let bash = find_bash(app)
         .ok_or("Git Bash is required for command tools. Select Prepare Git Bash first.")?;
     let executable = std::env::current_exe().map_err(|e| e.to_string())?;
-    let mut command = Command::new(executable.with_file_name("jouzu-console.exe"));
+    let mut command = Command::new(executable.with_file_name("console.exe"));
     command
         .arg(&root)
         .current_dir(path)
@@ -115,7 +115,7 @@ mod path_tests {
     fn program_location_follows_executable_not_default_data_root() {
         let directory = std::env::temp_dir().join("custom Jouzu install");
         assert_eq!(
-            install_root_for_executable(&directory.join("jouzu-launcher.exe")).unwrap(),
+            install_root_for_executable(&directory.join("launcher.exe")).unwrap(),
             directory
         );
     }

@@ -5,7 +5,11 @@ try {
     if ($directory -eq [IO.Path]::GetPathRoot($directory).TrimEnd('\')) { throw 'Drive root is not a valid installation directory.' }
     if (-not (Test-Path -LiteralPath $directory)) { exit 0 }
     $root = $directory + '\'
-    $launcher = Join-Path $directory 'jouzu-launcher.exe'
+    $launcher = Join-Path $directory 'launcher.exe'
+    # Accept the previous filename when upgrading an existing installation.
+    if (-not (Test-Path -LiteralPath $launcher)) {
+        $launcher = Join-Path $directory 'jouzu-launcher.exe'
+    }
     if (-not (Test-Path -LiteralPath $launcher)) {
         if ((Test-Path -LiteralPath (Join-Path $directory 'app')) -or (Test-Path -LiteralPath (Join-Path $directory 'runtime'))) {
             throw 'Cannot establish ownership of existing files. Choose an empty folder or repair the installation.'

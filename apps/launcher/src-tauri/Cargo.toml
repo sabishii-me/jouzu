@@ -1,9 +1,13 @@
 [package]
 name = "jouzu-launcher"
-default-run = "jouzu-launcher"
+default-run = "launcher"
 version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
+
+[[bin]]
+name = "launcher"
+path = "src/main.rs"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
