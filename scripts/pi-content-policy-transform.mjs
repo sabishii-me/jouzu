@@ -713,21 +713,38 @@ export function sessionEntryToContextMessages(entry) {`,
             structuredContent: hookResult ? hookResult.structuredContent : result.structuredContent,
             isError: hookResult?.isError ?? isError,
             usage: hookResult?.usage ?? result.usage,
+            terminate: hookResult?.terminate ?? result.terminate,
         };
         if (!this.resourceLoader.contentPolicy) return finalResult;
-        if (this.agent.signal?.aborted && this.resourceLoader.contentPolicy.shouldInspectTool?.(toolCall.name, args))
-            return { content: [{ type: "text", text: "Tool result withheld after cancellation." }], details: {}, isError: true, terminate: false };
+        const inspected = this.resourceLoader.contentPolicy.shouldInspectTool?.(toolCall.name, args) === true;
+        const replaceInspectedResult = (admitted) => {
+            const replacement = { ...admitted, details: admitted.details ?? {} };
+            if (inspected) {
+                // afterToolCall is a partial override. Clear the original merge source too, or
+                // omitted usage and unknown properties can return in nested outcomes.
+                replacement.terminate ??= false;
+                try {
+                    for (const key of Reflect.ownKeys(result)) delete result[key];
+                    Object.assign(result, replacement);
+                } catch {
+                    throw new Error("TextGuard could not replace this result; content withheld.");
+                }
+            }
+            return replacement;
+        };
+        if (this.agent.signal?.aborted && inspected)
+            return replaceInspectedResult({ content: [{ type: "text", text: "Tool result withheld after cancellation." }], details: {}, isError: true, terminate: false });
         try {
             const admitted = await this.resourceLoader.contentPolicy.filterToolResult({
                 toolName: toolCall.name, toolCallId: toolCall.id, input: args,
                 result: finalResult, signal: this.agent.signal,
             });
             if (!admitted || !Array.isArray(admitted.content)) throw new Error("Invalid content-policy result");
-            return { ...admitted, details: admitted.details ?? {} };
+            return replaceInspectedResult(admitted);
         } catch {
             // Uninspected sources retain their native result when no policy check ran.
-            if (!this.resourceLoader.contentPolicy.shouldInspectTool?.(toolCall.name, args)) return finalResult;
-            return { content: [{ type: "text", text: "TextGuard could not check this result; content withheld." }], details: {}, isError: true, terminate: false };
+            if (!inspected) return finalResult;
+            return replaceInspectedResult({ content: [{ type: "text", text: "TextGuard could not check this result; content withheld." }], details: {}, isError: true, terminate: false });
         }`,
 		);
 		change(
