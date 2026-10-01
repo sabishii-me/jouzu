@@ -1,3 +1,5 @@
+import { Download, RefreshCw, LoaderCircle } from 'lucide-react';
+import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogClose } from './components/ui/dialog';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from './components/ui/button';
 import { Progress } from './components/ui/progress';
@@ -14,6 +16,8 @@ export function UpdatePreview({locale}:{locale:Locale}) {
  const t=text[locale];const [scenario,setScenario]=useState('available');
  const [phases,setPhases]=useState<Phase[]>(['available','available']);
  const [versions,setVersions]=useState(['0.1.17','0.1.20']);const targets=['0.1.18','0.1.21'];
+ const [confirmRestart,setConfirmRestart]=useState(false);
+ const cancel={en:'Cancel',ja:'キャンセル','zh-Hans':'取消','zh-Hant':'取消'}[locale];
  const [progress,setProgress]=useState(0);const timers=useRef<ReturnType<typeof setTimeout>[]>([]);
  const generation=useRef(0);
  const failed=useRef(false);
@@ -22,18 +26,19 @@ export function UpdatePreview({locale}:{locale:Locale}) {
  useEffect(()=>()=>clear(),[]);
  function later(fn:()=>void,delay:number){const id=generation.current;timers.current.push(setTimeout(()=>{if(id===generation.current)fn();},delay));}
  function phase(index:number,p:Phase){setPhases(old=>old.map((v,i)=>i===index?p:v));}
- function reset(value:string){clear();failed.current=false;setScenario(value);setVersions(value==='current'?targets:value==='jouzu'?['0.1.17','0.1.21']:value==='launcher'?['0.1.18','0.1.20']:['0.1.17','0.1.20']);setProgress(value==='downloading'?45:0);setPhases(value==='downloading'?['downloading','available']:value==='installing'?['installing','available']:value==='current'?['current','current']:value==='error'?['error','error']:value==='jouzu'?['available','current']:value==='launcher'?['current','available']:['available','available']);}
+ function reset(value:string){clear();setConfirmRestart(false);failed.current=false;setScenario(value);setVersions(value==='current'?targets:value==='jouzu'?['0.1.17','0.1.21']:value==='launcher'?['0.1.18','0.1.20']:['0.1.17','0.1.20']);setProgress(value==='downloading'?45:0);setPhases(value==='downloading'?['downloading','available']:value==='installing'?['installing','available']:value==='current'?['current','current']:value==='error'?['error','error']:value==='jouzu'?['available','current']:value==='launcher'?['current','available']:['available','available']);}
  function check(){setPhases(['checking','checking']);later(()=>setPhases(versions.map((v,i)=>v===targets[i]?'current':'available')),850);}
  function install(index:number){phase(index,'downloading');setProgress(0);for(let step=1;step<=10;step++)later(()=>{setProgress(step*10);if(step===5&&scenario==='fail'&&!failed.current){failed.current=true;clear();phase(index,'error');}else if(step===10){phase(index,'installing');later(()=>{setVersions(old=>old.map((v,i)=>i===index?targets[i]:v));phase(index,'complete');},900);}},step*180);}
  const busy=phases.some(p=>['checking','downloading','installing'].includes(p));
  return <div className="space-y-6">
-  <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-lg font-semibold">{t[0]}</h2><p className="mt-1 text-sm text-muted-foreground">{t[1]}</p></div><Button variant="outline" className="text-sm" disabled={busy} onClick={check}>{phases.includes('checking')?t[9]:t[2]}</Button></div>
+  <Dialog open={confirmRestart} onOpenChange={setConfirmRestart}><DialogContent className="sm:max-w-sm"><DialogTitle>{t[8]}</DialogTitle><DialogDescription>{t[15]}</DialogDescription><div className="flex justify-end gap-2"><DialogClose asChild><Button variant="outline">{cancel}</Button></DialogClose><Button onClick={()=>{setConfirmRestart(false);install(1);}}>{t[8]}</Button></div></DialogContent></Dialog>
+  <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-lg font-semibold">{t[0]}</h2><p className="mt-1 text-sm text-muted-foreground">{t[1]}</p></div><Button variant="ghost" className="h-9 w-9 p-0" aria-label={t[2]} title={t[2]} disabled={busy} onClick={check}><RefreshCw className={`size-4 ${phases.includes("checking")?"animate-spin":""}`} /></Button></div>
   <div className="divide-y divide-border rounded-lg border border-border px-5">{phases.map((p,i)=><section key={i} className="flex h-40 flex-col gap-2 py-4 sm:h-32">
    <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-medium">{i===0?'Jouzu':t[3]}</h3><p className="mt-1 text-sm text-muted-foreground">{t[4]} {versions[i]}</p></div>
-    {p==='available'?<Button disabled={busy} onClick={()=>install(i)}>{i===0?t[7]:t[8]}</Button>:p==='error'?<Button variant="outline" disabled={busy} onClick={()=>scenario==='fail'?install(i):check()}>{t[14]}</Button>:<span role="status" className="text-sm text-muted-foreground">{p==='current'?t[6]:p==='complete'?t[12]:p==='checking'?t[9]:p==='downloading'?t[10]:t[11]}</span>}
+    {p==='available'?<Button className="h-9 w-9 p-0" aria-label={i===0?t[7]:t[8]} title={i===0?t[7]:t[8]} disabled={busy} onClick={()=>i===0?install(i):setConfirmRestart(true)}><Download className="size-4" /></Button>:p==='error'?<Button variant="outline" className="h-9 w-9 p-0" aria-label={t[14]} title={t[14]} disabled={busy} onClick={()=>scenario==='fail'?(i===0?install(i):setConfirmRestart(true)):check()}><RefreshCw className="size-4" /></Button>:<span role="status" className="flex items-center gap-2 text-sm text-muted-foreground">{["checking","downloading","installing"].includes(p)&&<LoaderCircle className="size-4 animate-spin"/>}{p==='current'?t[6]:p==='complete'?t[12]:p==='checking'?t[9]:p==='downloading'?t[10]:t[11]}</span>}
    </div>
    <div className="min-h-8 space-y-2">
-   {p==='available'&&<p className="text-sm text-muted-foreground">{t[5]} {targets[i]}{i===1?` · ${t[15]}`:''}</p>}
+   {p==='available'&&<p className="text-sm text-muted-foreground">{t[5]} {targets[i]}</p>}
    {p==='error'&&<p role="alert" className="text-sm text-destructive">{scenario==='fail'?({en:'Download failed. Your current version is unchanged.',ja:'ダウンロードに失敗しました。現在のバージョンは変更されていません。','zh-Hans':'下载失败，当前版本未改变。','zh-Hant':'下載失敗，目前版本未變更。'}[locale]):t[13]}</p>}
    {(p==='downloading'||p==='installing')&&<Progress value={p==='downloading'?progress:undefined}/>}
    </div>

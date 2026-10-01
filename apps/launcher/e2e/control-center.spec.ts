@@ -122,3 +122,19 @@ test('update preview keeps row height stable and exposes persistent progress sce
   expect((await rows.nth(1).boundingBox())!.height).toBe(height);
  }
 });
+
+test('launcher preview icon asks once before simulated restart', async ({page})=>{
+ await page.addInitScript(()=>localStorage.setItem('jouzu.ui.language','en'));
+ await page.goto('http://localhost:1420');
+ await page.getByRole('button',{name:'Update available',exact:true}).click();
+ await page.getByRole('button',{name:'Update and restart',exact:true}).click();
+ const confirmation=page.getByRole('dialog',{name:'Update and restart',exact:true});
+ await expect(confirmation).toBeVisible();
+ await confirmation.getByRole('button',{name:'Cancel',exact:true}).click();
+ await expect(confirmation).toHaveCount(0);
+ await expect(page.getByText('Current version 0.1.20',{exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'Update and restart',exact:true}).click();
+ await confirmation.getByRole('button',{name:'Update and restart',exact:true}).click();
+ await expect(confirmation).toHaveCount(0);
+ await expect(page.getByText('Current version 0.1.21',{exact:true})).toBeVisible();
+});
