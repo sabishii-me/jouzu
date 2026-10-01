@@ -1,24 +1,24 @@
 @import "tailwindcss";
 @theme inline {
-  --color-card: #ffffff;
-  --color-card-foreground: #171717;
-  --color-popover: #ffffff;
-  --color-popover-foreground: #171717;
-  --color-accent: #e8eef0;
-  --color-accent-foreground: #171717;
-  --color-input: #d4d4d4;
-  --color-destructive: #b91c1c;
-  --color-background: #fafafa;
-  --color-foreground: #171717;
-  --color-primary: #155e75;
-  --color-primary-foreground: #ffffff;
-  --color-muted: #f0f0f0;
-  --color-muted-foreground: #525252;
-  --color-border: #d4d4d4;
-  --color-ring: #0891b2;
+  --color-card: #18191f;
+  --color-card-foreground: #eeeeF2;
+  --color-popover: #18191f;
+  --color-popover-foreground: #eeeeF2;
+  --color-accent: #2b2536;
+  --color-accent-foreground: #eeeeF2;
+  --color-input: #303039;
+  --color-destructive: #f87171;
+  --color-background: #121318;
+  --color-foreground: #eeeeF2;
+  --color-primary: #39c8e8;
+  --color-primary-foreground: #101318;
+  --color-muted: #202127;
+  --color-muted-foreground: #a5a2b2;
+  --color-border: #303039;
+  --color-ring: #ae92c9;
 }
 @layer base {
-  body { @apply m-0 bg-background text-foreground antialiased; font-family: system-ui, sans-serif; }
+  body { color-scheme: dark; @apply m-0 bg-background text-foreground antialiased; font-family: system-ui, sans-serif; }
   button { cursor: pointer; }
   button:disabled { cursor: default; }
 }
