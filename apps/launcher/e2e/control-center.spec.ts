@@ -94,7 +94,7 @@ test('update preview supports failed download, retry and independent components'
  const dialog=page.getByRole('dialog');
  const scenarios=dialog.getByRole('combobox');
  await scenarios.click();await page.getByRole('option',{name:'Download fails',exact:true}).click();
- await dialog.getByRole('button',{name:'Update Jouzu',exact:true}).click();
+ await expect(dialog.getByRole('button',{name:'Update Jouzu',exact:true})).toHaveCount(0);
  await expect(dialog.getByRole('alert')).toContainText('Your current version is unchanged');
  await expect(dialog.getByText('Current version 0.1.17',{exact:true})).toBeVisible();
  await dialog.getByRole('button',{name:'Retry',exact:true}).click();
