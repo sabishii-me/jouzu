@@ -113,7 +113,44 @@ fn launch_jouzu(app: tauri::AppHandle, path: String) -> Result<(), String> {
             },
         },
     );
-    state.recent.truncate(20);
+
+    let data = runtime::managed_root()?;
+    std::fs::create_dir_all(&data).map_err(|e| e.to_string())?;
+    let mut file = tempfile::NamedTempFile::new_in(&data).map_err(|e| e.to_string())?;
+    serde_json::to_writer(&mut file, &state.recent).map_err(|e| e.to_string())?;
+    file.persist(data.join("recent.json"))
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn add_workspaces(app: tauri::AppHandle, paths: Vec<String>) -> Result<(), String> {
+    if paths.len() > 1000 {
+        return Err("Too many folders in one operation".into());
+    }
+    let mut state = launcher_state(app)?;
+    for path in &paths {
+        if !Path::new(path).is_dir() {
+            return Err("Only existing folders can be added".into());
+        }
+    }
+    for path in paths {
+        let canonical = std::fs::canonicalize(&path).map_err(|e| e.to_string())?;
+        if state.recent.iter().any(|item| {
+            std::fs::canonicalize(&item.path)
+                .map(|p| p == canonical)
+                .unwrap_or(item.path == path)
+        }) {
+            continue;
+        }
+        state.recent.push(Workspace {
+            id: format!("{}:{}", platform(), path),
+            path,
+            environment: Environment {
+                kind: platform().into(),
+            },
+        });
+    }
     let data = runtime::managed_root()?;
     std::fs::create_dir_all(&data).map_err(|e| e.to_string())?;
     let mut file = tempfile::NamedTempFile::new_in(&data).map_err(|e| e.to_string())?;
@@ -171,6 +208,7 @@ fn main() {
             launcher_state,
             launch_jouzu,
             forget_workspace,
+            add_workspaces,
             component_versions,
             control::control_request,
             runtime::install_git

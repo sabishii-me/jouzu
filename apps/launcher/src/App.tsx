@@ -1,11 +1,11 @@
 import jouzuIcon from "./assets/jouzu.svg";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Input } from "./components/ui/input";
 import { getVersion } from "@tauri-apps/api/app";
 import { open, confirm } from "@tauri-apps/plugin-dialog";
-import { FolderOpen, Search, X, ArrowUpRight, Settings, Languages, RefreshCw, LoaderCircle, Minus } from "lucide-react";
+import { FolderOpen, Search, X, ArrowUpRight, Settings, Languages, RefreshCw, LoaderCircle, Minus, Plus } from "lucide-react";
 import { Dialog, DialogTrigger, DialogContent, DialogTitle, DialogDescription, DialogClose } from "./components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "./components/ui/tabs";
 import { ScrollArea } from "./components/ui/scroll-area";
@@ -13,7 +13,7 @@ import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "./com
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "./components/ui/select";
 import { Button } from "./components/ui/button";
 import { messages, locales, resolveLocale, type Locale } from "./i18n";
-import { environmentLabel, type Workspace } from "./history";
+import { type Workspace } from "./history";
 interface LauncherState { platform: "windows" | "macos" | "linux"; recent: Workspace[]; ready: boolean; bash: boolean; bundled_git: boolean }
 interface Components { jouzu: string | null; development: boolean }
 export function App() {
@@ -30,6 +30,32 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [notice, setNotice] = useState<"requested" | "removed" | null>(null);
   const busy = operation !== null;
+  const busyRef = useRef(busy);
+  busyRef.current = busy;
+  const listRef = useRef<HTMLDivElement>(null);
+  const [dragging, setDragging] = useState(false);
+  async function addFolders(paths: string[]) {
+    setOperation("saving"); setError(null);
+    try { await invoke("add_workspaces", { paths }); setQuery(""); await refresh(); }
+    catch (error) { setError(String(error)); }
+    finally { setOperation(null); }
+  }
+  useEffect(() => {
+    if (!isTauri()) return;
+    let disposed = false;
+    const subscription = getCurrentWindow().onDragDropEvent(event => {
+      const payload = event.payload;
+      if (payload.type === "leave") { setDragging(false); return; }
+      const rect = listRef.current?.getBoundingClientRect();
+      const x = payload.position.x / window.devicePixelRatio;
+      const y = payload.position.y / window.devicePixelRatio;
+      const inside = !!rect && x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+      setDragging(inside && payload.type !== "drop");
+      if (payload.type === "drop" && inside && !busyRef.current && !settingsOpen) void addFolders(payload.paths);
+    });
+    subscription.then(unlisten => { if (disposed) unlisten(); }).catch(error => setError(String(error)));
+    return () => { disposed = true; subscription.then(unlisten => unlisten()).catch(() => {}); };
+  }, [settingsOpen]);
   async function configure(request: Record<string, unknown>) {
     setOperation("saving"); setError(null);
     try { setSetup(await invoke("control_request", { request })); }
@@ -63,7 +89,7 @@ export function App() {
     setOperation("choosing"); setError(null);
     try {
       const path = await open({ directory: true, multiple: false, title: t.picker });
-      if (typeof path === "string") await launch(path);
+      if (typeof path === "string") await addFolders([path]);
     } catch (error) { setError(String(error)); } finally { setOperation(null); }
   }
   async function forget(workspace: Workspace) {
@@ -75,12 +101,12 @@ export function App() {
   }
   const recent = state?.recent.filter(item => item.path.toLocaleLowerCase().includes(query.toLocaleLowerCase())) ?? [];
   const development = components?.development ?? import.meta.env.DEV;
-  return <main className="mx-auto flex min-h-screen max-w-4xl flex-col px-5 sm:px-6">
+  return <main className="mx-auto flex h-screen max-w-4xl flex-col px-5 sm:px-6">
     <header className="flex items-center justify-between border-b border-border py-3">
       <div className="absolute left-0 right-0 top-0 h-2" data-tauri-drag-region />
       <div className="flex items-center gap-3"><img src={jouzuIcon} alt="" className="size-9" /><h1 data-tauri-drag-region className="min-w-16 flex-1 text-lg font-semibold tracking-tight">Jouzu</h1></div>
       <div className="flex items-center gap-1"><Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-        <DialogTrigger asChild><Button variant="ghost" aria-label={t.settings}><Settings /><span className="hidden sm:inline">{t.settings}</span></Button></DialogTrigger>
+        <DialogTrigger asChild><Button variant="ghost" aria-label={t.settings} title={t.settings}><Settings /></Button></DialogTrigger>
         <DialogContent showCloseButton={false} className="flex h-[min(560px,85dvh)] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl border-border p-0 sm:max-w-3xl">
           {error && <p role="alert" className="border-b border-border bg-red-50 px-4 py-2 text-sm text-red-900">{error}</p>}
           <DialogDescription className="sr-only">{t.preferences}</DialogDescription>
@@ -115,10 +141,17 @@ export function App() {
       </div>
     </header>
     {error && <div role="alert" className="mt-5 flex items-start justify-between gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-900"><div><p className="font-medium">{t.error}</p><details className="mt-2 break-all"><summary className="cursor-pointer">{t.details}</summary><p className="mt-2">{error}</p></details></div><button onClick={() => setError(null)} aria-label={t.dismiss}><X className="size-4" /></button></div>}
-    <section className="flex-1 py-5" aria-labelledby="folders-heading">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-4"><div><h2 id="folders-heading" className="text-base font-semibold tracking-tight">{t.count}</h2></div><Button onClick={chooseFolder} disabled={!state?.ready || busy}><FolderOpen />{t.open}</Button></div>
-      {(state?.recent.length ?? 0) > 0 && <label className="mb-4 flex items-center gap-2 rounded-lg border border-border bg-card px-3"><Search className="size-4 text-muted-foreground" aria-hidden="true" /><Input className="min-w-0 flex-1 bg-transparent py-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={t.search} placeholder={t.search} value={query} onChange={event => setQuery(event.target.value)} /></label>}
-      {!state ? <p role="status" className="py-12 text-center text-sm text-muted-foreground">{isTauri() ? t.loading : t.preview}</p> : !state.recent.length ? <div className="rounded-xl border border-dashed border-border px-6 py-14 text-center"><FolderOpen className="mx-auto mb-4 size-9 text-muted-foreground" aria-hidden="true" /><h3 className="font-medium">{t.empty}</h3></div> : !recent.length ? <p className="py-10 text-center text-sm text-muted-foreground">{t.noResults}</p> : <ul className="space-y-2">{recent.map(workspace => <li key={workspace.id} className="group flex items-center gap-2 rounded-xl border border-border bg-card p-2 transition-colors hover:border-primary/40"><button disabled={busy || !state.ready} onClick={() => launch(workspace.path)} className="flex min-w-0 flex-1 items-center gap-4 rounded-lg p-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50" title={`Open ${workspace.path}`}><FolderOpen className="size-5 shrink-0 text-primary" aria-hidden="true" /><span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{workspace.path.split(/[\\/]/).filter(Boolean).at(-1) ?? workspace.path}</span><span className="mt-1 block truncate text-xs text-muted-foreground" title={workspace.path}>{workspace.path}</span></span><span className="hidden text-xs text-muted-foreground sm:block">{environmentLabel(workspace.environment)}</span><ArrowUpRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" /></button><Button disabled={busy} variant="ghost" onClick={() => forget(workspace)} aria-label={`${t.remove}: ${workspace.path}`} title={t.remove}><X /></Button></li>)}</ul>}
+    <section className="flex min-h-0 flex-1 flex-col gap-3 py-4" aria-label={t.home}>
+      <div className="flex items-center gap-2"><Search className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" /><Input aria-label={t.search} placeholder={t.search} value={query} onChange={event => setQuery(event.target.value)} /><span className="text-xs tabular-nums text-muted-foreground">{recent.length}</span></div>
+      <div ref={listRef} aria-busy={busy} className={`flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-card ${dragging ? "border-primary ring-2 ring-primary/30" : "border-border"}`}>
+        <ScrollArea className="min-h-0 flex-1">
+          <ul className="divide-y divide-border">
+            <li><Button variant="ghost" className="w-full justify-start rounded-none px-5 py-4" onClick={chooseFolder} disabled={!state || busy} aria-label={t.addFolder} title={t.addFolder}><Plus /><span>{t.addFolder}</span></Button></li>
+            {recent.map(workspace => <li key={workspace.id} className="flex items-center gap-1 px-2 hover:bg-muted/50"><Button variant="ghost" disabled={busy || !state?.ready} onClick={() => launch(workspace.path)} className="h-auto min-w-0 flex-1 justify-start rounded-none px-3 py-3 text-left" title={workspace.path}><FolderOpen className="shrink-0 text-primary" /><span className="min-w-0 flex-1"><span className="block truncate">{workspace.path.split(/[\/]/).filter(Boolean).at(-1) ?? workspace.path}</span><span className="mt-1 block truncate text-xs font-normal text-muted-foreground">{workspace.path}</span></span><ArrowUpRight className="shrink-0 text-muted-foreground" /></Button><Button variant="ghost" disabled={busy} onClick={() => forget(workspace)} title={t.remove} aria-label={`${t.remove}: ${workspace.path}`}><X /></Button></li>)}
+          </ul>
+          {query && !recent.length && <p className="p-5 text-sm text-muted-foreground">{t.noResults}</p>}
+        </ScrollArea>
+      </div>
     </section>
     {(busy || notice || (state && !state.ready)) && <footer className="flex min-h-10 items-center gap-2 border-t border-border py-4 text-xs text-muted-foreground" role="status" aria-live="polite">{busy && <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />}{operation === "preparing" ? t.preparing : operation === "launching" ? t.launching : operation === "choosing" ? t.choosing : operation === "saving" ? t.saving : (notice ? t[notice] : null) ?? (!state ? t.connecting : !state.ready ? t.repair : "")}</footer>}
   </main>;
