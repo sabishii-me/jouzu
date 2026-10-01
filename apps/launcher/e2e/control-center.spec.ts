@@ -108,3 +108,17 @@ test('update preview supports failed download, retry and independent components'
  await expect(dialog.getByRole('alert')).toHaveCount(0);
  await expect(dialog.getByRole('button',{name:'Update Jouzu',exact:true})).toBeVisible();
 });
+
+test('update preview keeps row height stable and exposes persistent progress scenes', async ({page}) => {
+ await page.addInitScript(()=>localStorage.setItem('jouzu.ui.language','en'));
+ await page.goto('http://localhost:1420');
+ await page.getByRole('button',{name:'Update available',exact:true}).click();
+ const dialog=page.getByRole('dialog');const rows=dialog.locator('section');
+ const height=(await rows.first().boundingBox())!.height;
+ for(const [scene,status] of [['Downloading','Downloading…'],['Installing','Installing…'],['No updates','Up to date'],['Check failed','Could not check for updates']]){
+  await dialog.getByRole('combobox').click();await page.getByRole('option',{name:scene,exact:true}).click();
+  await expect(rows.first().getByText(status,{exact:true})).toBeVisible();
+  expect((await rows.first().boundingBox())!.height).toBe(height);
+  expect((await rows.nth(1).boundingBox())!.height).toBe(height);
+ }
+});
