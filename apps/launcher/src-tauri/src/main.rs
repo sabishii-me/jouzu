@@ -103,17 +103,15 @@ fn launcher_state(app: tauri::AppHandle) -> Result<LauncherState, String> {
 fn launch_jouzu(app: tauri::AppHandle, path: String) -> Result<(), String> {
     runtime::launch(&app, &path)?;
     let mut state = launcher_state(app.clone())?;
-    state.recent.retain(|item| item.path != path);
-    state.recent.insert(
-        0,
-        Workspace {
+    if !state.recent.iter().any(|item| item.path == path) {
+        state.recent.push(Workspace {
             id: format!("{}:{}", platform(), path),
             path,
             environment: Environment {
                 kind: platform().into(),
             },
-        },
-    );
+        });
+    }
 
     let data = runtime::managed_root()?;
     std::fs::create_dir_all(&data).map_err(|e| e.to_string())?;

@@ -65,8 +65,10 @@ try {
     try {
       const config = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : { providers: {} };
       config.providers ??= {};
-      if (Object.hasOwn(config.providers, request.provider) || runtime.getProvider(request.provider)) throw new Error('Provider already exists');
-      config.providers[request.provider] = { baseUrl: url.href, api: 'openai-completions', authHeader: true, models: [{ id: request.model.trim(), name: request.model.trim(), reasoning: false, input: ['text'], cost: {input:0,output:0,cacheRead:0,cacheWrite:0}, contextWindow: 32768, maxTokens: 4096 }] };
+      const existing = config.providers[request.provider];
+      if (request.edit !== true && (existing || runtime.getProvider(request.provider))) throw new Error('Provider already exists');
+      if (request.edit === true && (!existing || existing.api !== 'openai-completions' || existing.models?.length !== 1)) throw new Error('This provider requires advanced editing');
+      config.providers[request.provider] = { ...existing, baseUrl: url.href, api: 'openai-completions', authHeader: true, models: [{ id: request.model.trim(), name: request.model.trim(), reasoning: false, input: ['text'], cost: {input:0,output:0,cacheRead:0,cacheWrite:0}, contextWindow: 32768, maxTokens: 4096 }] };
       writeFilePrivateAtomic(staged, JSON.stringify(config), paths.agentDir);
       const { ModelConfig } = await pi('model-config');
       const validated = await ModelConfig.load(staged);
@@ -89,8 +91,14 @@ try {
     await settings.flush();
   } else if (request.action !== 'status') throw new Error('Unsupported operation');
   await runtime.refresh({ allowNetwork: false });
+  const { ModelConfig } = await pi('model-config');
+  const savedConfig = await ModelConfig.load(join(paths.agentDir, 'models.json'));
+  const customProviders = savedConfig.getProviderIds().map(id => {
+    const p = savedConfig.getProvider(id);
+    return { id, url: p.baseUrl, model: p.models?.[0]?.id, editable: p.api === 'openai-completions' && p.models?.length === 1 };
+  });
   const { readShisaAccountStatus } = await load('shisa-link/account');
-  console.log(JSON.stringify({ profile: readProfileChoice(profilePath)?.profile ?? null, account: readShisaAccountStatus(paths), providers: runtime.getProviders().map(p => ({ id: p.id, name: p.name ?? p.id })), credentials: await auth.list(), models: runtime.getModels().map(m => ({ provider: m.provider, id: m.id, name: m.name })), defaultProvider: settings.getDefaultProvider(), defaultModel: settings.getDefaultModel() }));
+  console.log(JSON.stringify({ profile: readProfileChoice(profilePath)?.profile ?? null, account: readShisaAccountStatus(paths), customProviders, providers: runtime.getProviders().map(p => ({ id: p.id, name: p.name ?? p.id })), credentials: await auth.list(), models: runtime.getModels().map(m => ({ provider: m.provider, id: m.id, name: m.name })), defaultProvider: settings.getDefaultProvider(), defaultModel: settings.getDefaultModel() }));
 } catch {
   // Do not relay raw upstream errors: they can contain credentials or server input.
   console.log(JSON.stringify({ error: 'Configuration operation failed. Check data permissions and configuration conflicts.' }));
