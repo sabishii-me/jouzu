@@ -14,6 +14,14 @@ export function exportPackageNames(manifest) {
 	return [...new Set(["jouzu", ...(manifest.bundleDependencies ?? []), ...REQUIRED_PATCHED_TRANSITIVES])];
 }
 
+export function exportPackageRoot(root, name) {
+	// Preserve the core actually used by coding-agent, including nested npm bundles.
+	const consumer = name === "@earendil-works/pi-agent-core"
+		? packageRootFromConsumer(root, "@earendil-works/pi-coding-agent")
+		: root;
+	return name === "jouzu" ? root : packageRootFromConsumer(consumer, name);
+}
+
 export function exportRecipe(source, output) {
 	const root = realpathSync(source);
 	const destination = resolve(output);
@@ -27,7 +35,7 @@ export function exportRecipe(source, output) {
 	const artifacts = join(destination, "artifacts"); mkdirSync(artifacts);
 	const overrides = {};
 	for (const name of names) {
-		const input = name === "jouzu" ? root : packageRootFromConsumer(root, name);
+		const input = exportPackageRoot(root, name);
 		const metadata = JSON.parse(readFileSync(join(input, "package.json"), "utf8"));
 		if (metadata.name !== name) throw new Error(`Unexpected package at ${name}`);
 		const prepared = join(destination, "sources", name.replaceAll("/", "__"));
