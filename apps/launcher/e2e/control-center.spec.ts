@@ -24,7 +24,7 @@ for (const legacy of [false,true]) {
   await page.getByRole('button',{name:'Settings',exact:true}).click();
   const dialog=page.getByRole('dialog');await expect(dialog).toBeVisible();
   if(legacy) await expect(dialog.getByRole('alert')).toContainText('incompatible');
-  else { await dialog.getByRole('button',{name:'Add connection',exact:true}).click(); await expect(dialog.getByRole('combobox',{name:'Service',exact:true})).toBeVisible(); await expect(dialog.getByRole('button',{name:'Add connection',exact:true})).toHaveCount(0); await dialog.getByRole('combobox',{name:'Connection type'}).click(); await page.getByRole('option',{name:'Custom provider',exact:true}).click(); await expect(dialog.getByRole('textbox',{name:'API base URL'})).toBeVisible(); }
+  else { await dialog.getByRole('button',{name:'Add connection',exact:true}).click(); await expect(dialog.getByRole('combobox',{name:'Service',exact:true})).toBeVisible(); await expect(dialog.getByRole('button',{name:'Add connection',exact:true})).toHaveCount(0); await expect(dialog.getByRole('combobox')).toHaveCount(1); await dialog.getByRole('combobox',{name:'Service',exact:true}).click(); await page.getByRole('option',{name:'Custom provider',exact:true}).click(); await expect(dialog.getByRole('textbox',{name:'API base URL'})).toBeVisible(); }
   await dialog.getByRole('tab',{name:'Environment',exact:true}).click();
   await expect(dialog.getByRole('button',{name:'Add variable',exact:true})).toBeVisible();
   await dialog.getByRole('tab',{name:'General',exact:true}).click();
