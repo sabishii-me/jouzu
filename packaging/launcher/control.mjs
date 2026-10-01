@@ -34,6 +34,21 @@ try {
       ask: async () => request.accept ? 'yes' : 'no',
       output: { write: () => true },
     });
+  } else if (request.action === 'shisa-login') {
+    const { loginShisa } = await load('shisa-link/login');
+    const { resolveShisaGatewayUrl } = await load('shisa-link/device-flow');
+    const { loadMetadata } = await load('metadata');
+    await loginShisa({
+      signal: AbortSignal.timeout(180000),
+      onDeviceCode: ({ verificationUri, userCode }) => process.stderr.write(JSON.stringify({ type: 'device', url: verificationUri, code: userCode }) + String.fromCharCode(10)),
+      onAuth: () => {}, onProgress: () => {}, onSelect: async () => undefined,
+      onPrompt: async () => { throw new Error('Unsupported interactive prompt'); },
+    }, { paths, gatewayUrl: resolveShisaGatewayUrl(process.env), jouzuVersion: loadMetadata().jouzuVersion });
+  } else if (request.action === 'shisa-logout') {
+    const { logoutShisa } = await load('shisa-link/logout');
+    const result = await logoutShisa({ paths });
+    if (!result.localCleared) throw new Error('Local signout failed');
+    if (result.revocation === 'unconfirmed') throw new Error('Remote revocation unconfirmed');
   } else if (request.action === 'provider-key') {
     if (!runtime.getProvider(request.provider)) throw new Error('Unknown provider');
     if (typeof request.token !== 'string' || !request.token.trim() || request.token.length > 8192 || [...request.token].some(c => c.charCodeAt(0) < 32)) throw new Error('Invalid key');

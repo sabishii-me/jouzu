@@ -1,3 +1,4 @@
+import { listen } from "@tauri-apps/api/event";
 import jouzuIcon from "./assets/jouzu.svg";
 import { useEffect, useState, useRef } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
@@ -27,6 +28,12 @@ export function App() {
   const [components, setComponents] = useState<Components | null>(null);
   const [query, setQuery] = useState("");
   const [setup, setSetup] = useState<{ profile: string | null; account: { signedIn: boolean }; providers: {id:string;name:string}[]; credentials: {providerId:string}[]; models: {provider:string;id:string;name:string}[]; defaultProvider?:string; defaultModel?:string } | null>(null);
+  const [device, setDevice] = useState<{url:string;code:string} | null>(null);
+  useEffect(() => {
+    if (!isTauri()) return;
+    const pending = listen<{url:string;code:string}>("control-device", event => setDevice(event.payload));
+    return () => { pending.then(unlisten => unlisten()).catch(() => {}); };
+  }, []);
   const [provider, setProvider] = useState("");
   const [token, setToken] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -62,7 +69,7 @@ export function App() {
     setOperation("saving"); setError(null);
     try { setSetup(await invoke("control_request", { request })); }
     catch (error) { setError(String(error)); }
-    finally { setOperation(null); }
+    finally { setOperation(null); setDevice(null); }
   }
   useEffect(() => { if (!notice) return; const timer = setTimeout(() => setNotice(null), 4000); return () => clearTimeout(timer); }, [notice]);
   useEffect(() => { if (settingsOpen && isTauri()) void configure({ action: "status" }); }, [settingsOpen]);
@@ -124,6 +131,7 @@ export function App() {
             <ScrollArea className="min-w-0 flex-1">
               <div className="px-5 pb-6 pt-14 sm:px-6">
                 <TabsContent value="providers" className="m-0 space-y-4">
+                  <Card className="border-border shadow-none"><CardHeader><CardTitle>Shisa</CardTitle></CardHeader><CardContent className="space-y-3"><Button disabled={busy || !setup} onClick={() => void configure({ action: setup?.account.signedIn ? "shisa-logout" : "shisa-login" })}>{setup?.account.signedIn ? t.signOut : t.signIn}</Button>{device && <div className="space-y-2"><Input readOnly aria-label={t.loginUrl} value={device.url} onFocus={event => event.target.select()} /><Input readOnly aria-label={t.deviceCode} value={device.code} onFocus={event => event.target.select()} /><p className="text-xs text-muted-foreground">{t.loginHint}</p></div>}</CardContent></Card>
                   <Card className="border-border shadow-none"><CardHeader><CardTitle>{t.providers}</CardTitle></CardHeader><CardContent className="space-y-4">
                     <Select value={provider} onValueChange={value => { setProvider(value); setToken(""); }}><SelectTrigger className="w-full" aria-label={t.providers}><SelectValue placeholder={t.providers} /></SelectTrigger><SelectContent>{setup?.providers.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent></Select>
                     {provider && <><Input type="password" autoComplete="off" aria-label={t.apiKey} placeholder={t.apiKey} value={token} onChange={event => setToken(event.target.value)} /><div className="flex gap-2"><Button disabled={busy || !token.trim()} onClick={async () => { await configure({ action: "provider-key", provider, token }); setToken(""); }}>{t.save}</Button>{setup?.credentials.some(c => c.providerId === provider) && <Button variant="outline" disabled={busy} onClick={() => void configure({ action: "provider-remove", provider })}>{t.removeCredential}</Button>}</div>

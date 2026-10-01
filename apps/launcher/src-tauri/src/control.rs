@@ -1,8 +1,9 @@
 use crate::runtime;
 use std::{
-    io::Write,
+    io::{BufRead, BufReader, Write},
     process::{Command, Stdio},
 };
+use tauri::Emitter;
 
 #[tauri::command]
 pub async fn control_request(
@@ -21,7 +22,7 @@ pub async fn control_request(
             .arg(&root)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null());
+            .stderr(Stdio::piped());
         let home = runtime::effective_home()?;
         command.env("JOUZU_HOME", home);
         #[cfg(windows)]
@@ -32,6 +33,20 @@ pub async fn control_request(
         let mut child = command
             .spawn()
             .map_err(|_| "Cannot start configuration service".to_string())?;
+        let events = child
+            .stderr
+            .take()
+            .ok_or("Configuration events unavailable")?;
+        let event_app = app.clone();
+        let reader = std::thread::spawn(move || {
+            for line in BufReader::new(events).lines().map_while(Result::ok) {
+                if let Ok(value) = serde_json::from_str::<serde_json::Value>(&line) {
+                    if value["type"] == "device" {
+                        let _ = event_app.emit("control-device", value);
+                    }
+                }
+            }
+        });
         let bytes = serde_json::to_vec(&request).map_err(|e| e.to_string())?;
         child
             .stdin
@@ -42,6 +57,7 @@ pub async fn control_request(
         let output = child
             .wait_with_output()
             .map_err(|_| "Configuration service failed".to_string())?;
+        let _ = reader.join();
         let result: serde_json::Value = serde_json::from_slice(&output.stdout)
             .map_err(|_| "Invalid configuration service response".to_string())?;
         if !output.status.success() {
