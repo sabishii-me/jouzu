@@ -12,7 +12,7 @@ for(const fail of [false,true])test(`staging ${fail?'failure preserves active ap
  const active=join(root,'active');mkdirSync(active);writeFileSync(join(active,'marker'),'unchanged');
  const destination=join(root,'new');const phases=[];
  const operation=stageJouzuUpdate({recipe,runtime:root,store:join(root,'store'),destination,onProgress:e=>phases.push(e.phase)},{run:async(_node,args)=>{assert.ok(args.includes('--frozen-lockfile'));assert.ok(args.includes('--ignore-scripts'));const app=args[args.indexOf('--dir')+1];mkdirSync(join(app,'node_modules/jouzu/dist'),{recursive:true});writeFileSync(join(app,'node_modules/jouzu/dist/cli.js'),'fixture');},targetCheck:()=>{},verify:async()=>{if(fail)throw Error('bad runtime');}});
- if(fail){await assert.rejects(operation,/bad runtime/);assert.equal(existsSync(destination),false);}else{await operation;assert.deepEqual(phases,['preparing','verifying','staged']);}
+ if(fail){await assert.rejects(operation,/bad runtime/);assert.equal(existsSync(destination),false);}else{await operation;assert.ok(existsSync(join(destination,'app/bootstrap.mjs')));assert.deepEqual(phases,['preparing','verifying','staged']);}
  assert.ok(existsSync(join(active,'marker')));assert.equal(readdirSync(root).some(n=>n.includes('.staging-')),false);
  }finally{rmSync(root,{recursive:true,force:true});}
 });

@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, cpSync, rmSync, readFileSync, renameSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import { installArguments, PNPM_VERSION } from './prepare-starter.mjs';
 import { assertInstalledTarget } from './installed-target.mjs';
 import { verifyRuntime } from './verify-runtime.mjs';
@@ -33,6 +34,9 @@ export async function stageJouzuUpdate({recipe, runtime, store, destination, tar
   targetCheck(app,target);
   await verify(app);
   if(!existsSync(join(app,'node_modules/jouzu/dist/cli.js')))throw new Error('Missing Jouzu entrypoint');
+  // The launcher-owned bootstrap is part of every runnable app slot, not supplied
+  // by a recipe. Copy only after the installed runtime has passed verification.
+  cpSync(fileURLToPath(new URL('./bootstrap.mjs', import.meta.url)),join(app,'bootstrap.mjs'));
   signal?.throwIfAborted();
   renameSync(temporary,output);
   onProgress({phase:'staged'});
