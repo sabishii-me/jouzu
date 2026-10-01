@@ -789,6 +789,25 @@ Section Uninstall
 
   !insertmacro CheckIfAppIsRunning "$INSTDIR\${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
 
+  ; Finish requested user-data deletion before removing the repair/retry path.
+  SetShellVarContext current
+    ; Preferences and credentials are removed only by explicit opt-in.
+    ${If} $DeleteAppDataCheckboxState = 1
+    ${AndIf} $UpdateMode <> 1
+      Delete "$LOCALAPPDATA\Shisa.ai\Jouzu\recent.json"
+      RmDir /r "\\?\$LOCALAPPDATA\Shisa.ai\Jouzu\data"
+      RmDir /r "\\?\$APPDATA\${BUNDLEID}"
+      RmDir /r "\\?\$LOCALAPPDATA\${BUNDLEID}"
+      ${If} ${FileExists} "$LOCALAPPDATA\Shisa.ai\Jouzu\data"
+      ${OrIf} ${FileExists} "$LOCALAPPDATA\Shisa.ai\Jouzu\recent.json"
+      ${OrIf} ${FileExists} "$APPDATA\${BUNDLEID}"
+      ${OrIf} ${FileExists} "$LOCALAPPDATA\${BUNDLEID}"
+        SetErrorLevel 1
+        MessageBox MB_OK|MB_ICONSTOP "User-data deletion is incomplete. Program files and the uninstaller have been kept so you can retry. Some data may already have been deleted. Close applications using the remaining files, then run uninstall again."
+        Abort
+      ${EndIf}
+    ${EndIf}
+
   ; Delete the app directory and its content from disk
   ; Copy main executable
   Delete "$INSTDIR\${MAINBINARYNAME}.exe"
@@ -879,24 +898,9 @@ Section Uninstall
     DeleteRegKey SHCTX "${MANUPRODUCTKEY}"
     DeleteRegKey /ifempty SHCTX "${MANUKEY}"
     SetShellVarContext current
-    RmDir /r "$LOCALAPPDATA\Shisa.ai\Jouzu\cache"
-    RmDir /r "$LOCALAPPDATA\Shisa.ai\Jouzu\tools"
-    RmDir /r "$LOCALAPPDATA\Shisa.ai\Jouzu\logs"
-    ; Preferences and credentials are removed only by explicit opt-in.
-    ${If} $DeleteAppDataCheckboxState = 1
-      Delete "$LOCALAPPDATA\Shisa.ai\Jouzu\recent.json"
-      RmDir /r "$LOCALAPPDATA\Shisa.ai\Jouzu\data"
-      RmDir /r "$APPDATA\${BUNDLEID}"
-      RmDir /r "$LOCALAPPDATA\${BUNDLEID}"
-      ${If} ${FileExists} "$LOCALAPPDATA\Shisa.ai\Jouzu\data"
-      ${OrIf} ${FileExists} "$LOCALAPPDATA\Shisa.ai\Jouzu\recent.json"
-      ${OrIf} ${FileExists} "$APPDATA\${BUNDLEID}"
-      ${OrIf} ${FileExists} "$LOCALAPPDATA\${BUNDLEID}"
-        SetErrorLevel 1
-        MessageBox MB_OK|MB_ICONSTOP "Jouzu program removal finished, but some selected user data could not be deleted. Close applications using it and remove the remaining data manually. User-data deletion is NOT complete."
-        Abort
-      ${EndIf}
-    ${EndIf}
+    RmDir /r "\\?\$LOCALAPPDATA\Shisa.ai\Jouzu\cache"
+    RmDir /r "\\?\$LOCALAPPDATA\Shisa.ai\Jouzu\tools"
+    RmDir /r "\\?\$LOCALAPPDATA\Shisa.ai\Jouzu\logs"
     RmDir "$LOCALAPPDATA\Shisa.ai\Jouzu"
     RmDir "$LOCALAPPDATA\Shisa.ai"
   ${EndIf}

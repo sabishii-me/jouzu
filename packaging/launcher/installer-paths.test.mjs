@@ -19,7 +19,7 @@ test("installation hooks never replace the selected destination", () => {
 test("uninstall removes installation metadata independently of user-data choice", () => {
   const block = template.slice(template.indexOf("; Installation metadata is not user data."), template.indexOf("!ifmacrodef NSIS_HOOK_POSTUNINSTALL"));
   assert.ok(block.indexOf('DeleteRegKey SHCTX "${MANUPRODUCTKEY}"') >= 0);
-  assert.ok(block.indexOf('DeleteRegKey SHCTX "${MANUPRODUCTKEY}"') < block.indexOf('${If} $DeleteAppDataCheckboxState = 1'));
+  assert.ok(!block.includes('$DeleteAppDataCheckboxState'));
   assert.ok(block.indexOf('${If} $UpdateMode <> 1') < block.indexOf('DeleteRegKey SHCTX'));
 });
 
@@ -29,7 +29,23 @@ test("destructive data removal requires explicit confirmation and reports leftov
   assert.match(confirm, /cannot be undone/);
   assert.match(confirm, /custom JOUZU_HOME/);
   assert.match(confirm, /Project files.*NOT deleted/);
-  const removal = template.slice(template.indexOf('; Installation metadata is not user data.'));
+  const removal = template.slice(template.indexOf('Section Uninstall'));
   assert.match(removal, /SetErrorLevel 1/);
-  assert.match(removal, /User-data deletion is NOT complete/);
+  assert.match(removal, /User-data deletion is incomplete/);
+});
+
+test("data removal uses extended Windows paths for deep session trees", () => {
+  const block = template.slice(template.indexOf('Section Uninstall'), template.indexOf('!ifmacrodef NSIS_HOOK_POSTUNINSTALL'));
+  const removals = block.split('\n').filter(line => line.includes('RmDir /r'));
+  assert.ok(removals.length > 0);
+  for (const line of removals) assert.ok(line.includes(String.fromCharCode(34, 92, 92, 63, 92)), line);
+});
+
+test("data failure aborts before program and registration removal", () => {
+  const section = template.slice(template.indexOf("Section Uninstall"));
+  const cleanup = section.indexOf("User-data deletion is incomplete");
+  assert.ok(cleanup > 0);
+  assert.ok(cleanup < section.indexOf('Delete "$INSTDIR'));
+  assert.ok(cleanup < section.indexOf('DeleteRegKey'));
+  assert.match(section.slice(0, section.indexOf('Delete "$INSTDIR')), /SetErrorLevel 1[\s\S]*Abort/);
 });
