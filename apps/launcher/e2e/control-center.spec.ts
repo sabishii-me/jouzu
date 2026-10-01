@@ -35,8 +35,8 @@ for (const legacy of [false,true]) {
   await expect(dialog.getByText('TEST_TOKEN',{exact:true})).toBeVisible();
   await dialog.getByRole('button',{name:'Edit',exact:true}).click();
   await expect(dialog.getByLabel('Value',{exact:true})).toHaveValue('fixture-secret');
-  await dialog.getByRole('tab',{name:'General',exact:true}).click();
-  await expect(dialog.getByRole('combobox',{name:'Interface language'})).toBeVisible();
+  await dialog.getByRole('tab',{name:'Language',exact:true}).click();
+  await expect(dialog.getByRole('combobox',{name:'Launcher interface language'})).toBeVisible();
   expect(errors).toEqual([]);
  });
 }

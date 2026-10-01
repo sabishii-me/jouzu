@@ -6,9 +6,10 @@ import { readFileSync, existsSync, unlinkSync } from 'node:fs';
 import { createRequire } from 'node:module';
 const root = process.argv[1]?.endsWith("control.mjs") ? process.argv[2] : process.argv[1];
 const load = name => import(pathToFileURL(join(root, 'app/node_modules/jouzu/dist', `${name}.js`)));
+let action = "status";
 try {
-  let connectionCheck;
   const request = JSON.parse(readFileSync(0, 'utf8'));
+  action = request.action;
   const { resolveJouzuPaths } = await load('paths');
   const paths = resolveJouzuPaths({ homeOverride: process.env.JOUZU_HOME });
   const { readProfileChoice, writeProfileChoice } = await load('profile-choice');
@@ -79,26 +80,6 @@ try {
       if (existsSync(staged)) unlinkSync(staged);
       await release();
     }
-  } else if (request.action === 'check-provider') {
-    const model = runtime.getModels(request.provider)[0];
-    if (!model) throw new Error('No model available');
-    const supported = ['openai-completions', 'openai-responses', 'anthropic-messages'].includes(model.api);
-    connectionCheck = { provider: request.provider, status: 'unsupported' };
-    if (supported) {
-      const authResult = (await runtime.getAuth(model))?.auth;
-      if (!authResult?.apiKey) connectionCheck.status = 'missing-credential';
-      else {
-        const url = new URL((authResult.baseUrl || model.baseUrl).replace(/\/$/, '') + '/models');
-        const local = ['localhost','127.0.0.1','[::1]'].includes(url.hostname);
-        if (url.username || url.password || (url.protocol !== 'https:' && !(local && url.protocol === 'http:'))) throw new Error('Unsafe endpoint');
-        const headers = model.api === 'anthropic-messages' ? { 'x-api-key': authResult.apiKey, 'anthropic-version': '2023-06-01' } : { authorization: `Bearer ${authResult.apiKey}` };
-        try {
-          const response = await fetch(url, { headers, redirect: 'error', signal: AbortSignal.timeout(15000) });
-          connectionCheck.status = response.status === 401 || response.status === 403 ? 'auth-failed' : response.ok ? 'reachable' : response.status === 404 || response.status === 405 ? 'unsupported' : 'server-error';
-          await response.body?.cancel();
-        } catch { connectionCheck.status = 'network-error'; }
-      }
-    }
   } else if (request.action === 'provider-key') {
     if (!runtime.getProvider(request.provider)) throw new Error('Unknown provider');
     if (typeof request.token !== 'string' || !request.token.trim() || /^[!$]/.test(request.token.trim()) || request.token.length > 8192 || [...request.token].some(c => c.charCodeAt(0) < 32)) throw new Error('Invalid key');
@@ -111,7 +92,7 @@ try {
     settings.setDefaultModelAndProvider(request.provider, request.model);
     await settings.flush();
   } else if (request.action !== 'status') throw new Error('Unsupported operation');
-  await runtime.refresh({ allowNetwork: false });
+  if (request.action === "custom-provider") await runtime.refresh({ allowNetwork: false });
   const { ModelConfig } = await pi('model-config');
   const savedConfig = await ModelConfig.load(join(paths.agentDir, 'models.json'));
   const customProviders = savedConfig.getProviderIds().map(id => {
@@ -119,9 +100,19 @@ try {
     return { id, url: p.baseUrl, model: p.models?.[0]?.id, editable: p.api === 'openai-completions' && p.models?.length === 1 };
   });
   const { readShisaAccountStatus } = await load('shisa-link/account');
-  console.log(JSON.stringify({ schemaVersion: 1, connectionCheck, profile: readProfileChoice(profilePath)?.profile ?? null, account: readShisaAccountStatus(paths), customProviders, providers: runtime.getProviders().map(p => ({ id: p.id, name: p.name ?? p.id })), credentials: await auth.list(), models: runtime.getModels().map(m => ({ provider: m.provider, id: m.id, name: m.name })), defaultProvider: settings.getDefaultProvider(), defaultModel: settings.getDefaultModel() }));
+  console.log(JSON.stringify({ schemaVersion: 1, profile: readProfileChoice(profilePath)?.profile ?? null, account: readShisaAccountStatus(paths), customProviders, providers: runtime.getProviders().map(p => ({ id: p.id, name: p.name ?? p.id })), credentials: await auth.list(), models: runtime.getModels().map(m => ({ provider: m.provider, id: m.id, name: m.name })), defaultProvider: settings.getDefaultProvider(), defaultModel: settings.getDefaultModel() }));
 } catch {
   // Do not relay raw upstream errors: they can contain credentials or server input.
-  console.log(JSON.stringify({ error: 'Configuration operation failed. Check data permissions and configuration conflicts.' }));
+  const messages = {
+    status: 'Could not read Jouzu configuration. No settings were changed.',
+    profile: 'Could not apply the Jouzu profile. Existing profile files may conflict; the selection was not marked complete.',
+    'provider-key': 'Could not save the provider key. Check the provider selection and retry.',
+    'provider-remove': 'Could not remove the provider key. Refresh its state before retrying.',
+    'custom-provider': 'Could not save the custom connection. Check its unique ID, endpoint and model. Existing advanced configurations cannot be edited with this form.',
+    'default-model': 'Could not save the default model. Refresh the model list and retry.',
+    'shisa-login': 'Shisa sign-in did not complete. Refresh its state before retrying.',
+    'shisa-logout': 'Shisa sign-out could not be fully confirmed. Refresh its state and check the Shisa dashboard.',
+  };
+  console.log(JSON.stringify({ error: messages[action] ?? 'Unsupported configuration operation.' }));
   process.exitCode = 1;
 }
