@@ -4,6 +4,10 @@ use std::{
 };
 
 pub fn managed_root() -> Result<PathBuf, String> {
+    #[cfg(debug_assertions)]
+    if let Some(root) = std::env::var_os("JOUZU_LAUNCHER_DEV_HOME") {
+        return Ok(PathBuf::from(root));
+    }
     let local = std::env::var_os("LOCALAPPDATA").ok_or("LOCALAPPDATA is unavailable")?;
     Ok(PathBuf::from(local).join("Shisa.ai").join("Jouzu"))
 }
@@ -18,6 +22,10 @@ pub fn install_root_for_executable(executable: &Path) -> Result<PathBuf, String>
 pub fn application_root(_app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let executable = std::env::current_exe().map_err(|e| e.to_string())?;
     let root = install_root_for_executable(&executable)?;
+    #[cfg(debug_assertions)]
+    let root = std::env::var_os("JOUZU_LAUNCHER_DEV_RUNTIME")
+        .map(PathBuf::from)
+        .unwrap_or(root);
     if !root.join("runtime/node/node.exe").is_file() || !root.join("app/bootstrap.mjs").is_file() {
         return Err("Jouzu application files are missing. Please repair the installation.".into());
     }
@@ -90,6 +98,10 @@ pub fn launch(app: &tauri::AppHandle, path: &str) -> Result<(), String> {
         .ok_or("Git Bash is required for command tools. Select Prepare Git Bash first.")?;
     let executable = std::env::current_exe().map_err(|e| e.to_string())?;
     let mut command = Command::new(executable.with_file_name("console.exe"));
+    #[cfg(debug_assertions)]
+    if std::env::var_os("JOUZU_LAUNCHER_DEV_HOME").is_some() {
+        command.env("JOUZU_HOME", managed_root()?.join("data"));
+    }
     command
         .arg(&root)
         .current_dir(path)
