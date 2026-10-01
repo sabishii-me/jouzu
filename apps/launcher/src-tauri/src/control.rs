@@ -25,6 +25,7 @@ pub async fn control_request(
             .stderr(Stdio::piped());
         let home = runtime::effective_home()?;
         command.env("JOUZU_HOME", home);
+        crate::environment::apply(&mut command)?;
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;

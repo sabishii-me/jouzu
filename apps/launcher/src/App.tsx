@@ -1,3 +1,4 @@
+import { Switch } from "./components/ui/switch";
 import { listen } from "@tauri-apps/api/event";
 import jouzuIcon from "./assets/jouzu.svg";
 import { useEffect, useState, useRef } from "react";
@@ -34,6 +35,18 @@ export function App() {
     const pending = listen<{url:string;code:string}>("control-device", event => setDevice(event.payload));
     return () => { pending.then(unlisten => unlisten()).catch(() => {}); };
   }, []);
+  const [envRows, setEnvRows] = useState<{name:string;value:string;enabled:boolean}[]>([]);
+  const [envLoaded, setEnvLoaded] = useState(false);
+  async function readEnvironment() {
+    try { setEnvRows(await invoke("environment_read")); setEnvLoaded(true); }
+    catch (error) { setError(String(error)); }
+  }
+  async function saveEnvironment() {
+    setOperation("saving"); setError(null);
+    try { await invoke("environment_save", { entries: envRows }); }
+    catch (error) { setError(String(error)); }
+    finally { setOperation(null); }
+  }
   const [provider, setProvider] = useState("");
   const [token, setToken] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -72,7 +85,7 @@ export function App() {
     finally { setOperation(null); setDevice(null); }
   }
   useEffect(() => { if (!notice) return; const timer = setTimeout(() => setNotice(null), 4000); return () => clearTimeout(timer); }, [notice]);
-  useEffect(() => { if (settingsOpen && isTauri()) void configure({ action: "status" }); }, [settingsOpen]);
+  useEffect(() => { if (settingsOpen && isTauri()) { void configure({ action: "status" }); void readEnvironment(); } }, [settingsOpen]);
   const refresh = async () => setState(await invoke<LauncherState>("launcher_state"));
   useEffect(() => {
     if (!isTauri()) return;
@@ -124,7 +137,7 @@ export function App() {
               <DialogTitle className="mb-5 flex items-center gap-2 px-2 pt-2 text-sm font-semibold"><Settings className="size-4" />{t.settings}</DialogTitle>
               <TabsList aria-label={t.settings} className="h-auto w-full items-stretch gap-1 bg-transparent p-0">
                 <TabsTrigger value="providers" className="min-h-10 justify-start px-3">{t.providers}</TabsTrigger>
-                <TabsTrigger value="general" className="min-h-10 justify-start gap-2 px-3"><Languages className="size-4" />{t.general}</TabsTrigger>
+                <TabsTrigger value="environment" className="min-h-10 justify-start px-3">{t.environment}</TabsTrigger><TabsTrigger value="general" className="min-h-10 justify-start gap-2 px-3"><Languages className="size-4" />{t.general}</TabsTrigger>
                 <TabsTrigger value="about" className="min-h-10 justify-start whitespace-normal px-3 text-left">{t.versions}</TabsTrigger>
               </TabsList>
             </aside>
@@ -138,6 +151,10 @@ export function App() {
                     <Select value={setup?.defaultProvider === provider ? setup.defaultModel : ""} onValueChange={model => void configure({ action: "default-model", provider, model })}><SelectTrigger className="w-full" aria-label={t.defaultModel}><SelectValue placeholder={t.defaultModel} /></SelectTrigger><SelectContent>{setup?.models.filter(m => m.provider === provider).map(m => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}</SelectContent></Select></>}
                   </CardContent></Card>
                 </TabsContent>
+                <TabsContent value="environment" className="m-0 space-y-4"><Card className="border-border shadow-none"><CardHeader><CardTitle>{t.environment}</CardTitle><CardDescription>{t.envHint}</CardDescription></CardHeader><CardContent className="space-y-3">
+                  {envRows.map((row,index) => <div key={index} className="space-y-2 rounded-lg border border-border p-3"><div className="flex items-center gap-2"><Input aria-label={t.variableName} placeholder={t.variableName} value={row.name} disabled={busy} onChange={event => setEnvRows(rows => rows.map((r,i) => i === index ? {...r,name:event.target.value} : r))} /><Switch aria-label={t.enabled} checked={row.enabled} disabled={busy} onCheckedChange={enabled => setEnvRows(rows => rows.map((r,i) => i === index ? {...r,enabled} : r))} /><Button variant="ghost" disabled={busy} aria-label={t.deleteEntry} onClick={() => setEnvRows(rows => rows.filter((_,i) => i !== index))}><X /></Button></div><Input type="password" autoComplete="off" aria-label={t.variableValue} placeholder={t.variableValue} value={row.value} disabled={busy} onChange={event => setEnvRows(rows => rows.map((r,i) => i === index ? {...r,value:event.target.value} : r))} /></div>)}
+                  <div className="flex gap-2"><Button variant="outline" disabled={!envLoaded || busy} onClick={() => setEnvRows(rows => [...rows,{name:"",value:"",enabled:true}])}><Plus />{t.addEntry}</Button><Button disabled={!envLoaded || busy} onClick={saveEnvironment}>{t.save}</Button></div>
+                </CardContent></Card></TabsContent>
                 <TabsContent value="general" className="m-0 space-y-4">
                   <Card className="border-border shadow-none"><CardHeader><CardTitle>{t.language}</CardTitle></CardHeader><CardContent>
                     <Select value={locale} onValueChange={value => setLocale(value as Locale)}><SelectTrigger aria-label={t.language} className="w-full"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(locales).map(([key,label]) => <SelectItem key={key} value={key}>{label}</SelectItem>)}</SelectContent></Select>

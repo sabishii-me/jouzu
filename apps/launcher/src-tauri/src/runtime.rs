@@ -113,6 +113,7 @@ pub fn launch(app: &tauri::AppHandle, path: &str) -> Result<(), String> {
     let executable = std::env::current_exe().map_err(|e| e.to_string())?;
     let mut command = Command::new(executable.with_file_name("console.exe"));
     command.env("JOUZU_HOME", effective_home()?);
+    crate::environment::apply(&mut command)?;
     command
         .arg(&root)
         .current_dir(path)
