@@ -217,28 +217,39 @@ for (const scenario of [
 	"cancelled",
 	"scanner failure",
 	"nonconfigurable",
+	"strict inherited usage",
+	"guarded inherited usage",
+	"inherited cancelled",
+	"inherited scanner failure",
+	"inherited clear usage",
+	"inherited uninspected",
+	"inherited off",
 	"uninspected",
 	"off",
 ]) {
 	test(`nested admission cannot restore rejected metadata: ${scenario}`, async (t) => {
 		let nested;
 		const requests = [];
-		const mode = scenario.startsWith("guarded") ? "guarded" : scenario === "off" ? "off" : "strict";
+		const mode = scenario.startsWith("guarded") ? "guarded" : scenario.endsWith("off") ? "off" : "strict";
 		const policy = gate(mode, async (text) => {
-			if (scenario === "scanner failure") throw new Error("fixture scanner failure");
+			if (scenario.endsWith("scanner failure")) throw new Error("fixture scanner failure");
 			return text.includes("PRIVATE") ? flagged : clear;
 		});
 		const usage = assistant().usage;
-		const toolName = scenario === "uninspected" ? "trusted_fixture" : "mcp__fixture__fetch";
+		const toolName = scenario.endsWith("uninspected") ? "trusted_fixture" : "mcp__fixture__fetch";
 		const raw = {
 			content: [{ type: "text", text: "public result" }],
 			details: {},
 			usage:
-				scenario.includes("opaque") || scenario === "clear usage"
+				scenario.includes("opaque") || scenario.endsWith("clear usage")
 					? usage
 					: { ...usage, rawBody: "PRIVATE usage metadata" },
-			...(scenario === "clear usage" ? { terminate: true } : { opaqueBody: "PRIVATE unknown metadata" }),
+			...(scenario.endsWith("clear usage") ? { terminate: true } : { opaqueBody: "PRIVATE unknown metadata" }),
 		};
+		if (scenario.includes("inherited")) {
+			Object.setPrototypeOf(raw, { usage: raw.usage });
+			delete raw.usage;
+		}
 		if (scenario === "nonconfigurable")
 			Object.defineProperty(raw, "PRIVATE property name", {
 				value: "PRIVATE fixed metadata",
@@ -256,7 +267,7 @@ for (const scenario of [
 						description: "Fixture",
 						parameters: { type: "object", properties: {} },
 						execute: async () => {
-							if (scenario === "cancelled")
+							if (scenario.endsWith("cancelled"))
 								Object.defineProperty(session.agent, "signal", { value: AbortSignal.abort(), configurable: true });
 							return raw;
 						},
@@ -293,17 +304,21 @@ for (const scenario of [
 		};
 		await session.prompt("fixture");
 		assert.ok(nested, JSON.stringify(session.messages));
-		if (scenario === "off" || scenario === "uninspected") {
+		if (scenario.endsWith("off") || scenario.endsWith("uninspected")) {
 			assert.equal(nested.result.opaqueBody, "PRIVATE unknown metadata");
 			assert.equal(nested.result.usage.rawBody, "PRIVATE usage metadata");
+			if (scenario.includes("inherited")) assert.ok(Object.getPrototypeOf(raw).usage);
 		} else {
 			assert.equal(JSON.stringify(nested).includes("PRIVATE"), false);
 			assert.equal(JSON.stringify(requests).includes("PRIVATE"), false);
 			assert.equal(nested.result.opaqueBody, undefined);
-			if (scenario.includes("opaque") || scenario === "clear usage") assert.deepEqual(nested.result.usage, usage);
+			if (scenario.includes("opaque") || scenario.endsWith("clear usage")) assert.deepEqual(nested.result.usage, usage);
 			else assert.equal(nested.result.usage, undefined);
-			if (scenario === "clear usage") assert.equal(nested.result.terminate, true);
-			if (["strict usage", "cancelled", "scanner failure", "nonconfigurable"].includes(scenario))
+			if (scenario.endsWith("clear usage")) assert.equal(nested.result.terminate, true);
+			if (
+				(scenario.startsWith("strict") && scenario.endsWith("usage")) ||
+				/cancelled|scanner failure|nonconfigurable/.test(scenario)
+			)
 				assert.equal(nested.isError, true);
 		}
 	});

@@ -724,6 +724,8 @@ export function sessionEntryToContextMessages(entry) {`,
                 // omitted usage and unknown properties can return in nested outcomes.
                 replacement.terminate ??= false;
                 try {
+                    // Remove inherited fallbacks before upstream's partial merge reads the result.
+                    Object.setPrototypeOf(result, null);
                     for (const key of Reflect.ownKeys(result)) delete result[key];
                     Object.assign(result, replacement);
                 } catch {
