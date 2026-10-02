@@ -7,20 +7,10 @@ if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid launcher version' }
 $inputRoot = (Resolve-Path $InputDirectory).Path
 $output = Join-Path $env:RUNNER_TEMP 'launcher-release'
 New-Item -ItemType Directory $output | Out-Null
+. "$PSScriptRoot/signing-tools.ps1"
 $tools = Join-Path $env:RUNNER_TEMP 'signing-tools'
-& nuget install Microsoft.Trusted.Signing.Client -Version 1.0.95 -OutputDirectory $tools -NonInteractive
-if ($LASTEXITCODE) { throw 'Cannot install signing client' }
-$dlib = Get-ChildItem $tools -Recurse -Filter Azure.CodeSigning.Dlib.dll -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '[\/]x64[\/]' } | Select-Object -First 1
-$sdkRoots = @("${env:ProgramFiles(x86)}\Windows Kits\10\bin", "$env:ProgramFiles\Windows Kits\10\bin") | Where-Object { $_ -and (Test-Path $_) }
-$signTool = Get-ChildItem $sdkRoots -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '[\/]x64[\/]' } | Sort-Object FullName -Descending | Select-Object -First 1
-# Some runner images ship no Windows SDK; the build-tools package carries signtool for those.
-if (-not $signTool) {
- & nuget install Microsoft.Windows.SDK.BuildTools -Version 10.0.26100.1742 -OutputDirectory $tools -NonInteractive
- if ($LASTEXITCODE) { throw 'Cannot install signing tools' }
- $signTool = Get-ChildItem $tools -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '[\/]x64[\/]' } | Sort-Object FullName -Descending | Select-Object -First 1
-}
-if (-not $dlib) { throw "Signing client library not found under $tools" }
-if (-not $signTool) { throw 'signtool.exe not found; provide the Windows SDK build tools' }
+$dlib = Resolve-SigningClient -ToolsDirectory $tools
+$signTool = Resolve-SignTool -ToolsDirectory $tools -SdkRoots @("${env:ProgramFiles(x86)}\Windows Kits\10\bin", "$env:ProgramFiles\Windows Kits\10\bin")
 $metadata = Join-Path $tools 'metadata.json'
 @{Endpoint=$env:AZURE_SIGNING_ENDPOINT;CodeSigningAccountName=$env:AZURE_SIGNING_ACCOUNT;CertificateProfileName=$env:AZURE_SIGNING_PROFILE;ExcludeCredentials=@('EnvironmentCredential','WorkloadIdentityCredential','ManagedIdentityCredential','SharedTokenCacheCredential','VisualStudioCredential','VisualStudioCodeCredential','AzurePowerShellCredential','AzureDeveloperCliCredential','InteractiveBrowserCredential')} | ConvertTo-Json | Set-Content $metadata
 $target = Join-Path $repo 'apps/launcher/src-tauri/target/release'
@@ -44,7 +34,7 @@ function New-Template([string]$Policy,[string]$Extra) {
 }
 function New-Policy([string]$OwnedSetup,[string]$Evidence) {
  $policyFile = Join-Path $tools (($Evidence -replace '.*/','') + '.policy.json')
- @{ownedFiles=@("$target/launcher.exe","$target/console.exe",$OwnedSetup);vendorRoots=@("$inputRoot/app","$inputRoot/runtime",$plugins);signTool=$signTool.FullName;dlib=$dlib.FullName;metadata=$metadata;expectedSubject=$env:EXPECTED_SIGNER;uninstallerEvidence=$Evidence} | ConvertTo-Json -Depth 5 | Set-Content $policyFile
+ @{ownedFiles=@("$target/launcher.exe","$target/console.exe",$OwnedSetup);vendorRoots=@("$inputRoot/app","$inputRoot/runtime",$plugins);signTool=$signTool;dlib=$dlib;metadata=$metadata;expectedSubject=$env:EXPECTED_SIGNER;uninstallerEvidence=$Evidence} | ConvertTo-Json -Depth 5 | Set-Content $policyFile
  $policyFile
 }
 function New-Config([string]$Policy,[string]$Template,[bool]$Full) {
