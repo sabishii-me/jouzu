@@ -1,4 +1,7 @@
 name: Sign Jouzu update recipe
+
+# Called by the npm publication workflow so a published version cannot exist without its
+# signed Windows update artifact. Manual dispatch remains for re-signing an exact version.
 on:
   workflow_dispatch:
     inputs:
@@ -7,6 +10,20 @@ on:
         type: string
         required: true
         default: '0.1.18'
+      publish:
+        description: Publish the signed recipe to the update feed
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      jouzu_version:
+        description: Exact official Jouzu npm version, or the release tag
+        type: string
+        required: true
+      publish:
+        description: Publish the signed recipe to the update feed
+        type: boolean
+        default: true
 permissions:
   contents: read
 jobs:
@@ -14,6 +31,8 @@ jobs:
     runs-on: windows-latest
     environment: launcher-test
     timeout-minutes: 40
+    permissions:
+      contents: write
     defaults:
       run:
         shell: pwsh
@@ -24,6 +43,13 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: '24.19.0'
+      - name: Resolve the exact version
+        run: |
+          $version = ($env:JOUZU_VERSION_INPUT -replace '^v','').Trim()
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Invalid Jouzu version: $env:JOUZU_VERSION_INPUT" }
+          "JOUZU_VERSION=$version" | Out-File $env:GITHUB_ENV -Append
+        env:
+          JOUZU_VERSION_INPUT: ${{ inputs.jouzu_version }}
       - name: Check configuration
         env:
           JOUZU_RECIPE_PRIVATE_KEY: ${{ secrets.JOUZU_RECIPE_PRIVATE_KEY }}
@@ -32,15 +58,12 @@ jobs:
           LAUNCHER_PUBLIC_KEY: ${{ vars.LAUNCHER_PUBLIC_KEY }}
         run: node packaging/launcher/signing-preflight.mjs jouzu
       - name: Prepare published runtime
-        env:
-          JOUZU_VERSION: ${{ inputs.jouzu_version || '0.1.18' }}
         run: |
           npm install --prefix "$env:RUNNER_TEMP/build-tools" pnpm@10.21.0 --ignore-scripts --no-audit --no-fund
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           npm exec -- node packaging/launcher/prepare-published-runtime.mjs "$env:JOUZU_VERSION" "$env:RUNNER_TEMP/jouzu-runtime" "$env:RUNNER_TEMP/build-tools/node_modules/pnpm/bin/pnpm.cjs"
       - name: Sign and verify recipe
         env:
-          JOUZU_VERSION: ${{ inputs.jouzu_version || '0.1.18' }}
           RECIPE_KEY: ${{ secrets.JOUZU_RECIPE_PRIVATE_KEY }}
           RECIPE_PUBLIC_KEY: ${{ vars.JOUZU_RECIPE_PUBLIC_KEY }}
         run: |
@@ -66,3 +89,19 @@ jobs:
           path: ${{ runner.temp }}/recipe-assets/*
           if-no-files-found: error
           retention-days: 7
+      - name: Publish the update feed
+        if: ${{ inputs.publish }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $assets = "$env:RUNNER_TEMP/recipe-assets"
+          # The feed serves one recipe at a time under a stable release, so clients always
+          # see the newest published version after the assets are replaced together.
+          & gh release view jouzu-update --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE) {
+            & gh release create jouzu-update --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --prerelease --title 'Jouzu update feed' --notes 'Signed Jouzu update recipes.'
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          }
+          $files = Get-ChildItem -LiteralPath $assets -File | ForEach-Object { $_.FullName }
+          & gh release upload jouzu-update @files --repo $env:GITHUB_REPOSITORY --clobber
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
