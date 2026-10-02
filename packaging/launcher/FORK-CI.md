@@ -106,12 +106,26 @@ one npm version causes exactly one Windows runtime preparation.
 
 Launcher publication stays manual (`workflow_dispatch`) because Launcher changes
 rarely; the launcher-only artifact is built from the runtime the recipe flow has
-already qualified. Every update item is expected to carry a changelist: the
-Launcher changelist from the repository and the Jouzu notes from the upstream
-Release body for the version whose `gitHead` matches the published tag. A
-scheduled guard re-checks that the published npm version still has a matching
-signed recipe and opens an issue when it does not, so a missed Windows artifact
-is detected rather than discovered by users.
+already qualified. A scheduled guard re-checks that the published npm version
+still has a matching signed recipe and opens an issue when it does not, so a
+missed Windows artifact is detected rather than discovered by users.
+
+### Release notes on every update item
+
+An update item must say what changed. The Launcher item shows the section for
+the released version in `apps/launcher/CHANGELOG.md`; `launcher-notes.mjs` reads
+it and `publish-launcher.ps1` refuses to replace the feed without it. The Jouzu
+item is described by the upstream changelog section for the version being
+installed, read at the exact commit the registry reports (`gitHead`), so the
+notes belong to the published bytes. The published npm package ships no
+changelog, so the build reads it from the repository at that commit. The notes
+travel inside the signed recipe manifest as `notes`/`notesSource`, which means
+the client can show them before downloading and cannot be fed notes that were
+not signed; a recipe without a notes record is refused. When the upstream
+changelog has no section or cannot be read, the manifest records an explicit
+`unavailable` source and the interface says plainly that no description was
+published instead of showing an empty item. Wording is shown in the original
+English with its source label.
 
 Publication creates `launcher-vVERSION` before replacing the `launcher-update`
 feed. Existing version assets are never overwritten. A failed signing or
