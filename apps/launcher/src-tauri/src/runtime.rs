@@ -91,6 +91,22 @@ pub fn launch(app: &tauri::AppHandle, path: &str) -> Result<(), String> {
 }
 
 #[cfg(test)]
+mod cleanup_tests {
+    use super::*;
+    #[test]
+    fn removes_superseded_executables_but_keeps_others() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("console.exe"), "current").unwrap();
+        std::fs::write(dir.path().join("console.exe.old-abc"), "superseded").unwrap();
+        std::fs::write(dir.path().join("launcher.exe.old-1"), "superseded").unwrap();
+        cleanup_superseded_executables(dir.path());
+        assert!(dir.path().join("console.exe").is_file());
+        assert!(!dir.path().join("console.exe.old-abc").exists());
+        assert!(!dir.path().join("launcher.exe.old-1").exists());
+    }
+}
+
+#[cfg(test)]
 mod path_tests {
     use super::*;
     #[test]

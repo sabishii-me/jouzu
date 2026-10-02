@@ -113,6 +113,14 @@ test("uninstaller signing failure aborts bundle generation", () => {
   assert.ok(commands.every(line => line.trim().endsWith('= 0')));
 });
 
+test("the Rust crate version matches the application version", () => {
+  const pkg = JSON.parse(readFileSync(new URL("../../apps/launcher/package.json", import.meta.url), "utf8"));
+  const cargo = readFileSync(new URL("../../apps/launcher/src-tauri/Cargo.toml", import.meta.url), "utf8");
+  const match = cargo.match(/^version = "([^"]+)"/m);
+  assert.ok(match, "Cargo.toml must declare a version");
+  assert.equal(match[1], pkg.version);
+});
+
 test("the launcher version has a single committed source", () => {
   const config = JSON.parse(readFileSync(new URL("../../apps/launcher/src-tauri/tauri.conf.json", import.meta.url), "utf8"));
   assert.equal(config.version, "../package.json");
