@@ -41,6 +41,22 @@ jobs:
           tar -czf "$env:RUNNER_TEMP/jouzu-runtime.tgz" -C "$env:RUNNER_TEMP/jouzu-runtime" source.json recipe/package.json recipe/pnpm-lock.yaml recipe/artifacts app
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           (Get-FileHash "$env:RUNNER_TEMP/jouzu-runtime.tgz" -Algorithm SHA256).Hash | Out-File "$env:RUNNER_TEMP/jouzu-runtime.sha256" -Encoding ascii
+      - name: Build Windows installer
+        run: |
+          ./packaging/launcher/prepare-windows-bundle.ps1 -Prepared "$env:RUNNER_TEMP/jouzu-runtime" -Pnpm "$env:RUNNER_TEMP/build-tools/node_modules/pnpm" -Output "$env:RUNNER_TEMP/windows-bundle"
+          npm ci --prefix apps/launcher
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          Push-Location apps/launcher
+          try {
+            npm run tauri -- build --config "$env:RUNNER_TEMP/windows-bundle/tauri-build.json"
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          } finally { Pop-Location }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: windows-installer-unsigned
+          path: apps/launcher/src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+          retention-days: 7
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: windows-published-runtime
