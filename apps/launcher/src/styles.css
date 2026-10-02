@@ -21,5 +21,9 @@
   body { color-scheme: dark; @apply m-0 bg-background text-foreground antialiased; font-family: system-ui, sans-serif; }
   button { cursor: pointer; }
   button:disabled { cursor: default; }
+  /* The window is a native shell: only inputs and explicitly marked content are selectable. */
+  #root { user-select: none; -webkit-user-select: none; }
+  input, textarea, [contenteditable="true"], .select-text { user-select: text; -webkit-user-select: text; }
+  img { -webkit-user-drag: none; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; } }

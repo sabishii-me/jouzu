@@ -74,7 +74,7 @@ test('development update preview never invokes real update commands', async ({pa
    }
   };
  });
- await page.goto('http://localhost:1420');
+ await page.goto('http://localhost:1420/?onboarding=1');
  await page.getByRole('button',{name:'Update available',exact:true}).click();
  const dialog=page.getByRole('dialog');
  const install=dialog.getByRole('button',{name:'Update Jouzu',exact:true});
@@ -89,7 +89,7 @@ test('development update preview never invokes real update commands', async ({pa
 
 test('update preview supports failed download, retry and independent components', async ({page}) => {
  await page.addInitScript(()=>{localStorage.setItem('jouzu.ui.language','en');});
- await page.goto('http://localhost:1420');
+ await page.goto('http://localhost:1420/?onboarding=1');
  await page.getByRole('button',{name:'Update available',exact:true}).click();
  const dialog=page.getByRole('dialog');
  const scenarios=dialog.getByRole('combobox');
@@ -111,7 +111,7 @@ test('update preview supports failed download, retry and independent components'
 
 test('update preview keeps row height stable and exposes persistent progress scenes', async ({page}) => {
  await page.addInitScript(()=>localStorage.setItem('jouzu.ui.language','en'));
- await page.goto('http://localhost:1420');
+ await page.goto('http://localhost:1420/?onboarding=1');
  await page.getByRole('button',{name:'Update available',exact:true}).click();
  const dialog=page.getByRole('dialog');const rows=dialog.locator('section');
  const height=(await rows.first().boundingBox())!.height;
@@ -125,7 +125,7 @@ test('update preview keeps row height stable and exposes persistent progress sce
 
 test('launcher preview icon asks once before simulated restart', async ({page})=>{
  await page.addInitScript(()=>localStorage.setItem('jouzu.ui.language','en'));
- await page.goto('http://localhost:1420');
+ await page.goto('http://localhost:1420/?onboarding=1');
  await page.getByRole('button',{name:'Update available',exact:true}).click();
  await page.getByRole('button',{name:'Update and restart',exact:true}).click();
  const confirmation=page.getByRole('dialog',{name:'Update and restart',exact:true});
