@@ -18,8 +18,10 @@ export function signingPreflight(env, component) {
    if(!actual.equals(expected))throw new Error('mismatch');
   } catch {throw new Error('Jouzu signing key does not match configured public key');}
  } else {
-  for(const name of ['AZURE_CLIENT_ID','AZURE_TENANT_ID','AZURE_SUBSCRIPTION_ID'])if(!/^[a-f0-9-]{36}$/i.test(env[name]))throw new Error(`Invalid ${name}`);
-  const url=new URL(env.AZURE_SIGNING_ENDPOINT);
+  // Trim before matching: a variable written by a Windows PowerShell pipeline can arrive with a
+  // leading byte-order mark, which would otherwise read as an invalid identifier.
+  for(const name of ['AZURE_CLIENT_ID','AZURE_TENANT_ID','AZURE_SUBSCRIPTION_ID'])if(!/^[a-f0-9-]{36}$/i.test(env[name]?.trim()??''))throw new Error(`Invalid ${name}`);
+  const url=new URL(env.AZURE_SIGNING_ENDPOINT?.trim()??'');
   if(url.protocol!=='https:' || !/^[a-z0-9-]+\.codesigning\.azure\.net$/.test(url.hostname) || url.port || url.username || url.password || url.search || url.hash || url.pathname!=='/')throw new Error('Invalid Azure signing endpoint');
  }
  return {component,repository:env.GITHUB_REPOSITORY};
