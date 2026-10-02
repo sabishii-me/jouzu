@@ -14,8 +14,8 @@
 			"integrity": "sha512-OQFRsX0K6WlYxmoiXHxf5ghXmVPU4F3vfnPGkZjViU1GxftPLtWsKb99MNqfDkRcEz9trb8PGL4HVbd1uDEJPQ=="
 		}
 	},
-	"reviewedAt": null,
-	"compatibilityStatus": "pending-qualification",
+	"reviewedAt": "2026-10-02",
+	"compatibilityStatus": "qualified",
 	"deviations": [
 		{
 			"path": "upstream/pi-content-policy/patch.lock.json",
