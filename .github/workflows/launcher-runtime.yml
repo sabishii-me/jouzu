@@ -1,12 +1,12 @@
 name: Windows published runtime
 on:
-  push:
-    branches: ['feat/tauri-launcher']
-    paths:
-      - '.github/workflows/launcher-runtime.yml'
-      - 'packaging/launcher/prepare-published-runtime.mjs'
   workflow_dispatch:
     inputs:
+      launcher_version:
+        description: Launcher release version
+        type: string
+        default: '0.1.23'
+        required: true
       jouzu_version:
         description: Official Jouzu npm version
         type: string
@@ -42,8 +42,16 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           (Get-FileHash "$env:RUNNER_TEMP/jouzu-runtime.tgz" -Algorithm SHA256).Hash | Out-File "$env:RUNNER_TEMP/jouzu-runtime.sha256" -Encoding ascii
       - name: Build Windows installer
+        env:
+          LAUNCHER_VERSION: ${{ inputs.launcher_version }}
+          LAUNCHER_PUBLIC_KEY: ${{ vars.LAUNCHER_PUBLIC_KEY }}
+          JOUZU_RECIPE_PUBLIC_KEY: ${{ vars.JOUZU_RECIPE_PUBLIC_KEY }}
+          JOUZU_RECIPE_BASE_URL: ${{ vars.JOUZU_RECIPE_BASE_URL }}
         run: |
-          ./packaging/launcher/prepare-windows-bundle.ps1 -Prepared "$env:RUNNER_TEMP/jouzu-runtime" -Pnpm "$env:RUNNER_TEMP/build-tools/node_modules/pnpm" -Output "$env:RUNNER_TEMP/windows-bundle"
+          New-Item -ItemType Directory "$env:RUNNER_TEMP/update-config" | Out-Null
+          node packaging/launcher/update-configuration.mjs "$env:RUNNER_TEMP/update-config"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          ./packaging/launcher/prepare-windows-bundle.ps1 -Prepared "$env:RUNNER_TEMP/jouzu-runtime" -Pnpm "$env:RUNNER_TEMP/build-tools/node_modules/pnpm" -Output "$env:RUNNER_TEMP/windows-bundle" -Version "$env:LAUNCHER_VERSION" -UpdateConfigDirectory "$env:RUNNER_TEMP/update-config"
           npm ci --prefix apps/launcher
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           Push-Location apps/launcher

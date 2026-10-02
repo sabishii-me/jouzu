@@ -1,8 +1,5 @@
 name: Sign Jouzu update recipe
 on:
-  push:
-    branches: ['feat/tauri-launcher']
-    paths: ['.github/workflows/launcher-recipe.yml']
   workflow_dispatch:
     inputs:
       jouzu_version:
