@@ -7,6 +7,7 @@ test('provider mutations use Pi credential and settings operations', () => {
   assert.match(source, /auth\.delete\(request\.provider/);
   assert.match(source, /settings\.setDefaultModelAndProvider/);
   assert.match(source, /await settings\.flush/);
-  assert.match(source, /credentials: await auth\.list\(\)/);
+  assert.match(source, /const credentials = await auth\.list\(\)/);
+  assert.match(source, /credentials,/);
   assert.doesNotMatch(source, /console\.log\(.*request/);
 });

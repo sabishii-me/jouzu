@@ -24,10 +24,12 @@ test('vendor resource callback cannot invoke the signing service', () => {
 test('release feed follows immutable asset upload and download integrity check', () => {
  const script = read('publish-launcher.ps1');
  const create = script.indexOf('gh release create $tag');
- const verify = script.indexOf('Published setup integrity mismatch');
+ const verify = script.indexOf('Published update integrity mismatch');
  const feed = script.indexOf('gh release upload launcher-update');
  assert.ok(create >= 0 && verify > create && feed > verify);
  assert.doesNotMatch(script.slice(create, verify), /--clobber/);
+ // The feed must serve the launcher-only artifact, not the full package.
+ assert.match(script.slice(verify, feed), /\$updateSetup/);
 });
 
 test('finalization signs updater only after final Authenticode verification', () => {
