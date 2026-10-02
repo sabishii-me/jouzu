@@ -100,7 +100,10 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
 !addplugindir "${ADDITIONALPLUGINSPATH}"
 
 ; Uninstaller signing command
-!if "${UNINSTALLERSIGNCOMMAND}" != ""
+!define JOUZU_UNINSTALLER_SIGN_COMMAND "$%JOUZU_UNINSTALLER_SIGN_COMMAND%"
+!if "${JOUZU_UNINSTALLER_SIGN_COMMAND}" != ""
+  !uninstfinalize '${JOUZU_UNINSTALLER_SIGN_COMMAND}'
+!else if "${UNINSTALLERSIGNCOMMAND}" != ""
   !uninstfinalize '${UNINSTALLERSIGNCOMMAND}'
 !endif
 
@@ -844,6 +847,15 @@ Section Uninstall
         Abort
       ${EndIf}
     ${EndIf}
+
+  ; Git extracted during installation is not part of the bundled file manifest.
+  RmDir /r "\\?\$INSTDIR\runtime\git\installed"
+  ${If} ${FileExists} "$INSTDIR\runtime\git\installed"
+    SetErrorLevel 1
+    IfSilent +2
+    MessageBox MB_OK|MB_ICONSTOP "$(jouzuDeleteFailed)"
+    Abort
+  ${EndIf}
 
   ; Delete the app directory and its content from disk
   ; Copy main executable

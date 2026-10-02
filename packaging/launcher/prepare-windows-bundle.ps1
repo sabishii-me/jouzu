@@ -3,8 +3,7 @@ param(
  [Parameter(Mandatory=$true)][string]$Pnpm,
  [Parameter(Mandatory=$true)][string]$Output,
  [string]$Version = '0.1.22',
- [string]$UpdateConfigDirectory,
- [string]$SignScript
+ [string]$UpdateConfigDirectory
 )
 $ErrorActionPreference = 'Stop'
 if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid Launcher version' }
@@ -27,13 +26,9 @@ Expand-Archive "$Output/$archive" -DestinationPath $Output
 Move-Item "$Output/node-v$nodeVersion-win-x64" "$runtime/node"
 Copy-Item $Pnpm "$runtime/pnpm" -Recurse
 $gitUrl = 'https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.5/PortableGit-2.55.0.5-64-bit.7z.exe'
-$gitArchive = Join-Path $Output 'PortableGit.exe'
+$gitArchive = "$runtime/git/PortableGit.exe"
 Invoke-WebRequest $gitUrl -OutFile $gitArchive
 if ((Get-FileHash $gitArchive -Algorithm SHA256).Hash.ToLowerInvariant() -ne '5aa8a20f6e9abb2c755f0e73c91c687701a46b309ad84a0ca6509380fa4ae290') { throw 'PortableGit integrity mismatch' }
-$gitProcess = Start-Process -FilePath $gitArchive -ArgumentList @('-y', ('-o"' + "$runtime/git" + '"')) -Wait -PassThru
-if ($gitProcess.ExitCode -ne 0 -or -not (Test-Path "$runtime/git/bin/bash.exe") -or -not (Test-Path "$runtime/git/cmd/git.exe")) { throw 'PortableGit preparation failed' }
-& "$runtime/git/bin/bash.exe" --version
-if ($LASTEXITCODE) { throw 'Bundled Bash cannot start' }
 $resources = @{}
 $resources["$Prepared/app/"] = 'app/'
 $resources["$runtime/"] = 'runtime/'
@@ -51,13 +46,6 @@ $config = @{
    installerHooks = "$repo/packaging/launcher/installer-hooks.nsh"
    template = "$repo/packaging/launcher/installer.nsi"
   }}
- }
-}
-if ($SignScript) {
- $signer = (Resolve-Path $SignScript).Path
- $config.bundle.windows.signCommand = @{
-  cmd = 'powershell.exe'
-  args = @('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',$signer,'-File','%1')
  }
 }
 if ($UpdateConfigDirectory) {

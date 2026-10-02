@@ -92,3 +92,12 @@ test('ordinary uninstall removes managed program versions before user-data decis
  assert.ok(cleanup<section.indexOf('${If} $DeleteAppDataCheckboxState = 1'));
  assert.ok(cleanup<section.indexOf('Delete "$INSTDIR'));
 });
+
+test("Git preparation belongs to installer and failure aborts installation", () => {
+  const post = hooks.slice(hooks.indexOf('!macro NSIS_HOOK_POSTINSTALL'));
+  assert.match(post, /git-environment\.ps1.*-InstallRoot.*-Prepare/);
+  assert.match(post, /SetErrorLevel 1[\s\S]*Abort/);
+  const build = readFileSync(new URL('./prepare-windows-bundle.ps1', import.meta.url), 'utf8');
+  assert.doesNotMatch(build, /Start-Process|signCommand/);
+  assert.match(build, /runtime\/git\/PortableGit\.exe/);
+});

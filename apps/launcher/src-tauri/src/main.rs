@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod active_app;
+mod git_environment;
 mod recovery;
 mod node_path;
 mod update_lock;
@@ -224,7 +225,7 @@ fn main() {
             control::cancel_control,
             environment::environment_read,
             environment::environment_save,
-            runtime::install_git
+
         ])
         .run(tauri::generate_context!())
         .expect("Unable to start Jouzu launcher");

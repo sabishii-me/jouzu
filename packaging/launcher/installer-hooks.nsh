@@ -27,3 +27,16 @@
 !macro NSIS_HOOK_PREUNINSTALL
   !insertmacro JOUZU_STOP_MANAGED
 !macroend
+
+!macro NSIS_HOOK_POSTINSTALL
+  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR
+untime\launcher-update\git-environment.ps1" -InstallRoot "$INSTDIR" -Prepare'
+  Pop $0
+  Pop $1
+  ${If} $0 != 0
+    SetErrorLevel 1
+    IfSilent +2
+    MessageBox MB_OK|MB_ICONSTOP "$1"
+    Abort
+  ${EndIf}
+!macroend
