@@ -7,62 +7,63 @@ if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid launcher version' }
 $inputRoot = (Resolve-Path $InputDirectory).Path
 $output = Join-Path $env:RUNNER_TEMP 'launcher-release'
 New-Item -ItemType Directory $output | Out-Null
-# Signing tools are obtained the way Microsoft documents for Artifact Signing: nuget.exe
-# extracts each package, and .NET 8 (present on the runner image) is required by the dlib.
+
+# Signing tools follow the Artifact Signing SignTool integration: nuget.exe installs the Windows
+# SDK build tools and the signing client, and .NET 8 (present on the runner image) runs the dlib.
 $tools = Join-Path $env:RUNNER_TEMP 'signing-tools'
 New-Item -ItemType Directory $tools -Force | Out-Null
 $nuget = Join-Path $tools 'nuget.exe'
 Invoke-WebRequest -Uri 'https://dist.nuget.org/win-x86-commandline/latest/nuget.exe' -OutFile $nuget
 if (-not (Test-Path $nuget)) { throw 'Cannot download nuget.exe' }
-# nuget may keep the package contents in its global folder, so both are searched.
+# nuget can keep package contents in its global folder, so both locations are searched.
 $packageRoots = @($tools, (Join-Path $env:USERPROFILE '.nuget\packages'))
-$sdkRoots = @("${env:ProgramFiles(x86)}\Windows Kits\10\bin", "$env:ProgramFiles\Windows Kits\10\bin") | Where-Object { $_ -and (Test-Path $_) }
-$signTool = Get-ChildItem (@($sdkRoots) + $packageRoots) -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '[\\/]x64[\\/]' } | Sort-Object FullName -Descending | Select-Object -First 1
+$sdkRoots = @("${env:ProgramFiles(x86)}\Windows Kits\10\bin", "$env:ProgramFiles\Windows Kits\10\bin")
+function Find-Tool([string]$Name,[string[]]$Roots) {
+ $roots = @($Roots | Where-Object { $_ -and (Test-Path $_) })
+ if (-not $roots.Count) { return $null }
+ $found = Get-ChildItem $roots -Recurse -Filter $Name -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '[\\/]x64[\\/]' } | Sort-Object FullName -Descending | Select-Object -First 1
+ if ($found) { return $found.FullName }
+ return $null
+}
+$signTool = Find-Tool 'signtool.exe' (@($sdkRoots) + $packageRoots)
 if (-not $signTool) {
  & $nuget install Microsoft.Windows.SDK.BuildTools -ExcludeVersion -OutputDirectory $tools -NonInteractive
  if ($LASTEXITCODE) { throw 'Cannot install the Windows SDK build tools' }
- $signTool = Get-ChildItem $packageRoots -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '[\\/]x64[\\/]' } | Sort-Object FullName -Descending | Select-Object -First 1
+ $signTool = Find-Tool 'signtool.exe' $packageRoots
 }
 if (-not $signTool) { throw 'signtool.exe not found' }
 & $nuget install Microsoft.ArtifactSigning.Client -ExcludeVersion -OutputDirectory $tools -NonInteractive
 if ($LASTEXITCODE) { throw 'Cannot install the Artifact Signing client' }
-$dlib = Get-ChildItem $packageRoots -Recurse -Filter Azure.CodeSigning.Dlib.dll -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '[\\/]x64[\\/]' } | Select-Object -First 1
+$dlib = Find-Tool 'Azure.CodeSigning.Dlib.dll' $packageRoots
 if (-not $dlib) { throw 'Artifact Signing client library not found' }
-$signTool = $signTool.FullName
-$dlib = $dlib.FullName
 $metadata = Join-Path $tools 'metadata.json'
 @{Endpoint=$env:AZURE_SIGNING_ENDPOINT;CodeSigningAccountName=$env:AZURE_SIGNING_ACCOUNT;CertificateProfileName=$env:AZURE_SIGNING_PROFILE;ExcludeCredentials=@('EnvironmentCredential','WorkloadIdentityCredential','ManagedIdentityCredential','SharedTokenCacheCredential','VisualStudioCredential','VisualStudioCodeCredential','AzurePowerShellCredential','AzureDeveloperCliCredential','InteractiveBrowserCredential')} | ConvertTo-Json | Set-Content $metadata
+
 $target = Join-Path $repo 'apps/launcher/src-tauri/target/release'
 New-Item -ItemType Directory $target -Force | Out-Null
 Copy-Item "$inputRoot/bin/*" $target
 Copy-Item "$inputRoot/dist" "$repo/apps/launcher/dist" -Recurse -Force
 $setupPath = Join-Path $target "bundle/nsis/Jouzu Launcher_${Version}_x64-setup.exe"
-$plugins = Join-Path $target 'nsis'
 
-# The uninstaller signing command is injected through the generated template, so an absent
-# value stays a real no-op instead of a literal command.
-$dq = '$' + '\' + '"'
-function New-Template([string]$Policy,[string]$Extra) {
- $cmd = 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ' + $dq + "$PSScriptRoot/sign-uninstaller.ps1" + $dq + ' -Policy ' + $dq + $Policy + $dq + ' -File ' + $dq + '%1' + $dq
- $define = '!define JOUZU_UNINSTALLER_SIGN_COMMAND "' + $cmd + '"' + "`n"
- $extraDefine = if ($Extra) { $Extra + "`n" } else { '' }
+# The bundler calls this for every own binary, every resource it considers signable and the
+# NSIS uninstaller; each call runs the documented signtool command and verifies the result.
+$signCommand = @{cmd='powershell.exe';args=@('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',"$PSScriptRoot/sign-windows.ps1",'-SignTool',$signTool,'-Dlib',$dlib,'-Metadata',$metadata,'-ExpectedSubject',$env:EXPECTED_SIGNER,'-File','%1')}
+# Only the package mode differs between the two builds; the launcher-only define is prepended
+# because the bundler offers no way to pass a define into the template it compiles.
+function New-Template([string]$Extra) {
  $name = if ($Extra) { 'template-lo.nsi' } else { 'template-full.nsi' }
  $path = Join-Path $tools $name
- [IO.File]::WriteAllText($path, $extraDefine + $define + (Get-Content (Join-Path $PSScriptRoot 'installer.nsi') -Raw))
+ $prefix = if ($Extra) { $Extra + "`n" } else { '' }
+ [IO.File]::WriteAllText($path, $prefix + (Get-Content (Join-Path $PSScriptRoot 'installer.nsi') -Raw))
  $path
 }
-function New-Policy([string]$OwnedSetup,[string]$Evidence) {
- $policyFile = Join-Path $tools (($Evidence -replace '.*[\\/]','') + '.policy.json')
- @{ownedFiles=@("$target/launcher.exe","$target/console.exe",$OwnedSetup);vendorRoots=@("$inputRoot/app","$inputRoot/runtime",$plugins);signTool=$signTool;dlib=$dlib;metadata=$metadata;expectedSubject=$env:EXPECTED_SIGNER;uninstallerEvidence=$Evidence} | ConvertTo-Json -Depth 5 | Set-Content $policyFile
- $policyFile
-}
-function New-Config([string]$Policy,[string]$Template,[bool]$Full) {
+function New-Config([string]$Template,[bool]$Full) {
  $resources = [ordered]@{}
  if ($Full) { $resources["$inputRoot/app/"]='app/'; $resources["$inputRoot/runtime/"]='runtime/' }
  $resources["$repo/packaging/launcher/"]='runtime/launcher-update/'
  $resources["$target/console.exe"]='console.exe'
  $resources["$inputRoot/update-config/jouzu-update.json"]='jouzu-update.json'
- $config = @{plugins=(Get-Content "$inputRoot/update-config/tauri-updater.json" -Raw | ConvertFrom-Json).plugins;bundle=@{active=$true;targets=@('nsis');resources=$resources;icon=@('icons/icon.ico');windows=@{signCommand=@{cmd='powershell.exe';args=@('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',"$PSScriptRoot/sign-bundle-file.ps1",'-Policy',$Policy,'-File','%1')};nsis=@{installMode='currentUser';template=$Template;installerHooks="$PSScriptRoot/installer-hooks.nsh"}}}}
+ $config = @{plugins=(Get-Content "$inputRoot/update-config/tauri-updater.json" -Raw | ConvertFrom-Json).plugins;bundle=@{active=$true;targets=@('nsis');resources=$resources;icon=@('icons/icon.ico');windows=@{signCommand=$signCommand;nsis=@{installMode='currentUser';template=$Template;installerHooks="$PSScriptRoot/installer-hooks.nsh"}}}}
  $name = if ($Full) { 'bundle-full.json' } else { 'bundle-lo.json' }
  $path = Join-Path $tools $name
  $config | ConvertTo-Json -Depth 12 | Set-Content $path
@@ -74,42 +75,25 @@ try {
  npm ci
  if ($LASTEXITCODE) { throw 'Cannot install bundler' }
 
- # Evidence files must differ, so each build records its own generated uninstaller.
- $fullEvidence = Join-Path $output 'uninstall-full.exe'
- $loEvidence = Join-Path $output 'uninstall-lo.exe'
- $fullPolicy = New-Policy $setupPath $fullEvidence
- $loPolicy = New-Policy $setupPath $loEvidence
-
- # Hash every vendor input before Tauri enumerates resources for the full package.
- $before = @{}
- foreach ($root in @("$inputRoot/app","$inputRoot/runtime")) {
-  if (Test-Path -LiteralPath $root) { Get-ChildItem -LiteralPath $root -Recurse -File | ForEach-Object { $before[$_.FullName]=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash } }
- }
-
- npm run tauri -- bundle --config (New-Config $fullPolicy (New-Template $fullPolicy '') $true)
+ npm run tauri -- bundle --config (New-Config (New-Template '') $true)
  if ($LASTEXITCODE) { throw 'Full package bundling failed' }
- foreach ($file in $before.Keys) {
-  if ((Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash -ne $before[$file]) { throw "Vendor resource modified: $file" }
- }
  $fullSetup = Join-Path $output "Jouzu Launcher_${Version}_x64-setup.exe"
  Copy-Item -LiteralPath $setupPath -Destination $fullSetup -Force
 
- npm run tauri -- bundle --config (New-Config $loPolicy (New-Template $loPolicy '!define JOUZU_LAUNCHER_ONLY 1') $false)
+ npm run tauri -- bundle --config (New-Config (New-Template '!define JOUZU_LAUNCHER_ONLY 1') $false)
  if ($LASTEXITCODE) { throw 'Launcher-only package bundling failed' }
  $updateSetup = Join-Path $output "Jouzu Launcher_${Version}_x64-update.exe"
  Copy-Item -LiteralPath $setupPath -Destination $updateSetup -Force
 
- foreach ($file in @("$target/launcher.exe","$target/console.exe",$fullEvidence,$loEvidence,$fullSetup,$updateSetup)) {
+ foreach ($file in @("$target/launcher.exe","$target/console.exe",$fullSetup,$updateSetup)) {
   $signature = Get-AuthenticodeSignature -LiteralPath $file
   if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -ne $env:EXPECTED_SIGNER -or -not $signature.TimeStamperCertificate) { throw "Invalid final signature: $file" }
  }
 
- $keyFile = Join-Path $tools 'updater.key'
- try {
-  [IO.File]::WriteAllText($keyFile,$env:TAURI_SIGNING_PRIVATE_KEY)
-  npm run tauri -- signer sign -f $keyFile --app-version $Version $updateSetup
-  if ($LASTEXITCODE) { throw 'Updater signing failed' }
- } finally { Remove-Item -LiteralPath $keyFile -Force -ErrorAction SilentlyContinue }
+ # The updater signature covers the final installer bytes. The key arrives in
+ # TAURI_SIGNING_PRIVATE_KEY, which `signer sign` reads itself, so it never reaches a file.
+ npm run tauri -- signer sign --app-version $Version $updateSetup
+ if ($LASTEXITCODE) { throw 'Updater signing failed' }
 
  Copy-Item "$inputRoot/source.json" $output
  @{version=$Version;commit=$env:GITHUB_SHA;run=$env:GITHUB_RUN_ID;setup=(Get-FileHash $fullSetup -Algorithm SHA256).Hash;update=(Get-FileHash $updateSetup -Algorithm SHA256).Hash} | ConvertTo-Json | Set-Content "$output/build.json"

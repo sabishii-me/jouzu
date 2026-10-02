@@ -18,15 +18,23 @@ Required nonsecret configuration:
 
 Keep updater and recipe private signing keys in protected secrets. They are separate from Azure Authenticode. Do not commit local login caches, private keys, machine-specific build paths or temporary HTTP update settings.
 
-`sign-windows.ps1` accepts explicit SignTool, signing-client DLL and metadata paths, then verifies Authenticode, expected subject and timestamp. Provision those tools from trusted pinned sources. The job must establish its own working identity before invoking the script.
+`sign-windows.ps1` runs the documented Artifact Signing SignTool command (`/fd SHA256`, RFC3161
+timestamp, `/dlib` and `/dmdf`) and then verifies Authenticode, the expected subject and the
+timestamp. The job establishes its own working identity before it runs.
 
-Signing order:
+Signing order, all driven by the bundler:
 
-1. Build and sign launcher-owned executables.
-2. Bundle using the tracked installer template and hooks, retaining product identity and paths.
-3. Sign and verify the final installer.
-4. Generate the Tauri updater signature over the final installer bytes.
+1. Configure `bundle.windows.signCommand` to run `sign-windows.ps1`; the bundler calls it for the
+   application binaries, for every bundled `.exe`/`.dll` that is not already signed, and for the
+   NSIS-generated uninstaller through the `UNINSTALLERSIGNCOMMAND` define it supplies itself.
+2. The bundler compiles each installer and signs it with the same command.
+3. Verify the final signatures of the application binaries and both installers.
+4. Generate the Tauri updater signature over the final installer bytes; the CLI reads the key from
+   its environment, so the key is never written to a file.
 5. Generate checksums and update metadata; do not modify signed artifacts afterward.
+
+Binaries that already carry a vendor signature are skipped by the bundler (`signtool verify`), so
+third-party tools keep their own publisher.
 
 Initially retain output as CI artifacts for review. Publishing a release/feed is a separate authorized operation. Actions artifact download pages are not installer download URLs. Private release assets also require a supported authentication mechanism; do not assume an unauthenticated client can download them.
 
@@ -79,10 +87,9 @@ The build job runs frontend and Rust tests, compiles the binaries, and uploads
 signing inputs. It does not publish an unsigned installer. After approval, the
 signing job authenticates through `azure/login` with GitHub OIDC, obtains the signing tools the
 way Microsoft documents for Artifact Signing (`nuget.exe install Microsoft.Windows.SDK.BuildTools`
-and `Microsoft.ArtifactSigning.Client`), bundles and signs the declared own executables, and signs
-the NSIS-generated uninstaller. Vendor resources are not
-re-signed; their hashes are checked for changes. The Tauri callback executes after
-bundle-type patching so the Launcher signature covers its final bytes.
+and `Microsoft.ArtifactSigning.Client`), and bundles each package with that sign command, so the
+bundler signs the application binaries, the installers and the generated uninstaller. The signature
+covers the bytes the bundler patches last.
 
 A Launcher release publishes **two** artifacts from one source tree. The full
 `Jouzu Launcher_VERSION_x64-setup.exe` carries the whole product (application,
