@@ -122,25 +122,21 @@ export function App() {
       if (request.action === "shisa-logout" || request.action === "provider-remove") {setPreviewReady(false);setWorkspacePage(false);}
       return true;
     }
+    // A status read is not a user-visible change; only mutations show progress.
+    const mutates = request.action !== "status";
     const run = controlQueue.current.then(async () => {
-      setOperation("saving"); setError(null);
+      if (mutates) setOperation("saving");
+      setError(null);
       try { const next = parseControlState(await invoke<unknown>("control_request", { request })); setSetup(next);
         return true; }
       catch (error) { setError(String(error)); return false; }
-      finally { setOperation(null); setDevice(null); }
+      finally { if (mutates) setOperation(null); setDevice(null); }
     });
     controlQueue.current = run.catch(() => {});
     return run;
   }
   useEffect(() => { if (!notice) return; const timer = setTimeout(() => setNotice(null), 4000); return () => clearTimeout(timer); }, [notice]);
   useEffect(() => { if (settingsOpen && isTauri()) { if (!setup && !busyRef.current) void configure({ action: "status" }); void readEnvironment(); } }, [settingsOpen]);
-  // Signing in or out elsewhere (including the console) must not leave this window stale.
-  useEffect(() => {
-    if (!isTauri() || onboardingPreview) return;
-    const refreshStatus = () => void configure({ action: "status" });
-    window.addEventListener("focus", refreshStatus);
-    return () => window.removeEventListener("focus", refreshStatus);
-  }, []);
   const refresh = async () => setState(await invoke<LauncherState>("launcher_state"));
   useEffect(() => {
     if (!isTauri() || onboardingPreview) return;
@@ -203,7 +199,7 @@ export function App() {
     <header data-tauri-drag-region className="flex items-center justify-between border-b border-border py-3">
       <div className="absolute left-0 right-0 top-0 h-3" data-tauri-drag-region />
       <div className="pointer-events-none flex items-center gap-3"><img src={jouzuIcon} alt="" draggable={false} className="size-9" /><h1 className="min-w-16 flex-1 text-lg font-semibold tracking-tight">Jouzu</h1></div>
-      <div className="pointer-events-none flex items-center gap-1 [&>*]:pointer-events-auto"><Dialog open={settingsOpen} onOpenChange={value => { if (!value) { if (device) {if(onboardingPreview) setDevice(null); else void invoke("cancel_control")}; if (isTauri() && !onboardingPreview) void configure({action:"status"}); } setSettingsOpen(value); }}>
+      <div className="pointer-events-none flex items-center gap-1 [&>*]:pointer-events-auto"><Dialog open={settingsOpen} onOpenChange={value => { if (!value && device) {if(onboardingPreview) setDevice(null); else void invoke("cancel_control")}; setSettingsOpen(value); }}>
         <>{(onboardingPreview || updater.version || jouzuUpdater.version) && <Button variant="outline" onClick={() => {setSettingsTab("about");setSettingsOpen(true);}}>{t.updateAvailable}</Button>}</><DialogTrigger asChild><Button variant="ghost" aria-label={t.settings} title={t.settings}><Settings /></Button></DialogTrigger>
         <DialogContent showCloseButton={false} className="flex h-[min(560px,85dvh)] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl border-border p-0 sm:max-w-3xl">
           {error && <p role="alert" className="border-b border-border bg-red-50 px-4 py-2 text-sm text-red-900">{error}</p>}
