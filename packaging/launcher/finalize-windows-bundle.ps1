@@ -85,7 +85,10 @@ try {
  $updateSetup = Join-Path $output "Jouzu Launcher_${Version}_x64-update.exe"
  Copy-Item -LiteralPath $setupPath -Destination $updateSetup -Force
 
- foreach ($file in @("$target/launcher.exe","$target/console.exe",$fullSetup,$updateSetup)) {
+ # The bundler restores the application binary it patched for bundle-type marking after the
+ # run, so the on-disk copy is unsigned; what the installers carry is the signed copy the
+ # bundler verified before it ran makensis. Only the packaged results are checked here.
+ foreach ($file in @("$target/console.exe",$fullSetup,$updateSetup)) {
   $signature = Get-AuthenticodeSignature -LiteralPath $file
   if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -ne $env:EXPECTED_SIGNER -or -not $signature.TimeStamperCertificate) { throw "Invalid final signature: $file" }
  }
