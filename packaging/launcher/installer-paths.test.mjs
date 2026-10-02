@@ -101,3 +101,14 @@ test("Git preparation belongs to installer and failure aborts installation", () 
   assert.doesNotMatch(build, /Start-Process|signCommand/);
   assert.match(build, /runtime\/git\/PortableGit\.exe/);
 });
+
+test("installer commands preserve Windows path separators", () => {
+  assert.ok(hooks.includes(String.raw`$INSTDIR\runtime\launcher-update\git-environment.ps1`));
+  assert.ok(hooks.includes(String.raw`$SYSDIR\WindowsPowerShell\v1.0\powershell.exe`));
+});
+
+test("uninstaller signing failure aborts bundle generation", () => {
+  const commands = template.split('\n').filter(line => line.trim().startsWith('!uninstfinalize'));
+  assert.ok(commands.length > 0);
+  assert.ok(commands.every(line => line.trim().endsWith('= 0')));
+});

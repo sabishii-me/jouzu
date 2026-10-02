@@ -100,11 +100,11 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
 !addplugindir "${ADDITIONALPLUGINSPATH}"
 
 ; Uninstaller signing command
-!define JOUZU_UNINSTALLER_SIGN_COMMAND "$%JOUZU_UNINSTALLER_SIGN_COMMAND%"
-!if "${JOUZU_UNINSTALLER_SIGN_COMMAND}" != ""
-  !uninstfinalize '${JOUZU_UNINSTALLER_SIGN_COMMAND}'
+!define JOUZU_UNINSTALLER_SIGN_COMMAND `$%JOUZU_UNINSTALLER_SIGN_COMMAND%`
+!if `${JOUZU_UNINSTALLER_SIGN_COMMAND}` != ""
+  !uninstfinalize '${JOUZU_UNINSTALLER_SIGN_COMMAND}' = 0
 !else if "${UNINSTALLERSIGNCOMMAND}" != ""
-  !uninstfinalize '${UNINSTALLERSIGNCOMMAND}'
+  !uninstfinalize '${UNINSTALLERSIGNCOMMAND}' = 0
 !endif
 
 ; Handle install mode, `perUser`, `perMachine` or `both`

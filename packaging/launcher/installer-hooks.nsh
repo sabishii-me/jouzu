@@ -29,8 +29,7 @@
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
-  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR
-untime\launcher-update\git-environment.ps1" -InstallRoot "$INSTDIR" -Prepare'
+  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\runtime\launcher-update\git-environment.ps1" -InstallRoot "$INSTDIR" -Prepare'
   Pop $0
   Pop $1
   ${If} $0 != 0
