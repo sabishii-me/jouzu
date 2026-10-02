@@ -80,3 +80,33 @@ test('Shisa authorization actions stay together and cancellation preserves setup
  await expect(open).toHaveCount(0);
  await expect(page.getByRole('button',{name:'Sign in to Shisa',exact:true})).toBeVisible();
 });
+
+test('overlapping configuration requests never surface a busy error', async ({page}) => {
+ const errors:string[]=[]; page.on('pageerror',e=>errors.push(e.message));
+ await page.addInitScript(()=>{
+  (window as any).__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener:()=>{}};
+  localStorage.setItem('jouzu.ui.language','en');
+  let active=false;
+  (window as any).__TAURI_INTERNALS__={
+   metadata:{currentWindow:{label:'main'},currentWebview:{label:'main'}},
+   transformCallback:()=>1, unregisterCallback:()=>{},
+   invoke:async (command:string)=>{
+    if(command==='launcher_state') return {ready:true,bash:true,recent:[],platform:'windows'};
+    if(command==='component_versions') return {jouzu:'0.1.18',development:true};
+    if(command==='control_request') {
+     if(active) throw new Error('Another configuration operation is running');
+     active=true;
+     try { await new Promise(resolve=>setTimeout(resolve,150)); return {schemaVersion:1,modelReady:true,profile:'core',account:{signedIn:false},credentials:[],customProviders:[],providers:[],models:[]}; }
+     finally { active=false; }
+    }
+    if(command==='environment_read') return [];
+    if(command.includes('version')) return '0.1.0';
+    return 1;
+   }
+  };
+ });
+ await page.goto('http://localhost:1420');
+ await expect(page.getByRole('heading',{name:'Where will you work?'})).toBeVisible();
+ await expect(page.getByText('Another configuration operation is running')).toHaveCount(0);
+ expect(errors).toEqual([]);
+});

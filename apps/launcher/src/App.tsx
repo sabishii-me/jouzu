@@ -85,6 +85,10 @@ export function App() {
   const busy = operation !== null;
   const busyRef = useRef(busy);
   busyRef.current = busy;
+  // The configuration service allows one operation at a time; serialize requests
+  // so development remounts or overlapping menu opens cannot collide.
+  const controlQueue = useRef<Promise<unknown>>(Promise.resolve());
+  const initialStatusRequested = useRef(false);
   const listRef = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState(false);
   async function addFolders(paths: string[]) {
@@ -118,11 +122,15 @@ export function App() {
       if (request.action === "shisa-logout" || request.action === "provider-remove") {setPreviewReady(false);setWorkspacePage(false);}
       return true;
     }
-    setOperation("saving"); setError(null);
-    try { const next = parseControlState(await invoke<unknown>("control_request", { request })); setSetup(next);
-      return true; }
-    catch (error) { setError(String(error)); return false; }
-    finally { setOperation(null); setDevice(null); }
+    const run = controlQueue.current.then(async () => {
+      setOperation("saving"); setError(null);
+      try { const next = parseControlState(await invoke<unknown>("control_request", { request })); setSetup(next);
+        return true; }
+      catch (error) { setError(String(error)); return false; }
+      finally { setOperation(null); setDevice(null); }
+    });
+    controlQueue.current = run.catch(() => {});
+    return run;
   }
   useEffect(() => { if (!notice) return; const timer = setTimeout(() => setNotice(null), 4000); return () => clearTimeout(timer); }, [notice]);
   useEffect(() => { if (settingsOpen && isTauri()) { if (!setup && !busyRef.current) void configure({ action: "status" }); void readEnvironment(); } }, [settingsOpen]);
@@ -130,7 +138,7 @@ export function App() {
   useEffect(() => {
     if (!isTauri() || onboardingPreview) return;
     refresh().catch(error => setError(String(error)));
-    void configure({action:"status"});
+    if (!initialStatusRequested.current) { initialStatusRequested.current = true; void configure({action:"status"}); }
     getVersion().then(setVersion).catch(error => setError(String(error)));
     invoke<Components>("component_versions").then(setComponents).catch(error => setError(String(error)));
   }, []);
