@@ -82,6 +82,37 @@ executables, and signs the NSIS-generated uninstaller. Vendor resources are not
 re-signed; their hashes are checked for changes. The Tauri callback executes after
 bundle-type patching so the Launcher signature covers its final bytes.
 
+A Launcher release publishes **two** artifacts from one source tree. The full
+`Jouzu Launcher_VERSION_x64-setup.exe` carries the whole product (application,
+Node, pnpm, PortableGit) and serves download, first install and repair. The
+launcher-only `Jouzu Launcher_VERSION_x64-update.exe` carries launcher-owned
+files and is what the in-app updater installs, so an update neither rewrites the
+Jouzu payload nor requires closing a running session. `build.json` records both
+hashes and the version release carries both; only the launcher-only artifact is
+offered by the update feed.
+
+### Release chain
+
+A published npm version and its Windows update artifact must not diverge. After
+the npm publish job succeeds, the npm workflow calls the recipe workflow (a
+reusable `workflow_call` with `publish: true`) so the official npm version always
+gets a signed recipe and a published Jouzu feed. The recipe workflow is the
+single source of the Jouzu runtime: it prepares the runtime once from the
+official package and uploads the signed recipe plus a reusable
+`windows-published-runtime` artifact. A Launcher build takes a `runtime_run_id`
+referring to a successful recipe or runtime run and restores that qualified
+runtime; it does not prepare, download or re-install the npm package again, so
+one npm version causes exactly one Windows runtime preparation.
+
+Launcher publication stays manual (`workflow_dispatch`) because Launcher changes
+rarely; the launcher-only artifact is built from the runtime the recipe flow has
+already qualified. Every update item is expected to carry a changelist: the
+Launcher changelist from the repository and the Jouzu notes from the upstream
+Release body for the version whose `gitHead` matches the published tag. A
+scheduled guard re-checks that the published npm version still has a matching
+signed recipe and opens an issue when it does not, so a missed Windows artifact
+is detected rather than discovered by users.
+
 Publication creates `launcher-vVERSION` before replacing the `launcher-update`
 feed. Existing version assets are never overwritten. A failed signing or
 publication step must be diagnosed and corrected before retrying; it must not be
