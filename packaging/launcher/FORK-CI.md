@@ -64,3 +64,26 @@ The current recipe workflow uses the protected `launcher-test` Environment. It p
 GitHub recipe assets use flat names: `artifacts/example.tgz` is uploaded as `artifacts__example.tgz`. Signed manifest paths remain unchanged. The client accepts bounded redirects from GitHub Release URLs only to the HTTPS GitHub release-asset host. Ordinary directory sources cannot redirect. File integrity and recipe signature verification apply after transport.
 
 Keep fork and production update keys separate. Moving the workflow does not move client trust: builds for the main repository embed its configured production public keys and endpoints. Required approval is retained during tests; do not disable it to make a pending run proceed.
+
+
+### Launcher build and publication
+
+The Launcher workflow separates unsigned compilation inputs from the protected
+`sign-publish` job. Repository variables must contain the non-secret Azure
+configuration in the table above so the initial configuration check can reject
+an unconfigured release before compiling. The protected Environment may provide
+the same values; keep both scopes consistent. Private keys remain Environment
+secrets only.
+
+The build job runs frontend and Rust tests, compiles the binaries, and uploads
+signing inputs. It does not publish an unsigned installer. After approval, the
+signing job logs into Azure with GitHub OIDC, bundles and signs the declared own
+executables, and signs the NSIS-generated uninstaller. Vendor resources are not
+re-signed; their hashes are checked for changes. The Tauri callback executes after
+bundle-type patching so the Launcher signature covers its final bytes.
+
+Publication creates `launcher-vVERSION` before replacing the `launcher-update`
+feed. Existing version assets are never overwritten. A failed signing or
+publication step must be diagnosed and corrected before retrying; it must not be
+bypassed by publishing unsigned output. The workflow requires initial fork
+integration qualification before being used for production releases.
