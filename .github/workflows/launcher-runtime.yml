@@ -48,6 +48,13 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           Push-Location apps/launcher
           try {
+            npm run build
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+            Push-Location src-tauri
+            try {
+              cargo build --locked --release --bins
+              if ($LASTEXITCODE) { exit $LASTEXITCODE }
+            } finally { Pop-Location }
             npm run tauri -- build --config "$env:RUNNER_TEMP/windows-bundle/tauri-build.json"
             if ($LASTEXITCODE) { exit $LASTEXITCODE }
           } finally { Pop-Location }
