@@ -7,6 +7,10 @@ on:
         type: string
         default: '0.1.18'
         required: true
+      publish:
+        description: Publish the signed release and update feed
+        type: boolean
+        default: false
       runtime_run_id:
         description: Successful run containing a qualified runtime artifact (empty prepares from npm)
         type: string
@@ -185,6 +189,15 @@ jobs:
       - name: Sign and package CI binaries
         run: ./packaging/launcher/finalize-windows-bundle.ps1 -InputDirectory "$env:RUNNER_TEMP/signing-inputs"
       - name: Publish verified update
+        if: ${{ inputs.publish }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: ./packaging/launcher/publish-launcher.ps1 -Directory "$env:RUNNER_TEMP/launcher-release"
+      - name: Upload signed artifacts
+        if: ${{ !inputs.publish }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: launcher-signed
+          path: ${{ runner.temp }}/launcher-release/*
+          if-no-files-found: error
+          retention-days: 7
