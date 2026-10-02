@@ -6,13 +6,13 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid Launcher version' }
-$repo = Split-Path (Split-Path $PSScriptRoot)
-$Prepared = (Resolve-Path $Prepared).Path
+$repo = (Split-Path (Split-Path $PSScriptRoot)).Replace('\','/')
+$Prepared = (Resolve-Path $Prepared).Path.Replace('\','/')
 $Pnpm = (Resolve-Path $Pnpm).Path
 if (Test-Path $Output) { throw 'Output must not exist' }
 New-Item -ItemType Directory -Path $Output | Out-Null
 $Output = (Resolve-Path $Output).Path
-$runtime = Join-Path $Output 'runtime'
+$runtime = (Join-Path $Output 'runtime').Replace('\','/')
 New-Item -ItemType Directory -Path "$runtime/git" -Force | Out-Null
 $nodeVersion = '24.19.0'
 $archive = "node-v$nodeVersion-win-x64.zip"
