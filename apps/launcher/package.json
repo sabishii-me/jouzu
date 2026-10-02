@@ -1,6 +1,6 @@
 {
   "name": "@shisa-ai/jouzu-launcher",
-  "version": "0.1.25",
+  "version": "0.2.0",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",

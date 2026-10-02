@@ -198,6 +198,11 @@ fn main() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
+            if let Ok(executable) = std::env::current_exe() {
+                if let Ok(root) = runtime::install_root_for_executable(&executable) {
+                    runtime::cleanup_superseded_executables(&root);
+                }
+            }
             let data = runtime::managed_root()
                 .map_err(std::io::Error::other)?
                 .join("cache/webview");

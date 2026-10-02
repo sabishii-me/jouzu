@@ -99,9 +99,17 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
 # additional plugins
 !addplugindir "${ADDITIONALPLUGINSPATH}"
 
+; Package mode and the uninstaller signing command come from the generated template so an
+; unset value is a real no-op instead of a literal command.
+!ifndef JOUZU_LAUNCHER_ONLY
+!define JOUZU_LAUNCHER_ONLY 0
+!endif
+!ifndef JOUZU_UNINSTALLER_SIGN_COMMAND
+!define JOUZU_UNINSTALLER_SIGN_COMMAND ""
+!endif
+
 ; Uninstaller signing command
-!define JOUZU_UNINSTALLER_SIGN_COMMAND `$%JOUZU_UNINSTALLER_SIGN_COMMAND%`
-!if `${JOUZU_UNINSTALLER_SIGN_COMMAND}` != ""
+!if "${JOUZU_UNINSTALLER_SIGN_COMMAND}" != ""
   !uninstfinalize '${JOUZU_UNINSTALLER_SIGN_COMMAND}' = 0
 !else if "${UNINSTALLERSIGNCOMMAND}" != ""
   !uninstfinalize '${UNINSTALLERSIGNCOMMAND}' = 0

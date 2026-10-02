@@ -23,6 +23,19 @@ pub fn effective_home() -> Result<PathBuf, String> {
     Ok(managed_root()?.join("data"))
 }
 
+/// Leftovers from replacing a running launcher executable are deleted once no session
+/// holds them; anything still in use stays until a later start.
+pub fn cleanup_superseded_executables(root: &Path) {
+    let Ok(entries) = std::fs::read_dir(root) else { return };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name.contains(".old-") {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+}
+
 pub fn install_root_for_executable(executable: &Path) -> Result<PathBuf, String> {
     executable
         .parent()
