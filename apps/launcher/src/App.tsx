@@ -1,6 +1,5 @@
 import { LauncherPage } from "./components/launcher-page";
 import { ProviderPicker } from "./components/ui/provider-picker";
-import { onboardingPreview, previewState, onboardingText } from "./onboarding-preview";
 import { recoveryText } from "./recovery-text";
 import { UpdatePreview } from "./update-preview";
 import { useJouzuUpdate } from "./use-jouzu-update";
@@ -31,8 +30,6 @@ interface Components { jouzu: string | null; development: boolean; launcherUpdat
 export function App() {
   const [locale, setLocale] = useState<Locale>(() => resolveLocale(localStorage.getItem("jouzu.ui.language") ?? navigator.language));
   const t = messages[locale];
-  const ot = onboardingText[locale];
-  const [previewReady, setPreviewReady] = useState(false);
   const [workspacePage, setWorkspacePage] = useState(false);
   const [japaneseOverride, setJapaneseOverride] = useState<boolean | null>(null);
   const japaneseChoice = japaneseOverride ?? locale === "ja";
@@ -51,14 +48,13 @@ export function App() {
   const [providerQuery, setProviderQuery] = useState("");
   const [addingConnection, setAddingConnection] = useState(false);
   const [query, setQuery] = useState("");
-  const [setup, setSetup] = useState<ControlState | null>(() => onboardingPreview ? previewState() : null);
-  const modelReady = onboardingPreview ? previewReady : setup?.modelReady;
+  const [setup, setSetup] = useState<ControlState | null>(null);
+  const modelReady = setup?.modelReady;
   const needsSetup = modelReady === false;
   const showSetup = needsSetup && !workspacePage;
-  useEffect(() => { setWorkspacePage(false); }, [modelReady]);
   const [device, setDevice] = useState<{url:string;code:string} | null>(null);
   useEffect(() => {
-    if (!isTauri() || onboardingPreview) return;
+    if (!isTauri()) return;
     const pending = listen<{url:string;code:string}>("control-device", event => setDevice(event.payload));
     return () => { pending.then(unlisten => unlisten()).catch(() => {}); };
   }, []);
@@ -66,12 +62,10 @@ export function App() {
   const [editingEnv, setEditingEnv] = useState<number | null>(null);
   const [envLoaded, setEnvLoaded] = useState(false);
   async function readEnvironment() {
-    if (onboardingPreview) {setEnvRows([]);setEnvLoaded(true);return;}
     try { setEnvRows(await invoke("environment_read")); setEnvLoaded(true); setEditingEnv(null); }
     catch (error) { setError(String(error)); }
   }
   async function saveEnvironment() {
-    if (onboardingPreview) {setEditingEnv(null);return;}
     setOperation("saving"); setError(null);
     try { await invoke("environment_save", { entries: envRows }); setEditingEnv(null); setSetup(parseControlState(await invoke<unknown>("control_request", {request:{action:"status"}}))); }
     catch (error) { setError(String(error)); }
@@ -92,14 +86,13 @@ export function App() {
   const listRef = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState(false);
   async function addFolders(paths: string[]) {
-    if (onboardingPreview) return;
     setOperation("saving"); setError(null);
     try { await invoke("add_workspaces", { paths }); setQuery(""); await refresh(); }
     catch (error) { setError(String(error)); }
     finally { setOperation(null); }
   }
   useEffect(() => {
-    if (!isTauri() || onboardingPreview) return;
+    if (!isTauri()) return;
     let disposed = false;
     const subscription = getCurrentWindow().onDragDropEvent(event => {
       const payload = event.payload;
@@ -115,13 +108,6 @@ export function App() {
     return () => { disposed = true; subscription.then(unlisten => unlisten()).catch(() => {}); };
   }, [settingsOpen]);
   async function configure(request: Record<string, unknown>) {
-    if (onboardingPreview) {
-      if (request.action === "profile") setSetup(value => value && ({...value,profile:String(request.profile)}));
-      if (request.action === "shisa-login") setDevice({url:"https://platform.shisa.ai/connect",code:"DEMO-1234"});
-      if (["provider-key","custom-provider","default-model"].includes(String(request.action))) {setPreviewReady(true);setWorkspacePage(false);}
-      if (request.action === "shisa-logout" || request.action === "provider-remove") {setPreviewReady(false);setWorkspacePage(false);}
-      return true;
-    }
     // A status read is not a user-visible change; only mutations show progress.
     const mutates = request.action !== "status";
     const run = controlQueue.current.then(async () => {
@@ -139,14 +125,13 @@ export function App() {
   useEffect(() => { if (settingsOpen && isTauri()) { if (!setup && !busyRef.current) void configure({ action: "status" }); void readEnvironment(); } }, [settingsOpen]);
   const refresh = async () => setState(await invoke<LauncherState>("launcher_state"));
   useEffect(() => {
-    if (!isTauri() || onboardingPreview) return;
+    if (!isTauri()) return;
     refresh().catch(error => setError(String(error)));
     if (!initialStatusRequested.current) { initialStatusRequested.current = true; void configure({action:"status"}); }
     getVersion().then(setVersion).catch(error => setError(String(error)));
     invoke<Components>("component_versions").then(setComponents).catch(error => setError(String(error)));
   }, []);
   async function launch(path: string) {
-    if (onboardingPreview) {if (!previewReady) setWorkspacePage(false);return;}
     if (!state?.ready) return;
     setOperation("launching"); setError(null); setNotice(null);
     try {
@@ -158,7 +143,6 @@ export function App() {
     } catch (error) { setError(String(error)); } finally { setOperation(null); }
   }
   async function chooseFolder() {
-    if (onboardingPreview) return;
     setOperation("choosing"); setError(null);
     try {
       const path = await open({ directory: true, multiple: false, title: t.picker });
@@ -166,22 +150,18 @@ export function App() {
     } catch (error) { setError(String(error)); } finally { setOperation(null); }
   }
   async function forget(workspace: Workspace) {
-    if (onboardingPreview) return;
     setOperation("saving"); setError(null);
     try {
       await invoke("forget_workspace", { id: workspace.id }); await refresh();
       setNotice("removed");
     } catch (error) { setError(String(error)); } finally { setOperation(null); }
   }
-  useEffect(() => {
-    if (onboardingPreview) setState({platform:"windows",ready:true,bash:true,bundled_git:true,recent:[{id:"preview-workspace",path:"C:/Projects/Jouzu",environment:{kind:"windows"}}]});
-  }, []);
   const recent = state?.recent.filter(item => item.path.toLocaleLowerCase().includes(query.toLocaleLowerCase())) ?? [];
   if (sort === "name") recent.sort((a,b) => a.path.replaceAll(String.fromCharCode(92), "/").split("/").at(-1)!.localeCompare(b.path.replaceAll(String.fromCharCode(92), "/").split("/").at(-1)!, locale));
   if (sort === "path") recent.sort((a,b) => a.path.localeCompare(b.path, locale));
   const development = components?.development ?? import.meta.env.DEV;
   const inlineProviders = showSetup && !settingsOpen;
-  const providerContent = <div className="space-y-4">                  {(inlineProviders || !addingConnection) && <><Card className={inlineProviders ? "gap-3 rounded-none border-0 bg-transparent p-0 shadow-none" : "border-border gap-4 py-5 shadow-none"}><CardHeader className={inlineProviders ? "px-0" : undefined}><CardTitle>Shisa</CardTitle><CardDescription>{device ? t.waitingAuthorization : setup?.account.signedIn ? t.shisaConnected : t.shisaHint}</CardDescription></CardHeader><CardContent className={inlineProviders ? "space-y-3 px-0" : "space-y-3"}>{!device && setup?.account.revocation === "unconfirmed" && <p role="status" className="text-sm text-muted-foreground">{t.signOutUnconfirmed}</p>}{!device && <div className="flex justify-end"><Button disabled={busy || !setup} onClick={() => void configure({ action: setup?.account.signedIn ? "shisa-logout" : "shisa-login" })}>{setup?.account.signedIn ? t.signOut : t.signIn}</Button></div>}{device && <div className="space-y-3"><Input readOnly aria-label={t.loginUrl} value={device.url} onFocus={event => event.target.select()} /><Input readOnly aria-label={t.deviceCode} value={device.code} onFocus={event => event.target.select()} /><p className="text-xs text-muted-foreground">{t.loginHint}</p><div className="flex items-center justify-end gap-2"><Button variant="outline" onClick={() => {if(onboardingPreview) setDevice(null);else void invoke("cancel_control");}}>{t.cancel}</Button><Button onClick={async () => { try { const url = new URL(device.url); if (url.origin !== "https://platform.shisa.ai" || url.pathname !== "/connect" || url.username || url.password) throw new Error(t.loginUrl); if (!onboardingPreview) await openUrl(url.href); } catch (error) { setError(String(error)); } }}><ArrowUpRight />{t.openBrowser}</Button></div></div>}</CardContent></Card>
+  const providerContent = <div className="space-y-4">                  {(inlineProviders || !addingConnection) && <><Card className={inlineProviders ? "gap-3 rounded-none border-0 bg-transparent p-0 shadow-none" : "border-border gap-4 py-5 shadow-none"}><CardHeader className={inlineProviders ? "px-0" : undefined}><CardTitle>Shisa</CardTitle><CardDescription>{device ? t.waitingAuthorization : setup?.account.signedIn ? t.shisaConnected : t.shisaHint}</CardDescription></CardHeader><CardContent className={inlineProviders ? "space-y-3 px-0" : "space-y-3"}>{!device && setup?.account.revocation === "unconfirmed" && <p role="status" className="text-sm text-muted-foreground">{t.signOutUnconfirmed}</p>}{!device && <div className="flex justify-end"><Button disabled={busy || !setup} onClick={() => void configure({ action: setup?.account.signedIn ? "shisa-logout" : "shisa-login" })}>{setup?.account.signedIn ? t.signOut : t.signIn}</Button></div>}{device && <div className="space-y-3"><Input readOnly aria-label={t.loginUrl} value={device.url} onFocus={event => event.target.select()} /><Input readOnly aria-label={t.deviceCode} value={device.code} onFocus={event => event.target.select()} /><p className="text-xs text-muted-foreground">{t.loginHint}</p><div className="flex items-center justify-end gap-2"><Button variant="outline" onClick={() => void invoke("cancel_control")}>{t.cancel}</Button><Button onClick={async () => { try { const url = new URL(device.url); if (url.origin !== "https://platform.shisa.ai" || url.pathname !== "/connect" || url.username || url.password) throw new Error(t.loginUrl); await openUrl(url.href); } catch (error) { setError(String(error)); } }}><ArrowUpRight />{t.openBrowser}</Button></div></div>}</CardContent></Card>
                   {!inlineProviders && <>                  <Card className="border-border gap-4 py-5 shadow-none"><CardHeader><CardTitle>{t.connections}</CardTitle></CardHeader><CardContent className="space-y-2">{!!setup && setup.credentials.length + setup.customProviders.length > 5 && <Input aria-label={t.searchProviders} placeholder={t.searchProviders} value={providerQuery} onChange={event => setProviderQuery(event.target.value)} />}{!addingConnection && setup && [...new Set([...setup.credentials.map(c => c.providerId), ...setup.customProviders.map(c => c.id)])].filter(id => `${id} ${setup.providers.find(p => p.id === id)?.name ?? ""}`.toLowerCase().includes(providerQuery.toLowerCase())).map(id => ({providerId:id})).map(c => <div key={c.providerId} className="flex items-center gap-2"><Button variant="outline" className="h-auto min-w-0 flex-1 justify-between gap-2 py-3" disabled={busy} onClick={() => { setProvider(c.providerId); setToken(""); const saved = setup?.customProviders.find(p => p.id === c.providerId); setConnectionMode(saved?.editable ? "custom" : "builtin"); setCustom(saved?.editable ? {provider:saved.id,url:saved.url,model:saved.model,edit:true} : {provider:"",url:"",model:"",edit:false}); setAddingConnection(true); }}><span>{setup.providers.find(p => p.id === c.providerId)?.name ?? c.providerId}</span><span className="text-xs text-muted-foreground">{setup.credentials.some(key => key.providerId === c.providerId) ? t.credentialSaved : t.configuredNoKey}</span></Button></div>)}<Button variant="outline" disabled={busy || !setup} onClick={() => { setProviderQuery(""); setProvider(""); setConnectionMode("builtin"); setCustom({provider:"",url:"",model:"",edit:false}); setAddingConnection(true); }}><Plus />{t.addConnection}</Button></CardContent></Card></>}</>}
                   {(inlineProviders || addingConnection) && <section className={inlineProviders ? "space-y-3 border-t border-border pt-4" : "space-y-4 rounded-xl border border-border bg-card p-5"}><div className="flex items-center justify-between gap-3"><h3 className="text-sm font-semibold">{inlineProviders ? t.connections : custom.edit ? t.editConnection : t.addConnection}</h3>{!inlineProviders && <Button variant="ghost" disabled={busy} onClick={() => setAddingConnection(false)}>{t.backConnections}</Button>}</div><div className="space-y-4">
                   <div className="space-y-2">{!inlineProviders && <Label>{t.service}</Label>}<ProviderPicker value={connectionMode === "custom" ? "__custom__" : provider} disabled={busy || custom.edit} label={t.service} placeholder={t.chooseService} searchLabel={t.searchProviders} empty={t.noResults} items={[...(setup?.providers ?? []),{id:"__custom__",name:t.customProvider}]} onChange={value => { setToken(""); if(value === "__custom__") {setConnectionMode("custom");setProvider("");} else {setConnectionMode("builtin");setProvider(value);} }}/></div>
@@ -194,13 +174,13 @@ export function App() {
                   </div>}
                   {connectionMode === "custom" &&<div className="space-y-3 border-t border-border pt-4"><p className="text-sm text-muted-foreground">{t.customHint}</p><Label>{t.providerId}</Label><Input placeholder={t.providerId} aria-label={t.providerId} disabled={custom.edit} value={custom.provider} onChange={event => setCustom({...custom,provider:event.target.value})} /><Label>{t.endpoint}</Label><Input placeholder={t.endpoint} aria-label={t.endpoint} value={custom.url} onChange={event => setCustom({...custom,url:event.target.value})} /><Label>{t.modelId}</Label><Input placeholder={t.modelId} aria-label={t.modelId} value={custom.model} onChange={event => setCustom({...custom,model:event.target.value})} /><Label>{t.apiKey}</Label><Input type="password" autoComplete="off" aria-label={t.apiKey} placeholder={t.apiKey} value={token} onChange={event=>setToken(event.target.value)}/><div className="flex justify-end pt-1"><Button disabled={busy || !custom.provider || !custom.url || !custom.model} onClick={async () => { if (await configure({action:"custom-provider",...custom})) { setCustom(value=>({...value,edit:true})); if (token.trim() && !await configure({action:"provider-key",provider:custom.provider,token})) return; setToken("");setAddingConnection(false); } }}>{t.save}</Button></div></div>}
                   </div></section>}
-{onboardingPreview && device && <Button onClick={() => {setDevice(null);setPreviewReady(true);setWorkspacePage(false);setSetup(value=>value && ({...value,account:{signedIn:true}}));}}>{ot.complete}</Button>}</div>;
+</div>;
   return <main className="flex h-screen w-full flex-col px-5 sm:px-6">
     <header data-tauri-drag-region className="flex items-center justify-between border-b border-border py-3">
       <div className="absolute left-0 right-0 top-0 h-3" data-tauri-drag-region />
       <div className="pointer-events-none flex items-center gap-3"><img src={jouzuIcon} alt="" draggable={false} className="size-9" /><h1 className="min-w-16 flex-1 text-lg font-semibold tracking-tight">Jouzu</h1></div>
-      <div className="pointer-events-none flex items-center gap-1 [&>*]:pointer-events-auto"><Dialog open={settingsOpen} onOpenChange={value => { if (!value && device) {if(onboardingPreview) setDevice(null); else void invoke("cancel_control")}; setSettingsOpen(value); }}>
-        <>{(onboardingPreview || updater.version || jouzuUpdater.version) && <Button variant="outline" onClick={() => {setSettingsTab("about");setSettingsOpen(true);}}>{t.updateAvailable}</Button>}</><DialogTrigger asChild><Button variant="ghost" aria-label={t.settings} title={t.settings}><Settings /></Button></DialogTrigger>
+      <div className="pointer-events-none flex items-center gap-1 [&>*]:pointer-events-auto"><Dialog open={settingsOpen} onOpenChange={value => { if (!value && device) void invoke("cancel_control"); setSettingsOpen(value); }}>
+        <>{(import.meta.env.DEV || updater.version || jouzuUpdater.version) && <Button variant="outline" onClick={() => {setSettingsTab("about");setSettingsOpen(true);}}>{t.updateAvailable}</Button>}</><DialogTrigger asChild><Button variant="ghost" aria-label={t.settings} title={t.settings}><Settings /></Button></DialogTrigger>
         <DialogContent showCloseButton={false} className="flex h-[min(560px,85dvh)] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl border-border p-0 sm:max-w-3xl">
           {error && <p role="alert" className="border-b border-border bg-red-50 px-4 py-2 text-sm text-red-900">{error}</p>}
           <DialogDescription className="sr-only">{t.preferences}</DialogDescription>
@@ -243,7 +223,7 @@ export function App() {
                       catch(error){setError(String(error));}finally{setOperation(null);}
                     }}>{recoveryText[locale].action}</Button>
                   </details>
-                  <UpdatePreview locale={locale} live={onboardingPreview ? undefined : {
+                  <UpdatePreview locale={locale} live={import.meta.env.DEV ? undefined : {
                     phases:[jouzuUpdater.phase === 'preparing' || jouzuUpdater.phase === 'verifying' || jouzuUpdater.phase === 'activating' || jouzuUpdater.phase === 'staged' ? 'installing' : jouzuUpdater.phase as 'idle'|'checking'|'available'|'current'|'downloading'|'installing'|'complete'|'error', updater.phase],
                     versions:[components?.jouzu ?? t.unavailable, version ?? t.unavailable],
                     targets:[jouzuUpdater.version,updater.version],
@@ -264,16 +244,15 @@ export function App() {
       </div>
     </header>
     {error && <div role="alert" className="mt-5 flex items-start justify-between gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-900"><div><p className="font-medium">{t.error}</p><details className="mt-2 break-all"><summary className="cursor-pointer">{t.details}</summary><p className="mt-2">{error}</p></details></div><button onClick={() => setError(null)} aria-label={t.dismiss}><X className="size-4" /></button></div>}
-    {onboardingPreview && <div className="flex flex-wrap items-center gap-2 pt-3 text-xs text-muted-foreground"><span>{ot.review}</span><Button variant="ghost" onClick={()=>{setJapaneseOverride(null);setSetup(previewState());setPreviewReady(false);setWorkspacePage(false);setDevice(null);setAddingConnection(false);}}>{ot.reset}</Button><Button variant="ghost" onClick={()=>{setSetup({...previewState(),profile:"core"});setPreviewReady(false);setWorkspacePage(false);setDevice(null);setAddingConnection(false);}}>{ot.existing}</Button><Button variant="ghost" onClick={()=>{setPreviewReady(true);setWorkspacePage(false);setDevice(null);}}>{ot.ready}</Button></div>}
-    {!onboardingPreview && !setup ? <LauncherPage title={t.heading} description={t.connecting}><div className="p-6"><Button disabled={busy} onClick={()=>void configure({action:"status"})}>{busy ? t.loading : t.retry}</Button></div></LauncherPage> : showSetup ? <LauncherPage title={setup?.profile ? ot.connect : ot.preferences} description={setup?.profile ? ot.hint : ot.preferencesHint} action={!!state?.recent.length && <Button variant="ghost" onClick={()=>setWorkspacePage(true)}>{ot.workspaces}</Button>}>
+    {!setup ? <LauncherPage title={t.heading} description={t.connecting}><div className="p-6"><Button disabled={busy} onClick={()=>void configure({action:"status"})}>{busy ? t.loading : t.retry}</Button></div></LauncherPage> : showSetup ? <LauncherPage title={setup?.profile ? t.setupConnect : t.setupMake} description={setup?.profile ? t.setupHint : t.setupPreferencesHint} action={!!state?.recent.length && <Button variant="ghost" onClick={()=>setWorkspacePage(true)}>{t.setupWorkspaces}</Button>}>
       <ScrollArea className="min-h-0 flex-1"><div className="p-5 sm:p-6">
         {!setup?.profile ? <div className="space-y-6 pt-2">
           <div className="space-y-2"><Label>{t.language}</Label><div role="group" aria-label={t.language} className="flex flex-wrap gap-2">{Object.entries(locales).map(([key,label])=><Button key={key} lang={key} className="min-w-28" variant={locale===key ? "default" : "outline"} aria-pressed={locale===key} onClick={()=>setLocale(key as Locale)}>{label}</Button>)}</div><p className="text-sm text-muted-foreground">{t.languageHint}</p></div>
-          <div className="space-y-2"><div className="flex items-center gap-4"><Label htmlFor="onboarding-japanese">{t.profile}</Label><Switch id="onboarding-japanese" checked={japaneseChoice} onCheckedChange={setJapaneseOverride}/></div><p className="max-w-prose text-sm leading-relaxed text-muted-foreground">{ot.japaneseHint}</p></div>
-          <div className="flex justify-end pt-1"><Button onClick={()=>void configure({action:"profile",profile:japaneseChoice ? "ja" : "core"})}>{ot.next}</Button></div>
+          <div className="space-y-2"><div className="flex items-center gap-4"><Label htmlFor="onboarding-japanese">{t.profile}</Label><Switch id="onboarding-japanese" checked={japaneseChoice} onCheckedChange={setJapaneseOverride}/></div><p className="max-w-prose text-sm leading-relaxed text-muted-foreground">{t.setupJapaneseHint}</p></div>
+          <div className="flex justify-end pt-1"><Button onClick={()=>void configure({action:"profile",profile:japaneseChoice ? "ja" : "core"})}>{t.setupContinue}</Button></div>
         </div> : <>{!settingsOpen && providerContent}</>}
       </div></ScrollArea>
-    </LauncherPage> : <LauncherPage title={t.heading} description={t.intro} action={needsSetup && <Button variant="ghost" onClick={()=>setWorkspacePage(false)}>{ot.models}</Button>}>
+    </LauncherPage> : <LauncherPage title={t.heading} description={t.intro} action={needsSetup && <Button variant="ghost" onClick={()=>setWorkspacePage(false)}>{t.setupModels}</Button>}>
       <div className="flex items-center gap-2 border-b border-border px-3 py-2"><Search className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" /><Input aria-label={t.search} placeholder={t.search} value={query} onChange={event => setQuery(event.target.value)} /><Select value={sort} onValueChange={value => { setSort(value); localStorage.setItem("jouzu.folder.sort",value); }}><SelectTrigger className="w-40 shrink-0" aria-label={t.sort}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="added">{t.sortAdded}</SelectItem><SelectItem value="name">{t.sortName}</SelectItem><SelectItem value="path">{t.sortPath}</SelectItem></SelectContent></Select></div>
       <div ref={listRef} aria-busy={busy} className={`flex min-h-0 flex-1 flex-col overflow-hidden ${dragging ? "ring-2 ring-inset ring-primary/30" : ""}`}>
         <ScrollArea className="min-h-0 flex-1">
