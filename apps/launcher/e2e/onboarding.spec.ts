@@ -51,3 +51,32 @@ test('page frame remains stable across preferences, model setup and workspaces',
  expect(await geometry()).toEqual(initial);
  await expect(page.getByLabel('API key',{exact:true})).toBeVisible();
 });
+
+test('Japanese-first defaults follow language until explicitly chosen', async ({page}) => {
+ await page.addInitScript(()=>localStorage.setItem('jouzu.ui.language','en'));
+ await page.goto('http://localhost:1420/?onboarding=1');
+ const toggle=page.getByRole('switch');
+ await expect(toggle).not.toBeChecked();
+ await page.getByRole('button',{name:'日本語',exact:true}).click();
+ await expect(toggle).toBeChecked();
+ await page.getByRole('button',{name:'English',exact:true}).click();
+ await expect(toggle).not.toBeChecked();
+ await toggle.click();
+ await page.getByRole('button',{name:'简体中文',exact:true}).click();
+ await expect(toggle).toBeChecked();
+});
+
+test('Shisa authorization actions stay together and cancellation preserves setup', async ({page}) => {
+ await page.addInitScript(()=>localStorage.setItem('jouzu.ui.language','en'));
+ await page.goto('http://localhost:1420/?onboarding=1');
+ await page.getByRole('button',{name:'Continue',exact:true}).click();
+ await page.getByRole('button',{name:'Sign in to Shisa',exact:true}).click();
+ const open=page.getByRole('button',{name:'Open in browser',exact:true});
+ const cancel=page.getByRole('button',{name:'Cancel',exact:true});
+ const a=await open.boundingBox(), b=await cancel.boundingBox();
+ expect(a?.y).toBe(b?.y);
+ expect(b!.x+b!.width).toBeLessThan(a!.x);
+ await cancel.click();
+ await expect(open).toHaveCount(0);
+ await expect(page.getByRole('button',{name:'Sign in to Shisa',exact:true})).toBeVisible();
+});
