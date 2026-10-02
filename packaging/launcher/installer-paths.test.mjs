@@ -119,6 +119,12 @@ test("the Rust crate version matches the application version", () => {
   const match = cargo.match(/^version = "([^"]+)"/m);
   assert.ok(match, "Cargo.toml must declare a version");
   assert.equal(match[1], pkg.version);
+  // The lock pins the crate version too, and CI builds with --locked, so a version bump that
+  // skips the lock would fail the release build instead of the release.
+  const lock = readFileSync(new URL("../../apps/launcher/src-tauri/Cargo.lock", import.meta.url), "utf8");
+  const entry = lock.match(new RegExp('name = "jouzu-launcher"' + '\n' + 'version = "([^"]+)"'));
+  assert.ok(entry, "Cargo.lock must pin the launcher crate version");
+  assert.equal(entry[1], pkg.version);
 });
 
 test("the launcher version has a single committed source", () => {
