@@ -1,3 +1,4 @@
+import { onboardingPreview, previewState, onboardingText } from "./onboarding-preview";
 import { recoveryText } from "./recovery-text";
 import { UpdatePreview } from "./update-preview";
 import { useJouzuUpdate } from "./use-jouzu-update";
@@ -28,6 +29,12 @@ interface Components { jouzu: string | null; development: boolean; launcherUpdat
 export function App() {
   const [locale, setLocale] = useState<Locale>(() => resolveLocale(localStorage.getItem("jouzu.ui.language") ?? navigator.language));
   const t = messages[locale];
+  const ot = onboardingText[locale];
+  const [previewReady, setPreviewReady] = useState(false);
+  const [workspacePage, setWorkspacePage] = useState(false);
+  const [japaneseChoice, setJapaneseChoice] = useState(false);
+  const needsSetup = onboardingPreview && !previewReady;
+  const showSetup = needsSetup && !workspacePage;
   useEffect(() => { document.documentElement.lang = locale; localStorage.setItem("jouzu.ui.language", locale); }, [locale]);
   const [state, setState] = useState<LauncherState | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -42,10 +49,10 @@ export function App() {
   const [providerQuery, setProviderQuery] = useState("");
   const [addingConnection, setAddingConnection] = useState(false);
   const [query, setQuery] = useState("");
-  const [setup, setSetup] = useState<ControlState | null>(null);
+  const [setup, setSetup] = useState<ControlState | null>(() => onboardingPreview ? previewState() : null);
   const [device, setDevice] = useState<{url:string;code:string} | null>(null);
   useEffect(() => {
-    if (!isTauri()) return;
+    if (!isTauri() || onboardingPreview) return;
     const pending = listen<{url:string;code:string}>("control-device", event => setDevice(event.payload));
     return () => { pending.then(unlisten => unlisten()).catch(() => {}); };
   }, []);
@@ -53,10 +60,12 @@ export function App() {
   const [editingEnv, setEditingEnv] = useState<number | null>(null);
   const [envLoaded, setEnvLoaded] = useState(false);
   async function readEnvironment() {
+    if (onboardingPreview) {setEnvRows([]);setEnvLoaded(true);return;}
     try { setEnvRows(await invoke("environment_read")); setEnvLoaded(true); setEditingEnv(null); }
     catch (error) { setError(String(error)); }
   }
   async function saveEnvironment() {
+    if (onboardingPreview) {setEditingEnv(null);return;}
     setOperation("saving"); setError(null);
     try { await invoke("environment_save", { entries: envRows }); setEditingEnv(null); }
     catch (error) { setError(String(error)); }
@@ -73,13 +82,14 @@ export function App() {
   const listRef = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState(false);
   async function addFolders(paths: string[]) {
+    if (onboardingPreview) return;
     setOperation("saving"); setError(null);
     try { await invoke("add_workspaces", { paths }); setQuery(""); await refresh(); }
     catch (error) { setError(String(error)); }
     finally { setOperation(null); }
   }
   useEffect(() => {
-    if (!isTauri()) return;
+    if (!isTauri() || onboardingPreview) return;
     let disposed = false;
     const subscription = getCurrentWindow().onDragDropEvent(event => {
       const payload = event.payload;
@@ -95,6 +105,13 @@ export function App() {
     return () => { disposed = true; subscription.then(unlisten => unlisten()).catch(() => {}); };
   }, [settingsOpen]);
   async function configure(request: Record<string, unknown>) {
+    if (onboardingPreview) {
+      if (request.action === "profile") setSetup(value => value && ({...value,profile:String(request.profile)}));
+      if (request.action === "shisa-login") setDevice({url:"https://platform.shisa.ai/connect",code:"DEMO-1234"});
+      if (["provider-key","custom-provider","default-model"].includes(String(request.action))) {setPreviewReady(true);setWorkspacePage(false);}
+      if (request.action === "shisa-logout" || request.action === "provider-remove") {setPreviewReady(false);setWorkspacePage(false);}
+      return true;
+    }
     setOperation("saving"); setError(null);
     try { const next = parseControlState(await invoke<unknown>("control_request", { request })); setSetup(next);
       return true; }
@@ -105,12 +122,13 @@ export function App() {
   useEffect(() => { if (settingsOpen && isTauri()) { void configure({ action: "status" }); void readEnvironment(); } }, [settingsOpen]);
   const refresh = async () => setState(await invoke<LauncherState>("launcher_state"));
   useEffect(() => {
-    if (!isTauri()) return;
+    if (!isTauri() || onboardingPreview) return;
     refresh().catch(error => setError(String(error)));
     getVersion().then(setVersion).catch(error => setError(String(error)));
     invoke<Components>("component_versions").then(setComponents).catch(error => setError(String(error)));
   }, []);
   async function launch(path: string) {
+    if (onboardingPreview) {if (!previewReady) setWorkspacePage(false);return;}
     if (!state?.ready) return;
     setOperation("launching"); setError(null); setNotice(null);
     try {
@@ -121,6 +139,7 @@ export function App() {
     } catch (error) { setError(String(error)); } finally { setOperation(null); }
   }
   async function chooseFolder() {
+    if (onboardingPreview) return;
     setOperation("choosing"); setError(null);
     try {
       const path = await open({ directory: true, multiple: false, title: t.picker });
@@ -128,21 +147,39 @@ export function App() {
     } catch (error) { setError(String(error)); } finally { setOperation(null); }
   }
   async function forget(workspace: Workspace) {
+    if (onboardingPreview) return;
     setOperation("saving"); setError(null);
     try {
       await invoke("forget_workspace", { id: workspace.id }); await refresh();
       setNotice("removed");
     } catch (error) { setError(String(error)); } finally { setOperation(null); }
   }
+  useEffect(() => {
+    if (onboardingPreview) setState({platform:"windows",ready:true,bash:true,bundled_git:true,recent:[{id:"preview-workspace",path:"C:/Projects/Jouzu",environment:{kind:"windows"}}]});
+  }, []);
   const recent = state?.recent.filter(item => item.path.toLocaleLowerCase().includes(query.toLocaleLowerCase())) ?? [];
   if (sort === "name") recent.sort((a,b) => a.path.replaceAll(String.fromCharCode(92), "/").split("/").at(-1)!.localeCompare(b.path.replaceAll(String.fromCharCode(92), "/").split("/").at(-1)!, locale));
   if (sort === "path") recent.sort((a,b) => a.path.localeCompare(b.path, locale));
   const development = components?.development ?? import.meta.env.DEV;
+  const providerContent = <div className="space-y-4">                  {!addingConnection && <><Card className="border-border shadow-none"><CardHeader><CardTitle>Shisa</CardTitle><CardDescription>{t.shisaHint}</CardDescription></CardHeader><CardContent className="space-y-3"><p className="text-sm text-muted-foreground">{device ? t.waitingAuthorization : setup?.account.signedIn ? t.credentialPresent : t.notConfigured}</p>{!device && <Button disabled={busy || !setup} onClick={() => void configure({ action: setup?.account.signedIn ? "shisa-logout" : "shisa-login" })}>{setup?.account.signedIn ? t.signOut : t.signIn}</Button>}{device && <div className="space-y-2"><Button onClick={async () => { try { const url = new URL(device.url); if (url.origin !== "https://platform.shisa.ai" || url.pathname !== "/connect" || url.username || url.password) throw new Error(t.loginUrl); if (!onboardingPreview) await openUrl(url.href); } catch (error) { setError(String(error)); } }}><ArrowUpRight />{t.openBrowser}</Button><Input readOnly aria-label={t.loginUrl} value={device.url} onFocus={event => event.target.select()} /><Input readOnly aria-label={t.deviceCode} value={device.code} onFocus={event => event.target.select()} /><p className="text-xs text-muted-foreground">{t.loginHint}</p><Button variant="outline" onClick={() => {if(onboardingPreview) setDevice(null);else void invoke("cancel_control");}}>{t.cancel}</Button></div>}</CardContent></Card>
+                  <Card className="border-border shadow-none"><CardHeader><CardTitle>{t.connections}</CardTitle></CardHeader><CardContent className="space-y-2"><Input aria-label={t.searchProviders} placeholder={t.searchProviders} value={providerQuery} onChange={event => setProviderQuery(event.target.value)} />{!addingConnection && setup && [...new Set([...setup.credentials.map(c => c.providerId), ...setup.customProviders.map(c => c.id)])].filter(id => `${id} ${setup.providers.find(p => p.id === id)?.name ?? ""}`.toLowerCase().includes(providerQuery.toLowerCase())).map(id => ({providerId:id})).map(c => <div key={c.providerId} className="flex items-center gap-2"><Button variant="outline" className="h-auto min-w-0 flex-1 justify-between gap-2 py-3" disabled={busy} onClick={() => { setProvider(c.providerId); setToken(""); const saved = setup?.customProviders.find(p => p.id === c.providerId); setConnectionMode(saved?.editable ? "custom" : "builtin"); setCustom(saved?.editable ? {provider:saved.id,url:saved.url,model:saved.model,edit:true} : {provider:"",url:"",model:"",edit:false}); setAddingConnection(true); }}><span>{setup.providers.find(p => p.id === c.providerId)?.name ?? c.providerId}</span><span className="text-xs text-muted-foreground">{setup.credentials.some(key => key.providerId === c.providerId) ? t.credentialSaved : t.configuredNoKey}</span></Button></div>)}<Button variant="outline" disabled={busy || !setup} onClick={() => { setProviderQuery(""); setProvider(""); setConnectionMode("builtin"); setCustom({provider:"",url:"",model:"",edit:false}); setAddingConnection(true); }}><Plus />{t.addConnection}</Button></CardContent></Card></>}
+                  {addingConnection && <>
+                  <div className="flex items-center justify-between"><h2 className="font-semibold">{custom.edit || provider ? t.editConnection : t.addConnection}</h2><Button variant="ghost" disabled={busy} onClick={() => setAddingConnection(false)}>{t.backConnections}</Button></div>
+                  <Label>{t.service}</Label><Input aria-label={t.searchProviders} placeholder={t.searchProviders} value={providerQuery} onChange={event => setProviderQuery(event.target.value)} /><Select value={connectionMode === "custom" ? "__custom__" : provider} disabled={busy || custom.edit} onValueChange={value => { setToken(""); if (value === "__custom__") { setConnectionMode("custom"); setProvider(""); } else { setConnectionMode("builtin"); setProvider(value); } }}><SelectTrigger className="w-full" aria-label={t.service}><SelectValue placeholder={t.chooseService} /></SelectTrigger><SelectContent>{setup?.providers.filter(p => `${p.name} ${p.id}`.toLowerCase().includes(providerQuery.toLowerCase())).map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}<SelectItem value="__custom__">{t.customProvider}</SelectItem></SelectContent></Select>
+                  {connectionMode === "builtin" && provider &&
+                  <Card className="border-border shadow-none"><CardContent className="space-y-4 pt-6">
+
+                    {provider && <><Label>{t.apiKey}</Label><Input type="password" autoComplete="off" aria-label={t.apiKey} placeholder={t.apiKey} value={token} onChange={event => setToken(event.target.value)} /><div className="flex gap-2"><Button disabled={busy || !token.trim()} onClick={async () => { if (await configure({ action: "provider-key", provider, token })) { setToken(""); setAddingConnection(false); } }}>{t.save}</Button>{setup?.credentials.some(c => c.providerId === provider) && <Button variant="outline" disabled={busy} onClick={() => void configure({ action: "provider-remove", provider })}>{t.removeCredential}</Button>}</div>
+                    <Label>{t.defaultModel}</Label><Select value={setup?.defaultProvider === provider ? setup.defaultModel : ""} onValueChange={model => void configure({ action: "default-model", provider, model })}><SelectTrigger className="w-full" aria-label={t.defaultModel}><SelectValue placeholder={t.defaultModel} /></SelectTrigger><SelectContent>{setup?.models.filter(m => m.provider === provider).map(m => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}</SelectContent></Select></>}
+                  </CardContent></Card>}
+                  {connectionMode === "custom" &&<Card className="border-border shadow-none"><CardHeader><CardTitle>{t.customProvider}</CardTitle><CardDescription>{t.customHint}</CardDescription></CardHeader><CardContent className="space-y-3"><Label>{t.providerId}</Label><Input placeholder={t.providerId} aria-label={t.providerId} disabled={custom.edit} value={custom.provider} onChange={event => setCustom({...custom,provider:event.target.value})} /><Label>{t.endpoint}</Label><Input placeholder={t.endpoint} aria-label={t.endpoint} value={custom.url} onChange={event => setCustom({...custom,url:event.target.value})} /><Label>{t.modelId}</Label><Input placeholder={t.modelId} aria-label={t.modelId} value={custom.model} onChange={event => setCustom({...custom,model:event.target.value})} /><Button disabled={busy || !custom.provider || !custom.url || !custom.model} onClick={async () => { if (await configure({action:"custom-provider",...custom})) setAddingConnection(false); }}>{t.save}</Button></CardContent></Card>}
+                  </>}
+{onboardingPreview && device && <Button onClick={() => {setDevice(null);setPreviewReady(true);setWorkspacePage(false);setSetup(value=>value && ({...value,account:{signedIn:true}}));}}>{ot.complete}</Button>}</div>;
   return <main className="mx-auto flex h-screen max-w-4xl flex-col px-5 sm:px-6">
     <header className="flex items-center justify-between border-b border-border py-3">
       <div className="absolute left-0 right-0 top-0 h-2" data-tauri-drag-region />
       <div className="flex items-center gap-3"><img src={jouzuIcon} alt="" className="size-9" /><h1 data-tauri-drag-region className="min-w-16 flex-1 text-lg font-semibold tracking-tight">Jouzu</h1></div>
-      <div className="flex items-center gap-1"><Dialog open={settingsOpen} onOpenChange={value => { if (!value && device) void invoke("cancel_control"); setSettingsOpen(value); }}>
+      <div className="flex items-center gap-1"><Dialog open={settingsOpen} onOpenChange={value => { if (!value && device) {if(onboardingPreview) setDevice(null); else void invoke("cancel_control")}; setSettingsOpen(value); }}>
         <>{(import.meta.env.DEV || updater.version || jouzuUpdater.version) && <Button variant="outline" onClick={() => {setSettingsTab("about");setSettingsOpen(true);}}>{t.updateAvailable}</Button>}</><DialogTrigger asChild><Button variant="ghost" aria-label={t.settings} title={t.settings}><Settings /></Button></DialogTrigger>
         <DialogContent showCloseButton={false} className="flex h-[min(560px,85dvh)] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl border-border p-0 sm:max-w-3xl">
           {error && <p role="alert" className="border-b border-border bg-red-50 px-4 py-2 text-sm text-red-900">{error}</p>}
@@ -159,19 +196,7 @@ export function App() {
             <ScrollArea className="min-w-0 flex-1">
               <div className="px-5 pb-6 pt-14 sm:px-6">
                 <TabsContent value="providers" className="m-0 space-y-4">
-                  {!addingConnection && <><Card className="border-border shadow-none"><CardHeader><CardTitle>Shisa</CardTitle><CardDescription>{t.shisaHint}</CardDescription></CardHeader><CardContent className="space-y-3"><p className="text-sm text-muted-foreground">{device ? t.waitingAuthorization : setup?.account.signedIn ? t.credentialPresent : t.notConfigured}</p>{!device && <Button disabled={busy || !setup} onClick={() => void configure({ action: setup?.account.signedIn ? "shisa-logout" : "shisa-login" })}>{setup?.account.signedIn ? t.signOut : t.signIn}</Button>}{device && <div className="space-y-2"><Button onClick={async () => { try { const url = new URL(device.url); if (url.origin !== "https://platform.shisa.ai" || url.pathname !== "/connect" || url.username || url.password) throw new Error(t.loginUrl); await openUrl(url.href); } catch (error) { setError(String(error)); } }}><ArrowUpRight />{t.openBrowser}</Button><Input readOnly aria-label={t.loginUrl} value={device.url} onFocus={event => event.target.select()} /><Input readOnly aria-label={t.deviceCode} value={device.code} onFocus={event => event.target.select()} /><p className="text-xs text-muted-foreground">{t.loginHint}</p><Button variant="outline" onClick={() => void invoke("cancel_control")}>{t.cancel}</Button></div>}</CardContent></Card>
-                  <Card className="border-border shadow-none"><CardHeader><CardTitle>{t.connections}</CardTitle></CardHeader><CardContent className="space-y-2"><Input aria-label={t.searchProviders} placeholder={t.searchProviders} value={providerQuery} onChange={event => setProviderQuery(event.target.value)} />{!addingConnection && setup && [...new Set([...setup.credentials.map(c => c.providerId), ...setup.customProviders.map(c => c.id)])].filter(id => `${id} ${setup.providers.find(p => p.id === id)?.name ?? ""}`.toLowerCase().includes(providerQuery.toLowerCase())).map(id => ({providerId:id})).map(c => <div key={c.providerId} className="flex items-center gap-2"><Button variant="outline" className="h-auto min-w-0 flex-1 justify-between gap-2 py-3" disabled={busy} onClick={() => { setProvider(c.providerId); setToken(""); const saved = setup?.customProviders.find(p => p.id === c.providerId); setConnectionMode(saved?.editable ? "custom" : "builtin"); setCustom(saved?.editable ? {provider:saved.id,url:saved.url,model:saved.model,edit:true} : {provider:"",url:"",model:"",edit:false}); setAddingConnection(true); }}><span>{setup.providers.find(p => p.id === c.providerId)?.name ?? c.providerId}</span><span className="text-xs text-muted-foreground">{setup.credentials.some(key => key.providerId === c.providerId) ? t.credentialSaved : t.configuredNoKey}</span></Button></div>)}<Button variant="outline" disabled={busy || !setup} onClick={() => { setProviderQuery(""); setProvider(""); setConnectionMode("builtin"); setCustom({provider:"",url:"",model:"",edit:false}); setAddingConnection(true); }}><Plus />{t.addConnection}</Button></CardContent></Card></>}
-                  {addingConnection && <>
-                  <div className="flex items-center justify-between"><h2 className="font-semibold">{custom.edit || provider ? t.editConnection : t.addConnection}</h2><Button variant="ghost" disabled={busy} onClick={() => setAddingConnection(false)}>{t.backConnections}</Button></div>
-                  <Label>{t.service}</Label><Input aria-label={t.searchProviders} placeholder={t.searchProviders} value={providerQuery} onChange={event => setProviderQuery(event.target.value)} /><Select value={connectionMode === "custom" ? "__custom__" : provider} disabled={busy || custom.edit} onValueChange={value => { setToken(""); if (value === "__custom__") { setConnectionMode("custom"); setProvider(""); } else { setConnectionMode("builtin"); setProvider(value); } }}><SelectTrigger className="w-full" aria-label={t.service}><SelectValue placeholder={t.chooseService} /></SelectTrigger><SelectContent>{setup?.providers.filter(p => `${p.name} ${p.id}`.toLowerCase().includes(providerQuery.toLowerCase())).map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}<SelectItem value="__custom__">{t.customProvider}</SelectItem></SelectContent></Select>
-                  {connectionMode === "builtin" && provider &&
-                  <Card className="border-border shadow-none"><CardContent className="space-y-4 pt-6">
-
-                    {provider && <><Label>{t.apiKey}</Label><Input type="password" autoComplete="off" aria-label={t.apiKey} placeholder={t.apiKey} value={token} onChange={event => setToken(event.target.value)} /><div className="flex gap-2"><Button disabled={busy || !token.trim()} onClick={async () => { if (await configure({ action: "provider-key", provider, token })) { setToken(""); setAddingConnection(false); } }}>{t.save}</Button>{setup?.credentials.some(c => c.providerId === provider) && <Button variant="outline" disabled={busy} onClick={() => void configure({ action: "provider-remove", provider })}>{t.removeCredential}</Button>}</div>
-                    <Label>{t.defaultModel}</Label><Select value={setup?.defaultProvider === provider ? setup.defaultModel : ""} onValueChange={model => void configure({ action: "default-model", provider, model })}><SelectTrigger className="w-full" aria-label={t.defaultModel}><SelectValue placeholder={t.defaultModel} /></SelectTrigger><SelectContent>{setup?.models.filter(m => m.provider === provider).map(m => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}</SelectContent></Select></>}
-                  </CardContent></Card>}
-                  {connectionMode === "custom" &&<Card className="border-border shadow-none"><CardHeader><CardTitle>{t.customProvider}</CardTitle><CardDescription>{t.customHint}</CardDescription></CardHeader><CardContent className="space-y-3"><Label>{t.providerId}</Label><Input placeholder={t.providerId} aria-label={t.providerId} disabled={custom.edit} value={custom.provider} onChange={event => setCustom({...custom,provider:event.target.value})} /><Label>{t.endpoint}</Label><Input placeholder={t.endpoint} aria-label={t.endpoint} value={custom.url} onChange={event => setCustom({...custom,url:event.target.value})} /><Label>{t.modelId}</Label><Input placeholder={t.modelId} aria-label={t.modelId} value={custom.model} onChange={event => setCustom({...custom,model:event.target.value})} /><Button disabled={busy || !custom.provider || !custom.url || !custom.model} onClick={async () => { if (await configure({action:"custom-provider",...custom})) setAddingConnection(false); }}>{t.save}</Button></CardContent></Card>}
-                  </>}
+                  {providerContent}
                 </TabsContent>
                 <TabsContent value="environment" className="m-0 space-y-4"><Card className="border-border shadow-none"><CardHeader><CardTitle>{t.environment}</CardTitle><CardDescription>{t.envHint}</CardDescription></CardHeader><CardContent className="space-y-3">
                   {envRows.map((row,index) => <div key={index} className="space-y-2 rounded-lg border border-border p-3"><div className="flex items-center gap-2">{editingEnv === index ? <Input aria-label={t.variableName} placeholder={t.variableName} value={row.name} disabled={busy} onChange={event => setEnvRows(rows => rows.map((r,i) => i === index ? {...r,name:event.target.value} : r))} /> : <span className="min-w-0 flex-1 truncate text-sm font-medium" title={row.name}>{row.name}</span>}<Button variant="ghost" disabled={busy} onClick={() => setEditingEnv(index)}>{t.editValue}</Button><Switch aria-label={t.enabled} checked={row.enabled} disabled={busy} onCheckedChange={enabled => setEnvRows(rows => rows.map((r,i) => i === index ? {...r,enabled} : r))} /><Button variant="ghost" disabled={busy} aria-label={t.deleteEntry} onClick={() => { setEnvRows(rows => rows.filter((_,i) => i !== index)); setEditingEnv(null); }}><X /></Button></div>{editingEnv === index && <Input type="password" autoComplete="off" aria-label={t.variableValue} placeholder={t.variableValue} value={row.value} disabled={busy} onChange={event => setEnvRows(rows => rows.map((r,i) => i === index ? {...r,value:event.target.value} : r))} />}</div>)}
@@ -219,6 +244,18 @@ export function App() {
       </div>
     </header>
     {error && <div role="alert" className="mt-5 flex items-start justify-between gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-900"><div><p className="font-medium">{t.error}</p><details className="mt-2 break-all"><summary className="cursor-pointer">{t.details}</summary><p className="mt-2">{error}</p></details></div><button onClick={() => setError(null)} aria-label={t.dismiss}><X className="size-4" /></button></div>}
+    {onboardingPreview && <div className="flex flex-wrap items-center gap-2 pt-3 text-xs text-muted-foreground"><span>{ot.review}</span><Button variant="ghost" onClick={()=>{setSetup(previewState());setPreviewReady(false);setWorkspacePage(false);setDevice(null);setAddingConnection(false);}}>{ot.reset}</Button><Button variant="ghost" onClick={()=>{setSetup({...previewState(),profile:"core"});setPreviewReady(false);setWorkspacePage(false);setDevice(null);setAddingConnection(false);}}>{ot.existing}</Button><Button variant="ghost" onClick={()=>{setPreviewReady(true);setWorkspacePage(false);setDevice(null);}}>{ot.ready}</Button></div>}
+    {showSetup ? <section className="min-h-0 flex-1 overflow-y-auto py-6" aria-label={ot.models}>
+      <div className="mx-auto max-w-xl space-y-5">
+        <div className="flex items-center justify-between gap-3"><h2 className="text-xl font-semibold">{setup?.profile ? ot.connect : ot.preferences}</h2>{!!state?.recent.length && <Button variant="ghost" onClick={()=>setWorkspacePage(true)}>{ot.workspaces}</Button>}</div>
+        {!setup?.profile ? <Card><CardContent className="space-y-6 pt-6">
+          <div className="space-y-2"><Label>{t.language}</Label><Select value={locale} onValueChange={value=>setLocale(value as Locale)}><SelectTrigger aria-label={t.language}><SelectValue/></SelectTrigger><SelectContent>{Object.entries(locales).map(([key,label])=><SelectItem key={key} value={key}>{label}</SelectItem>)}</SelectContent></Select><p className="text-sm text-muted-foreground">{t.languageHint}</p></div>
+          <div className="space-y-2"><div className="flex items-center justify-between gap-3"><Label htmlFor="onboarding-japanese">{t.profile}</Label><Switch id="onboarding-japanese" checked={japaneseChoice} onCheckedChange={setJapaneseChoice}/></div><p className="text-sm text-muted-foreground">{t.profileHint}</p><p className="text-sm text-muted-foreground">{t.profileOffHint}</p></div>
+          <Button className="w-full" onClick={()=>void configure({action:"profile",profile:japaneseChoice ? "ja" : "core"})}>{ot.next}</Button>
+        </CardContent></Card> : <><p className="text-sm text-muted-foreground">{ot.hint}</p>{!settingsOpen && providerContent}</>}
+      </div>
+    </section> : <>
+    {needsSetup && <div className="flex justify-end pt-3"><Button variant="outline" onClick={()=>setWorkspacePage(false)}>{ot.models}</Button></div>}
     <section className="flex min-h-0 flex-1 flex-col py-4" aria-label={t.home}>
       <div className="flex items-center gap-2 rounded-t-xl border border-b-0 border-border bg-card px-3 py-2"><Search className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" /><Input aria-label={t.search} placeholder={t.search} value={query} onChange={event => setQuery(event.target.value)} /><Select value={sort} onValueChange={value => { setSort(value); localStorage.setItem("jouzu.folder.sort",value); }}><SelectTrigger className="w-40 shrink-0" aria-label={t.sort}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="added">{t.sortAdded}</SelectItem><SelectItem value="name">{t.sortName}</SelectItem><SelectItem value="path">{t.sortPath}</SelectItem></SelectContent></Select></div>
       <div ref={listRef} aria-busy={busy} className={`flex min-h-0 flex-1 flex-col overflow-hidden rounded-b-xl border bg-card ${dragging ? "border-primary ring-2 ring-primary/30" : "border-border"}`}>
@@ -231,7 +268,7 @@ export function App() {
           {query && !recent.length && <p className="p-5 text-sm text-muted-foreground">{t.noResults}</p>}
         </ScrollArea>
       </div>
-    </section>
+    </section></>}
     {(busy || notice || (state && !state.ready)) && <footer className="flex min-h-10 items-center gap-2 border-t border-border py-4 text-xs text-muted-foreground" role="status" aria-live="polite">{busy && <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />}{operation === "preparing" ? t.preparing : operation === "launching" ? t.launching : operation === "choosing" ? t.choosing : operation === "saving" ? t.saving : (notice ? t[notice] : null) ?? (!state ? t.connecting : !state.ready ? t.repair : "")}</footer>}
   </main>;
 }
