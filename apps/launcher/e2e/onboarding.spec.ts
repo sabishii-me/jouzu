@@ -24,7 +24,8 @@ test('languages are discoverable and provider search includes custom credentials
  await page.goto('http://localhost:1420/?onboarding=1');
  for(const name of ['English','日本語','简体中文','繁體中文']) await expect(page.getByRole('button',{name,exact:true})).toBeVisible();
  await page.getByRole('button',{name:'Continue',exact:true}).click();
- await page.getByRole('button',{name:'Add provider',exact:true}).click();
+ await expect(page.getByRole('button',{name:'Add provider',exact:true})).toHaveCount(0);
+ await expect(page.getByRole('button',{name:'Sign in to Shisa',exact:true})).toBeVisible();
  await expect(page.getByRole('textbox',{name:'Search services'})).toHaveCount(0);
  await page.getByRole('combobox',{name:'Service',exact:true}).click();
  await page.getByRole('textbox',{name:'Search services'}).fill('custom');
