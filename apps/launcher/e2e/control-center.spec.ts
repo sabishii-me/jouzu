@@ -138,3 +138,16 @@ test('launcher preview icon asks once before simulated restart', async ({page})=
  await expect(confirmation).toHaveCount(0);
  await expect(page.getByText('Current version 0.1.21',{exact:true})).toBeVisible();
 });
+
+test('each update item shows what changed', async ({page})=>{
+ await page.addInitScript(()=>localStorage.setItem('jouzu.ui.language','en'));
+ await page.goto('http://localhost:1420/?updates=1');
+ await page.getByRole('button',{name:'Update available',exact:true}).click();
+ const dialog=page.getByRole('dialog');const rows=dialog.locator('section');
+ // The Jouzu row describes the Jouzu release and the Launcher row describes the Launcher release,
+ // so the two rows never show the same note.
+ await expect(rows.nth(0).getByText("What's new",{exact:true})).toBeVisible();
+ await expect(rows.nth(0).getByText(/Git Bash is prepared during installation/)).toBeVisible();
+ await expect(rows.nth(1).getByText(/install only launcher-owned files/)).toBeVisible();
+ await expect(rows.nth(1).getByText(/Git Bash is prepared during installation/)).toHaveCount(0);
+});

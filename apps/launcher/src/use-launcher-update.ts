@@ -3,6 +3,7 @@ import { check, type Update } from "@tauri-apps/plugin-updater";
 export function useLauncherUpdate(configured: boolean) {
  const candidate = useRef<Update | null>(null);
  const [version,setVersion]=useState<string|null>(null);
+ const [notes,setNotes]=useState<string|null>(null);
  const [phase,setPhase]=useState<"idle"|"checking"|"current"|"available"|"downloading"|"installing"|"error">("idle");
  const [progress,setProgress]=useState<number|undefined>();
  const [error,setError]=useState<string|null>(null);
@@ -11,9 +12,9 @@ export function useLauncherUpdate(configured: boolean) {
   if(!configured || lock.current)return;
   lock.current=true;setError(null);setPhase("checking");
   try {
-   await candidate.current?.close();candidate.current=null;setVersion(null);
+   await candidate.current?.close();candidate.current=null;setVersion(null);setNotes(null);
    const update=await check({timeout:20000});candidate.current=update;
-   setVersion(update?.version ?? null);setPhase(update ? "available":"current");
+   setVersion(update?.version ?? null);setNotes(update?.body ?? null);setPhase(update ? "available":"current");
   }catch(e){setError(String(e));setPhase("error");}finally{lock.current=false;}
  }
  async function install() {
@@ -31,5 +32,5 @@ export function useLauncherUpdate(configured: boolean) {
   }catch(e){setError(String(e));setPhase("error");}finally{lock.current=false;}
  }
  useEffect(()=>{ if(configured)void refresh(); },[configured]);
- return {version,phase,progress,error,refresh,install,busy:phase==="checking"||phase==="downloading"||phase==="installing"};
+ return {version,notes,phase,progress,error,refresh,install,busy:phase==="checking"||phase==="downloading"||phase==="installing"};
 }

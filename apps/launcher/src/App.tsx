@@ -232,6 +232,8 @@ export function App() {
                     progress:jouzuUpdater.busy?jouzuUpdater.progress:updater.progress,
                     configured:[!!components?.jouzuUpdaterConfigured,!!components?.launcherUpdaterConfigured],
                     errors:[jouzuUpdater.error,updater.error],
+                    notes:[jouzuUpdater.notes ?? '',updater.notes ?? ''],
+                    sources:[jouzuUpdater.notesSource ?? '', ''],
                     check:()=>{void jouzuUpdater.check();void updater.refresh();},
                     install:index=>{if(index===0)void jouzuUpdater.install();else void updater.install();}
                   }}/>

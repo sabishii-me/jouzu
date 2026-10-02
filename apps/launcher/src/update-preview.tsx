@@ -14,13 +14,16 @@ const text = {
 type Phase='available'|'current'|'checking'|'downloading'|'installing'|'complete'|'error'|'idle';
 export interface UpdateViewState {
  phases: Phase[]; versions: string[]; targets: (string|null)[]; progress?: number;
- configured: boolean[]; errors: (string|null)[]; check:()=>void; install:(index:number)=>void;
+ configured: boolean[]; errors: (string|null)[]; notes: string[]; sources: string[]; check:()=>void; install:(index:number)=>void;
 }
+const noteText={en:["What's new",'Source:','No description was published for this version.'],ja:['変更点','出典:','このバージョンの説明は公開されていません。'],'zh-Hans':['更新内容','来源：','此版本未发布说明。'],'zh-Hant':['更新內容','來源：','此版本未發布說明。']};
+const mockNotes=['- Fixed a startup failure after a Jouzu update.\n- Git Bash is prepared during installation.','- Launcher updates install only launcher-owned files and no longer require closing a running session.'];
 export function UpdatePreview({locale,live}:{locale:Locale;live?:UpdateViewState}) {
  const t=text[locale];const [scenario,setScenario]=useState('available');
  const [mockPhases,setPhases]=useState<Phase[]>(['available','available']);
  const [mockVersions,setVersions]=useState(['0.1.17','0.1.20']);const targets=live?.targets ?? ['0.1.18','0.1.21'];
  const versions=live?.versions ?? mockVersions; const phases=live?.phases ?? mockPhases;
+ const notes=live?.notes ?? mockNotes; const sources=live?.sources ?? ['',''];
  const [confirmRestart,setConfirmRestart]=useState(false);
  const cancel={en:'Cancel',ja:'キャンセル','zh-Hans':'取消','zh-Hant':'取消'}[locale];
  const [mockProgress,setProgress]=useState(0);const timers=useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -36,16 +39,18 @@ export function UpdatePreview({locale,live}:{locale:Locale;live?:UpdateViewState
  function check(){if(live){live.check();return;}setPhases(['checking','checking']);later(()=>setPhases(versions.map((v,i)=>v===targets[i]?'current':'available')),850);}
  function install(index:number){if(live){live.install(index);return;}phase(index,'downloading');setProgress(0);for(let step=1;step<=10;step++)later(()=>{setProgress(step*10);if(step===5&&scenario==='fail'&&!failed.current){failed.current=true;clear();phase(index,'error');}else if(step===10){phase(index,'installing');later(()=>{setVersions(old=>old.map((v,i)=>i===index?(targets[i]??v):v));phase(index,'complete');},900);}},step*180);}
  const busy=phases.some(p=>['checking','downloading','installing'].includes(p));
+ const noteItems=(value:string)=>value.split('\n').map(line=>line.trim()).filter(Boolean).map((line,index)=>line.startsWith('### ')?<li key={index} className="text-xs font-medium text-muted-foreground">{line.slice(4)}</li>:line.startsWith('- ')?<li key={index} className="flex gap-2 text-xs text-muted-foreground"><span aria-hidden="true">•</span><span>{line.slice(2)}</span></li>:<li key={index} className="text-xs text-muted-foreground">{line}</li>);
  return <div className="space-y-6">
   <Dialog open={confirmRestart} onOpenChange={setConfirmRestart}><DialogContent className="sm:max-w-sm"><DialogTitle>{t[8]}</DialogTitle><DialogDescription>{t[15]}</DialogDescription><div className="flex justify-end gap-2"><DialogClose asChild><Button variant="outline">{cancel}</Button></DialogClose><Button onClick={()=>{setConfirmRestart(false);install(1);}}>{t[8]}</Button></div></DialogContent></Dialog>
   <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-lg font-semibold">{t[0]}</h2><p className="mt-1 text-sm text-muted-foreground">{t[1]}</p></div><Button variant="ghost" className="h-9 w-9 p-0" aria-label={t[2]} title={t[2]} disabled={busy} onClick={check}><RefreshCw className={`size-4 ${phases.includes("checking")?"animate-spin":""}`} /></Button></div>
-  <div className="divide-y divide-border rounded-lg border border-border px-5">{phases.map((p,i)=><section key={i} className="flex h-40 flex-col gap-2 py-4 sm:h-32">
+  <div className="divide-y divide-border rounded-lg border border-border px-5">{phases.map((p,i)=><section key={i} className="flex h-44 flex-col gap-2 py-4 sm:h-36">
    <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-medium">{i===0?'Jouzu':t[3]}</h3><p className="mt-1 text-sm text-muted-foreground">{t[4]} {versions[i]}</p></div>
     {p==='available'?<Button className="h-9 w-9 p-0" aria-label={i===0?t[7]:t[8]} title={i===0?t[7]:t[8]} disabled={busy} onClick={()=>i===0?install(i):setConfirmRestart(true)}><Download className="size-4" /></Button>:p==='error'?<Button variant="outline" className="h-9 w-9 p-0" aria-label={t[14]} title={t[14]} disabled={busy} onClick={()=>(live?!!targets[i]:scenario==='fail')?(i===0?install(i):setConfirmRestart(true)):check()}><RefreshCw className="size-4" /></Button>:<span role="status" className="flex items-center gap-2 text-sm text-muted-foreground">{["checking","downloading","installing"].includes(p)&&<LoaderCircle className="size-4 animate-spin"/>}{p==='current'?t[6]:p==='complete'?t[12]:p==='checking'?t[9]:p==='downloading'?t[10]:p==='installing'?t[11]:''}</span>}
    </div>
    <div className="min-h-8 space-y-2">
    {live && !live.configured[i] && <p className="text-sm text-muted-foreground">{{en:'Online updates are unavailable for this version.',ja:'このバージョンではオンライン更新を利用できません。','zh-Hans':'此版本暂不支持在线更新。','zh-Hant':'此版本暫不支援線上更新。'}[locale]}</p>}
    {p==='available'&&<p className="text-sm text-muted-foreground">{t[5]} {targets[i]}</p>}
+   {['available','complete'].includes(p)&&(notes[i]?<div className="h-16 overflow-auto rounded-md bg-muted/40 p-2"><p className="text-xs font-medium">{noteText[locale][0]}</p><ul className="mt-1 space-y-1">{noteItems(notes[i])}</ul>{sources[i]&&<p className="mt-1 text-[10px] text-muted-foreground/70">{noteText[locale][1]} {sources[i]}</p>}</div>:<p className="text-xs text-muted-foreground">{noteText[locale][2]}</p>)}
    {p==='error'&&<p role="alert" className="text-sm text-destructive">{live ? t[13] : scenario==='fail'?({en:'Download failed. Your current version is unchanged.',ja:'ダウンロードに失敗しました。現在のバージョンは変更されていません。','zh-Hans':'下载失败，当前版本未改变。','zh-Hant':'下載失敗，目前版本未變更。'}[locale]):t[13]}</p>}
    {(p==='downloading'||p==='installing')&&<Progress value={p==='downloading'?progress:undefined}/>}
    </div>
