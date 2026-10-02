@@ -40,6 +40,9 @@ jobs:
           npm --prefix apps/launcher run build
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           npm --prefix apps/launcher test
+      - name: Signing tool discovery
+        shell: pwsh
+        run: ./packaging/launcher/signing-tools.test.ps1
       - name: Packaging and update fixtures
         run: |
           $tests = Get-ChildItem packaging/launcher -Filter '*.test.mjs' | ForEach-Object { $_.FullName }

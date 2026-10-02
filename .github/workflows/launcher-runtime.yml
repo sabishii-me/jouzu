@@ -126,7 +126,7 @@ jobs:
     needs: runtime
     environment: launcher-test
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 60
     permissions:
       contents: write
       actions: read
