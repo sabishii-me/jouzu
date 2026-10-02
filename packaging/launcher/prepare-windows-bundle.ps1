@@ -2,7 +2,8 @@ param(
  [Parameter(Mandatory=$true)][string]$Prepared,
  [Parameter(Mandatory=$true)][string]$Pnpm,
  [Parameter(Mandatory=$true)][string]$Output,
- [string]$Version = '0.1.22'
+ [string]$Version = '0.1.22',
+ [string]$UpdateConfigDirectory
 )
 $ErrorActionPreference = 'Stop'
 if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid Launcher version' }
@@ -45,5 +46,11 @@ $config = @{
    template = "$repo/packaging/launcher/installer.nsi"
   }}
  }
+}
+if ($UpdateConfigDirectory) {
+ $updater = Get-Content (Join-Path $UpdateConfigDirectory 'tauri-updater.json') -Raw | ConvertFrom-Json
+ $jouzuConfig = (Resolve-Path (Join-Path $UpdateConfigDirectory 'jouzu-update.json')).Path.Replace('\','/')
+ $config.plugins = $updater.plugins
+ $resources[$jouzuConfig] = 'jouzu-update.json'
 }
 $config | ConvertTo-Json -Depth 12 | Set-Content "$Output/tauri-build.json" -Encoding utf8

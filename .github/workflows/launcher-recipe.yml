@@ -1,0 +1,67 @@
+name: Sign Jouzu update recipe
+on:
+  workflow_dispatch:
+    inputs:
+      jouzu_version:
+        description: Exact official Jouzu npm version
+        type: string
+        required: true
+        default: '0.1.18'
+permissions:
+  contents: read
+jobs:
+  recipe:
+    runs-on: windows-latest
+    environment: launcher-test
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24.19.0'
+      - name: Check configuration
+        env:
+          RECIPE_KEY: ${{ secrets.JOUZU_RECIPE_PRIVATE_KEY }}
+          RECIPE_PUBLIC_KEY: ${{ vars.JOUZU_RECIPE_PUBLIC_KEY }}
+        run: |
+          if (-not $env:RECIPE_KEY -or -not $env:RECIPE_PUBLIC_KEY) { throw 'Recipe signing keys are required' }
+      - name: Prepare published runtime
+        env:
+          JOUZU_VERSION: ${{ inputs.jouzu_version }}
+        run: |
+          npm install --prefix "$env:RUNNER_TEMP/build-tools" pnpm@10.21.0 --ignore-scripts --no-audit --no-fund
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          npm exec -- node packaging/launcher/prepare-published-runtime.mjs "$env:JOUZU_VERSION" "$env:RUNNER_TEMP/jouzu-runtime" "$env:RUNNER_TEMP/build-tools/node_modules/pnpm/bin/pnpm.cjs"
+      - name: Sign and verify recipe
+        env:
+          JOUZU_VERSION: ${{ inputs.jouzu_version }}
+          RECIPE_KEY: ${{ secrets.JOUZU_RECIPE_PRIVATE_KEY }}
+          RECIPE_PUBLIC_KEY: ${{ vars.JOUZU_RECIPE_PUBLIC_KEY }}
+        run: |
+          $key = Join-Path $env:RUNNER_TEMP 'recipe-key.pem'
+          try {
+            [IO.File]::WriteAllText($key,$env:RECIPE_KEY)
+            node packaging/launcher/sign-recipe.mjs "$env:RUNNER_TEMP/jouzu-runtime/recipe" "$env:JOUZU_VERSION" $key
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+            node --input-type=module -e "import{readFileSync}from'node:fs';import{authenticateRecipe}from'./packaging/launcher/authenticate-recipe.mjs';const r=process.env.RUNNER_TEMP+'/jouzu-runtime/recipe/';authenticateRecipe(readFileSync(r+'manifest.json'),readFileSync(r+'manifest.sig'),process.env.RECIPE_PUBLIC_KEY,{version:process.env.JOUZU_VERSION,platform:'win32',arch:'x64',maxBytes:512*1024*1024});"
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          } finally { Remove-Item $key -Force -ErrorAction SilentlyContinue }
+      - name: Prepare flat Release assets
+        run: |
+          $recipe = Join-Path $env:RUNNER_TEMP 'jouzu-runtime/recipe'
+          $assets = New-Item -ItemType Directory -Path "$env:RUNNER_TEMP/recipe-assets"
+          $manifest = Get-Content "$recipe/manifest.json" -Raw | ConvertFrom-Json
+          foreach ($file in $manifest.files) { Copy-Item (Join-Path $recipe $file.path) (Join-Path $assets.FullName $file.path.Replace('/','__')) }
+          Copy-Item "$recipe/manifest.json","$recipe/manifest.sig" $assets.FullName
+          Copy-Item "$env:RUNNER_TEMP/jouzu-runtime/source.json" $assets.FullName
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: signed-jouzu-recipe
+          path: ${{ runner.temp }}/recipe-assets/*
+          if-no-files-found: error
+          retention-days: 7
