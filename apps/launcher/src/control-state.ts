@@ -2,7 +2,7 @@ export interface ControlState {
   modelReady?: boolean;
   connectionCheck?: { provider: string; status: string };
   profile: string | null;
-  account: { signedIn: boolean };
+  account: { signedIn: boolean; revocation?: "confirmed" | "unconfirmed" | "not-linked" };
   customProviders: { id: string; url: string; model: string; editable: boolean }[];
   providers: { id: string; name: string }[];
   credentials: { providerId: string }[];
@@ -16,6 +16,7 @@ export function parseControlState(value: unknown): ControlState {
   if (!record(value)) return fail();
   if (value.schemaVersion !== 1 || !record(value.account) || typeof value.account.signedIn !== "boolean" || !(value.profile === null || typeof value.profile === "string")) return fail();
   if (value.modelReady !== undefined && typeof value.modelReady !== "boolean") return fail();
+  if (value.account.revocation !== undefined && !["confirmed", "unconfirmed", "not-linked"].includes(value.account.revocation as string)) return fail();
   const fields = { credentials: ["providerId"], providers: ["id", "name"], models: ["provider", "id", "name"], customProviders: ["id"] };
   for (const [key, required] of Object.entries(fields)) {
     const rows = value[key];

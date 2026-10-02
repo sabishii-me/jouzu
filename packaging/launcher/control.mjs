@@ -8,6 +8,8 @@ const root = process.argv[1]?.endsWith("control.mjs") ? process.argv[2] : proces
 const appRoot = process.argv[1]?.endsWith('control.mjs') ? (process.argv[3] || join(root, 'app')) : (process.argv[2] || join(root, 'app'));
 const load = name => import(pathToFileURL(join(appRoot, 'node_modules/jouzu/dist', `${name}.js`)));
 let action = "status";
+// Remote revocation is advisory: a saved sign-out still clears local credentials.
+let signOutRevocation;
 try {
   const request = JSON.parse(readFileSync(0, 'utf8'));
   action = request.action;
@@ -52,7 +54,7 @@ try {
     const { logoutShisa } = await load('shisa-link/logout');
     const result = await logoutShisa({ paths });
     if (!result.localCleared) throw new Error('Local signout failed');
-    if (result.revocation === 'unconfirmed') throw new Error('Remote revocation unconfirmed');
+    signOutRevocation = result.revocation;
   } else if (request.action === 'custom-provider') {
     if (!/^[a-z][a-z0-9-]{0,63}$/.test(request.provider) || request.provider === 'shisa') throw new Error('Invalid provider');
     const url = new URL(request.url);
@@ -103,7 +105,7 @@ try {
   const { readShisaAccountStatus } = await load('shisa-link/account');
   const currentRuntime = await ModelRuntime.create({ authPath: join(paths.agentDir, 'auth.json'), modelsPath: join(paths.agentDir, 'models.json'), allowModelNetwork: false, refreshOnCreate: false });
   const availableModels = await currentRuntime.getAvailable();
-  console.log(JSON.stringify({ schemaVersion: 1, modelReady: availableModels.length > 0, profile: readProfileChoice(profilePath)?.profile ?? null, account: readShisaAccountStatus(paths), customProviders, providers: runtime.getProviders().map(p => ({ id: p.id, name: p.name ?? p.id })), credentials: await auth.list(), models: runtime.getModels().map(m => ({ provider: m.provider, id: m.id, name: m.name })), defaultProvider: settings.getDefaultProvider(), defaultModel: settings.getDefaultModel() }));
+  console.log(JSON.stringify({ schemaVersion: 1, modelReady: availableModels.length > 0, profile: readProfileChoice(profilePath)?.profile ?? null, account: { ...readShisaAccountStatus(paths), ...(signOutRevocation ? { revocation: signOutRevocation } : {}) }, customProviders, providers: runtime.getProviders().map(p => ({ id: p.id, name: p.name ?? p.id })), credentials: await auth.list(), models: runtime.getModels().map(m => ({ provider: m.provider, id: m.id, name: m.name })), defaultProvider: settings.getDefaultProvider(), defaultModel: settings.getDefaultModel() }));
 } catch {
   // Do not relay raw upstream errors: they can contain credentials or server input.
   const messages = {
