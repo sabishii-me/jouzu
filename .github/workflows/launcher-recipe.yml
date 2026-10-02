@@ -1,5 +1,8 @@
 name: Sign Jouzu update recipe
 on:
+  push:
+    branches: ['feat/tauri-launcher']
+    paths: ['.github/workflows/launcher-recipe.yml']
   workflow_dispatch:
     inputs:
       jouzu_version:
@@ -32,14 +35,14 @@ jobs:
           if (-not $env:RECIPE_KEY -or -not $env:RECIPE_PUBLIC_KEY) { throw 'Recipe signing keys are required' }
       - name: Prepare published runtime
         env:
-          JOUZU_VERSION: ${{ inputs.jouzu_version }}
+          JOUZU_VERSION: ${{ inputs.jouzu_version || '0.1.18' }}
         run: |
           npm install --prefix "$env:RUNNER_TEMP/build-tools" pnpm@10.21.0 --ignore-scripts --no-audit --no-fund
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           npm exec -- node packaging/launcher/prepare-published-runtime.mjs "$env:JOUZU_VERSION" "$env:RUNNER_TEMP/jouzu-runtime" "$env:RUNNER_TEMP/build-tools/node_modules/pnpm/bin/pnpm.cjs"
       - name: Sign and verify recipe
         env:
-          JOUZU_VERSION: ${{ inputs.jouzu_version }}
+          JOUZU_VERSION: ${{ inputs.jouzu_version || '0.1.18' }}
           RECIPE_KEY: ${{ secrets.JOUZU_RECIPE_PRIVATE_KEY }}
           RECIPE_PUBLIC_KEY: ${{ vars.JOUZU_RECIPE_PUBLIC_KEY }}
         run: |
