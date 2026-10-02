@@ -1,4 +1,5 @@
 export interface ControlState {
+  modelReady?: boolean;
   connectionCheck?: { provider: string; status: string };
   profile: string | null;
   account: { signedIn: boolean };
@@ -14,6 +15,7 @@ export function parseControlState(value: unknown): ControlState {
   const fail = () => { throw new Error("Configuration service response is incompatible. Restart the development launcher and retry."); };
   if (!record(value)) return fail();
   if (value.schemaVersion !== 1 || !record(value.account) || typeof value.account.signedIn !== "boolean" || !(value.profile === null || typeof value.profile === "string")) return fail();
+  if (value.modelReady !== undefined && typeof value.modelReady !== "boolean") return fail();
   const fields = { credentials: ["providerId"], providers: ["id", "name"], models: ["provider", "id", "name"], customProviders: ["id"] };
   for (const [key, required] of Object.entries(fields)) {
     const rows = value[key];

@@ -36,8 +36,7 @@ export function App() {
   const [workspacePage, setWorkspacePage] = useState(false);
   const [japaneseOverride, setJapaneseOverride] = useState<boolean | null>(null);
   const japaneseChoice = japaneseOverride ?? locale === "ja";
-  const needsSetup = onboardingPreview && !previewReady;
-  const showSetup = needsSetup && !workspacePage;
+
   useEffect(() => { document.documentElement.lang = locale; localStorage.setItem("jouzu.ui.language", locale); }, [locale]);
   const [state, setState] = useState<LauncherState | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -53,6 +52,10 @@ export function App() {
   const [addingConnection, setAddingConnection] = useState(false);
   const [query, setQuery] = useState("");
   const [setup, setSetup] = useState<ControlState | null>(() => onboardingPreview ? previewState() : null);
+  const modelReady = onboardingPreview ? previewReady : setup?.modelReady;
+  const needsSetup = modelReady === false;
+  const showSetup = needsSetup && !workspacePage;
+  useEffect(() => { setWorkspacePage(false); }, [modelReady]);
   const [device, setDevice] = useState<{url:string;code:string} | null>(null);
   useEffect(() => {
     if (!isTauri() || onboardingPreview) return;
@@ -70,7 +73,7 @@ export function App() {
   async function saveEnvironment() {
     if (onboardingPreview) {setEditingEnv(null);return;}
     setOperation("saving"); setError(null);
-    try { await invoke("environment_save", { entries: envRows }); setEditingEnv(null); }
+    try { await invoke("environment_save", { entries: envRows }); setEditingEnv(null); setSetup(parseControlState(await invoke<unknown>("control_request", {request:{action:"status"}}))); }
     catch (error) { setError(String(error)); }
     finally { setOperation(null); }
   }
@@ -122,11 +125,12 @@ export function App() {
     finally { setOperation(null); setDevice(null); }
   }
   useEffect(() => { if (!notice) return; const timer = setTimeout(() => setNotice(null), 4000); return () => clearTimeout(timer); }, [notice]);
-  useEffect(() => { if (settingsOpen && isTauri()) { void configure({ action: "status" }); void readEnvironment(); } }, [settingsOpen]);
+  useEffect(() => { if (settingsOpen && isTauri()) { if (!setup && !busyRef.current) void configure({ action: "status" }); void readEnvironment(); } }, [settingsOpen]);
   const refresh = async () => setState(await invoke<LauncherState>("launcher_state"));
   useEffect(() => {
     if (!isTauri() || onboardingPreview) return;
     refresh().catch(error => setError(String(error)));
+    void configure({action:"status"});
     getVersion().then(setVersion).catch(error => setError(String(error)));
     invoke<Components>("component_versions").then(setComponents).catch(error => setError(String(error)));
   }, []);
@@ -135,6 +139,7 @@ export function App() {
     if (!state?.ready) return;
     setOperation("launching"); setError(null); setNotice(null);
     try {
+      if (needsSetup) {setWorkspacePage(false);return;}
       setOperation("launching");
       await invoke("launch_jouzu", { path });
       setNotice("requested");
@@ -179,12 +184,12 @@ export function App() {
                   {connectionMode === "custom" &&<div className="space-y-3 border-t border-border pt-4"><p className="text-sm text-muted-foreground">{t.customHint}</p><Label>{t.providerId}</Label><Input placeholder={t.providerId} aria-label={t.providerId} disabled={custom.edit} value={custom.provider} onChange={event => setCustom({...custom,provider:event.target.value})} /><Label>{t.endpoint}</Label><Input placeholder={t.endpoint} aria-label={t.endpoint} value={custom.url} onChange={event => setCustom({...custom,url:event.target.value})} /><Label>{t.modelId}</Label><Input placeholder={t.modelId} aria-label={t.modelId} value={custom.model} onChange={event => setCustom({...custom,model:event.target.value})} /><Label>{t.apiKey}</Label><Input type="password" autoComplete="off" aria-label={t.apiKey} placeholder={t.apiKey} value={token} onChange={event=>setToken(event.target.value)}/><div className="flex justify-end pt-1"><Button disabled={busy || !custom.provider || !custom.url || !custom.model} onClick={async () => { if (await configure({action:"custom-provider",...custom})) { setCustom(value=>({...value,edit:true})); if (token.trim() && !await configure({action:"provider-key",provider:custom.provider,token})) return; setToken("");setAddingConnection(false); } }}>{t.save}</Button></div></div>}
                   </div></section>}
 {onboardingPreview && device && <Button onClick={() => {setDevice(null);setPreviewReady(true);setWorkspacePage(false);setSetup(value=>value && ({...value,account:{signedIn:true}}));}}>{ot.complete}</Button>}</div>;
-  return <main className={`flex h-screen w-full flex-col px-5 sm:px-6 ${onboardingPreview ? "" : "mx-auto max-w-4xl"}`}>
+  return <main className="flex h-screen w-full flex-col px-5 sm:px-6">
     <header className="flex items-center justify-between border-b border-border py-3">
       <div className="absolute left-0 right-0 top-0 h-2" data-tauri-drag-region />
       <div className="flex items-center gap-3"><img src={jouzuIcon} alt="" className="size-9" /><h1 data-tauri-drag-region className="min-w-16 flex-1 text-lg font-semibold tracking-tight">Jouzu</h1></div>
       <div className="flex items-center gap-1"><Dialog open={settingsOpen} onOpenChange={value => { if (!value && device) {if(onboardingPreview) setDevice(null); else void invoke("cancel_control")}; setSettingsOpen(value); }}>
-        <>{(import.meta.env.DEV || updater.version || jouzuUpdater.version) && <Button variant="outline" onClick={() => {setSettingsTab("about");setSettingsOpen(true);}}>{t.updateAvailable}</Button>}</><DialogTrigger asChild><Button variant="ghost" aria-label={t.settings} title={t.settings}><Settings /></Button></DialogTrigger>
+        <>{(onboardingPreview || updater.version || jouzuUpdater.version) && <Button variant="outline" onClick={() => {setSettingsTab("about");setSettingsOpen(true);}}>{t.updateAvailable}</Button>}</><DialogTrigger asChild><Button variant="ghost" aria-label={t.settings} title={t.settings}><Settings /></Button></DialogTrigger>
         <DialogContent showCloseButton={false} className="flex h-[min(560px,85dvh)] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl border-border p-0 sm:max-w-3xl">
           {error && <p role="alert" className="border-b border-border bg-red-50 px-4 py-2 text-sm text-red-900">{error}</p>}
           <DialogDescription className="sr-only">{t.preferences}</DialogDescription>
@@ -227,7 +232,7 @@ export function App() {
                       catch(error){setError(String(error));}finally{setOperation(null);}
                     }}>{recoveryText[locale].action}</Button>
                   </details>
-                  <UpdatePreview locale={locale} live={import.meta.env.DEV ? undefined : {
+                  <UpdatePreview locale={locale} live={onboardingPreview ? undefined : {
                     phases:[jouzuUpdater.phase === 'preparing' || jouzuUpdater.phase === 'verifying' || jouzuUpdater.phase === 'activating' || jouzuUpdater.phase === 'staged' ? 'installing' : jouzuUpdater.phase as 'idle'|'checking'|'available'|'current'|'downloading'|'installing'|'complete'|'error', updater.phase],
                     versions:[components?.jouzu ?? t.unavailable, version ?? t.unavailable],
                     targets:[jouzuUpdater.version,updater.version],
@@ -249,7 +254,7 @@ export function App() {
     </header>
     {error && <div role="alert" className="mt-5 flex items-start justify-between gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-900"><div><p className="font-medium">{t.error}</p><details className="mt-2 break-all"><summary className="cursor-pointer">{t.details}</summary><p className="mt-2">{error}</p></details></div><button onClick={() => setError(null)} aria-label={t.dismiss}><X className="size-4" /></button></div>}
     {onboardingPreview && <div className="flex flex-wrap items-center gap-2 pt-3 text-xs text-muted-foreground"><span>{ot.review}</span><Button variant="ghost" onClick={()=>{setJapaneseOverride(null);setSetup(previewState());setPreviewReady(false);setWorkspacePage(false);setDevice(null);setAddingConnection(false);}}>{ot.reset}</Button><Button variant="ghost" onClick={()=>{setSetup({...previewState(),profile:"core"});setPreviewReady(false);setWorkspacePage(false);setDevice(null);setAddingConnection(false);}}>{ot.existing}</Button><Button variant="ghost" onClick={()=>{setPreviewReady(true);setWorkspacePage(false);setDevice(null);}}>{ot.ready}</Button></div>}
-    {showSetup ? <LauncherPage title={setup?.profile ? ot.connect : ot.preferences} description={setup?.profile ? ot.hint : ot.preferencesHint} action={!!state?.recent.length && <Button variant="ghost" onClick={()=>setWorkspacePage(true)}>{ot.workspaces}</Button>}>
+    {!onboardingPreview && !setup ? <LauncherPage title={t.heading} description={t.connecting}><div className="p-6"><Button disabled={busy} onClick={()=>void configure({action:"status"})}>{busy ? t.loading : t.retry}</Button></div></LauncherPage> : showSetup ? <LauncherPage title={setup?.profile ? ot.connect : ot.preferences} description={setup?.profile ? ot.hint : ot.preferencesHint} action={!!state?.recent.length && <Button variant="ghost" onClick={()=>setWorkspacePage(true)}>{ot.workspaces}</Button>}>
       <ScrollArea className="min-h-0 flex-1"><div className="p-5 sm:p-6">
         {!setup?.profile ? <div className="space-y-6 pt-2">
           <div className="space-y-2"><Label>{t.language}</Label><div role="group" aria-label={t.language} className="flex flex-wrap gap-2">{Object.entries(locales).map(([key,label])=><Button key={key} lang={key} className="min-w-28" variant={locale===key ? "default" : "outline"} aria-pressed={locale===key} onClick={()=>setLocale(key as Locale)}>{label}</Button>)}</div><p className="text-sm text-muted-foreground">{t.languageHint}</p></div>
