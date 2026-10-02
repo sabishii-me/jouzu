@@ -6,7 +6,7 @@ if (-not $Version) { $Version = (Get-Content (Join-Path $repo 'apps/launcher/pac
 if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid launcher version' }
 $inputRoot = (Resolve-Path $InputDirectory).Path
 $output = Join-Path $env:RUNNER_TEMP 'launcher-release'
-New-Item -ItemType Directory $output | Out-Null
+New-Item -ItemType Directory $output -Force | Out-Null
 
 # Signing tools follow the Artifact Signing SignTool integration: nuget.exe installs the Windows
 # SDK build tools and the signing client, and .NET 8 (present on the runner image) runs the dlib.
