@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod active_app;
+mod recovery;
 mod node_path;
 mod update_lock;
 mod jouzu_update;
@@ -217,6 +218,7 @@ fn main() {
             forget_workspace,
             add_workspaces,
             component_versions,
+            recovery::repair_jouzu,
             jouzu_update::jouzu_update,
             control::control_request,
             control::cancel_control,

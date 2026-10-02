@@ -1,3 +1,4 @@
+import { recoveryText } from "./recovery-text";
 import { UpdatePreview } from "./update-preview";
 import { useJouzuUpdate } from "./use-jouzu-update";
 import { useLauncherUpdate } from "./use-launcher-update";
@@ -188,6 +189,15 @@ export function App() {
 
                 </TabsContent>
                 <TabsContent value="about" className="m-0 space-y-4">
+                  <details><summary className="cursor-pointer text-sm">{recoveryText[locale].title}</summary>
+                    <p className="my-2 text-sm text-muted-foreground">{recoveryText[locale].description}</p>
+                    <Button variant="outline" disabled={busy || updater.busy || jouzuUpdater.busy || import.meta.env.DEV} onClick={async()=>{
+                      if (!await confirm(recoveryText[locale].description,{title:recoveryText[locale].title,kind:"warning"})) return;
+                      setOperation("saving");setError(null);
+                      try {await invoke("repair_jouzu");setComponents(await invoke<Components>("component_versions"));await refresh();}
+                      catch(error){setError(String(error));}finally{setOperation(null);}
+                    }}>{recoveryText[locale].action}</Button>
+                  </details>
                   <UpdatePreview locale={locale} live={import.meta.env.DEV ? undefined : {
                     phases:[jouzuUpdater.phase === 'preparing' || jouzuUpdater.phase === 'verifying' || jouzuUpdater.phase === 'activating' || jouzuUpdater.phase === 'staged' ? 'installing' : jouzuUpdater.phase as 'idle'|'checking'|'available'|'current'|'downloading'|'installing'|'complete'|'error', updater.phase],
                     versions:[components?.jouzu ?? t.unavailable, version ?? t.unavailable],
