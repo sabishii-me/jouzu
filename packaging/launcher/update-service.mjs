@@ -1,3 +1,4 @@
+import { fetchUpdateFile, recipeFileUrl } from './update-transport.mjs';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { authenticateRecipe } from './authenticate-recipe.mjs';
@@ -15,7 +16,7 @@ try {
  if(base.protocol!=='https:'&&!local&&!testHttp)throw Error('Update source requires HTTPS');
  if(base.username||base.password||base.search||base.hash||!base.pathname.endsWith('/'))throw Error('Invalid update source');
  async function fetchSmall(name,limit){
-  const response=await fetch(new URL(name,base),{redirect:'error',signal:AbortSignal.timeout(20000)});
+  const response=await fetchUpdateFile(recipeFileUrl(base,name),{signal:AbortSignal.timeout(20000)});
   if(!response.ok||!response.body)throw Error('Update source unavailable');
   const reader=response.body.getReader();let size=0;const chunks=[];
   try{for(;;){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>limit)throw Error('Invalid update metadata');chunks.push(value);}}finally{await reader.cancel();}

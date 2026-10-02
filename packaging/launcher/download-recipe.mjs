@@ -1,10 +1,11 @@
+import { fetchUpdateFile, recipeFileUrl } from './update-transport.mjs';
 import { mkdirSync, writeFileSync, rmSync, existsSync, renameSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { authenticateRecipe, verifyRecipeFile } from './authenticate-recipe.mjs';
 
 async function boundedDownload(url, maxBytes, signal) {
- const response = await fetch(url, {signal, redirect:'error'});
+ const response = await fetchUpdateFile(url, {signal});
  if (!response.ok || !response.body) throw new Error('Update download failed');
  const length=response.headers.get('content-length');
  if(length !== null && (!/^\d+$/.test(length) || Number(length)>maxBytes)) throw new Error('Update download exceeds size limit');
@@ -31,8 +32,8 @@ export async function downloadRecipe({url,publicKey,expected,destination,signal,
  if(existsSync(output))throw new Error('Recipe destination already exists');
  const timeout=AbortSignal.timeout(10*60*1000);
  const combined=signal ? AbortSignal.any([signal,timeout]) : timeout;
- const bytes=await boundedDownload(new URL('manifest.json',source),1024*1024,combined);
- const signature=await boundedDownload(new URL('manifest.sig',source),64,combined);
+ const bytes=await boundedDownload(recipeFileUrl(source,'manifest.json'),1024*1024,combined);
+ const signature=await boundedDownload(recipeFileUrl(source,'manifest.sig'),64,combined);
  const manifest=authenticateRecipe(bytes,signature,publicKey,expected);
  const temporary=`${output}.download-${randomUUID()}`;
  mkdirSync(temporary);
@@ -41,7 +42,7 @@ export async function downloadRecipe({url,publicKey,expected,destination,signal,
   onProgress({phase:'downloading',downloaded,total});
   for(const file of manifest.files) {
    combined.throwIfAborted();
-   const bytes=await boundedDownload(new URL(file.path,source),file.size,combined);
+   const bytes=await boundedDownload(recipeFileUrl(source,file.path),file.size,combined);
    verifyRecipeFile(bytes,file);
    const target=join(temporary,file.path);mkdirSync(dirname(target),{recursive:true});
    writeFileSync(target,bytes,{flag:'wx'});
