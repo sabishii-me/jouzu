@@ -75,19 +75,23 @@ test("a shutdown-terminated dependency delivers one decision after reopen and ne
 	// The task extension kills every running task on session_shutdown, whatever its reason, so the
 	// wait is decided while no session can receive it. The decision must survive to the next one.
 	await idle(500);
-	const appended = next.bodies.map((body) => JSON.stringify(body.messages.at(-1)));
-	const decisions = appended.filter((text) => text.includes('kind\\":\\"wait'));
-	assert.equal(decisions.length, 1, "the pending wait decision is delivered exactly once after reopen");
-	assert.ok(decisions[0].includes(wait.token), "it carries the original wait token");
+	const decisions = () =>
+		next.bodies
+			.map((body) => JSON.stringify(body.messages.at(-1)))
+			.filter((text) => text.includes('kind\\":\\"wait'));
+	const delivered = decisions();
+	assert.equal(delivered.length, 1, "the pending wait decision is delivered exactly once after reopen");
+	assert.ok(delivered[0].includes(wait.token), "it carries the original wait token");
 	assert.ok(
-		decisions[0].includes('kind\\":\\"result'),
+		delivered[0].includes('kind\\":\\"result'),
 		"the terminated execution's result composes into the same wake",
 	);
 
-	const delivered = next.bodies.length;
+	// A new user turn and the active loop's work turns are not replayed wait decisions.
+	await next.session.prompt("continue after the wait decision");
 	await idle(600);
-	assert.equal(
-		next.bodies.length,
+	assert.deepEqual(
+		decisions(),
 		delivered,
 		`a delivered decision is not replayed on later turns: ${JSON.stringify({
 			appended: next.bodies.map((body) => body.messages.at(-1)),
