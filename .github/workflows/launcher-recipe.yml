@@ -29,10 +29,11 @@ jobs:
           node-version: '24.19.0'
       - name: Check configuration
         env:
-          RECIPE_KEY: ${{ secrets.JOUZU_RECIPE_PRIVATE_KEY }}
-          RECIPE_PUBLIC_KEY: ${{ vars.JOUZU_RECIPE_PUBLIC_KEY }}
-        run: |
-          if (-not $env:RECIPE_KEY -or -not $env:RECIPE_PUBLIC_KEY) { throw 'Recipe signing keys are required' }
+          JOUZU_RECIPE_PRIVATE_KEY: ${{ secrets.JOUZU_RECIPE_PRIVATE_KEY }}
+          JOUZU_RECIPE_PUBLIC_KEY: ${{ vars.JOUZU_RECIPE_PUBLIC_KEY }}
+          JOUZU_RECIPE_BASE_URL: ${{ vars.JOUZU_RECIPE_BASE_URL }}
+          LAUNCHER_PUBLIC_KEY: ${{ vars.LAUNCHER_PUBLIC_KEY }}
+        run: node packaging/launcher/signing-preflight.mjs jouzu
       - name: Prepare published runtime
         env:
           JOUZU_VERSION: ${{ inputs.jouzu_version || '0.1.18' }}
