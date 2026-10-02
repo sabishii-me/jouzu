@@ -83,6 +83,19 @@ jobs:
           foreach ($file in $manifest.files) { Copy-Item (Join-Path $recipe $file.path) (Join-Path $assets.FullName $file.path.Replace('/','__')) }
           Copy-Item "$recipe/manifest.json","$recipe/manifest.sig" $assets.FullName
           Copy-Item "$env:RUNNER_TEMP/jouzu-runtime/source.json" $assets.FullName
+      - name: Archive the qualified runtime for the launcher build
+        run: |
+          tar -czf "$env:RUNNER_TEMP/jouzu-runtime.tgz" -C "$env:RUNNER_TEMP/jouzu-runtime" source.json recipe/package.json recipe/pnpm-lock.yaml recipe/artifacts app
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          (Get-FileHash "$env:RUNNER_TEMP/jouzu-runtime.tgz" -Algorithm SHA256).Hash | Out-File "$env:RUNNER_TEMP/jouzu-runtime.sha256" -Encoding ascii
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: windows-published-runtime
+          path: |
+            ${{ runner.temp }}/jouzu-runtime.tgz
+            ${{ runner.temp }}/jouzu-runtime.sha256
+          if-no-files-found: error
+          retention-days: 7
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: signed-jouzu-recipe

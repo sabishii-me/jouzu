@@ -12,10 +12,9 @@ on:
         type: boolean
         default: false
       runtime_run_id:
-        description: Successful run containing a qualified runtime artifact (empty prepares from npm)
+        description: Successful recipe or runtime run providing the qualified Jouzu runtime
         type: string
-        default: ''
-        required: false
+        required: true
 permissions:
   contents: read
   actions: read
@@ -56,7 +55,6 @@ jobs:
         run: |
           npm install --prefix "$env:RUNNER_TEMP/build-tools" pnpm@10.21.0 --ignore-scripts --no-audit --no-fund
       - name: Restore qualified runtime
-        if: inputs.runtime_run_id != ''
         env:
           GH_TOKEN: ${{ github.token }}
           RUNTIME_RUN_ID: ${{ inputs.runtime_run_id }}
@@ -64,7 +62,8 @@ jobs:
         run: |
           if ($env:RUNTIME_RUN_ID -notmatch '^\d+$') { throw 'Invalid runtime run ID' }
           $run = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:RUNTIME_RUN_ID" | ConvertFrom-Json
-          if ($LASTEXITCODE -or $run.conclusion -ne 'success' -or $run.path -ne '.github/workflows/launcher-runtime.yml') { throw 'Runtime source must be a successful runtime workflow' }
+          $sources = @('.github/workflows/launcher-recipe.yml', '.github/workflows/launcher-runtime.yml')
+          if ($LASTEXITCODE -or $run.conclusion -ne 'success' -or $sources -notcontains $run.path) { throw 'Runtime source must be a successful recipe or runtime workflow' }
           gh run download $env:RUNTIME_RUN_ID --repo $env:GITHUB_REPOSITORY --name windows-published-runtime --dir "$env:RUNNER_TEMP/runtime-input"
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           $archive = "$env:RUNNER_TEMP/runtime-input/jouzu-runtime.tgz"
@@ -77,17 +76,6 @@ jobs:
           if ($package.name -ne 'jouzu' -or $package.version -ne $env:JOUZU_VERSION) { throw 'Runtime version mismatch' }
           node packaging/launcher/verify-runtime.mjs "$env:RUNNER_TEMP/jouzu-runtime/app"
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-      - name: Prepare official published Jouzu runtime
-        if: inputs.runtime_run_id == ''
-        env:
-          JOUZU_VERSION: ${{ inputs.jouzu_version || '0.1.18' }}
-        run: |
-          npm exec -- node packaging/launcher/prepare-published-runtime.mjs "$env:JOUZU_VERSION" "$env:RUNNER_TEMP/jouzu-runtime" "$env:RUNNER_TEMP/build-tools/node_modules/pnpm/bin/pnpm.cjs"
-      - name: Archive qualified inputs and application
-        run: |
-          tar -czf "$env:RUNNER_TEMP/jouzu-runtime.tgz" -C "$env:RUNNER_TEMP/jouzu-runtime" source.json recipe/package.json recipe/pnpm-lock.yaml recipe/artifacts app
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          (Get-FileHash "$env:RUNNER_TEMP/jouzu-runtime.tgz" -Algorithm SHA256).Hash | Out-File "$env:RUNNER_TEMP/jouzu-runtime.sha256" -Encoding ascii
       - name: Build and test signing inputs
         env:
           LAUNCHER_PUBLIC_KEY: ${{ vars.LAUNCHER_PUBLIC_KEY }}
@@ -132,14 +120,6 @@ jobs:
         with:
           name: launcher-signing-inputs
           path: ${{ runner.temp }}/signing-inputs.tgz
-          if-no-files-found: error
-          retention-days: 7
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: windows-published-runtime
-          path: |
-            ${{ runner.temp }}/jouzu-runtime.tgz
-            ${{ runner.temp }}/jouzu-runtime.sha256
           if-no-files-found: error
           retention-days: 7
   sign-publish:
