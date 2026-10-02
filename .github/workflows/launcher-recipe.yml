@@ -67,10 +67,12 @@ jobs:
           RECIPE_KEY: ${{ secrets.JOUZU_RECIPE_PRIVATE_KEY }}
           RECIPE_PUBLIC_KEY: ${{ vars.JOUZU_RECIPE_PUBLIC_KEY }}
         run: |
+          $notes = "$env:RUNNER_TEMP/jouzu-runtime/notes.json"
+          if (-not (Test-Path $notes)) { throw 'Release notes are required for every update item' }
           $key = Join-Path $env:RUNNER_TEMP 'recipe-key.pem'
           try {
             [IO.File]::WriteAllText($key,$env:RECIPE_KEY)
-            node packaging/launcher/sign-recipe.mjs "$env:RUNNER_TEMP/jouzu-runtime/recipe" "$env:JOUZU_VERSION" $key
+            node packaging/launcher/sign-recipe.mjs "$env:RUNNER_TEMP/jouzu-runtime/recipe" "$env:JOUZU_VERSION" $key "$env:RUNNER_TEMP/jouzu-runtime/notes.json"
             if ($LASTEXITCODE) { exit $LASTEXITCODE }
             node --input-type=module -e "import{readFileSync}from'node:fs';import{authenticateRecipe}from'./packaging/launcher/authenticate-recipe.mjs';const r=process.env.RUNNER_TEMP+'/jouzu-runtime/recipe/';authenticateRecipe(readFileSync(r+'manifest.json'),readFileSync(r+'manifest.sig'),process.env.RECIPE_PUBLIC_KEY,{version:process.env.JOUZU_VERSION,platform:'win32',arch:'x64',maxBytes:512*1024*1024});"
             if ($LASTEXITCODE) { exit $LASTEXITCODE }

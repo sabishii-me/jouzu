@@ -2,6 +2,8 @@ import { createHash, verify, createPublicKey } from 'node:crypto';
 
 const MAX_MANIFEST_BYTES = 1024 * 1024;
 const MAX_FILES = 4096;
+const MAX_NOTES_BYTES = 8192;
+const MAX_SOURCE_BYTES = 256;
 
 /** Verify the exact manifest bytes before parsing any update-controlled paths.
  * Public keys come from launcher configuration, never from the update response.
@@ -14,6 +16,8 @@ export function authenticateRecipe(bytes, signature, publicKey, expected) {
  if (!Buffer.isBuffer(signature) || signature.length !== 64 || !verify(null, bytes, key, signature)) throw new Error('Recipe signature rejected');
  const manifest = JSON.parse(bytes.toString('utf8'));
  if (manifest.schemaVersion !== 1 || manifest.platform !== expected.platform || manifest.arch !== expected.arch || manifest.version !== expected.version) throw new Error('Recipe target mismatch');
+ if (manifest.notes !== undefined && (typeof manifest.notes !== 'string' || Buffer.byteLength(manifest.notes, 'utf8') > MAX_NOTES_BYTES)) throw new Error('Invalid recipe notes');
+ if (manifest.notesSource !== undefined && (typeof manifest.notesSource !== 'string' || Buffer.byteLength(manifest.notesSource, 'utf8') > MAX_SOURCE_BYTES)) throw new Error('Invalid recipe notes source');
  if (!Array.isArray(manifest.files) || manifest.files.length < 2 || manifest.files.length > MAX_FILES) throw new Error('Invalid recipe file list');
  const names = new Set();
  let total = 0;

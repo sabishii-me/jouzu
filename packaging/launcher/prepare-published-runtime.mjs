@@ -7,6 +7,7 @@ import { exportRecipe } from './export-recipe.mjs';
 import { installArguments } from './prepare-starter.mjs';
 import { assertInstalledTarget } from './installed-target.mjs';
 import { checkStagedHealth } from './check-update-health.mjs';
+import { fetchReleaseNotes } from './jouzu-notes.mjs';
 
 async function download(url, limit) {
  const response = await fetch(url, {redirect:'error',signal:AbortSignal.timeout(120000)});
@@ -38,6 +39,8 @@ export async function preparePublishedRuntime({version,output,pnpm}) {
  mkdirSync(root,{recursive:true});
  writeFileSync(join(root,'source.tgz'),bytes);
  writeFileSync(join(root,'source.json'),JSON.stringify(receipt,null,2)+'\n');
+ const notes=await fetchReleaseNotes({metadata,version});
+ writeFileSync(join(root,'notes.json'),JSON.stringify(notes,null,2)+'\n');
  const source=join(root,'source');mkdirSync(source);
  run(join(process.env.SystemRoot,'System32','tar.exe'),['-xzf',join(root,'source.tgz'),'-C',source],root);
  const recipe=join(root,'recipe');

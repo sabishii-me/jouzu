@@ -33,3 +33,10 @@ test('rejects duplicate paths, wrong targets, incomplete manifests and excessive
  assert.throws(()=>check(base(),{maxBytes:1}),/size limit/);
  assert.throws(()=>check(base(),{maxBytes:undefined}),/size limit/);
 });
+
+test('optional release notes are accepted and bounded',()=>{
+ assert.equal(check({...base(),notes:'- A change.',notesSource:'source'}).notes,'- A change.');
+ assert.throws(()=>check({...base(),notes:'x'.repeat(9000)}),/notes/);
+ assert.throws(()=>check({...base(),notesSource:'x'.repeat(300)}),/notes source/);
+ assert.throws(()=>check({...base(),notes:42}),/notes/);
+});

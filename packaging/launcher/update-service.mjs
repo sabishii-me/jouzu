@@ -24,10 +24,11 @@ try {
  }
  const bytes=await fetchSmall('manifest.json',1024*1024);const signature=await fetchSmall('manifest.sig',64);
  // Untrusted version is only a validation input; never used for a path or execution.
- const version=JSON.parse(bytes.toString('utf8')).version;
+ const manifest=JSON.parse(bytes.toString('utf8'));
+ const version=manifest.version;
  if(typeof version!=='string'||!/^\d+\.\d+\.\d+$/.test(version))throw Error('Invalid release version');
  authenticateRecipe(bytes,signature,config.publicKey,{version,platform:process.platform,arch:process.arch,maxBytes:512*1024*1024});
- if(action==='check')console.log(JSON.stringify({version}));
+ if(action==='check')console.log(JSON.stringify({version,notes:typeof manifest.notes==='string'?manifest.notes:'',notesSource:typeof manifest.notesSource==='string'?manifest.notesSource:''}));
  else{
   const requested=JSON.parse(readFileSync(0,'utf8'));
   if(requested.version!==version)throw Error('Release changed; check again');
