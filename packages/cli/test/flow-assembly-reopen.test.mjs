@@ -76,9 +76,7 @@ test("a shutdown-terminated dependency delivers one decision after reopen and ne
 	// wait is decided while no session can receive it. The decision must survive to the next one.
 	await idle(500);
 	const decisions = () =>
-		next.bodies
-			.map((body) => JSON.stringify(body.messages.at(-1)))
-			.filter((text) => text.includes('kind\\":\\"wait'));
+		next.bodies.map((body) => JSON.stringify(body.messages.at(-1))).filter((text) => text.includes('kind\\":\\"wait'));
 	const delivered = decisions();
 	assert.equal(delivered.length, 1, "the pending wait decision is delivered exactly once after reopen");
 	assert.ok(delivered[0].includes(wait.token), "it carries the original wait token");
