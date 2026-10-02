@@ -7,10 +7,29 @@ if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid launcher version' }
 $inputRoot = (Resolve-Path $InputDirectory).Path
 $output = Join-Path $env:RUNNER_TEMP 'launcher-release'
 New-Item -ItemType Directory $output | Out-Null
-. "$PSScriptRoot/signing-tools.ps1"
+# Signing tools are obtained the way Microsoft documents for Artifact Signing: nuget.exe
+# extracts each package, and .NET 8 (present on the runner image) is required by the dlib.
 $tools = Join-Path $env:RUNNER_TEMP 'signing-tools'
-$dlib = Resolve-SigningClient -ToolsDirectory $tools
-$signTool = Resolve-SignTool -ToolsDirectory $tools -SdkRoots @("${env:ProgramFiles(x86)}\Windows Kits\10\bin", "$env:ProgramFiles\Windows Kits\10\bin")
+New-Item -ItemType Directory $tools -Force | Out-Null
+$nuget = Join-Path $tools 'nuget.exe'
+Invoke-WebRequest -Uri 'https://dist.nuget.org/win-x86-commandline/latest/nuget.exe' -OutFile $nuget
+if (-not (Test-Path $nuget)) { throw 'Cannot download nuget.exe' }
+# nuget may keep the package contents in its global folder, so both are searched.
+$packageRoots = @($tools, (Join-Path $env:USERPROFILE '.nuget\packages'))
+$sdkRoots = @("${env:ProgramFiles(x86)}\Windows Kits\10\bin", "$env:ProgramFiles\Windows Kits\10\bin") | Where-Object { $_ -and (Test-Path $_) }
+$signTool = Get-ChildItem (@($sdkRoots) + $packageRoots) -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '[\\/]x64[\\/]' } | Sort-Object FullName -Descending | Select-Object -First 1
+if (-not $signTool) {
+ & $nuget install Microsoft.Windows.SDK.BuildTools -ExcludeVersion -OutputDirectory $tools -NonInteractive
+ if ($LASTEXITCODE) { throw 'Cannot install the Windows SDK build tools' }
+ $signTool = Get-ChildItem $packageRoots -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '[\\/]x64[\\/]' } | Sort-Object FullName -Descending | Select-Object -First 1
+}
+if (-not $signTool) { throw 'signtool.exe not found' }
+& $nuget install Microsoft.ArtifactSigning.Client -ExcludeVersion -OutputDirectory $tools -NonInteractive
+if ($LASTEXITCODE) { throw 'Cannot install the Artifact Signing client' }
+$dlib = Get-ChildItem $packageRoots -Recurse -Filter Azure.CodeSigning.Dlib.dll -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '[\\/]x64[\\/]' } | Select-Object -First 1
+if (-not $dlib) { throw 'Artifact Signing client library not found' }
+$signTool = $signTool.FullName
+$dlib = $dlib.FullName
 $metadata = Join-Path $tools 'metadata.json'
 @{Endpoint=$env:AZURE_SIGNING_ENDPOINT;CodeSigningAccountName=$env:AZURE_SIGNING_ACCOUNT;CertificateProfileName=$env:AZURE_SIGNING_PROFILE;ExcludeCredentials=@('EnvironmentCredential','WorkloadIdentityCredential','ManagedIdentityCredential','SharedTokenCacheCredential','VisualStudioCredential','VisualStudioCodeCredential','AzurePowerShellCredential','AzureDeveloperCliCredential','InteractiveBrowserCredential')} | ConvertTo-Json | Set-Content $metadata
 $target = Join-Path $repo 'apps/launcher/src-tauri/target/release'
@@ -33,7 +52,7 @@ function New-Template([string]$Policy,[string]$Extra) {
  $path
 }
 function New-Policy([string]$OwnedSetup,[string]$Evidence) {
- $policyFile = Join-Path $tools (($Evidence -replace '.*/','') + '.policy.json')
+ $policyFile = Join-Path $tools (($Evidence -replace '.*[\\/]','') + '.policy.json')
  @{ownedFiles=@("$target/launcher.exe","$target/console.exe",$OwnedSetup);vendorRoots=@("$inputRoot/app","$inputRoot/runtime",$plugins);signTool=$signTool;dlib=$dlib;metadata=$metadata;expectedSubject=$env:EXPECTED_SIGNER;uninstallerEvidence=$Evidence} | ConvertTo-Json -Depth 5 | Set-Content $policyFile
  $policyFile
 }

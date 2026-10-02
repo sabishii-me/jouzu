@@ -42,7 +42,7 @@ The signing administrator manages Azure. The GitHub repository administrator doe
 | Repository administrator | Protected GitHub Environment, required reviewers, permitted deployment branches/tags, Environment variables and secrets |
 | Release maintainer | Review the source commit, approve the protected job, inspect artifacts and authorize publication |
 
-For OIDC, use issuer `https://token.actions.githubusercontent.com`, audience `api://AzureADTokenExchange`, and subject `repo:OWNER/REPOSITORY:environment:ENVIRONMENT`. The repository and Environment names must match exactly. Use a separate federation for the fork. Do not export a developer's Azure login cache or create a client secret as a substitute for federation.
+For OIDC, use the documented `azure/login` action. Use issuer `https://token.actions.githubusercontent.com`, audience `api://AzureADTokenExchange`, and subject `repo:OWNER@OWNER_ID/REPOSITORY@REPOSITORY_ID:environment:ENVIRONMENT`: GitHub includes the numeric owner and repository IDs, and a federation created without them is rejected with `AADSTS700213`. The repository and Environment names must match exactly. Use a separate federation for the fork. Do not export a developer's Azure login cache or create a client secret as a substitute for federation.
 
 ### Environment configuration
 
@@ -77,8 +77,10 @@ secrets only.
 
 The build job runs frontend and Rust tests, compiles the binaries, and uploads
 signing inputs. It does not publish an unsigned installer. After approval, the
-signing job logs into Azure with GitHub OIDC, bundles and signs the declared own
-executables, and signs the NSIS-generated uninstaller. Vendor resources are not
+signing job authenticates through `azure/login` with GitHub OIDC, obtains the signing tools the
+way Microsoft documents for Artifact Signing (`nuget.exe install Microsoft.Windows.SDK.BuildTools`
+and `Microsoft.ArtifactSigning.Client`), bundles and signs the declared own executables, and signs
+the NSIS-generated uninstaller. Vendor resources are not
 re-signed; their hashes are checked for changes. The Tauri callback executes after
 bundle-type patching so the Launcher signature covers its final bytes.
 

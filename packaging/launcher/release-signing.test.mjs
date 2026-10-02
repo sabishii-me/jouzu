@@ -7,7 +7,7 @@ import {fileURLToPath} from 'node:url';
 const read = name => readFileSync(new URL(name, import.meta.url), 'utf8');
 
 test('release signing scripts parse without invoking signing services', {skip: process.platform !== 'win32'}, () => {
- const files = ['azure-oidc-login.ps1','sign-bundle-file.ps1','sign-uninstaller.ps1','finalize-windows-bundle.ps1','publish-launcher.ps1'];
+ const files = ['sign-bundle-file.ps1','sign-uninstaller.ps1','finalize-windows-bundle.ps1','publish-launcher.ps1'];
  const paths = files.map(name => "'" + fileURLToPath(new URL(name, import.meta.url)).replaceAll("'", "''") + "'").join(',');
  const script = `foreach($file in @(${paths})){$errors=$null;[void][Management.Automation.Language.Parser]::ParseFile($file,[ref]$null,[ref]$errors);if($errors.Count){$errors;exit 1}}`;
  const result = spawnSync('powershell.exe', ['-NoProfile','-NonInteractive','-Command',script], {encoding:'utf8',timeout:10000,windowsHide:true});

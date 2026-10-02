@@ -164,8 +164,14 @@ jobs:
           New-Item -ItemType Directory "$env:RUNNER_TEMP/signing-inputs" | Out-Null
           tar -xzf "$env:RUNNER_TEMP/input/signing-inputs.tgz" -C "$env:RUNNER_TEMP/signing-inputs"
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-      - name: Authenticate signing identity
-        run: ./packaging/launcher/azure-oidc-login.ps1
+      # The documented OIDC entry point: it authenticates as the repository's signing
+      # application, never a developer account.
+      - name: Azure login
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       - name: Sign and package CI binaries
         run: ./packaging/launcher/finalize-windows-bundle.ps1 -InputDirectory "$env:RUNNER_TEMP/signing-inputs"
       - name: Publish verified update
