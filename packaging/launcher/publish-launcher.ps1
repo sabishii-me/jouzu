@@ -19,7 +19,10 @@ $url = "https://github.com/$repository/releases/download/$tag/" + [Uri]::EscapeD
 $probe = Join-Path $env:RUNNER_TEMP 'published-update.exe'
 Invoke-WebRequest $url -OutFile $probe
 if ((Get-FileHash $probe -Algorithm SHA256).Hash -ne (Get-FileHash $updateSetup -Algorithm SHA256).Hash) { throw 'Published update integrity mismatch; feed unchanged' }
-$feed = @{version=$Version;notes='Launcher updates install only launcher-owned files and no longer rewrite the Jouzu payload or require closing a Jouzu session.';pub_date=[DateTime]::UtcNow.ToString('o');platforms=@{'windows-x86_64'=@{url=$url;signature=(Get-Content "$updateSetup.sig" -Raw).Trim()}}}
+# The feed note is the released version's changelog section; a release without one is refused.
+$notes = & node "$PSScriptRoot/launcher-notes.mjs" (Join-Path $PSScriptRoot '../../apps/launcher/CHANGELOG.md') $Version
+if ($LASTEXITCODE) { throw 'Missing launcher changelog for this version; feed unchanged' }
+$feed = @{version=$Version;notes=$notes;pub_date=[DateTime]::UtcNow.ToString('o');platforms=@{'windows-x86_64'=@{url=$url;signature=(Get-Content "$updateSetup.sig" -Raw).Trim()}}}
 $feedFile = Join-Path $Directory 'latest.json'
 $feed | ConvertTo-Json -Depth 5 | Set-Content $feedFile -Encoding utf8
 & gh release view launcher-update --repo $repository *> $null
