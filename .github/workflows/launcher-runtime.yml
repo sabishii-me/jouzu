@@ -5,15 +5,21 @@ on:
       launcher_version:
         description: Launcher release version
         type: string
-        default: '0.1.23'
+        default: '0.1.24'
         required: true
       jouzu_version:
         description: Official Jouzu npm version
         type: string
         default: '0.1.18'
         required: true
+      runtime_run_id:
+        description: Successful run containing a qualified runtime artifact (empty prepares from npm)
+        type: string
+        default: ''
+        required: false
 permissions:
   contents: read
+  actions: read
 jobs:
   runtime:
     runs-on: windows-latest
@@ -31,7 +37,30 @@ jobs:
       - name: Install private build package manager
         run: |
           npm install --prefix "$env:RUNNER_TEMP/build-tools" pnpm@10.21.0 --ignore-scripts --no-audit --no-fund
+      - name: Restore qualified runtime
+        if: inputs.runtime_run_id != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUNTIME_RUN_ID: ${{ inputs.runtime_run_id }}
+          JOUZU_VERSION: ${{ inputs.jouzu_version }}
+        run: |
+          if ($env:RUNTIME_RUN_ID -notmatch '^\d+$') { throw 'Invalid runtime run ID' }
+          $run = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:RUNTIME_RUN_ID" | ConvertFrom-Json
+          if ($LASTEXITCODE -or $run.conclusion -ne 'success' -or $run.path -ne '.github/workflows/launcher-runtime.yml') { throw 'Runtime source must be a successful runtime workflow' }
+          gh run download $env:RUNTIME_RUN_ID --repo $env:GITHUB_REPOSITORY --name windows-published-runtime --dir "$env:RUNNER_TEMP/runtime-input"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $archive = "$env:RUNNER_TEMP/runtime-input/jouzu-runtime.tgz"
+          $expected = (Get-Content "$env:RUNNER_TEMP/runtime-input/jouzu-runtime.sha256" -Raw).Trim()
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne $expected) { throw 'Runtime archive integrity mismatch' }
+          New-Item -ItemType Directory "$env:RUNNER_TEMP/jouzu-runtime" | Out-Null
+          tar -xzf $archive -C "$env:RUNNER_TEMP/jouzu-runtime"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $package = Get-Content "$env:RUNNER_TEMP/jouzu-runtime/app/node_modules/jouzu/package.json" -Raw | ConvertFrom-Json
+          if ($package.name -ne 'jouzu' -or $package.version -ne $env:JOUZU_VERSION) { throw 'Runtime version mismatch' }
+          node packaging/launcher/verify-runtime.mjs "$env:RUNNER_TEMP/jouzu-runtime/app"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Prepare official published Jouzu runtime
+        if: inputs.runtime_run_id == ''
         env:
           JOUZU_VERSION: ${{ inputs.jouzu_version || '0.1.18' }}
         run: |
