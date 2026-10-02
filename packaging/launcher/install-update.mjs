@@ -10,22 +10,33 @@ import { checkStagedHealth } from './check-update-health.mjs';
 /** A single process-owned lock spans download through activation. Caller config
  * (including expected release version) must come from a trusted release source.
  */
-export async function installJouzuUpdate({managed,runtime,url,publicKey,version,signal,allowLoopbackHttp=false,allowTestHttpHost=null,onProgress=()=>{}}) {
+export async function installJouzuUpdate({managed,runtime,url,publicKey,version,signal,allowLoopbackHttp=false,allowTestHttpHost=null,onProgress=()=>{}}, dependencies = {}) {
+ const prune = dependencies.prune ?? pruneUpdates;
+ const download = dependencies.download ?? downloadRecipe;
+ const stage = dependencies.stage ?? stageJouzuUpdate;
+ const activate = dependencies.activate ?? activateJouzu;
  return withUpdateTransaction(managed,async transaction=>{
-  pruneUpdates(transaction.root);
+  prune(transaction.root);
   const slot=randomUUID();
   const versions=join(transaction.root,'versions');mkdirSync(versions,{recursive:true});
   const work=join(transaction.root,`recipe-${slot}`);
+  let result;
+  let cleanupPending = false;
   try{
-   const {recipe}=await downloadRecipe({url,publicKey,expected:{version,platform:process.platform,arch:process.arch,maxBytes:512*1024*1024},destination:work,signal,allowLoopbackHttp,allowTestHttpHost,onProgress});
-   await stageJouzuUpdate({recipe,runtime,store:join(transaction.root,'store'),destination:join(versions,slot),signal,onProgress});
+   const {recipe}=await download({url,publicKey,expected:{version,platform:process.platform,arch:process.arch,maxBytes:512*1024*1024},destination:work,signal,allowLoopbackHttp,allowTestHttpHost,onProgress});
+   await stage({recipe,runtime,store:join(transaction.root,'store'),destination:join(versions,slot),signal,onProgress});
    signal?.throwIfAborted();
    onProgress({phase:'verifying'});
    const node=join(runtime,'node',process.platform==='win32'?'node.exe':'bin/node');
-   const result=await activateJouzu({managed,slot,version,healthCheck:async app=>{
+   result=await activate({managed,slot,version,healthCheck:async app=>{
     await checkStagedHealth({node,app,version,signal});signal?.throwIfAborted();onProgress({phase:'activating'});
    }},transaction);
-   onProgress({phase:'complete',version});return result;
-  }finally{rmSync(work,{recursive:true,force:true});pruneUpdates(transaction.root);}
+  } finally {
+   // Cleanup cannot undo activation or replace the primary failure.
+   try { rmSync(work,{recursive:true,force:true}); } catch { cleanupPending = true; }
+   try { prune(transaction.root); } catch { cleanupPending = true; }
+  }
+  onProgress({phase:'complete',version,cleanupPending});
+  return {...result,cleanupPending};
  });
 }

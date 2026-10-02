@@ -31,7 +31,7 @@ try {
   const requested=JSON.parse(readFileSync(0,'utf8'));
   if(requested.version!==version)throw Error('Release changed; check again');
   const result=await installJouzuUpdate({managed,runtime:join(install,'runtime'),url:config.url,publicKey:config.publicKey,version,allowLoopbackHttp:local,allowTestHttpHost:testHttp?testHost:null,onProgress:event=>process.stderr.write(JSON.stringify(event)+'\n')});
-  console.log(JSON.stringify({version:result.version}));
+  console.log(JSON.stringify({version:result.version,cleanupPending:result.cleanupPending}));
  }
 }catch(error){
  // Package or network errors may contain credential-bearing URLs; never echo them.
