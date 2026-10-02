@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { test } from "node:test";
-import { BACKGROUND_CONTEXT, setValue, value } from "@earendil-works/pi-agent-core";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { deferred } from "../../../scripts/fixtures/pi-flow-session.mjs";
+import { BACKGROUND_CONTEXT, setValue, value } from "../dist/flow-control/scalar-storage.js";
 import { createFlowWaitDecisionProducer } from "../dist/flow-control/wait-decisions.js";
 import { declareIngressWait, fixture, ingressWaitClock, waitForFlow } from "./fixtures/flow-session-ingress.mjs";
 

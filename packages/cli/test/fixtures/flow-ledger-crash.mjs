@@ -1,8 +1,7 @@
 import { appendFile } from "node:fs/promises";
-import { BACKGROUND_CONTEXT as context, JsonlSessionRepo } from "@earendil-works/pi-agent-core";
-import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
 import { createPiLedgerStore } from "../../dist/flow-control/pi-ledger-store.js";
 import { FlowReceiptLedger } from "../../dist/flow-control/receipt-ledger.js";
+import { BACKGROUND_CONTEXT as context, JsonlSessionRepo, NodeExecutionEnv } from "./flow-storage.mjs";
 
 const [root, checkpoint] = process.argv.slice(2);
 let tearNext = false;

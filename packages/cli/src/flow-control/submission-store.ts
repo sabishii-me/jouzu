@@ -1,12 +1,12 @@
 import { createHash } from "node:crypto";
-import { BACKGROUND_CONTEXT, type Session, setValue, value, type Write } from "@earendil-works/pi-agent-core";
 import type { CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent";
 import { replayableContinuation, undispatchedRecord } from "./native-admission.js";
 import type { FlowOwnership } from "./ownership.js";
 import { FlowLedgerError, type FlowScope } from "./receipt-ledger.js";
+import { BACKGROUND_CONTEXT, type Session, setValue, value, type Write } from "./scalar-storage.js";
 
 type Submission = Parameters<NonNullable<CreateAgentSessionOptions["flowIngress"]>["submit"]>[0];
-// Tagged containers preserve undefined positional arguments through Pi's JSONL codec.
+// Tagged containers preserve undefined positional arguments through the flow journal's JSONL codec.
 type Encoded =
 	| null
 	| boolean

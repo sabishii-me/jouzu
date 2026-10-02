@@ -4,12 +4,12 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { BACKGROUND_CONTEXT as context, MemorySessionRepo, setValue, value } from "@earendil-works/pi-agent-core";
 import { FlowOwnership } from "../dist/flow-control/ownership.js";
 import { PiFlowAttachment } from "../dist/flow-control/pi-attachment.js";
 import { FlowResultManifestStore } from "../dist/flow-control/result-manifest.js";
 import { createFlowResultExtension } from "../dist/flow-control/result-tools.js";
 import { afterCleanup } from "./fixtures/cleanup.mjs";
+import { BACKGROUND_CONTEXT as context, MemorySessionRepo, setValue, value } from "./fixtures/flow-storage.mjs";
 
 const scope = { sessionId: "parent", branchId: "main" };
 const member = (id = "result", status = "success") => ({

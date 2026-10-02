@@ -1,6 +1,5 @@
-import { BACKGROUND_CONTEXT as context, JsonlSessionRepo } from "@earendil-works/pi-agent-core";
-import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
 import { PiFlowAttachment } from "../../dist/flow-control/pi-attachment.js";
+import { BACKGROUND_CONTEXT as context, JsonlSessionRepo, NodeExecutionEnv } from "./flow-storage.mjs";
 
 const [root] = process.argv.slice(2);
 let metadata;

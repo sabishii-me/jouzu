@@ -6,19 +6,19 @@ import { mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/pro
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import {
-	BACKGROUND_CONTEXT as context,
-	deleteValue,
-	MemorySessionRepo,
-	setValue,
-	value,
-} from "@earendil-works/pi-agent-core";
 import { createFlowSession, deferred } from "../../../scripts/fixtures/pi-flow-session.mjs";
 import { FlowOwnership } from "../dist/flow-control/ownership.js";
 import { PiFlowAttachment } from "../dist/flow-control/pi-attachment.js";
 import { FlowSubmissionStore } from "../dist/flow-control/submission-store.js";
 import { legacyPathDigest } from "../dist/path-digest.js";
 import { afterCleanup, cleanupContext } from "./fixtures/cleanup.mjs";
+import {
+	BACKGROUND_CONTEXT as context,
+	deleteValue,
+	MemorySessionRepo,
+	setValue,
+	value,
+} from "./fixtures/flow-storage.mjs";
 
 const scope = { sessionId: "parent", branchId: "main" };
 const submission = (id = "item") => ({

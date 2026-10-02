@@ -3,7 +3,6 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { BACKGROUND_CONTEXT as context, MemorySessionRepo } from "@earendil-works/pi-agent-core";
 import { generateBranchSummary, generateSummaryWithUsage, SessionManager } from "@earendil-works/pi-coding-agent";
 import { assistant, model } from "../../../scripts/fixtures/pi-flow-session.mjs";
 import { FlowModelInput } from "../dist/flow-control/model-input.js";
@@ -12,6 +11,7 @@ import { PiQueueReceipts } from "../dist/flow-control/pi-queue-receipts.js";
 import { PiRequestReceipts } from "../dist/flow-control/pi-request-receipts.js";
 import { FlowReceiptLedger } from "../dist/flow-control/receipt-ledger.js";
 import { afterCleanup } from "./fixtures/cleanup.mjs";
+import { BACKGROUND_CONTEXT as context, MemorySessionRepo } from "./fixtures/flow-storage.mjs";
 import { nativeRequests } from "./fixtures/native-requests.mjs";
 
 const PLACEHOLDER = /This tool result is unavailable in the selected conversation history/;

@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import { BACKGROUND_CONTEXT, type Session, type SessionReader, setValue, value } from "@earendil-works/pi-agent-core";
 import { automaticWorkId } from "./automatic-work.js";
 import type { FlowOwnership } from "./ownership.js";
 import { FlowLedgerError, type FlowScope } from "./receipt-ledger.js";
 import { MAX_RETIRED_FLOW_IDENTITIES, retiredIdentityHash, validRetiredIdentityHash } from "./retired-identities.js";
+import { BACKGROUND_CONTEXT, type Session, type SessionReader, setValue, value } from "./scalar-storage.js";
 import {
 	authorityObservations,
 	captureWorkBinding,

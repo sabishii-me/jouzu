@@ -1,4 +1,3 @@
-import { BACKGROUND_CONTEXT, deleteValue, type Session, setValue, value } from "@earendil-works/pi-agent-core";
 import { flowDiagnosticText } from "./diagnostic-text.js";
 import { type NativeProjectionCapture, validateNativeProjections } from "./native-context-projections.js";
 import { nativeProjectionDelivered, nativeSourceDelivered } from "./native-inclusion.js";
@@ -10,6 +9,7 @@ import {
 import type { FlowOwnership } from "./ownership.js";
 import { FlowLedgerError, type FlowScope } from "./receipt-ledger.js";
 import { retiredIdentityHash } from "./retired-identities.js";
+import { BACKGROUND_CONTEXT, deleteValue, type Session, setValue, value } from "./scalar-storage.js";
 
 export interface NativeRequestFailure {
 	stage: "provider-preparation" | "payload-admission" | "compaction-preparation";

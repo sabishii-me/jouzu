@@ -1,6 +1,6 @@
-import { BACKGROUND_CONTEXT, type SessionReader, setValue, value, type Write } from "@earendil-works/pi-agent-core";
 import { FlowLedgerError } from "./receipt-ledger.js";
 import { validRetiredIdentityHash } from "./retired-identities.js";
+import { BACKGROUND_CONTEXT, type SessionReader, setValue, value, type Write } from "./scalar-storage.js";
 
 export type WaitHistoryKind = "work" | "executions" | "waits";
 export interface WaitHistoryEntry {

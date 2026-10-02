@@ -3,9 +3,9 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { BACKGROUND_CONTEXT, setValue, value } from "@earendil-works/pi-agent-core";
 import { checkpointFlowJournal } from "../dist/flow-control/journal-checkpoint.js";
 import { openLocalFlowSession } from "../dist/flow-control/local-storage.js";
+import { BACKGROUND_CONTEXT, setValue, value } from "../dist/flow-control/scalar-storage.js";
 
 async function fixture(t) {
 	const root = await mkdtemp(join(tmpdir(), "flow-checkpoint-"));

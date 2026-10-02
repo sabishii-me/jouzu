@@ -1,10 +1,9 @@
 import { readdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { BACKGROUND_CONTEXT, JsonlSessionRepo, type Session } from "@earendil-works/pi-agent-core";
-import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
 import { ensurePrivateDirectory } from "../private-fs.js";
-import { checkpointFlowJournal, FLOW_JOURNAL_CHECKPOINT_BYTES } from "./journal-checkpoint.js";
+import { createJournalSession, openJournalSession } from "./journal-storage.js";
 import { FlowOwnershipError } from "./ownership.js";
+import type { Session } from "./scalar-storage.js";
 
 /**
  * Version of incompatible durable record shapes. Optional fields with validated defaults can be
@@ -47,20 +46,7 @@ export async function reconcileFlowStateVersion(directory: string): Promise<stri
 	return isolated;
 }
 
-class FlowExecutionEnv extends NodeExecutionEnv {
-	private checkpointBytes = FLOW_JOURNAL_CHECKPOINT_BYTES;
-	async checkpoint(path: string): Promise<void> {
-		const size = await checkpointFlowJournal(path, this.checkpointBytes);
-		// Live history cannot be compacted away. Wait for proportional growth before scanning it again.
-		if (size !== undefined) this.checkpointBytes = Math.max(FLOW_JOURNAL_CHECKPOINT_BYTES, size * 2);
-	}
-	override async appendFile(...args: Parameters<NodeExecutionEnv["appendFile"]>) {
-		await this.checkpoint(args[0]);
-		return super.appendFile(...args);
-	}
-}
-
-/** Called only inside the per-branch writer reservation. Pi owns file naming and replay. */
+/** Called only inside the per-branch writer reservation. Preserve existing journal paths and records. */
 export async function openLocalFlowSession(
 	directory: string,
 	acceptedDirectories: readonly string[] = [],
@@ -79,28 +65,44 @@ export async function openLocalFlowSession(
 			if (files.length > 1) throw new FlowOwnershipError("storage", "Flow branch storage contains multiple sessions.");
 		}
 	}
-	const fileSystem = new FlowExecutionEnv({ cwd: directory });
-	for (const path of files) await fileSystem.checkpoint(path);
-	const repo = new JsonlSessionRepo({ fileSystem, sessionsRoot: root });
-	try {
-		const metadata = await repo.list(undefined, BACKGROUND_CONTEXT);
-		if (
-			metadata.length !== files.length ||
-			metadata.some(
-				(item) =>
-					item.id !== "flow" ||
-					// A relocated directory moves a session file that records the path it was written at.
-					// The caller names that path; anything else is still a genuine inconsistency.
-					(item.cwd !== directory && !acceptedDirectories.includes(item.cwd)) ||
-					!files.includes(item.path),
-			)
-		)
-			throw new FlowOwnershipError("storage", "Flow session metadata is missing or inconsistent.");
-		return metadata.length
-			? await repo.open(metadata[0], BACKGROUND_CONTEXT)
-			: await repo.create({ id: "flow", cwd: directory }, BACKGROUND_CONTEXT);
-	} finally {
-		// Pi repository close releases discovery resources; the returned Session owns its storage handle.
-		await repo.close(BACKGROUND_CONTEXT);
+	const path = files[0];
+	if (!path) {
+		const folder = join(root, "flow");
+		ensurePrivateDirectory(root, folder);
+		const createdAt = Date.now();
+		const filename = `${new Date(createdAt).toISOString().replace(/[:.]/g, "-")}_flow.jsonl`;
+		return createJournalSession(join(folder, filename), { id: "flow", cwd: directory, createdAt });
 	}
+	// Validate identity before opening can repair a torn tail or compact the journal.
+	let header: Record<string, unknown>;
+	try {
+		const text = await readFile(path, "utf8");
+		const end = text.indexOf("\n");
+		if (end < 0) throw new Error("Missing complete header.");
+		header = JSON.parse(text.slice(0, end));
+		if (
+			header?.v !== 4 ||
+			header.kind !== "header" ||
+			header.storageVersion !== 1 ||
+			header.id !== "flow" ||
+			typeof header.cwd !== "string" ||
+			(header.cwd !== directory && !acceptedDirectories.includes(header.cwd)) ||
+			!Number.isSafeInteger(header.createdAt) ||
+			Number(header.createdAt) < 0
+		)
+			throw new Error("Invalid journal identity.");
+	} catch (error) {
+		if ((error as { code?: string }).code === "ENOENT") throw error;
+		throw new FlowOwnershipError("storage", "Flow session metadata is missing or inconsistent.");
+	}
+	return openJournalSession(path, {
+		validateMetadata: (metadata) => {
+			if (
+				metadata.id !== "flow" ||
+				(metadata.cwd !== directory && !acceptedDirectories.includes(metadata.cwd)) ||
+				metadata.path !== path
+			)
+				throw new FlowOwnershipError("storage", "Flow session metadata is missing or inconsistent.");
+		},
+	});
 }

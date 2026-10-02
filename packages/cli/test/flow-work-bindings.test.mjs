@@ -3,10 +3,10 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { BACKGROUND_CONTEXT, setValue, value } from "@earendil-works/pi-agent-core";
 import { openLocalFlowSession } from "../dist/flow-control/local-storage.js";
 import { multiloopWorkBinding } from "../dist/flow-control/multiloop-producer.js";
 import { PiFlowAttachment } from "../dist/flow-control/pi-attachment.js";
+import { BACKGROUND_CONTEXT, setValue, value } from "../dist/flow-control/scalar-storage.js";
 import { afterCleanup } from "./fixtures/cleanup.mjs";
 
 const scope = { sessionId: "session", branchId: "branch" };

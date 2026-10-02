@@ -5,10 +5,14 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { BACKGROUND_CONTEXT as context, JsonlSessionRepo, MemorySessionRepo } from "@earendil-works/pi-agent-core";
-import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
 import { FlowOwnership } from "../dist/flow-control/ownership.js";
 import { PiFlowAttachment } from "../dist/flow-control/pi-attachment.js";
+import {
+	BACKGROUND_CONTEXT as context,
+	JsonlSessionRepo,
+	MemorySessionRepo,
+	NodeExecutionEnv,
+} from "./fixtures/flow-storage.mjs";
 
 const scope = { sessionId: "parent", branchId: "branch" };
 const member = { id: "result", revision: "1", kind: "result", required: false, contentHash: "a".repeat(64) };

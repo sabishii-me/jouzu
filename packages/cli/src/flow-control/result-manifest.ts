@@ -1,13 +1,6 @@
 import { createHash } from "node:crypto";
-import {
-	BACKGROUND_CONTEXT,
-	type Session,
-	type SessionReader,
-	setValue,
-	value,
-	type Write,
-} from "@earendil-works/pi-agent-core";
 import { type FlowResultReference, normalizeFlowResults } from "./result-types.js";
+import { BACKGROUND_CONTEXT, type Session, type SessionReader, setValue, value, type Write } from "./scalar-storage.js";
 
 export type { FlowResultReference } from "./result-types.js";
 

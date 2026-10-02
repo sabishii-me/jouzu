@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { BACKGROUND_CONTEXT as context, MemorySessionRepo } from "@earendil-works/pi-agent-core";
 import { createFlowSession, deferred, model, tick } from "../../../scripts/fixtures/pi-flow-session.mjs";
 import { PiHostBoundary } from "../dist/flow-control/pi-host-boundary.js";
 import { createPiLedgerStore } from "../dist/flow-control/pi-ledger-store.js";
 import { FlowReceiptLedger } from "../dist/flow-control/receipt-ledger.js";
+import { BACKGROUND_CONTEXT as context, MemorySessionRepo } from "./fixtures/flow-storage.mjs";
 
 async function fixture(t, phase = "running") {
 	const host = await createFlowSession(t);
