@@ -1,7 +1,7 @@
 {
 	"schemaVersion": 1,
 	"package": "@earendil-works/pi-ai",
-	"version": "0.99.2",
+	"version": "1.0.0",
 	"files": {
 		"dist/api/transform-messages.js": {
 			"before": "9d747a3d64c533f7bfaf2a66e8446dc006086559d364a09d4c51d1c8c9c332e5",
@@ -32,8 +32,8 @@
 			"after": "de0f7d146688bb3c844366974bcf38d02433bce6f3f9fdde30ad3177e15c7bc7"
 		},
 		"dist/api/openai-responses-shared.js": {
-			"before": "2eb01d2e82737150f582e78ebcda2dc0cf1083bf83e98432f97d9f3a80ff3f2f",
-			"after": "ae4c922aa0447b83c6fc2f502df36477ba3995571e4683283371b49f44e09fab"
+			"before": "8744ad2ce9ce2512993360600760f5bcdbeb520d0a641c655b2a0b7cbe9db10a",
+			"after": "8e3c15a8136b76bb9e879b89ed1403e3bad585f610b092c8945f779a9a1dea18"
 		},
 		"dist/api/openai-responses-shared.d.ts": {
 			"before": "5457317a10e3e27e3e4e59672c9153eece30e82dcdd9f4e12904950d8e039fa2",

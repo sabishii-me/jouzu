@@ -10,6 +10,10 @@ JOUZU_HOME="$PWD/.jouzu" jz doctor
 
 - The Windows installer stores everything under `%LOCALAPPDATA%\JouzuDesktop\data`.
 
+## Terminal display
+
+The interactive terminal defaults to full-screen mode. To use the terminal's normal scrollback, set `"tuiMode": "regular"` in `settings.json` under the [agent/config directory](../README.md#state-and-isolation). Set `"tuiMode": "fullscreen"` to select full-screen mode explicitly. Jouzu preserves an existing setting.
+
 ## Importing from Pi
 
 On the first interactive setup, Jouzu looks for Pi files in `PI_CODING_AGENT_DIR`, then `~/.pi/agent`.

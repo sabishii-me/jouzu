@@ -1,19 +1,19 @@
 {
 	"schemaVersion": 1,
 	"package": "@earendil-works/pi-coding-agent",
-	"version": "0.99.2",
+	"version": "1.0.0",
 	"files": {
 		"dist/core/settings-manager.js": {
-			"before": "5adc92ea0ae8440e3918149f741e6f8ac3f2606e55228e059380795d7585efd7",
-			"after": "8a7ba71e8fa30a849b4cff25d9959513261d34889b0a559dbd2d0a2238f8b134"
+			"before": "b3a424ac1af9bd0c380796f9e5d812e2c61755ed3b31dd39982a57bbe0d5a391",
+			"after": "c64d12a27f8b92d11edd60ed5ebd1b0f0a13617aadb06ada201435297842544a"
 		},
 		"dist/core/cache-warmer.js": {
 			"before": "9c4b000930d6d3c567073102f6b6a52660110bb0f79cf78dd72c4dd1ebc87fc0",
 			"after": "d1ccccbb4661e335254a8d38adba82345a829417b0b83ea55645f3d94d9e2b1c"
 		},
 		"dist/main.js": {
-			"before": "bb36969572097bc657b85b42954a78f4be42afc5dfd63453a7d97d53165657b2",
-			"after": "651ccd1adde418d067a5d0fa046a2fe063139b0161b7079cc59e17bf6a702d98"
+			"before": "060521b0b81f91948d8ded9139e423e5d0c9e6808a45c81750cc30519de4d2db",
+			"after": "95d05b3e57ce1bb48905caace332c31ae9599090d9b8b87c38b01c80ea7ef77d"
 		},
 		"dist/main.d.ts": {
 			"before": "cf197873ee07f73d5682fe2236e24989714d1f5c1acf8820264e570a5c17dadc",
@@ -36,12 +36,12 @@
 			"after": "570c7ea3a639e762e2cb4a78ae53aae832910d1cf8ea0f86e70c5056a6d8540a"
 		},
 		"dist/core/agent-session.js": {
-			"before": "4da636cea504ccec903c7b39f5eb1553f4f64469408f06e5b7938c7682b131d1",
-			"after": "637b7ca84a976de5681dd018b8d8ca6b52197e5e44b7418cbfb6b6cdf3924142"
+			"before": "476722dd363a0347049d450b5a0c67386cf156ecae2b039676962aa00a857161",
+			"after": "0f0ab19080bfc79d1564cc6e9c6785c01738bbad80625effa9abe951a03a0602"
 		},
 		"dist/core/agent-session.d.ts": {
-			"before": "54beba962cf8fc6591c4ff904da3be25b62f8f49b1e517521fa364dee4287a95",
-			"after": "84f13e5ab04cb7b365528f64bbc80e2249f90903c4f76230813e58feb10e5b49"
+			"before": "2e50b35a37f9c7149c6297ae554b2d965bd74dbfcb8ccd7be44f13226ce497e7",
+			"after": "6afa12470102443bbe678967bc9b61963b2e854aeee3f3a5e91fbde99ee91bef"
 		},
 		"dist/core/agent-session-services.js": {
 			"before": "20b7aa4b0657b53fb522ea051df26f72901802e03cc06c89e0a8926388bca601",
@@ -116,12 +116,12 @@
 			"after": "0e8f08c0d39c52596d518262624a86f4410772ffe6c3b85d86cfd9ecec73be15"
 		},
 		"dist/modes/interactive/interactive-mode.js": {
-			"before": "20637835b51c2a33f1c152d94a875d28d762bd99ba27d6679c2c538ab9028276",
-			"after": "0628843c13c05f01c9cc79bf4f8a085c428e5d361fd5cfbd70a4d9eb906a207d"
+			"before": "f9629b20031fa11ed10835b6f80f97d39e67397e9fa339cfc938e9cb0dcb4f2d",
+			"after": "fa50e26875ab3b31c99287beadeb10cb27db28417abe29b88d5c2d4ea743beda"
 		},
 		"dist/modes/interactive/interactive-mode.d.ts": {
-			"before": "f0b0cfa6a277a38fc699c342355cbadc099f26e2dab155e31978dff57efc3c96",
-			"after": "b58b5d8803443f05aba49072ac71e5f698d2298b7195a4b803ac112cfe8e392d"
+			"before": "dfc64721390ff2c3145c7342d8bd3c21e4153cd463578a690bb8542a9772b445",
+			"after": "0ec1ef8ee1b59c701a91f3edccebc675833add65f206523ceeee92c7f2b73942"
 		},
 		"dist/core/slash-commands.js": {
 			"before": "3c4b7576c59d81e39e7dff4a847fdb51021fbea544a7880746018866a599f1e6",

@@ -27,7 +27,14 @@ const alignedRuntimePackageNames = [
 	"@earendil-works/pi-telemetry",
 	tuiPackageName,
 ];
+const developmentRuntimePackageNames = [
+	"@earendil-works/pi-agent-core",
+	"@earendil-works/pi-ai",
+	packageName,
+	tuiPackageName,
+];
 const directRuntimePackageNames = [
+	"@earendil-works/pi-agent-core",
 	"@earendil-works/pi-ai",
 	"@earendil-works/pi-codemode",
 	packageName,
@@ -197,13 +204,10 @@ function validateLock({ online }) {
 	if (!/^[0-9a-f]{40}$/.test(lock.tagCommit) || !/^[0-9a-f]{40}$/.test(lock.commit)) {
 		fail("Pi tag or package source commit is invalid");
 	}
-	if (packageJson.devDependencies?.[packageName] !== packageRecord.version) {
-		fail(
-			`package.json development pin ${packageJson.devDependencies?.[packageName]} does not match ${packageRecord.version}`,
-		);
-	}
-	if (packageJson.devDependencies?.[tuiPackageName] !== packageRecord.version) {
-		fail(`package.json development pin for ${tuiPackageName} does not match ${packageRecord.version}`);
+	for (const name of developmentRuntimePackageNames) {
+		if (packageJson.devDependencies?.[name] !== packageRecord.version) {
+			fail(`package.json development pin for ${name} does not match ${packageRecord.version}`);
+		}
 	}
 	for (const name of directRuntimePackageNames) {
 		if (cliPackageJson.dependencies?.[name] !== packageRecord.version) {
@@ -236,7 +240,7 @@ function validateLock({ online }) {
 	if (cliPackageJson.bundleDependencies?.includes(serverPackageName)) {
 		fail(`jouzu runtime must install ${serverPackageName} separately from the bundled Pi tree`);
 	}
-	for (const name of ["@earendil-works/pi-ai", "@earendil-works/pi-telemetry"]) {
+	for (const name of ["@earendil-works/pi-agent-core", "@earendil-works/pi-ai", "@earendil-works/pi-telemetry"]) {
 		if (!cliPackageJson.bundleDependencies?.includes(name)) {
 			fail(`jouzu runtime must bundle ${name} alongside the bundled coding agent`);
 		}
@@ -386,14 +390,16 @@ function update(version) {
 	verifyTagContainsPackageSource(tag, tagCommit, serverMetadata.gitHead);
 	metadata.tagCommit = tagCommit;
 
-	pinManifestDependency(packagePath, "devDependencies", packageName, metadata.version);
-	pinManifestDependency(packagePath, "devDependencies", tuiPackageName, tuiVersion);
+	for (const name of developmentRuntimePackageNames) {
+		pinManifestDependency(packagePath, "devDependencies", name, metadata.version);
+	}
 	for (const name of directRuntimePackageNames) {
 		pinManifestDependency(cliPackagePath, "dependencies", name, metadata.version);
 	}
 	pinManifestDependency(cliPackagePath, "dependencies", esbuildPackageName, esbuildMetadata.version);
 	pinManifestDependency(cliPackagePath, "dependencies", typeboxPackageName, typeboxVersion);
 	setBundledDependency(cliPackagePath, serverPackageName, false);
+	setBundledDependency(cliPackagePath, "@earendil-works/pi-agent-core", true);
 	setBundledDependency(cliPackagePath, "@earendil-works/pi-ai", true);
 	setBundledDependency(cliPackagePath, "@earendil-works/pi-telemetry", true);
 	setBundledDependency(cliPackagePath, typeboxPackageName, true);
