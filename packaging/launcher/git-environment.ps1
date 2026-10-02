@@ -11,6 +11,8 @@ function Test-GitEnvironment([string]$Root) {
   if ([DateTime]::UtcNow -gt $deadline) { return $false }
   $file = Join-Path $Root $entry
   if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { return $false }
+  $signature = Get-AuthenticodeSignature -LiteralPath $file
+  if ($signature.Status -ne 'Valid') { return $false }
   $info = New-Object System.Diagnostics.ProcessStartInfo
   $info.FileName = $file
   $info.Arguments = '--version'
@@ -50,6 +52,10 @@ $parent = Join-Path $InstallRoot 'runtime\git'
 $archive = Join-Path $parent 'PortableGit.exe'
 if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne '5aa8a20f6e9abb2c755f0e73c91c687701a46b309ad84a0ca6509380fa4ae290') {
  throw 'PortableGit integrity verification failed'
+}
+$archiveSignature = Get-AuthenticodeSignature -LiteralPath $archive
+if ($archiveSignature.Status -ne 'Valid' -or $archiveSignature.SignerCertificate.Subject -notmatch '(^|, )CN=Johannes Schindelin(,|$)') {
+ throw 'PortableGit publisher verification failed'
 }
 $stage = Join-Path $parent ('prepare-' + [guid]::NewGuid().ToString('N'))
 $destination = Join-Path $parent 'installed'
