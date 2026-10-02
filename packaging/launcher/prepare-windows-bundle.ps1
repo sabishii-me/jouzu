@@ -3,7 +3,8 @@ param(
  [Parameter(Mandatory=$true)][string]$Pnpm,
  [Parameter(Mandatory=$true)][string]$Output,
  [string]$Version = '0.1.22',
- [string]$UpdateConfigDirectory
+ [string]$UpdateConfigDirectory,
+ [string]$SignScript
 )
 $ErrorActionPreference = 'Stop'
 if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid Launcher version' }
@@ -50,6 +51,13 @@ $config = @{
    installerHooks = "$repo/packaging/launcher/installer-hooks.nsh"
    template = "$repo/packaging/launcher/installer.nsi"
   }}
+ }
+}
+if ($SignScript) {
+ $signer = (Resolve-Path $SignScript).Path
+ $config.bundle.windows.signCommand = @{
+  cmd = 'powershell.exe'
+  args = @('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',$signer,'-File','%1')
  }
 }
 if ($UpdateConfigDirectory) {
