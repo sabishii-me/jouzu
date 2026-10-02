@@ -10,9 +10,17 @@ New-Item -ItemType Directory $output | Out-Null
 $tools = Join-Path $env:RUNNER_TEMP 'signing-tools'
 & nuget install Microsoft.Trusted.Signing.Client -Version 1.0.95 -OutputDirectory $tools -NonInteractive
 if ($LASTEXITCODE) { throw 'Cannot install signing client' }
-$dlib = Get-ChildItem $tools -Recurse -Filter Azure.CodeSigning.Dlib.dll | Where-Object { $_.FullName -match '[\/]x64[\/]' } | Select-Object -First 1
-$signTool = Get-ChildItem 'C:/Program Files (x86)/Windows Kits/10/bin/*/x64/signtool.exe' | Sort-Object FullName -Descending | Select-Object -First 1
-if (-not $dlib -or -not $signTool) { throw 'Signing tools unavailable' }
+$dlib = Get-ChildItem $tools -Recurse -Filter Azure.CodeSigning.Dlib.dll -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '[\/]x64[\/]' } | Select-Object -First 1
+$sdkRoots = @("${env:ProgramFiles(x86)}\Windows Kits\10\bin", "$env:ProgramFiles\Windows Kits\10\bin") | Where-Object { $_ -and (Test-Path $_) }
+$signTool = Get-ChildItem $sdkRoots -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '[\/]x64[\/]' } | Sort-Object FullName -Descending | Select-Object -First 1
+# Some runner images ship no Windows SDK; the build-tools package carries signtool for those.
+if (-not $signTool) {
+ & nuget install Microsoft.Windows.SDK.BuildTools -Version 10.0.26100.1742 -OutputDirectory $tools -NonInteractive
+ if ($LASTEXITCODE) { throw 'Cannot install signing tools' }
+ $signTool = Get-ChildItem $tools -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '[\/]x64[\/]' } | Sort-Object FullName -Descending | Select-Object -First 1
+}
+if (-not $dlib) { throw "Signing client library not found under $tools" }
+if (-not $signTool) { throw 'signtool.exe not found; provide the Windows SDK build tools' }
 $metadata = Join-Path $tools 'metadata.json'
 @{Endpoint=$env:AZURE_SIGNING_ENDPOINT;CodeSigningAccountName=$env:AZURE_SIGNING_ACCOUNT;CertificateProfileName=$env:AZURE_SIGNING_PROFILE;ExcludeCredentials=@('EnvironmentCredential','WorkloadIdentityCredential','ManagedIdentityCredential','SharedTokenCacheCredential','VisualStudioCredential','VisualStudioCodeCredential','AzurePowerShellCredential','AzureDeveloperCliCredential','InteractiveBrowserCredential')} | ConvertTo-Json | Set-Content $metadata
 $target = Join-Path $repo 'apps/launcher/src-tauri/target/release'
