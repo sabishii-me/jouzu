@@ -43,8 +43,11 @@ pub fn application_root(_app: &tauri::AppHandle) -> Result<PathBuf, String> {
     Ok(root)
 }
 
-pub fn find_bash(_app: &tauri::AppHandle) -> Option<PathBuf> {
+pub fn find_bash(app: &tauri::AppHandle) -> Option<PathBuf> {
     let mut candidates = Vec::new();
+    if let Ok(root) = application_root(app) {
+        candidates.push(root.join("runtime/git/bin/bash.exe"));
+    }
     if let Ok(data) = managed_root() {
         candidates.push(data.join("tools/git/bin/bash.exe"));
     }
@@ -109,7 +112,7 @@ pub fn launch(app: &tauri::AppHandle, path: &str) -> Result<(), String> {
     }
     let root = application_root(app)?;
     let bash = find_bash(app)
-        .ok_or("Git Bash is required for command tools. Select Prepare Git Bash first.")?;
+        .ok_or("Git Bash is missing. Repair the Jouzu installation.")?;
     let executable = std::env::current_exe().map_err(|e| e.to_string())?;
     let mut command = Command::new(executable.with_file_name("console.exe"));
     command.env("JOUZU_HOME", effective_home()?);

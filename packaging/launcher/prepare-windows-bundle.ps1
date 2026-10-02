@@ -26,8 +26,13 @@ Expand-Archive "$Output/$archive" -DestinationPath $Output
 Move-Item "$Output/node-v$nodeVersion-win-x64" "$runtime/node"
 Copy-Item $Pnpm "$runtime/pnpm" -Recurse
 $gitUrl = 'https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.5/PortableGit-2.55.0.5-64-bit.7z.exe'
-Invoke-WebRequest $gitUrl -OutFile "$runtime/git/PortableGit.exe"
-if ((Get-FileHash "$runtime/git/PortableGit.exe" -Algorithm SHA256).Hash.ToLowerInvariant() -ne '5aa8a20f6e9abb2c755f0e73c91c687701a46b309ad84a0ca6509380fa4ae290') { throw 'PortableGit integrity mismatch' }
+$gitArchive = Join-Path $Output 'PortableGit.exe'
+Invoke-WebRequest $gitUrl -OutFile $gitArchive
+if ((Get-FileHash $gitArchive -Algorithm SHA256).Hash.ToLowerInvariant() -ne '5aa8a20f6e9abb2c755f0e73c91c687701a46b309ad84a0ca6509380fa4ae290') { throw 'PortableGit integrity mismatch' }
+$gitProcess = Start-Process -FilePath $gitArchive -ArgumentList @('-y', ('-o"' + "$runtime/git" + '"')) -Wait -PassThru
+if ($gitProcess.ExitCode -ne 0 -or -not (Test-Path "$runtime/git/bin/bash.exe") -or -not (Test-Path "$runtime/git/cmd/git.exe")) { throw 'PortableGit preparation failed' }
+& "$runtime/git/bin/bash.exe" --version
+if ($LASTEXITCODE) { throw 'Bundled Bash cannot start' }
 $resources = @{}
 $resources["$Prepared/app/"] = 'app/'
 $resources["$runtime/"] = 'runtime/'

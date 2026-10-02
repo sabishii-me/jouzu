@@ -113,10 +113,6 @@ export function App() {
     if (!state?.ready) return;
     setOperation("launching"); setError(null); setNotice(null);
     try {
-      if (!state.bash) {
-        if (!state.bundled_git && !await confirm(t.download, { title: t.prepare, kind: "info" })) return;
-        setOperation("preparing"); await invoke("install_git");
-      }
       setOperation("launching");
       await invoke("launch_jouzu", { path });
       setNotice("requested");
