@@ -62,9 +62,10 @@ for (const phase of ["before", "after"]) {
 			stderr += data;
 		});
 		const [code, signal] = await once(child, "exit");
-		assert.equal(code, null, stderr);
-		assert.equal(signal, "SIGKILL", stderr);
-		assert.equal(JSON.parse(await readFile(marker, "utf8")).phase, phase);
+		// Windows reports a self-inflicted SIGKILL as exit code 1, not a signal.
+		assert.equal(code, process.platform === "win32" ? 1 : null, stderr);
+		assert.equal(signal, process.platform === "win32" ? null : "SIGKILL", stderr);
+		assert.deepEqual(JSON.parse(await readFile(marker, "utf8")), { repair: "truncate", phase });
 
 		// Use production discovery, not an injected opener with a known journal path.
 		const reopened = await open();
