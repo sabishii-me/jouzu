@@ -8,9 +8,8 @@
  */
 
 import { isUtf8 } from "node:buffer";
-import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, truncate, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { writeFilePrivateAtomic } from "../private-fs.js";
 import { checkpointFlowJournal, FLOW_JOURNAL_CHECKPOINT_BYTES } from "./journal-checkpoint.js";
 import {
 	applyValueWrites,
@@ -333,7 +332,9 @@ export async function openJournalSession(
 		applyValueWrites(values, writes);
 	}
 	const nextSeq = Math.max(header.nextSeq ?? 1, lastSeq + 1);
-	if (completeBytes !== content.length) writeFilePrivateAtomic(path, complete);
+	// Writer ownership excludes concurrent appends. Truncate only the validated incomplete suffix;
+	// interrupted repair must not leave a temporary file that blocks journal discovery.
+	if (completeBytes !== content.length) await truncate(path, completeBytes);
 	// Complete records and identity are validated before either repair or compaction can write.
 	const size = await checkpointFlowJournal(path, checkpointBytes);
 	if (size !== undefined) checkpointBytes = Math.max(FLOW_JOURNAL_CHECKPOINT_BYTES, size * 2);
