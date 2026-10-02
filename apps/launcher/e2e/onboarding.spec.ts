@@ -33,3 +33,21 @@ test('languages are discoverable and provider search includes custom credentials
  await expect(page.getByLabel('API key',{exact:true})).toBeVisible();
  await expect(page.getByRole('textbox',{name:'API base URL'})).toBeVisible();
 });
+
+test('page frame remains stable across preferences, model setup and workspaces', async ({page}) => {
+ await page.addInitScript(()=>localStorage.setItem('jouzu.ui.language','en'));
+ await page.goto('http://localhost:1420/?onboarding=1');
+ const geometry=async()=>({heading:await page.locator('[data-slot="page-heading"]').boundingBox(),body:await page.locator('[data-slot="page-body"]').boundingBox()});
+ const initial=await geometry();
+ await page.getByRole('button',{name:'Continue',exact:true}).click();
+ expect(await geometry()).toEqual(initial);
+ await page.getByRole('combobox',{name:'Service',exact:true}).click();
+ await page.getByRole('option',{name:'Custom provider',exact:true}).click();
+ expect(await geometry()).toEqual(initial);
+ await page.getByRole('button',{name:'Return to workspaces',exact:true}).click();
+ await expect(page.getByRole('heading',{name:'Where will you work?'})).toBeVisible();
+ expect(await geometry()).toEqual(initial);
+ await page.getByRole('button',{name:'Return to model setup',exact:true}).click();
+ expect(await geometry()).toEqual(initial);
+ await expect(page.getByLabel('API key',{exact:true})).toBeVisible();
+});
