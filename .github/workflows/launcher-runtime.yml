@@ -1,0 +1,51 @@
+name: Windows published runtime
+on:
+  push:
+    branches: ['feat/tauri-launcher']
+    paths:
+      - '.github/workflows/launcher-runtime.yml'
+      - 'packaging/launcher/prepare-published-runtime.mjs'
+  workflow_dispatch:
+    inputs:
+      jouzu_version:
+        description: Official Jouzu npm version
+        type: string
+        default: '0.1.18'
+        required: true
+permissions:
+  contents: read
+jobs:
+  runtime:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24.19.0'
+      - name: Install private build package manager
+        run: |
+          npm install --prefix "$env:RUNNER_TEMP/build-tools" pnpm@10.21.0 --ignore-scripts --no-audit --no-fund
+      - name: Prepare official published Jouzu runtime
+        env:
+          JOUZU_VERSION: ${{ inputs.jouzu_version || '0.1.18' }}
+        run: |
+          npm exec -- node packaging/launcher/prepare-published-runtime.mjs "$env:JOUZU_VERSION" "$env:RUNNER_TEMP/jouzu-runtime" "$env:RUNNER_TEMP/build-tools/node_modules/pnpm/bin/pnpm.cjs"
+      - name: Archive qualified inputs and application
+        run: |
+          tar -czf "$env:RUNNER_TEMP/jouzu-runtime.tgz" -C "$env:RUNNER_TEMP/jouzu-runtime" source.json recipe/package.json recipe/pnpm-lock.yaml recipe/artifacts app
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          (Get-FileHash "$env:RUNNER_TEMP/jouzu-runtime.tgz" -Algorithm SHA256).Hash | Out-File "$env:RUNNER_TEMP/jouzu-runtime.sha256" -Encoding ascii
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: windows-published-runtime
+          path: |
+            ${{ runner.temp }}/jouzu-runtime.tgz
+            ${{ runner.temp }}/jouzu-runtime.sha256
+          if-no-files-found: error
+          retention-days: 7
