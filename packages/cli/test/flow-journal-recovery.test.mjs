@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { fork } from "node:child_process";
 import { once } from "node:events";
-import { appendFile, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { test } from "node:test";
@@ -11,7 +11,8 @@ const scope = { sessionId: "parent", branchId: "branch" };
 const member = { id: "結果", revision: "1", kind: "result", required: false, contentHash: "a".repeat(64) };
 
 async function fixture(t) {
-	const root = await mkdtemp(join(tmpdir(), "jouzu-journal-recovery-"));
+	// Attachment discovery canonicalizes its root, including macOS's /var alias.
+	const root = await realpath(await mkdtemp(join(tmpdir(), "jouzu-journal-recovery-")));
 	const attachments = [];
 	t.after(async () => {
 		for (const attachment of attachments) await attachment.close();
