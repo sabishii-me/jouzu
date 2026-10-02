@@ -1,7 +1,9 @@
-param([Parameter(Mandatory=$true)][string]$InputDirectory,[Parameter(Mandatory=$true)][string]$Version)
+param([Parameter(Mandatory=$true)][string]$InputDirectory,[string]$Version)
 $ErrorActionPreference = 'Stop'
-if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid version' }
 $repo = (Resolve-Path "$PSScriptRoot/../..").Path
+# The launcher version is committed in the application package; nothing injects it.
+if (-not $Version) { $Version = (Get-Content (Join-Path $repo 'apps/launcher/package.json') -Raw | ConvertFrom-Json).version }
+if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid launcher version' }
 $inputRoot = (Resolve-Path $InputDirectory).Path
 $output = Join-Path $env:RUNNER_TEMP 'launcher-release'
 New-Item -ItemType Directory $output | Out-Null
@@ -26,7 +28,7 @@ $resources["$inputRoot/runtime/"]='runtime/'
 $resources["$repo/packaging/launcher/"]='runtime/launcher-update/'
 $resources["$target/console.exe"]='console.exe'
 $resources["$inputRoot/update-config/jouzu-update.json"]='jouzu-update.json'
-$config = @{version=$Version;plugins=(Get-Content "$inputRoot/update-config/tauri-updater.json" -Raw | ConvertFrom-Json).plugins;bundle=@{active=$true;targets=@('nsis');resources=$resources;icon=@('icons/icon.ico');windows=@{signCommand=@{cmd='powershell.exe';args=@('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',"$PSScriptRoot/sign-bundle-file.ps1",'-Policy',$policyFile,'-File','%1')};nsis=@{installMode='currentUser';template="$PSScriptRoot/installer.nsi";installerHooks="$PSScriptRoot/installer-hooks.nsh"}}}}
+$config = @{plugins=(Get-Content "$inputRoot/update-config/tauri-updater.json" -Raw | ConvertFrom-Json).plugins;bundle=@{active=$true;targets=@('nsis');resources=$resources;icon=@('icons/icon.ico');windows=@{signCommand=@{cmd='powershell.exe';args=@('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',"$PSScriptRoot/sign-bundle-file.ps1",'-Policy',$policyFile,'-File','%1')};nsis=@{installMode='currentUser';template="$PSScriptRoot/installer.nsi";installerHooks="$PSScriptRoot/installer-hooks.nsh"}}}}
 $configPath = Join-Path $tools 'bundle.json'
 $config | ConvertTo-Json -Depth 12 | Set-Content $configPath
 $env:JOUZU_UNINSTALLER_SIGN_COMMAND = 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + "$PSScriptRoot/sign-uninstaller.ps1" + '" -Policy "' + $policyFile + '" -File "%1"'

@@ -2,11 +2,6 @@ name: Windows published runtime
 on:
   workflow_dispatch:
     inputs:
-      launcher_version:
-        description: Launcher release version
-        type: string
-        default: '0.1.24'
-        required: true
       jouzu_version:
         description: Official Jouzu npm version
         type: string
@@ -91,7 +86,6 @@ jobs:
           (Get-FileHash "$env:RUNNER_TEMP/jouzu-runtime.tgz" -Algorithm SHA256).Hash | Out-File "$env:RUNNER_TEMP/jouzu-runtime.sha256" -Encoding ascii
       - name: Build and test signing inputs
         env:
-          LAUNCHER_VERSION: ${{ inputs.launcher_version }}
           LAUNCHER_PUBLIC_KEY: ${{ vars.LAUNCHER_PUBLIC_KEY }}
           JOUZU_RECIPE_PUBLIC_KEY: ${{ vars.JOUZU_RECIPE_PUBLIC_KEY }}
           JOUZU_RECIPE_BASE_URL: ${{ vars.JOUZU_RECIPE_BASE_URL }}
@@ -99,7 +93,7 @@ jobs:
           New-Item -ItemType Directory "$env:RUNNER_TEMP/update-config" | Out-Null
           node packaging/launcher/update-configuration.mjs "$env:RUNNER_TEMP/update-config"
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          ./packaging/launcher/prepare-windows-bundle.ps1 -Prepared "$env:RUNNER_TEMP/jouzu-runtime" -Pnpm "$env:RUNNER_TEMP/build-tools/node_modules/pnpm" -Output "$env:RUNNER_TEMP/windows-bundle" -Version "$env:LAUNCHER_VERSION" -UpdateConfigDirectory "$env:RUNNER_TEMP/update-config"
+          ./packaging/launcher/prepare-windows-bundle.ps1 -Prepared "$env:RUNNER_TEMP/jouzu-runtime" -Pnpm "$env:RUNNER_TEMP/build-tools/node_modules/pnpm" -Output "$env:RUNNER_TEMP/windows-bundle" -UpdateConfigDirectory "$env:RUNNER_TEMP/update-config"
           npm ci --prefix apps/launcher
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           Push-Location apps/launcher
@@ -168,7 +162,6 @@ jobs:
       LAUNCHER_PUBLIC_KEY: ${{ vars.LAUNCHER_PUBLIC_KEY }}
       JOUZU_RECIPE_PUBLIC_KEY: ${{ vars.JOUZU_RECIPE_PUBLIC_KEY }}
       JOUZU_RECIPE_BASE_URL: ${{ vars.JOUZU_RECIPE_BASE_URL }}
-      LAUNCHER_VERSION: ${{ inputs.launcher_version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -190,8 +183,8 @@ jobs:
       - name: Authenticate signing identity
         run: ./packaging/launcher/azure-oidc-login.ps1
       - name: Sign and package CI binaries
-        run: ./packaging/launcher/finalize-windows-bundle.ps1 -InputDirectory "$env:RUNNER_TEMP/signing-inputs" -Version $env:LAUNCHER_VERSION
+        run: ./packaging/launcher/finalize-windows-bundle.ps1 -InputDirectory "$env:RUNNER_TEMP/signing-inputs"
       - name: Publish verified update
         env:
           GH_TOKEN: ${{ github.token }}
-        run: ./packaging/launcher/publish-launcher.ps1 -Version $env:LAUNCHER_VERSION -Directory "$env:RUNNER_TEMP/launcher-release"
+        run: ./packaging/launcher/publish-launcher.ps1 -Directory "$env:RUNNER_TEMP/launcher-release"

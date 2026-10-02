@@ -1,6 +1,7 @@
-param([Parameter(Mandatory=$true)][string]$Version,[Parameter(Mandatory=$true)][string]$Directory)
+param([Parameter(Mandatory=$true)][string]$Directory,[string]$Version)
 $ErrorActionPreference = 'Stop'
-if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid version' }
+if (-not $Version) { $Version = (Get-Content (Join-Path (Resolve-Path "$PSScriptRoot/../..").Path 'apps/launcher/package.json') -Raw | ConvertFrom-Json).version }
+if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid launcher version' }
 $repository = $env:GITHUB_REPOSITORY
 if ($repository -notmatch '^[\w.-]+/[\w.-]+$') { throw 'Invalid repository' }
 $setup = Join-Path $Directory "Jouzu Launcher_${Version}_x64-setup.exe"

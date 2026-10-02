@@ -112,3 +112,13 @@ test("uninstaller signing failure aborts bundle generation", () => {
   assert.ok(commands.length > 0);
   assert.ok(commands.every(line => line.trim().endsWith('= 0')));
 });
+
+test("the launcher version has a single committed source", () => {
+  const config = JSON.parse(readFileSync(new URL("../../apps/launcher/src-tauri/tauri.conf.json", import.meta.url), "utf8"));
+  assert.equal(config.version, "../package.json");
+  const pkg = JSON.parse(readFileSync(new URL("../../apps/launcher/package.json", import.meta.url), "utf8"));
+  assert.match(pkg.version, /^\d+\.\d+\.\d+$/);
+  const build = readFileSync(new URL("./prepare-windows-bundle.ps1", import.meta.url), "utf8");
+  assert.doesNotMatch(build, /\$Version/);
+  assert.doesNotMatch(build, /version = /);
+});

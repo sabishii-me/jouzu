@@ -2,11 +2,9 @@ param(
  [Parameter(Mandatory=$true)][string]$Prepared,
  [Parameter(Mandatory=$true)][string]$Pnpm,
  [Parameter(Mandatory=$true)][string]$Output,
- [string]$Version = '0.1.22',
  [string]$UpdateConfigDirectory
 )
 $ErrorActionPreference = 'Stop'
-if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid Launcher version' }
 $repo = (Split-Path (Split-Path $PSScriptRoot)).Replace('\','/')
 $Prepared = (Resolve-Path $Prepared).Path.Replace('\','/')
 $Pnpm = (Resolve-Path $Pnpm).Path
@@ -35,7 +33,6 @@ $resources["$runtime/"] = 'runtime/'
 $resources["$repo/packaging/launcher/"] = 'runtime/launcher-update/'
 $resources["$repo/apps/launcher/src-tauri/target/release/console.exe"] = 'console.exe'
 $config = @{
- version = $Version
  bundle = @{
   active = $true
   targets = @('nsis')
