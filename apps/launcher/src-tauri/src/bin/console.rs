@@ -1,3 +1,5 @@
+#[path = "../node_path.rs"]
+mod node_path;
 #[path = "../update_lock.rs"]
 mod update_lock;
 #[path = "../active_app.rs"]
@@ -42,7 +44,7 @@ fn main() {
         let _lease = update_lock::lock(&managed, false)?;
         let app = active_app::resolve_app(&root, &managed)?;
         let status = Command::new(root.join("runtime/node/node.exe"))
-            .arg(app.join("bootstrap.mjs"))
+            .arg(node_path::node_path(&app.join("bootstrap.mjs")))
             .stdin(Stdio::inherit())
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
