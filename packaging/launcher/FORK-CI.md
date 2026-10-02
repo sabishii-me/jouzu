@@ -31,3 +31,36 @@ Signing order:
 Initially retain output as CI artifacts for review. Publishing a release/feed is a separate authorized operation. Actions artifact download pages are not installer download URLs. Private release assets also require a supported authentication mechanism; do not assume an unauthenticated client can download them.
 
 Validate both independent update paths with installed builds: launcher replacement must retain the selected Jouzu version; Jouzu update must retain user configuration and use the qualified patched runtime. Test normal uninstall/reinstall separately from launcher upgrade. Use the normal product identity and installation paths for acceptance.
+
+## Administrator responsibilities
+
+The signing administrator manages Azure. The GitHub repository administrator does not need Azure access and must not disable signing-service controls.
+
+| Owner | Configuration |
+| --- | --- |
+| Signing administrator | Azure application/service principal, certificate-profile signer role, and federated identity |
+| Repository administrator | Protected GitHub Environment, required reviewers, permitted deployment branches/tags, Environment variables and secrets |
+| Release maintainer | Review the source commit, approve the protected job, inspect artifacts and authorize publication |
+
+For OIDC, use issuer `https://token.actions.githubusercontent.com`, audience `api://AzureADTokenExchange`, and subject `repo:OWNER/REPOSITORY:environment:ENVIRONMENT`. The repository and Environment names must match exactly. Use a separate federation for the fork. Do not export a developer's Azure login cache or create a client secret as a substitute for federation.
+
+### Environment configuration
+
+| Kind | Name | Purpose |
+| --- | --- | --- |
+| Variable | `LAUNCHER_PUBLIC_KEY` | Tauri public verification key embedded in the client |
+| Secret | `TAURI_SIGNING_PRIVATE_KEY` | Corresponding Tauri signing key |
+| Variable | `JOUZU_RECIPE_PUBLIC_KEY` | PEM Ed25519 verification key |
+| Secret | `JOUZU_RECIPE_PRIVATE_KEY` | Corresponding PEM Ed25519 private key |
+| Variable | `JOUZU_RECIPE_BASE_URL` | HTTPS recipe directory or GitHub Release asset base, ending in `/` |
+| Variables | `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID` | OIDC signing identity |
+| Variables | `AZURE_SIGNING_ENDPOINT`, `AZURE_SIGNING_ACCOUNT`, `AZURE_SIGNING_PROFILE` | Artifact Signing service destination |
+| Variable | `EXPECTED_SIGNER` | Exact expected Authenticode certificate subject |
+
+GitHub supplies `GITHUB_REPOSITORY`; do not hardcode the fork in product source. `signing-preflight.mjs` checks component requirements before a build. Jouzu recipe signing does not require Azure credentials or the Launcher private key.
+
+The current recipe workflow uses the protected `launcher-test` Environment. It prepares and signs an update independently of any Launcher build and uploads an artifact for review. It does not publish a Release. A workflow introduced only on a feature branch may need its scoped push trigger before GitHub makes it available for manual dispatch.
+
+GitHub recipe assets use flat names: `artifacts/example.tgz` is uploaded as `artifacts__example.tgz`. Signed manifest paths remain unchanged. The client accepts bounded redirects from GitHub Release URLs only to the HTTPS GitHub release-asset host. Ordinary directory sources cannot redirect. File integrity and recipe signature verification apply after transport.
+
+Keep fork and production update keys separate. Moving the workflow does not move client trust: builds for the main repository embed its configured production public keys and endpoints. Required approval is retained during tests; do not disable it to make a pending run proceed.
