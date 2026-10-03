@@ -29,7 +29,7 @@ permissions:
 jobs:
   recipe:
     runs-on: windows-latest
-    environment: launcher-test
+    environment: launcher-publish
     timeout-minutes: 40
     permissions:
       contents: write

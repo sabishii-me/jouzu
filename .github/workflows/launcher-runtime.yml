@@ -124,7 +124,7 @@ jobs:
           retention-days: 7
   sign-publish:
     needs: runtime
-    environment: launcher-test
+    environment: launcher-publish
     runs-on: windows-latest
     timeout-minutes: 60
     permissions:
