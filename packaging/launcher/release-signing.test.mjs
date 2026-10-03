@@ -43,6 +43,9 @@ test('release feed follows immutable asset upload and download integrity check',
  assert.match(script.slice(create, verify), /--jq '\.assets\[\]\.name'/);
  assert.doesNotMatch(script, /endswith\('/);
  assert.doesNotMatch(script, /\+\s*BS\s*\+/);
+ // The feed's notes field is a string in both documented update formats; a command's output is
+ // a list of lines in PowerShell, which would ship an array the client cannot parse.
+ assert.match(script, /-join "`n"/);
  assert.match(script.slice(create, verify), /-update\.exe/);
 });
 
