@@ -61,7 +61,7 @@ test('finalization signs updater only after final Authenticode verification', ()
 test('the payload is excluded from signing so vendor bytes stay pinned', () => {
  const signer = read('sign-windows.ps1');
  // textguard-native.js rejects a binary whose size or SHA256 differs from its manifest, so a
- // signed payload binary would break the feature and carry our publisher identity.
+ // signed payload binary would break the feature and carry the Jouzu publisher identity.
  assert.match(signer, /SkipRoots/);
  assert.match(signer, /StartsWith\(\$skip, \[StringComparison\]::OrdinalIgnoreCase\)\) \{/);
  // A failing signature must reach the log the release prints.

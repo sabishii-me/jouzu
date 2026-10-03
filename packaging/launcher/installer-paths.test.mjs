@@ -149,7 +149,8 @@ test('uninstall closes the launcher and reports program-file failures honestly',
  const post = hooks.slice(hooks.indexOf('!macro NSIS_HOOK_POSTUNINSTALL'));
  assert.ok(post.includes('$UpdateMode <> 1'), 'payload removal is uninstall-only');
  assert.ok(post.includes('jouzuRemoveFailed'), 'leftovers are reported');
- // The user-data message was shown when a running launcher, not user data, blocked a deletion.
+ // Program files and user data fail for different reasons, so only the branch that deletes user
+ // data may use the user-data message.
  assert.equal(installer.split('$(jouzuDeleteFailed)').length - 1, 1);
  assert.equal(installer.split('$(jouzuRemoveFailed)').length - 1, 2);
  for (const language of ['LANG_ENGLISH', 'LANG_JAPANESE', 'LANG_SIMPCHINESE', 'LANG_TRADCHINESE']) {

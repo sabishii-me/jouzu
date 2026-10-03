@@ -1,7 +1,7 @@
 # Launcher changelog
 
-One section per released Launcher version. The section titled `## <version>` is what the
-update feed shows for that version, so every release must have one.
+One section per released Launcher version. The update feed shows the section for the released
+version verbatim, so a release without a section is refused.
 
 ## 0.3.1
 

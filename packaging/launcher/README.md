@@ -1,4 +1,29 @@
-# Launcher application staging
+# Launcher packaging
+
+The launcher packages Jouzu as a native Windows application: a Tauri launcher with its own workspace
+screen, a console entry point, the Jouzu application payload, and the runtime that payload needs.
+`apps/launcher/` holds the application; everything in this directory builds, verifies, signs and
+publishes it.
+
+## Packages
+
+| Artifact | Contents | Purpose |
+| --- | --- | --- |
+| `Jouzu Launcher_<version>_x64-setup.exe` | launcher, console, application payload, Node/pnpm/PortableGit runtime | download, first install, repair |
+| `Jouzu Launcher_<version>_x64-update.exe` | launcher and launcher-owned support files only | in-app launcher update; the update feed serves only this artifact |
+
+Both come from one source tree in one release, and `build.json` records the version, the commit, the
+workflow run and both hashes. An update package that reaches a tenth of the full package is refused:
+that means the application payload was bundled into it, and an update exists precisely so that
+installing it does not rewrite the payload.
+
+## Build inputs
+
+Pinned and hash-verified: Node 24.19.0 from nodejs.org (SHA-256 checked against `SHASUMS256.txt`),
+PortableGit 2.55.0.5 from git-for-windows (pinned SHA-256), and pnpm 10.21.0. `NOTICES.md` lists the
+bundled components and their licences.
+
+## Application staging
 
 `stage-application.mjs` copies a **prepared npm installation prefix** into a separate application directory. It does not install dependencies, execute package scripts, download runtimes, or create an installer.
 
@@ -40,4 +65,67 @@ The recipe contains `package.json`, `pnpm-lock.yaml`, and optional `patches/`. P
 
 The resulting directory contains `node/`, `pnpm/`, and installed `app/`. Installation uses a frozen lock, production dependencies, disabled lifecycle scripts, a hoisted layout and copied package content. The source store is not copied: shipping a second copy of package content is not required for startup. Packages requiring build scripts must be explicitly prepared and qualified separately; this command does not silently enable scripts.
 
-This is a build primitive, not a complete installer. A real release recipe, native-feature checks, relocation/offline acceptance, starter import into the managed installation, and updater integration are still required. A version check alone does not qualify all features.
+## Jouzu updates
+
+A Jouzu update is described by a signed recipe: the npm tarballs, a frozen lock, a manifest and a
+signature verified with `JOUZU_RECIPE_PUBLIC_KEY`. The manifest carries the changelog section for the
+version being installed as `notes`/`notesSource`, read at the exact commit the registry reports, so the
+interface shows text that belongs to the published bytes and a recipe without notes is refused. The
+recipe is downloaded from `JOUZU_RECIPE_BASE_URL`, authenticated, staged into
+`<managed root>/updates/versions/<slot>` using the installed Node and pnpm, health-checked, and
+activated by writing `active.json`; a failed check restores the previous selection. Superseded slots
+are pruned after activation, and user data stays in `<managed root>/data`.
+
+The recipe workflow prepares the runtime once per npm version and uploads it for reuse, and a launcher
+build restores that qualified runtime instead of preparing the npm package a second time.
+
+## Release signing
+
+Windows Authenticode signatures use Azure Artifact Signing. The tools are obtained the way Microsoft
+documents (`nuget.exe install Microsoft.Windows.SDK.BuildTools` for signtool and
+`Microsoft.ArtifactSigning.Client` for the signing dlib), and `sign-windows.ps1` runs the documented
+command (`/fd SHA256`, RFC3161 timestamp, `/dlib`, `/dmdf`) through the bundler's
+`bundle.windows.signCommand`. The bundler calls it for the application binaries, for every bundled
+`.exe`/`.dll` that does not already carry a vendor signature, and for the NSIS-generated uninstaller
+through the define the bundler supplies. The command reads its configuration from the environment
+(`JOUZU_SIGN_SIGNTOOL`, `JOUZU_SIGN_DLIB`, `JOUZU_SIGN_METADATA`, `JOUZU_SIGN_SKIP_ROOTS`,
+`JOUZU_SIGN_LOG`) and logs every result, which the release prints when a bundle fails.
+
+The application payload and the runtime are never signed: upstream pins their size and SHA-256 and the
+payload re-checks both when it starts a native helper, so signing them would disable that check.
+`JOUZU_SIGN_SKIP_ROOTS` carries those directories.
+
+Configuration is checked before a build compiles anything (`signing-preflight.mjs`):
+
+| Kind | Name | Purpose |
+| --- | --- | --- |
+| Variable | `LAUNCHER_PUBLIC_KEY` | Tauri public verification key embedded in the client |
+| Secret | `TAURI_SIGNING_PRIVATE_KEY` | Corresponding Tauri signing key |
+| Variable | `JOUZU_RECIPE_PUBLIC_KEY` | Recipe verification key |
+| Secret | `JOUZU_RECIPE_PRIVATE_KEY` | Corresponding recipe signing key |
+| Variable | `JOUZU_RECIPE_BASE_URL` | HTTPS recipe directory or release asset base, ending in `/` |
+| Variables | `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID` | OIDC signing identity |
+| Variables | `AZURE_SIGNING_ENDPOINT`, `AZURE_SIGNING_ACCOUNT`, `AZURE_SIGNING_PROFILE` | Artifact Signing destination |
+| Variable | `EXPECTED_SIGNER` | Exact expected Authenticode certificate subject |
+
+The updater signature over the published installer is verified against `LAUNCHER_PUBLIC_KEY` before
+publication, so an installer that no installed launcher could verify is never offered.
+
+A release publishes its version assets once and then replaces the `launcher-update` feed, which is the
+only replaceable file: it names the stored artifact, carries the changelog section as `notes` and the
+updater signature. A scheduled check re-verifies that the published npm version still has a matching
+signed recipe and opens an issue when it does not, and the npm publication workflow calls the recipe
+workflow with `publish: true`, so a published version cannot exist without its signed Windows update
+artifact.
+
+## Validation
+
+```sh
+npm run test:node -- packaging/launcher/*.test.mjs
+```
+
+`Launcher Windows checks` builds the frontend and the Windows binaries, runs these packaging tests and
+the Rust tests, and exercises the interface with mocked IPC. It does not sign, publish, or install an
+update, and a green check is not installed-upgrade acceptance: verify that a launcher replacement
+retains the selected Jouzu version and that a Jouzu update retains user configuration, and test
+uninstall separately from a launcher upgrade.
