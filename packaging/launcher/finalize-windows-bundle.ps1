@@ -120,6 +120,10 @@ try {
  # TAURI_SIGNING_PRIVATE_KEY, which `signer sign` reads itself, so it never reaches a file.
  npm run tauri -- signer sign --app-version $Version $updateSetup
  if ($LASTEXITCODE) { throw 'Updater signing failed' }
+ # The signing key is a secret, so its pairing with the key installed launchers carry is proven
+ # by verifying the signature it just produced; an unusable update is never published.
+ & node "$PSScriptRoot/verify-updater-signature.mjs" $updateSetup "$updateSetup.sig" $env:LAUNCHER_PUBLIC_KEY
+ if ($LASTEXITCODE) { throw 'Updater signature does not match the launcher public key' }
 
  Copy-Item "$inputRoot/source.json" $output
  @{version=$Version;commit=$env:GITHUB_SHA;run=$env:GITHUB_RUN_ID;setup=(Get-FileHash $fullSetup -Algorithm SHA256).Hash;update=(Get-FileHash $updateSetup -Algorithm SHA256).Hash} | ConvertTo-Json | Set-Content "$output/build.json"
