@@ -10,7 +10,7 @@ test("Windows network acceptance fixture exercises the built CLI", { timeout: 24
 	const root = resolve(import.meta.dirname, "../../..");
 	const { stdout } = await run(
 		process.execPath,
-		[resolve(root, "packaging/launcher/network.test.mjs"), resolve(root, "packages/cli/dist/cli.js"), tmpdir()],
+		[resolve(root, "packaging/launcher/network-acceptance.mjs"), resolve(root, "packages/cli/dist/cli.js"), tmpdir()],
 		{ timeout: 230_000, maxBuffer: 1024 * 1024 },
 	);
 	assert.match(stdout, /streamed inference and model rejection passed/u);
