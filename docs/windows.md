@@ -1,6 +1,6 @@
 # Windows prerequisites for Jouzu v0.1
 
-Published Jouzu v0.1 releases use npm. An unsigned [Windows installer preview](../packaging/windows/README.md) is also available from GitHub Releases; it bundles Node/npm, Git Bash, Windows Terminal, and the runtime DLLs.
+Published Jouzu v0.1 releases use npm. A signed [Windows launcher](../packaging/launcher/README.md) is also available from GitHub Releases; it packages the launcher, the Jouzu application, Node, pnpm, and Git Bash.
 
 Jouzu v0.1.5's bundled extension set passed the full Linux, macOS, and Windows qualification matrix with Node 22 and 24. The prerequisites below describe the v0.1 npm environment.
 
@@ -36,14 +36,14 @@ For real global npm installations, the first eligible interactive launch checks 
 
 Jouzu uses `%APPDATA%\Jouzu\agent` for configuration and `%LOCALAPPDATA%\Jouzu` for state and cache by default. `--jouzu-home <path>` or `JOUZU_HOME` can select one portable root. The compatibility suite covers spaces, Japanese characters, full-width spaces, UTF-8, UTF-8 BOM, CRLF, and normalization-sensitive names without rewriting user files.
 
-The installer preview uses `%LOCALAPPDATA%\JouzuDesktop\data` for configuration, sessions, and caches unless `JOUZU_HOME` or `--jouzu-home` overrides it. Desktop launches disable automatic npm updates; run a newer installer to update.
+The launcher keeps configuration, sessions, and caches under `%LOCALAPPDATA%\Shisa.ai\Jouzu\data` unless `JOUZU_HOME` overrides it. It updates the launcher and the Jouzu application independently of npm.
 
 CP932/Shift-JIS is not a managed-profile encoding. If an existing profile target is not valid UTF-8, Jouzu reports an `unsupported-encoding` conflict and leaves its bytes unchanged.
 
 ## v0.1 limitations
 
 - npm installations require separately installed Node.js/npm, Git Bash, a terminal, and Visual C++ runtime.
-- The installer preview bundles those dependencies for x64 Windows. It is unsigned; native testing used Windows Server 2025, with clean Windows 10/11 qualification still pending.
-- The installer adds bundled tools to Jouzu child processes only; it does not change the system PATH.
+- The launcher bundles those dependencies for x64 Windows and ships signed, so a separate Node.js/npm, Git Bash, or Visual C++ runtime installation is not required.
+- The launcher adds bundled tools to Jouzu child processes only; it does not change the system PATH.
 - No claim that all third-party Pi extensions support native Windows.
 - Console behavior outside Windows Terminal and Git Bash is not part of the v0.1 support claim.

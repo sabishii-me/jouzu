@@ -32,4 +32,4 @@ For a flow-control problem, include relevant `/flow` output after reviewing it. 
 
 You can report a problem using the [GitHub issue form](https://github.com/shisa-ai/jouzu/issues/new) without launching Jouzu. Include the installation method, the version you attempted to install, your operating system, the failing step, and the reviewed error text.
 
-For Windows installer failures, use the setup log path shown by the installer. Review relevant excerpts before sharing them; logs can include your username and local paths. See [Windows setup](windows.md) and the [Windows installer preview](../packaging/windows/README.md) for installation details.
+For Windows installer failures, use the setup log path shown by the installer. Review relevant excerpts before sharing them; logs can include your username and local paths. See [Windows setup](windows.md) and the [launcher packaging](../packaging/launcher/README.md) for installation details.

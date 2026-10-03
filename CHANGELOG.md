@@ -230,7 +230,7 @@
 - Check GitHub Releases daily from the Windows working-folder screen and show a download link for newer stable x64 installers.
 
 - List running and paused goals with `/goal`, and pause, stop, or resume one with `/goal pause`, `/goal stop`, or `/goal resume`, optionally followed by a `lane/run-tag`. Without a target, the command selects the attached goal or the only matching goal; `/multiloop` shows all runs.
-- Show the selected working folder in the Windows launcher before it opens a terminal, with an option to remember it for later launches. If the saved folder is unavailable, the launcher asks for another folder instead of opening a different one. The launchers and installer use a transparent JZ icon. See [Windows installer preview](packaging/windows/README.md).
+- Show the selected working folder in the Windows launcher before it opens a terminal, with an option to remember it for later launches. If the saved folder is unavailable, the launcher asks for another folder instead of opening a different one. The launchers and installer use a transparent JZ icon.
 - Report catalog access failures with the cause and the action to take: DNS resolution, connection, timeout, proxy authentication, HTTP 401, 403, or 407, certificate verification, or local catalog-data access. The first refresh failure is retained until a refresh succeeds, and `catalog status` reports it as `Last error` with the overall status degraded.
 
 ### Changed
@@ -258,7 +258,7 @@
 
 ### Added
 
-- Add an unsigned Windows installer preview with per-user installation, bundled Node.js/npm, Git Bash, Windows Terminal, ripgrep, and fd. Desktop and Start menu shortcuts open a project-folder picker and Jouzu setup. Installation verifies the payload before activation, supports rollback, and preserves user data outside the installation directory on uninstall. See [Windows installer preview](packaging/windows/README.md).
+- Add an unsigned Windows installer preview with per-user installation, bundled Node.js/npm, Git Bash, Windows Terminal, ripgrep, and fd. Desktop and Start menu shortcuts open a project-folder picker and Jouzu setup. Installation verifies the payload before activation, supports rollback, and preserves user data outside the installation directory on uninstall. 
 - Inspect the loaded flow runtime with `/flow runtime`, including build and extension identity, and warn when a rebuild requires restarting the session.
 
 ### Changed
