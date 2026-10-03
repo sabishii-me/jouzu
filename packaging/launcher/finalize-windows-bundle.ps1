@@ -111,6 +111,11 @@ try {
  # The bundler restores the application binary it patched for bundle-type marking after the
  # run, so the on-disk copy is unsigned; what the installers carry is the signed copy the
  # bundler verified before it ran makensis. Only the packaged results are checked here.
+ # The launcher-only package must not carry the application payload: the update artifact exists
+ # precisely so an update never rewrites it. A payload-sized update means the two builds got mixed up.
+ if ((Get-Item -LiteralPath $updateSetup).Length * 10 -ge (Get-Item -LiteralPath $fullSetup).Length) {
+  throw "Launcher-only package is unexpectedly large, refusing to publish: $updateSetup"
+ }
  foreach ($file in @("$target/console.exe",$fullSetup,$updateSetup)) {
   $signature = Get-AuthenticodeSignature -LiteralPath $file
   if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -ne $env:EXPECTED_SIGNER -or -not $signature.TimeStamperCertificate) { throw "Invalid final signature: $file ($($signature.Status), $($signature.SignerCertificate.Subject))" }
