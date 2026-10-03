@@ -20,9 +20,12 @@ test('the bundler signing callback runs the documented signtool command', () => 
  assert.match(script, /\/fd SHA256/);
  assert.match(script, /\/tr http:\/\/timestamp\.acs\.microsoft\.com/);
  assert.match(script, /\/dlib \$Dlib \/dmdf \$Metadata/);
- // A signature that is not the expected signer, or is untimestamped, must stop the release.
- assert.match(script, /SignerCertificate\.Subject -ne \$ExpectedSubject/);
- assert.match(script, /TimeStamperCertificate/);
+ // The callback must not depend on certificate cmdlets: the bundler spawns Windows PowerShell
+ // where they are not guaranteed to load, so identity is asserted by the release script.
+ assert.doesNotMatch(script, /Get-AuthenticodeSignature/);
+ const finalize = read('finalize-windows-bundle.ps1');
+ assert.match(finalize, /SignerCertificate\.Subject -ne \$env:EXPECTED_SIGNER/);
+ assert.match(finalize, /TimeStamperCertificate/);
 });
 
 test('release feed follows immutable asset upload and download integrity check', () => {

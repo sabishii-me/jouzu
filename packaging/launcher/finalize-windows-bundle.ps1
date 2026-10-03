@@ -51,6 +51,11 @@ $skipRoots = @("$inputRoot/app","$inputRoot/runtime","$repo/packaging/launcher")
 # The bundler substitutes only the file path; everything else reaches the signer through the
 # environment, which keeps quoting and argument binding out of the release path. The signer
 # reports its result to this log, which the release prints when a bundle fails.
+# PowerShell 7 exports a PSModulePath that Windows PowerShell cannot use: it resolves the pwsh
+# copies of its own built-in modules, and autoloading them fails inside the process the bundler
+# spawns (PowerShell/PowerShell#18530, actions/runner-images#13221). Removing it here makes every
+# spawned powershell.exe start with its own module paths again.
+Remove-Item Env:PSModulePath -ErrorAction SilentlyContinue
 $signLog = Join-Path $output 'signing.log'
 $env:JOUZU_SIGN_SIGNTOOL = $signTool
 $env:JOUZU_SIGN_DLIB = $dlib
@@ -111,7 +116,7 @@ try {
  # bundler verified before it ran makensis. Only the packaged results are checked here.
  foreach ($file in @("$target/console.exe",$fullSetup,$updateSetup)) {
   $signature = Get-AuthenticodeSignature -LiteralPath $file
-  if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -ne $env:EXPECTED_SIGNER -or -not $signature.TimeStamperCertificate) { throw "Invalid final signature: $file" }
+  if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -ne $env:EXPECTED_SIGNER -or -not $signature.TimeStamperCertificate) { throw "Invalid final signature: $file ($($signature.Status), $($signature.SignerCertificate.Subject))" }
  }
 
  # The updater signature covers the final installer bytes. The key arrives in
