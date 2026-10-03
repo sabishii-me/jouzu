@@ -23,8 +23,22 @@ test("a settled descriptor is fenced against replay, and the fence outlives its 
 	await settle();
 	assert.equal(f.bodies.length, 1, "the settled revision is fenced, not resurrected");
 
+	// A drained host operation starts its own semantic pass, which holds the idle boundary while it
+	// retires and re-wakes producers. Retire on the same terms the launcher does: retry briefly while
+	// the host reports busy rather than asserting on one attempt.
+	const retire = async () => {
+		const deadline = Date.now() + 5000;
+		for (;;) {
+			try {
+				return await f.ingress.retireLedgerHistory(0);
+			} catch (error) {
+				if (error.code !== "busy" || Date.now() >= deadline) throw error;
+				await settle();
+			}
+		}
+	};
 	// Retiring the attempt must keep that fence.
-	await f.ingress.retireLedgerHistory(0);
+	assert.equal(await retire(), 1);
 	assert.deepEqual((await f.ingress.branch().attachment.ledger.snapshot()).attempts, []);
 	synthetic.offer([{ id: "intent-1", revision: "1" }]);
 	await registration.changed();

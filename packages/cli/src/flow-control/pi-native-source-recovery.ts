@@ -126,6 +126,10 @@ export async function recoverNativeSources(
 	for (const record of records) {
 		const dispatch = record.dispatch;
 		if (!dispatch) continue;
+		// A recovered dispatch intent without native evidence has an unknown outcome, not a
+		// deliverable callback. Require an explicit recovery decision instead of silent user priority.
+		if (!atRequestBoundary && record.status !== "cancelled" && dispatch.phase === "started" && !dispatch.inputs?.length)
+			unresolved++;
 		unresolved += (dispatch.inputs ?? []).filter(
 			(input, index) =>
 				input.kind === "context" &&

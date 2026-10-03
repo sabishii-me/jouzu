@@ -841,7 +841,7 @@ test("retained user input blocks semantic producer selection until cancellation"
 	assert.equal(branch.host.gate().userPending, false);
 });
 
-test("user priority covers retention writes and failed admission remains retained", async (t) => {
+test("user priority covers retention writes but ends when admission revokes the callback", async (t) => {
 	const f = await fixture(t, {
 		admit: async () => {
 			throw new Error("admission failed");
@@ -863,8 +863,10 @@ test("user priority covers retention writes and failed admission remains retaine
 	assert.equal(branch.host.gate().userPending, true);
 	proceed.resolve();
 	await rejected;
-	assert.equal(branch.host.gate().userPending, true);
+	assert.equal(branch.host.gate().userPending, false);
 	const [record] = await store.snapshot();
+	assert.equal(record.status, "retained");
+	assert.equal(record.unavailable, "callback-ended");
 	await f.ingress.cancelRetained(record.id, 1);
 	assert.equal(branch.host.gate().userPending, false);
 	assert.equal(f.sent.length, 0);

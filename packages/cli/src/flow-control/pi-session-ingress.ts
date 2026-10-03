@@ -934,8 +934,12 @@ export class PiSessionFlowIngress implements Ingress {
 			try {
 				await this.release(saved.id, saved.revision);
 			} catch (error) {
-				// Pi revokes a callback when its submission handler throws.
+				// Pi revokes a callback when its submission handler throws. Retain its history,
+				// but do not let an undispatched input with no callback hold future wakes.
 				this.pending.delete(saved.id);
+				await branch.attachment.submissions.endCallback(saved.id, saved.revision);
+				await this.refreshUserInput();
+				this.requestRelease();
 				throw error;
 			}
 		}).finally(() => {
@@ -1088,6 +1092,12 @@ export class PiSessionFlowIngress implements Ingress {
 				else await dispatch();
 				await this.refreshUserInput();
 				return true;
+			} catch (error) {
+				// Deferred release can outlive submit(), but the dispatch callback is still one-use.
+				await branch.attachment.submissions.endCallback(id, revision);
+				await this.refreshUserInput();
+				this.requestRelease();
+				throw error;
 			} finally {
 				if (user) this.activeUserInput--;
 			}

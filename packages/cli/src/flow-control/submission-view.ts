@@ -5,7 +5,7 @@ import { type FlowAttempt, FlowLedgerError, type FlowLedgerState } from "./recei
 import { flowMemberIncluded } from "./request-retention.js";
 import type { RetainedSubmission } from "./submission-store.js";
 
-export const UNAVAILABLE_INPUT_REASON = "Input was not dispatched before the session ended. Submit it again to run it.";
+export const UNAVAILABLE_INPUT_REASON = "Input was not dispatched and cannot be delivered. Submit it again to run it.";
 
 export interface FlowSubmissionView {
 	id: string;

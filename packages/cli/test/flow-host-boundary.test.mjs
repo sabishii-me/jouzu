@@ -396,6 +396,35 @@ test("idle listeners recheck streaming state before notification", async (t) => 
 	assert.equal(calls, 1);
 });
 
+test("a deferred operation notification keeps its cause across a held maintenance barrier", async (t) => {
+	const { boundary, session, requests } = await fixture(t);
+	const causes = [];
+	boundary.onIdle((cause) => causes.push(cause));
+
+	// The completed prompt drains as an operation and defers its notification to the next turn.
+	await session.prompt("turn");
+	assert.equal(requests.length, 1);
+	const entered = deferred(),
+		release = deferred();
+	const maintenance = boundary.atQueueMaintenance(async () => {
+		entered.resolve();
+		await release.promise;
+	});
+	await entered.promise;
+	await tick();
+	assert.deepEqual(causes, []);
+
+	release.resolve();
+	assert.equal((await maintenance).kind, "idle");
+	await tick();
+	assert.deepEqual(causes, ["operation"]);
+
+	// The delivered cause is consumed, so a later maintenance-only drain reports maintenance.
+	await boundary.atQueueMaintenance(async () => {});
+	await tick();
+	assert.deepEqual(causes, ["operation", "maintenance"]);
+});
+
 test("ordinary prompt preflight cannot enter idle maintenance", async (t) => {
 	let boundary;
 	const results = [];

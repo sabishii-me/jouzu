@@ -25,6 +25,14 @@ Flow control coordinates background jobs, goals, loops, and tasks in one session
 - `retry` may repeat a request the model already answered.
 - Set `JOUZU_FLOW_CONTROL=0` before starting Jouzu to disable flow control for that process.
 
+## Waiting for jobs
+
+When an `agent_wait` call returns `waiting`, completion, failure, or deadline expiry schedules a response at the next eligible turn. If a reply is in progress, Flow waits for it to finish. Queued user messages run first and can carry the wait outcome in their context. Successful delivery does not schedule the same outcome again.
+
+An explicit pause or an unresolved execution outcome still blocks automatic replies. The wait outcome stays pending; use `/flow` to inspect the blocker.
+
+Inputs that can no longer be delivered remain visible as undelivered input, but are not queued and do not block automatic replies. Submit one again only if it is still needed. If dispatch was interrupted and its outcome is unknown, inspect the session and job state before using `/flow clear`. Clearing releases that recovery hold without replaying the interrupted input.
+
 ## Branches and resuming
 
 | Action | Result |

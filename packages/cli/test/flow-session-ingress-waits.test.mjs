@@ -316,6 +316,146 @@ test("committed resolution schedules a decision before its original deadline", a
 	assert.deepEqual(errors, []);
 });
 
+for (const queued of ["none", "steer", "followUp", "pause"])
+	test(`resolution during a busy turn resumes automatically (${queued})`, async (t) => {
+		const entered = deferred(),
+			proceed = deferred(),
+			errors = [];
+		let first = true;
+		const f = await fixture(t, {
+			provider: true,
+			admit: null,
+			autoRelease: { clock: ingressWaitClock(), onError: (error) => errors.push(error) },
+			onRequest: async () => {
+				if (!first) return;
+				first = false;
+				entered.resolve();
+				await proceed.promise;
+			},
+		});
+		const running = f.session.prompt("initial busy turn");
+		await entered.promise;
+		const branch = f.ingress.branch();
+		const wait = await declareIngressWait(branch);
+		if (queued === "steer" || queued === "followUp") await f.session[queued]("queued user priority");
+		if (queued === "pause") f.ingress.pauseAutomated("explicit user pause");
+		await branch.attachment.waits.reconcile(
+			"wait",
+			wait.observations.map((item) => ({ ...item, state: "satisfied" })),
+			20,
+		);
+		assert.equal(f.sent.length, 1, "resolution cannot interrupt the active request");
+		proceed.resolve();
+		await running;
+		if (queued === "pause") {
+			await f.session.waitForIdle();
+			await new Promise((resolve) => setTimeout(resolve, 50));
+			assert.equal(f.sent.length, 1, "a job finishing does not override an explicit pause");
+			assert.equal((await branch.attachment.waits.snapshot())[0].state, "resolved");
+			assert.equal(branch.host.gate().automatedPaused, true);
+			f.ingress.resumeAutomated();
+			f.ingress.requestRelease();
+		}
+		await waitForFlow(() => f.sent.length === 2);
+		await f.session.waitForIdle();
+		assert.match(JSON.stringify(f.sent[1]), /resolved/);
+		if (queued === "steer" || queued === "followUp")
+			assert.match(JSON.stringify(f.sent[1]), /queued user priority/, "the user's queued input owns the next request");
+		await f.ingress.dispose();
+		assert.equal(f.sent.length, 2, "draining scheduling produces no duplicate decision turn");
+		assert.deepEqual(errors, []);
+	});
+
+test("an interrupted dispatch without native evidence exposes a recovery blocker instead of replay", async (t) => {
+	const first = await fixture(t, { provider: true, admit: async () => false });
+	await first.session.prompt("continue");
+	const branch = first.ingress.branch();
+	const [held] = await branch.attachment.submissions.snapshot(false);
+	// Model the crash after durable dispatch intent but before a native input receipt.
+	await branch.attachment.submissions.session.mutate(async (mutation, context) => {
+		const address = value("jouzu.flow.submission", held.id);
+		const record = (await mutation.getValue(address, context)).value;
+		record.dispatch = { operationId: held.id, ownerId: "prior-attachment", phase: "started" };
+		await mutation.commit([setValue(address, record)], context);
+	}, BACKGROUND_CONTEXT);
+	await first.ingress.dispose();
+	const next = await fixture(t, {
+		root: first.root,
+		provider: true,
+		admit: null,
+		manager: SessionManager.open(first.session.sessionManager.getSessionFile()),
+	});
+	assert.equal(next.ingress.branch().sourceRecovery.unresolved, 1);
+	assert.equal(next.ingress.branch().host.gate().recoveryBlocked, true);
+	assert.equal(await next.ingress.recoveryHold(), "saved work needs a recovery decision");
+	const [interrupted] = await next.ingress.branch().attachment.submissions.snapshot(false);
+	assert.equal(interrupted.unavailable, undefined, "unknown execution cannot be classified as safely undelivered");
+	assert.equal(interrupted.dispatch.phase, "started");
+	assert.equal(next.sent.length, 0);
+	const recoveredBranch = next.ingress.branch();
+	const recover = recoveredBranch.native.recoverSources.bind(recoveredBranch.native);
+	let failRecovery = true;
+	t.mock.method(recoveredBranch.native, "recoverSources", async (...args) => {
+		if (failRecovery) {
+			failRecovery = false;
+			throw new Error("recovery read failed");
+		}
+		return recover(...args);
+	});
+	await assert.rejects(next.ingress.resetFlow(), /recovery read failed/);
+	assert.equal(recoveredBranch.host.gate().recoveryBlocked, true);
+	assert.deepEqual(await recoveredBranch.attachment.submissions.snapshot(false), [], "discard frees active capacity");
+	const [discarded] = await recoveredBranch.attachment.submissions.forIds([held.id]);
+	assert.equal(discarded.status, "cancelled");
+	assert.equal(discarded.dispatch.phase, "started", "discard preserves the unknown execution history");
+	const reset = await next.ingress.resetFlow();
+	assert.equal(reset.recoveryHeld, false);
+	assert.equal(await next.ingress.recoveryHold(), undefined);
+	assert.equal((await next.ingress.branch().attachment.submissions.forIds([held.id]))[0].status, "cancelled");
+	await next.session.prompt("new authorized work");
+	assert.equal(next.sent.length, 1, "reset releases the safety hold without replaying the interrupted input");
+});
+
+test("a failed deferred user dispatch releases its pending wait decision", async (t) => {
+	let allow = false;
+	const errors = [];
+	const f = await fixture(t, {
+		provider: true,
+		admit: async () => allow,
+		autoRelease: { clock: ingressWaitClock(), onError: (error) => errors.push(error) },
+	});
+	await f.session.prompt("continue");
+	const branch = f.ingress.branch();
+	const [held] = await branch.attachment.submissions.snapshot(false);
+	const dispatch = branch.native.dispatch.bind(branch.native);
+	t.mock.method(branch.native, "dispatch", (id, revision, operationId, callback) =>
+		id === held.id
+			? branch.attachment.submissions.dispatch(id, revision, operationId, async () => {
+					throw new Error("deferred dispatch failed");
+				})
+			: dispatch(id, revision, operationId, callback),
+	);
+	const wait = await declareIngressWait(branch);
+	allow = true;
+	await branch.attachment.waits.reconcile(
+		"wait",
+		wait.observations.map((item) => ({ ...item, state: "satisfied" })),
+		20,
+	);
+	await waitForFlow(() => f.sent.length === 1);
+	await f.session.waitForIdle();
+	const [abandoned] = await branch.attachment.submissions.forIds([held.id]);
+	assert.equal(abandoned.dispatch.phase, "failed");
+	assert.equal(abandoned.unavailable, "callback-ended");
+	assert.equal(branch.host.gate().userPending, false);
+	await assert.rejects(f.ingress.release(held.id, held.revision), { code: "stale" });
+	assert.match(JSON.stringify(f.sent[0]), /resolved/);
+	await f.ingress.dispose();
+	assert.equal(f.sent.length, 1);
+	assert.equal(errors.length, 1);
+	assert.match(errors[0].message, /deferred dispatch failed/);
+});
+
 for (const withUser of [false, true])
 	test(`automatic expiry precedes retained automation${withUser ? " after user input" : ""}`, async (t) => {
 		const clock = ingressWaitClock(),
