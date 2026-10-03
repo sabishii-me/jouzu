@@ -3,6 +3,11 @@
 One section per released Launcher version. The update feed shows the section for the released
 version verbatim, so a release without a section is refused.
 
+## 0.3.2
+
+- Rebuilt from the current packaging tree. Installing, updating and uninstalling are unchanged, and
+  the 0.3.1 uninstall fixes are included.
+
 ## 0.3.1
 
 - Uninstalling no longer reports "User-data deletion is incomplete" when a running Jouzu is what
