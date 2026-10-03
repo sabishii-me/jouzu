@@ -167,6 +167,46 @@ test("role definitions are arbitrary, revision checked, and judging tools cannot
 	assert.equal(resolveAgentModel("test", [model]).provider, "test");
 	assert.throws(() => resolveAgentModel("test", [model, { ...model, provider: "other" }]), /matches 2 providers/u);
 });
+test("concurrency and workspace-writer settings default, validate, and accept the widened limit", () => {
+	const config = defaultAgentConfig();
+	assert.equal(config.maxConcurrent, 4);
+	assert.equal(config.workspaceWriters, "serialize");
+	assert.equal(parseAgentConfig({ ...config, maxConcurrent: 32 }).maxConcurrent, 32);
+	assert.throws(() => parseAgentConfig({ ...config, maxConcurrent: 33 }), /Concurrent agents must be 1–32/);
+	assert.throws(() => parseAgentConfig({ ...config, maxConcurrent: 0 }), /Concurrent agents must be 1–32/);
+	assert.equal(
+		parseAgentConfig({ ...config, workspaceWriters: undefined }).workspaceWriters,
+		"serialize",
+		"configuration written before the setting existed keeps the historical behavior",
+	);
+	assert.equal(parseAgentConfig({ ...config, workspaceWriters: "parallel" }).workspaceWriters, "parallel");
+	assert.throws(() => parseAgentConfig({ ...config, workspaceWriters: "sometimes" }), /serialize or parallel/);
+});
+test("raised concurrency starts queued work in another workspace immediately", async () => {
+	const f = fixture(1);
+	const role = defaultAgentConfig().roles[1];
+	const other = join(f.p.cwd, "other-workspace");
+	mkdirSync(other, { recursive: true });
+	f.launch(role);
+	f.manager.launch({ role, model, auth: {}, cwd: other, task: "Do the task" });
+	assert.equal(f.children.length, 1);
+	f.manager.setConcurrency(2);
+	assert.equal(f.children.length, 2);
+	assert.throws(() => f.manager.setConcurrency(33), /Concurrent agents must be 1–32/);
+	assert.throws(() => f.manager.setWorkspaceWriters("sometimes"), /serialize or parallel/);
+	await f.manager.dispose();
+});
+test("parallel child writers may share one workspace on the user's instruction", async () => {
+	const f = fixture();
+	const role = defaultAgentConfig().roles[1];
+	f.launch(role);
+	f.launch(role);
+	assert.equal(f.children.length, 1, "writers serialize in one workspace by default");
+	f.manager.setWorkspaceWriters("parallel");
+	assert.equal(f.children.length, 2, "the parallel policy starts the queued writer beside the running one");
+	f.manager.setWorkspaceWriters("serialize");
+	await f.manager.dispose();
+});
 test("writer children serialize; result is terminal only after process exit; secrets stay out of records", async () => {
 	const f = fixture();
 	const first = f.launch();

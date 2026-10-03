@@ -122,6 +122,40 @@ test("a damaged workspace lock fails the run without starting a worker or retryi
 	}
 });
 
+test("the parallel writer policy starts a writer while another process holds the workspace lock", async () => {
+	const root = realpathSync(mkdtempSync(join(tmpdir(), "jouzu-lock-parallel-")));
+	const paths = { cwd: root, stateDir: join(root, "state") };
+	const path = join(paths.stateDir, "subagent-writers", `${pathDigest(root)}.sqlite`);
+	mkdirSync(dirname(path), { recursive: true });
+	let starts = 0;
+	const manager = new SubagentManager(paths, "parent", 1, (_launch, _emit, exit) => {
+		starts++;
+		return {
+			send() {},
+			async stop() {
+				exit(false);
+			},
+		};
+	});
+	const held = await hold(path);
+	try {
+		manager.setWorkspaceWriters("parallel");
+		const run = manager.launch({
+			role: defaultAgentConfig().roles[1],
+			model: { provider: "fixture", id: "test" },
+			auth: {},
+			cwd: root,
+			task: "Test parallel writers",
+		});
+		assert.equal(starts, 1, "the parallel policy does not wait for the cross-session workspace lock");
+		assert.equal(manager.get(run.id).status, "starting");
+	} finally {
+		await manager.dispose();
+		held.child.kill("SIGKILL");
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
 test("a failed writer-lock release fails completed and queued runs and rejects further work", async (t) => {
 	const root = realpathSync(mkdtempSync(join(tmpdir(), "jouzu-lock-release-")));
 	const paths = { cwd: root, stateDir: join(root, "state") };

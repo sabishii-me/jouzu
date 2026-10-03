@@ -10,17 +10,23 @@ The **Subagents** row controls child execution for this session. Select it and p
 
 Command shortcuts are `/workflow on`, `/workflow off`, and `/workflow toggle`. Turning subagents off blocks launch, resume, and steering, cancels queued work, and stops running children. The Palette asks for confirmation when children are active; `/workflow off` and `/workflow toggle` apply the requested change directly. Files already written remain. Turning subagents back on does not restart stopped work.
 
+## Concurrency and child writers
+
+The **Concurrency** row opens a form showing the current limit. Press `Enter` there to save a value from 1 to 32, or `Esc` to discard the edit; anything else is reported without saving. The **Child writers** row chooses what children with `write`, `edit`, or shell tools may do to one workspace: **One at a time** or **In parallel**. Both rows write `agents.json` and apply to the running session immediately, so a raised limit starts queued work without a relaunch.
+
+Every launch has a working directory, which defaults to the parent session's directory. The assignment form's **Workspace** row and the `workspace` argument of the `subagent` tool point a launch at another existing directory, such as a second worktree. Resume keeps the directory saved with the run.
+
 Definitions, main-session roles, run history, output reading, Stop, and completion acknowledgements remain available while subagents are off. The main agent receives the enabled state in its system prompt and is instructed to work directly when disabled. A disabled assignment call reports the setting rather than starting a child. Only the user should re-enable subagents.
 
 ## Definitions
 
 **Save** writes the definition. **Cancel** or `Esc` discards the form. Model selection and instruction editing change the draft; save the form to retain them. In the multiline editor, `Enter` inserts a newline and `Esc` returns the text to the form. Cancelling the enclosing form discards that text too. Applying, launching, or deleting a definition requires saving or cancelling pending edits first.
 
-**Use in main session** changes the idle main agent's model and thinking setting, and adds the role's instructions to subsequent turns. The main session keeps its conversation and tools. **Launch agent** opens an assignment form and starts a separate child session after you submit it. Child tools and execution limits apply to child runs. Editing a definition affects future launches; existing runs retain their saved definition.
+**Use in main session** changes the idle main agent's model and thinking setting, and adds the role's instructions to subsequent turns. The main session keeps its conversation and tools. **Launch agent** opens an assignment form and starts a separate child session after you submit it; the form's **Workspace** row names the child's directory and defaults to the parent session's. Child tools and execution limits apply to child runs. Editing a definition affects future launches; existing runs retain their saved definition.
 
 **Add agent** and **Duplicate as new agent** support arbitrary role names. Behavior follows the definition's fields, including **Review only**, rather than its name. Review-only definitions run as children and restrict built-in tools to `read`, `grep`, `find`, and `ls`. Bundled extension tools are also available; review-only is an assignment policy, not an OS security boundary.
 
-Definitions are stored in `agents.json` in Jouzu's configuration directory (`jz doctor` shows the directories). With `JOUZU_HOME`, this is `$JOUZU_HOME/agents.json`. The file contains `schemaVersion: 1`, `maxConcurrent`, and a `roles` array. Each role has:
+Definitions are stored in `agents.json` in Jouzu's configuration directory (`jz doctor` shows the directories). With `JOUZU_HOME`, this is `$JOUZU_HOME/agents.json`. The file contains `schemaVersion: 1`, `maxConcurrent`, `workspaceWriters`, and a `roles` array. Each role has:
 
 | Field | Meaning |
 | --- | --- |
@@ -34,7 +40,9 @@ Definitions are stored in `agents.json` in Jouzu's configuration directory (`jz 
 
 Saved definitions keep their configured limits. Edit and save them to use different limits; active runs and resumed follow-ups retain their original definition. The runtime ceiling avoids Node timer overflow; for example, 259,200 seconds allows a three-day run. A run stops at whichever limit it reaches first.
 
-`maxConcurrent` defaults to 2 and accepts 1–8. Changes to this file's concurrency setting take effect when a parent session attaches. The queue holds up to 32 waiting tasks. Roles with write, edit, or shell tools run one at a time per workspace; within a parent session, readers also wait for its writer. Separate Jouzu parent sessions serialize child writers through a workspace lock. Main-session edits and external programs do not participate in that lock.
+`maxConcurrent` defaults to 4 and accepts 1–32. `workspaceWriters` accepts `serialize` (default) or `parallel`; a file written before the setting existed loads as `serialize`. Workflow applies both settings to the running session when they are saved, and editing the file directly takes effect when a parent session attaches. The queue holds up to 32 waiting tasks.
+
+With `serialize`, roles with write, edit, or shell tools run one at a time per workspace; within a parent session, readers also wait for its writer, and separate Jouzu parent sessions serialize child writers through a workspace lock. With `parallel`, children may write in one workspace at the same time and the workspace lock is not used. Main-session edits and external programs do not participate in that lock.
 
 ## Delegation from the main agent
 
@@ -55,7 +63,7 @@ Only `op` is required by the shared schema. Each operation checks its own inputs
 
 Omit unrelated fields. If a strict provider requires every field, use `null` for unused optional fields—not empty strings, empty arrays, or invented IDs. For example, a fresh launch must omit `entryIds` or set it to `null`. If that field is rejected, remove it and retry; changing to splice would change the context shared with the child. Splice requires actual IDs obtained through parent trace. An interface that requires unrelated fields but rejects both omission and null cannot represent a valid call; report that interface error rather than guessing values.
 
-Before delegating, the main agent calls `roles` to check live availability and current definitions. It returns `{ "enabled": true, "roles": [...] }`, or `enabled: false` with a reason and the configured roles. Definitions can change during a session; choose a role with `child` or `both` placement. Launch checks the current definition and enable setting again. Only you can change a role's model through Workflow. The tool rejects model overrides, and the agent is instructed not to edit agent configuration to select another model. New launches use the role's configured model; resume keeps the exact model and definition saved with that run. A role configured as `same` uses the main session's model at launch.
+Before delegating, the main agent calls `roles` to check live availability and current definitions. It returns `{ "enabled": true, "maxConcurrent": 4, "workspaceWriters": "serialize", "roles": [...] }`, or `enabled: false` with a reason and the configured roles. Definitions can change during a session; choose a role with `child` or `both` placement. Launch checks the current definition and enable setting again. Only you can change a role's model through Workflow. The tool rejects model overrides, and the agent is instructed not to edit agent configuration to select another model. New launches use the role's configured model; resume keeps the exact model and definition saved with that run. A role configured as `same` uses the main session's model at launch.
 
 Launch returns immediately with a run ID. Unread terminal summaries arrive in a batch after active work and queued messages finish, including successful completion, limit exhaustion, timeout, cancellation, and crashes. Each batch includes status counts and a bounded sample; omitted results remain available through `list` and `read`. A notification reports completion, not acceptance of the work.
 

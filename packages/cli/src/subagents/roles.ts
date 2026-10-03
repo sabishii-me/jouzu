@@ -33,10 +33,20 @@ export interface AgentRole {
 	timeoutSeconds: number;
 	maxTurns: number;
 }
+/**
+ * What children that can write may do to one workspace at the same time.
+ * `serialize` keeps one writer per workspace and holds the cross-session
+ * workspace lock; `parallel` lets writers share a workspace on the user's
+ * instruction, including two children editing the same worktree.
+ */
+export const WORKSPACE_WRITER_POLICIES = ["serialize", "parallel"] as const;
+export type WorkspaceWriterPolicy = (typeof WORKSPACE_WRITER_POLICIES)[number];
+export const CONCURRENCY_BOUNDS = { minimum: 1, maximum: 32 } as const;
 export interface AgentConfig {
 	schemaVersion: 1;
-	roles: AgentRole[];
 	maxConcurrent: number;
+	workspaceWriters: WorkspaceWriterPolicy;
+	roles: AgentRole[];
 }
 export interface RoleSnapshot {
 	config: AgentConfig;
@@ -49,7 +59,8 @@ export function defaultAgentConfig(): AgentConfig {
 	const common = { thinking: "medium" as const, timeoutSeconds: 7200, maxTurns: 500 };
 	return {
 		schemaVersion: 1,
-		maxConcurrent: 2,
+		maxConcurrent: 4,
+		workspaceWriters: "serialize",
 		roles: [
 			{
 				...common,
@@ -97,6 +108,19 @@ function integer(value: unknown, label: string, min: number, max: number): numbe
 		throw new Error(`Validation: ${label} must be ${min}–${max}.`);
 	return value as number;
 }
+export function parseConcurrency(value: unknown): number {
+	return integer(value, "Concurrent agents", CONCURRENCY_BOUNDS.minimum, CONCURRENCY_BOUNDS.maximum);
+}
+/**
+ * Workspace-writer policy is optional so configuration written before the
+ * setting existed keeps loading; the historical behavior is `serialize`.
+ */
+export function parseWorkspaceWriters(value: unknown): WorkspaceWriterPolicy {
+	if (value === undefined) return "serialize";
+	if (!WORKSPACE_WRITER_POLICIES.includes(value as WorkspaceWriterPolicy))
+		throw new Error("Validation: child writers must be serialize or parallel.");
+	return value as WorkspaceWriterPolicy;
+}
 export function parseAgentConfig(value: unknown): AgentConfig {
 	if (!value || typeof value !== "object") throw new Error("Validation: invalid agent configuration.");
 	const raw = value as Record<string, unknown>;
@@ -141,7 +165,12 @@ export function parseAgentConfig(value: unknown): AgentConfig {
 			maxTurns: integer(role.maxTurns, "Maximum turns", 1, Number.MAX_SAFE_INTEGER),
 		};
 	});
-	return { schemaVersion: 1, roles, maxConcurrent: integer(raw.maxConcurrent, "Concurrent agents", 1, 8) };
+	return {
+		schemaVersion: 1,
+		maxConcurrent: parseConcurrency(raw.maxConcurrent),
+		workspaceWriters: parseWorkspaceWriters(raw.workspaceWriters),
+		roles,
+	};
 }
 export class AgentRoleStore {
 	readonly path: string;

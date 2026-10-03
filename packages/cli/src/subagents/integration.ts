@@ -31,18 +31,22 @@ import {
 	type AgentModel,
 	type AgentRole,
 	AgentRoleStore,
+	defaultAgentConfig,
 	digest,
 	isSameModelSelector,
 	parseAgentConfig,
 	type RoleSnapshot,
 	resolveAgentModel,
 	SAME_MODEL,
+	type WorkspaceWriterPolicy,
 } from "./roles.js";
 import { readSessionTrace, type TraceQuery } from "./trace.js";
 import { resolveWorkspace } from "./workspace.js";
 
 export interface WorkflowService {
 	sessionId(): string | undefined;
+	/** Parent session working directory, the default child workspace. */
+	cwd(): string;
 	subagentsEnabled(): boolean;
 	setSubagentsEnabled(enabled: boolean): Promise<void>;
 	roles(): RoleSnapshot;
@@ -207,6 +211,7 @@ export function createWorkflowIntegration(
 	};
 	const service: WorkflowService = {
 		sessionId: () => (ctx && manager ? manager.parentSessionId : undefined),
+		cwd: () => context().cwd,
 		subagentsEnabled: () => subagentsEnabled,
 		async setSubagentsEnabled(enabled) {
 			context();
@@ -228,7 +233,9 @@ export function createWorkflowIntegration(
 		},
 		roles,
 		save(snapshot) {
-			store.save(snapshot.config, snapshot.revision);
+			const saved = store.save(snapshot.config, snapshot.revision);
+			manager?.setConcurrency(saved.config.maxConcurrent);
+			manager?.setWorkspaceWriters(saved.config.workspaceWriters);
 			notify();
 		},
 		models: availableModels,
@@ -455,9 +462,12 @@ export function createWorkflowIntegration(
 								mainRole = parseAgentConfig({ schemaVersion: 1, maxConcurrent: 1, roles: [saved.role] }).roles[0];
 						} catch {}
 					}
-				let concurrency = 2;
+				let concurrency = defaultAgentConfig().maxConcurrent;
+				let workspaceWriters: WorkspaceWriterPolicy = "serialize";
 				try {
-					concurrency = roles().config.maxConcurrent;
+					const config = roles().config;
+					concurrency = config.maxConcurrent;
+					workspaceWriters = config.workspaceWriters;
 				} catch {
 					active.ui.notify(
 						"Workflow: agents.json could not be loaded. Correct the configuration before launching agents.",
@@ -470,6 +480,8 @@ export function createWorkflowIntegration(
 				});
 				try {
 					manager.attach();
+					// Apply the saved writer policy only once this process owns the session.
+					manager.setWorkspaceWriters(workspaceWriters);
 					inbox.start(active);
 				} catch (error) {
 					active.ui.notify(error instanceof Error ? error.message : "Workflow storage is unavailable.", "warning");
@@ -663,7 +675,8 @@ export function createWorkflowIntegration(
 					let result: unknown;
 					let presentation: unknown;
 					switch (params.op) {
-						case "roles":
+						case "roles": {
+							const config = roles().config;
 							result = {
 								enabled: subagentsEnabled,
 								...(!subagentsEnabled
@@ -672,7 +685,9 @@ export function createWorkflowIntegration(
 												"Subagents are disabled by the user for this session. Work directly; only the user should re-enable them.",
 										}
 									: {}),
-								roles: roles().config.roles.map(
+								maxConcurrent: config.maxConcurrent,
+								workspaceWriters: config.workspaceWriters,
+								roles: config.roles.map(
 									({ id, description, model, placement, judging, tools, maxTurns, timeoutSeconds }) => ({
 										id,
 										description,
@@ -687,6 +702,7 @@ export function createWorkflowIntegration(
 								),
 							};
 							break;
+						}
 						case "list":
 							result = {
 								runs: service

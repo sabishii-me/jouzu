@@ -210,11 +210,15 @@ About shows the running and installed Jouzu builds, Pi version, and process star
 
 Workflow uses one top-level tab and a visible **View: ‹ Agents ›** / **View: ‹ Runs ›** choice. The choice uses `←`/`→`; `Tab` remains reserved for Models / Workflow / Settings. Opening `/workflow` shows definitions. A **Subagents: ‹ On › / ‹ Off ›** row controls child execution for this session with `Enter`, `Space`, or `←`/`→`. Disabling asks for confirmation if children are queued or running, then stops them without undoing file changes. Definition editing and result inspection remain available. `/workflow on`, `/workflow off`, and `/workflow toggle` provide command shortcuts; off/toggle apply directly. Run updates request a redraw without changing the selected view.
 
+Two rows below it write `agents.json` as soon as they change. **Concurrency** opens a form whose number field accepts 1–32 and saves on `Enter`. **Child writers** is a choice between **‹ One at a time ›**, which runs one writer per workspace and takes the cross-session workspace lock, and **‹ In parallel ›**, which lets writers share a workspace. The saving session applies either change at once; other sessions pick it up when they next save or attach. An assignment form adds a **Workspace** row that names the child's directory; it defaults to the parent session's.
+
 ```text
 ╭ Workflow ─────────────────────────────────────╮
 │ Models  [Workflow]  Settings                   │
 │ → View: ‹ Agents ›                            │
 │   Subagents: ‹ On › · this session             │
+│   Concurrency: 4 · 1–32                        │
+│   Child writers: ‹ One at a time ›             │
 │   orchestrator · provider/planner-model        │
 │   coder · provider/coder-model                 │
 │   reviewer · provider/review-model             │
@@ -226,7 +230,7 @@ Workflow uses one top-level tab and a visible **View: ‹ Agents ›** / **View:
 
 Select a definition to edit it. The form groups identity and model, placement and child tools, thinking and execution limits, then instructions and actions. Main-session application and child launch are visible rows. Applying, launching, or deleting refuses unsaved edits. A definition save checks whether another session changed the configuration and preserves the draft on conflict.
 
-Workflow forms contain nested model and multiline editors. This extends the form's Enter behavior: Enter on a text field saves the form; Enter on a choice changes it; Enter on a visible action performs that action. The first hint names the focused action. In a multiline editor, Enter inserts a newline and semantic cancel returns the text to the enclosing draft. Only Save persists definition changes; cancelling the enclosing form discards the draft. Top-level navigation and external routes are disabled throughout nested editing.
+Workflow forms contain nested model and multiline editors. This extends the form's Enter behavior: Enter on a text field saves the form; Enter on a choice changes it; Enter on a visible action performs that action. The first hint names the focused action. In a multiline editor, Enter inserts a newline and semantic cancel returns the text to the enclosing draft. Only Save persists changes; cancelling the enclosing form discards the draft. Top-level navigation and external routes are disabled throughout nested editing.
 
 Runs show role, state, and current tool or assignment. Enter opens run details with model, usage, and output/control rows. Output uses bounded byte pages and a line viewport; semantic Page Up/Page Down moves through the text. Stop opens a confirmation that states existing changes remain. A completed or interrupted run offers Resume with a new assignment. Failures remain visible in the panel and keep the relevant form values.
 
