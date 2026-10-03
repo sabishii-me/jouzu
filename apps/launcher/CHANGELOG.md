@@ -3,6 +3,13 @@
 One section per released Launcher version. The section titled `## <version>` is what the
 update feed shows for that version, so every release must have one.
 
+## 0.3.1
+
+- Uninstalling no longer reports "User-data deletion is incomplete" when a running Jouzu is what
+  holds a program file. The message now names the cause and says what to close.
+- The uninstaller closes Jouzu and the Launcher, so uninstall no longer deletes files from under a
+  running Launcher.
+
 ## 0.3.0
 
 - Windows launcher packages are now built and signed by CI, not on a workstation.
