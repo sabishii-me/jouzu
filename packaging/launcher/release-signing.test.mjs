@@ -35,8 +35,10 @@ test('release feed follows immutable asset upload and download integrity check',
  const feed = script.indexOf('gh release upload launcher-update');
  assert.ok(create >= 0 && verify > create && feed > verify);
  assert.doesNotMatch(script.slice(create, verify), /--clobber/);
- // The feed must serve the launcher-only artifact, not the full package.
- assert.match(script.slice(verify, feed), /\$updateSetup/);
+ // The launcher-only artifact is addressed by the name the release stored: GitHub rewrites
+ // spaces in asset names, so the local file name would build a URL that does not exist.
+ assert.match(script.slice(create, verify), /--json assets/);
+ assert.match(script.slice(create, verify), /-update\.exe/);
 });
 
 test('finalization signs updater only after final Authenticode verification', () => {

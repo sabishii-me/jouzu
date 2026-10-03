@@ -3,7 +3,6 @@ param(
     [string]$SignTool = $env:JOUZU_SIGN_SIGNTOOL,
     [string]$Dlib = $env:JOUZU_SIGN_DLIB,
     [string]$Metadata = $env:JOUZU_SIGN_METADATA,
-    [string]$ExpectedSubject = $env:JOUZU_SIGN_SUBJECT,
     [string]$SkipRoots = $env:JOUZU_SIGN_SKIP_ROOTS
 )
 # Invoked by the bundler for every own binary, every signable resource and the NSIS-generated

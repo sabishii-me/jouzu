@@ -51,16 +51,10 @@ $skipRoots = @("$inputRoot/app","$inputRoot/runtime","$repo/packaging/launcher")
 # The bundler substitutes only the file path; everything else reaches the signer through the
 # environment, which keeps quoting and argument binding out of the release path. The signer
 # reports its result to this log, which the release prints when a bundle fails.
-# PowerShell 7 exports a PSModulePath that Windows PowerShell cannot use: it resolves the pwsh
-# copies of its own built-in modules, and autoloading them fails inside the process the bundler
-# spawns (PowerShell/PowerShell#18530, actions/runner-images#13221). Removing it here makes every
-# spawned powershell.exe start with its own module paths again.
-Remove-Item Env:PSModulePath -ErrorAction SilentlyContinue
 $signLog = Join-Path $output 'signing.log'
 $env:JOUZU_SIGN_SIGNTOOL = $signTool
 $env:JOUZU_SIGN_DLIB = $dlib
 $env:JOUZU_SIGN_METADATA = $metadata
-$env:JOUZU_SIGN_SUBJECT = $env:EXPECTED_SIGNER
 $env:JOUZU_SIGN_SKIP_ROOTS = ($skipRoots -join ';')
 $env:JOUZU_SIGN_LOG = $signLog
 $signCommand = @{cmd='powershell.exe';args=@('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',"$PSScriptRoot/sign-windows.ps1",'%1')}
@@ -72,6 +66,21 @@ function New-Template([string]$Extra) {
  $prefix = if ($Extra) { $Extra + "`n" } else { '' }
  [IO.File]::WriteAllText($path, $prefix + (Get-Content (Join-Path $PSScriptRoot 'installer.nsi') -Raw))
  $path
+}
+# PowerShell 7 exports a PSModulePath that Windows PowerShell cannot use: it resolves the pwsh
+# copies of its own built-in modules and fails to autoload them inside the process the bundler
+# spawns (PowerShell/PowerShell#18530, actions/runner-images#13221). The variable is removed for
+# the bundling call only, so this script keeps its own module paths.
+function Invoke-Bundle([string]$Config,[string]$What) {
+ $modulePath = $env:PSModulePath
+ Remove-Item Env:PSModulePath -ErrorAction SilentlyContinue
+ try {
+  npm run tauri -- bundle --config $Config
+  if ($LASTEXITCODE) { throw "$What bundling failed" }
+ } catch {
+  if (Test-Path $signLog) { Write-Host '--- signing log ---'; Get-Content $signLog | Select-Object -Last 40 | ForEach-Object { Write-Host $_ } }
+  throw
+ } finally { $env:PSModulePath = $modulePath }
 }
 function New-Config([string]$Template,[bool]$Full) {
  $resources = [ordered]@{}
@@ -91,23 +100,11 @@ try {
  npm ci
  if ($LASTEXITCODE) { throw 'Cannot install bundler' }
 
- try {
-  npm run tauri -- bundle --config (New-Config (New-Template '') $true)
-  if ($LASTEXITCODE) { throw 'Full package bundling failed' }
- } catch {
-  if (Test-Path $signLog) { Write-Host '--- signing log ---'; Get-Content $signLog | Select-Object -Last 40 | ForEach-Object { Write-Host $_ } }
-  throw
- }
+ Invoke-Bundle (New-Config (New-Template '') $true) 'Full package'
  $fullSetup = Join-Path $output "Jouzu Launcher_${Version}_x64-setup.exe"
  Copy-Item -LiteralPath $setupPath -Destination $fullSetup -Force
 
- try {
-  npm run tauri -- bundle --config (New-Config (New-Template '!define JOUZU_LAUNCHER_ONLY 1') $false)
-  if ($LASTEXITCODE) { throw 'Launcher-only package bundling failed' }
- } catch {
-  if (Test-Path $signLog) { Write-Host '--- signing log ---'; Get-Content $signLog | Select-Object -Last 40 | ForEach-Object { Write-Host $_ } }
-  throw
- }
+ Invoke-Bundle (New-Config (New-Template '!define JOUZU_LAUNCHER_ONLY 1') $false) 'Launcher-only package'
  $updateSetup = Join-Path $output "Jouzu Launcher_${Version}_x64-update.exe"
  Copy-Item -LiteralPath $setupPath -Destination $updateSetup -Force
 

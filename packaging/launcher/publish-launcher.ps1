@@ -15,7 +15,11 @@ $tag = "launcher-v$Version"
 # Version releases are immutable; only the discovery feed is replaceable.
 & gh release create $tag $fullSetup $updateSetup "$updateSetup.sig" "$Directory/build.json" "$Directory/source.json" --repo $repository --target $env:GITHUB_SHA --prerelease --title "Jouzu Launcher $Version" --notes 'Windows Launcher test release. The x64-setup asset installs everything; the x64-update asset updates an existing launcher without rewriting the Jouzu payload.'
 if ($LASTEXITCODE) { throw 'Version release creation failed; feed unchanged' }
-$url = "https://github.com/$repository/releases/download/$tag/" + [Uri]::EscapeDataString([IO.Path]::GetFileName($updateSetup))
+# GitHub rewrites spaces in asset names, so the download URL is built from the name the release
+# actually stored; a URL built from the local file name is a 404.
+$assetName = & gh release view $tag --repo $repository --json assets --jq ".assets[] | select(.name | endswith('" + BS + "'-update.exe')) | .name"
+if ($LASTEXITCODE -or -not $assetName) { throw 'Published update asset not found' }
+$url = "https://github.com/$repository/releases/download/$tag/$assetName"
 $probe = Join-Path $env:RUNNER_TEMP 'published-update.exe'
 Invoke-WebRequest $url -OutFile $probe
 if ((Get-FileHash $probe -Algorithm SHA256).Hash -ne (Get-FileHash $updateSetup -Algorithm SHA256).Hash) { throw 'Published update integrity mismatch; feed unchanged' }
