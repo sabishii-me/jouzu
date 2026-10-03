@@ -54,7 +54,7 @@ test("data failure aborts before program and registration removal", () => {
 test("all four installer locales contain the same custom message keys", () => {
   const languages = ["ENGLISH", "JAPANESE", "SIMPCHINESE", "TRADCHINESE"];
   const entries = [...messages.matchAll(/LangString (\w+) \$\{LANG_(\w+)\} "(.+)"/g)];
-  const keys = ["jouzuCloseSessions", "jouzuCloseFailed", "jouzuDeleteData", "jouzuDeleteFailed"].sort();
+  const keys = ["jouzuCloseSessions", "jouzuCloseFailed", "jouzuDeleteData", "jouzuDeleteFailed", "jouzuRemoveFailed"].sort();
   for (const language of languages) {
     assert.deepEqual(entries.filter(entry => entry[2] === language).map(entry => entry[1]).sort(), keys);
   }
@@ -135,4 +135,24 @@ test("the launcher version has a single committed source", () => {
   const build = readFileSync(new URL("./prepare-windows-bundle.ps1", import.meta.url), "utf8");
   assert.doesNotMatch(build, /\$Version/);
   assert.doesNotMatch(build, /version = /);
+});
+
+test('uninstall closes the launcher and reports program-file failures honestly', () => {
+ const hooks = readFileSync(new URL('./installer-hooks.nsh', import.meta.url), 'utf8');
+ const installer = readFileSync(new URL('./installer.nsi', import.meta.url), 'utf8');
+ const messages = readFileSync(new URL('./installer-messages.nsh', import.meta.url), 'utf8');
+ // A launcher-only package keeps sessions open while replacing files, but an uninstall deletes
+ // those files, so it must stop the launcher as well.
+ const pre = hooks.slice(hooks.indexOf('!macro NSIS_HOOK_PREUNINSTALL'), hooks.indexOf('!macro NSIS_HOOK_POSTINSTALL'));
+ assert.ok(pre.includes('JOUZU_STOP_ALL'), 'uninstall must stop the launcher too');
+ // Payload removal belongs to an uninstall, never to an update.
+ const post = hooks.slice(hooks.indexOf('!macro NSIS_HOOK_POSTUNINSTALL'));
+ assert.ok(post.includes('$UpdateMode <> 1'), 'payload removal is uninstall-only');
+ assert.ok(post.includes('jouzuRemoveFailed'), 'leftovers are reported');
+ // The user-data message was shown when a running launcher, not user data, blocked a deletion.
+ assert.equal(installer.split('$(jouzuDeleteFailed)').length - 1, 1);
+ assert.equal(installer.split('$(jouzuRemoveFailed)').length - 1, 2);
+ for (const language of ['LANG_ENGLISH', 'LANG_JAPANESE', 'LANG_SIMPCHINESE', 'LANG_TRADCHINESE']) {
+  assert.ok(messages.includes('LangString jouzuRemoveFailed ' + '${' + language + '}'), language);
+ }
 });

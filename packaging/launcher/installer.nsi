@@ -826,7 +826,7 @@ Section Uninstall
     ${If} ${FileExists} "$LOCALAPPDATA\Shisa.ai\Jouzu\updates"
       SetErrorLevel 1
       IfSilent +2
-      MessageBox MB_OK|MB_ICONSTOP "$(jouzuDeleteFailed)"
+      MessageBox MB_OK|MB_ICONSTOP "$(jouzuRemoveFailed)"
       Abort
     ${EndIf}
   ${EndIf}
@@ -855,7 +855,7 @@ Section Uninstall
   ${If} ${FileExists} "$INSTDIR\runtime\git\installed"
     SetErrorLevel 1
     IfSilent +2
-    MessageBox MB_OK|MB_ICONSTOP "$(jouzuDeleteFailed)"
+    MessageBox MB_OK|MB_ICONSTOP "$(jouzuRemoveFailed)"
     Abort
   ${EndIf}
 

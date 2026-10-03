@@ -14,12 +14,7 @@
   ${EndIf}
 !macroend
 
-!macro JOUZU_STOP_MANAGED
-!if ${JOUZU_LAUNCHER_ONLY} == 1
-  ; A launcher-only package leaves the payload in place, so running sessions stay open; only
-  ; locked launcher-owned executables are renamed aside for replacement.
-  !insertmacro JOUZU_LAUNCHER_ONLY_REPLACE
-!else
+!macro JOUZU_STOP_ALL
   IfSilent +3
   MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION "$(jouzuCloseSessions)" IDOK +2
   Abort
@@ -38,6 +33,15 @@
     MessageBox MB_OK|MB_ICONSTOP "$(jouzuCloseFailed)"
     Abort
   ${EndIf}
+!macroend
+
+!macro JOUZU_STOP_MANAGED
+!if ${JOUZU_LAUNCHER_ONLY} == 1
+  ; A launcher-only package leaves the payload in place, so running sessions stay open; only
+  ; locked launcher-owned executables are renamed aside for replacement.
+  !insertmacro JOUZU_LAUNCHER_ONLY_REPLACE
+!else
+  !insertmacro JOUZU_STOP_ALL
 !endif
 !macroend
 
@@ -46,7 +50,10 @@
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
-  !insertmacro JOUZU_STOP_MANAGED
+  ; Removing the installation deletes its files, so the launcher has to stop as well. The
+  ; launcher-only package's keep-sessions behaviour belongs to replacing files during an update,
+  ; not to an uninstall that would otherwise delete files from under a running launcher.
+  !insertmacro JOUZU_STOP_ALL
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
@@ -62,8 +69,20 @@
 !macroend
 
 !macro NSIS_HOOK_POSTUNINSTALL
-  ; A launcher-only package does not carry the payload file list, so remove it explicitly.
-  RmDir /r "\\?\$INSTDIR\app"
-  RmDir /r "\\?\$INSTDIR\runtime"
-  Delete "$INSTDIR\*.old-*"
+  ${If} $UpdateMode <> 1
+    ; A launcher-only package does not carry the payload file list, so remove it explicitly. An
+    ; update keeps the payload: it replaces the launcher, it does not remove the installation.
+    RmDir /r "\\?\$INSTDIR\app"
+    RmDir /r "\\?\$INSTDIR\runtime"
+    Delete "$INSTDIR\*.old-*"
+    ; Leftovers mean something still holds these files, usually a launcher or a session that
+    ; started again, so the uninstall says so instead of reporting success.
+    ${If} ${FileExists} "$INSTDIR\app\*.*"
+    ${OrIf} ${FileExists} "$INSTDIR\runtime\*.*"
+    ${OrIf} ${FileExists} "$INSTDIR\*.old-*"
+      SetErrorLevel 1
+      IfSilent +2
+      MessageBox MB_OK|MB_ICONSTOP "$(jouzuRemoveFailed)"
+    ${EndIf}
+  ${EndIf}
 !macroend
