@@ -53,5 +53,5 @@ test('the payload is excluded from signing so vendor bytes stay pinned', () => {
  assert.match(signer, /StartsWith\(\$skip, \[StringComparison\]::OrdinalIgnoreCase\)\) \{ exit 0 \}/);
  const finalize = read('finalize-windows-bundle.ps1');
  assert.match(finalize, /\$skipRoots = @\("\$inputRoot\/app","\$inputRoot\/runtime"/);
- assert.match(finalize, /'-SkipRoots'\)\+\$skipRoots/);
+ assert.match(finalize, /'-SkipRoots',\(\$skipRoots -join ';'\)/);
 });

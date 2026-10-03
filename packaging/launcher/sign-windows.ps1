@@ -4,7 +4,7 @@ param(
     [Parameter(Mandatory=$true)][string]$Dlib,
     [Parameter(Mandatory=$true)][string]$Metadata,
     [Parameter(Mandatory=$true)][string]$ExpectedSubject,
-    [string[]]$SkipRoots = @()
+    [string]$SkipRoots = ''
 )
 $ErrorActionPreference = 'Stop'
 # Third-party components of the application payload keep the exact bytes their own manifests
@@ -12,7 +12,7 @@ $ErrorActionPreference = 'Stop'
 # signed vendor binary would also carry our publisher identity. Only the launcher's own
 # artifacts are bootstrapped by this command.
 $full = [IO.Path]::GetFullPath($File)
-foreach ($root in @($SkipRoots | Where-Object { $_ })) {
+foreach ($root in @($SkipRoots -split ';' | Where-Object { $_ })) {
     $skip = [IO.Path]::GetFullPath($root).TrimEnd('\') + '\'
     if ($full.StartsWith($skip, [StringComparison]::OrdinalIgnoreCase)) { exit 0 }
 }

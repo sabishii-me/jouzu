@@ -48,7 +48,7 @@ $setupPath = Join-Path $target "bundle/nsis/Jouzu Launcher_${Version}_x64-setup.
 # The bundler calls this for every own binary, every resource it considers signable and the
 # NSIS uninstaller; each call runs the documented signtool command and verifies the result.
 $skipRoots = @("$inputRoot/app","$inputRoot/runtime","$repo/packaging/launcher")
-$signCommand = @{cmd='powershell.exe';args=@('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',"$PSScriptRoot/sign-windows.ps1",'-SignTool',$signTool,'-Dlib',$dlib,'-Metadata',$metadata,'-ExpectedSubject',$env:EXPECTED_SIGNER,'-SkipRoots')+$skipRoots+@('-File','%1')}
+$signCommand = @{cmd='powershell.exe';args=@('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',"$PSScriptRoot/sign-windows.ps1",'-SignTool',$signTool,'-Dlib',$dlib,'-Metadata',$metadata,'-ExpectedSubject',$env:EXPECTED_SIGNER,'-SkipRoots',($skipRoots -join ';'),'-File','%1')}
 # Only the package mode differs between the two builds; the launcher-only define is prepended
 # because the bundler offers no way to pass a define into the template it compiles.
 function New-Template([string]$Extra) {
