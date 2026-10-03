@@ -38,6 +38,11 @@ test('release feed follows immutable asset upload and download integrity check',
  // The launcher-only artifact is addressed by the name the release stored: GitHub rewrites
  // spaces in asset names, so the local file name would build a URL that does not exist.
  assert.match(script.slice(create, verify), /--json assets/);
+ // `gh --jq` rejects single-quoted string literals in the expression, and a botched edit can
+ // still parse while producing an unusable expression, so the shape is asserted directly.
+ assert.match(script.slice(create, verify), /--jq '\.assets\[\]\.name'/);
+ assert.doesNotMatch(script, /endswith\('/);
+ assert.doesNotMatch(script, /\+\s*BS\s*\+/);
  assert.match(script.slice(create, verify), /-update\.exe/);
 });
 

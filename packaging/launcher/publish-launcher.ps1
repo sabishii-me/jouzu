@@ -17,8 +17,12 @@ $tag = "launcher-v$Version"
 if ($LASTEXITCODE) { throw 'Version release creation failed; feed unchanged' }
 # GitHub rewrites spaces in asset names, so the download URL is built from the name the release
 # actually stored; a URL built from the local file name is a 404.
-$assetName = & gh release view $tag --repo $repository --json assets --jq ".assets[] | select(.name | endswith('" + BS + "'-update.exe')) | .name"
-if ($LASTEXITCODE -or -not $assetName) { throw 'Published update asset not found' }
+# `gh --jq` rejects single-quoted string literals in its expression, so the asset names are
+# listed and matched here instead.
+$assetNames = & gh release view $tag --repo $repository --json assets --jq '.assets[].name'
+if ($LASTEXITCODE) { throw 'Cannot read the published release' }
+$assetName = @($assetNames) | Where-Object { $_ -like '*-update.exe' } | Select-Object -First 1
+if (-not $assetName) { throw 'Published update asset not found' }
 $url = "https://github.com/$repository/releases/download/$tag/$assetName"
 $probe = Join-Path $env:RUNNER_TEMP 'published-update.exe'
 Invoke-WebRequest $url -OutFile $probe
