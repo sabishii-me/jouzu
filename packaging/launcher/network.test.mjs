@@ -6,9 +6,9 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-// Pass JouzuConsole.exe for native acceptance, or a built cli.js for a local check.
+// Pass console.exe for native acceptance, or a built cli.js for a local check.
 const [target, workingFolder] = process.argv.slice(2);
-assert.ok(target && workingFolder, "Usage: node network.test.mjs <JouzuConsole.exe|cli.js> <working-folder>");
+assert.ok(target && workingFolder, "Usage: node network.test.mjs <console.exe|cli.js> <working-folder>");
 const home = mkdtempSync(join(tmpdir(), "jouzu network 日本語 "));
 const token = "local-acceptance-token";
 const marker = "windows-network-fixture-ok";

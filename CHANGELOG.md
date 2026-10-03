@@ -258,7 +258,7 @@
 
 ### Added
 
-- Add an unsigned Windows installer preview with per-user installation, bundled Node.js/npm, Git Bash, Windows Terminal, ripgrep, and fd. Desktop and Start menu shortcuts open a project-folder picker and Jouzu setup. Installation verifies the payload before activation, supports rollback, and preserves user data outside the installation directory on uninstall. 
+- Add an unsigned Windows installer preview with per-user installation, bundled Node.js/npm, Git Bash, Windows Terminal, ripgrep, and fd. Desktop and Start menu shortcuts open a project-folder picker and Jouzu setup. Installation verifies the payload before activation, supports rollback, and preserves user data outside the installation directory on uninstall.
 - Inspect the loaded flow runtime with `/flow runtime`, including build and extension identity, and warn when a rebuild requires restarting the session.
 
 ### Changed
