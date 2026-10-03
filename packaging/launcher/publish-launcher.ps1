@@ -13,7 +13,7 @@ foreach ($file in @($fullSetup,$updateSetup,"$updateSetup.sig","$Directory/build
 }
 $tag = "launcher-v$Version"
 # Version releases are immutable; only the discovery feed is replaceable.
-& gh release create $tag $fullSetup $updateSetup "$updateSetup.sig" "$Directory/build.json" "$Directory/source.json" --repo $repository --target $env:GITHUB_SHA --prerelease --title "Jouzu Launcher $Version" --notes 'Windows Launcher test release. The x64-setup asset installs everything; the x64-update asset updates an existing launcher without rewriting the Jouzu payload.'
+& gh release create $tag $fullSetup $updateSetup "$updateSetup.sig" "$Directory/build.json" "$Directory/source.json" --repo $repository --target $env:GITHUB_SHA --title "Jouzu Launcher $Version" --notes 'The x64-setup asset installs the launcher with the runtime; the x64-update asset updates an installed launcher without rewriting the Jouzu payload.'
 if ($LASTEXITCODE) { throw 'Version release creation failed; feed unchanged' }
 # GitHub rewrites spaces in asset names, so the download URL is built from the name the release
 # actually stored; a URL built from the local file name is a 404.
@@ -35,7 +35,7 @@ $feedFile = Join-Path $Directory 'latest.json'
 $feed | ConvertTo-Json -Depth 5 | Set-Content $feedFile -Encoding utf8
 & gh release view launcher-update --repo $repository *> $null
 if ($LASTEXITCODE) {
- & gh release create launcher-update --repo $repository --target $env:GITHUB_SHA --prerelease --title 'Launcher test updates' --notes 'Launcher test update feed.'
+ & gh release create launcher-update --repo $repository --target $env:GITHUB_SHA --title 'Jouzu launcher updates' --notes 'Signed launcher update feed.'
  if ($LASTEXITCODE) { throw 'Cannot create update feed release' }
 }
 & gh release upload launcher-update $feedFile --repo $repository --clobber
