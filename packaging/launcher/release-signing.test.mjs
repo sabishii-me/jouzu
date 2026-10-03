@@ -44,3 +44,14 @@ test('finalization signs updater only after final Authenticode verification', ()
  assert.match(script, /signer sign --app-version/);
  // The updater key is never materialised on disk by this script.
 });
+
+test('the payload is excluded from signing so vendor bytes stay pinned', () => {
+ const signer = read('sign-windows.ps1');
+ // textguard-native.js rejects a binary whose size or SHA256 differs from its manifest, so a
+ // signed payload binary would break the feature and carry our publisher identity.
+ assert.match(signer, /SkipRoots/);
+ assert.match(signer, /StartsWith\(\$skip, \[StringComparison\]::OrdinalIgnoreCase\)\) \{ exit 0 \}/);
+ const finalize = read('finalize-windows-bundle.ps1');
+ assert.match(finalize, /\$skipRoots = @\("\$inputRoot\/app","\$inputRoot\/runtime"/);
+ assert.match(finalize, /'-SkipRoots'\)\+\$skipRoots/);
+});
