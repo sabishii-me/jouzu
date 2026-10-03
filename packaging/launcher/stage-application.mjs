@@ -71,7 +71,7 @@ export function stageApplication({ source, output, target, sourceCommit }) {
 	mkdirSync(temporary); // Never reuse somebody else's staging directory.
 	try {
 		cpSync(input, join(temporary, "app"), { recursive: true, dereference: false });
-		// Remove build-host tarball paths from the same metadata normalized by the legacy builder.
+		// Build-host tarball paths must not survive into shipped metadata.
 		for (const name of ["package.json", "package-lock.json", "node_modules/.package-lock.json"]) {
 			const path = join(temporary, "app", name);
 			if (!existsSync(path)) continue;
