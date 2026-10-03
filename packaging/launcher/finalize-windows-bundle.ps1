@@ -48,7 +48,17 @@ $setupPath = Join-Path $target "bundle/nsis/Jouzu Launcher_${Version}_x64-setup.
 # The bundler calls this for every own binary, every resource it considers signable and the
 # NSIS uninstaller; each call runs the documented signtool command and verifies the result.
 $skipRoots = @("$inputRoot/app","$inputRoot/runtime","$repo/packaging/launcher")
-$signCommand = @{cmd='powershell.exe';args=@('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',"$PSScriptRoot/sign-windows.ps1",'-SignTool',$signTool,'-Dlib',$dlib,'-Metadata',$metadata,'-ExpectedSubject',$env:EXPECTED_SIGNER,'-SkipRoots',($skipRoots -join ';'),'-File','%1')}
+# The bundler substitutes only the file path; everything else reaches the signer through the
+# environment, which keeps quoting and argument binding out of the release path. The signer
+# reports its result to this log, which the release prints when a bundle fails.
+$signLog = Join-Path $output 'signing.log'
+$env:JOUZU_SIGN_SIGNTOOL = $signTool
+$env:JOUZU_SIGN_DLIB = $dlib
+$env:JOUZU_SIGN_METADATA = $metadata
+$env:JOUZU_SIGN_SUBJECT = $env:EXPECTED_SIGNER
+$env:JOUZU_SIGN_SKIP_ROOTS = ($skipRoots -join ';')
+$env:JOUZU_SIGN_LOG = $signLog
+$signCommand = @{cmd='powershell.exe';args=@('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',"$PSScriptRoot/sign-windows.ps1",'%1')}
 # Only the package mode differs between the two builds; the launcher-only define is prepended
 # because the bundler offers no way to pass a define into the template it compiles.
 function New-Template([string]$Extra) {
@@ -76,13 +86,23 @@ try {
  npm ci
  if ($LASTEXITCODE) { throw 'Cannot install bundler' }
 
- npm run tauri -- bundle --config (New-Config (New-Template '') $true)
- if ($LASTEXITCODE) { throw 'Full package bundling failed' }
+ try {
+  npm run tauri -- bundle --config (New-Config (New-Template '') $true)
+  if ($LASTEXITCODE) { throw 'Full package bundling failed' }
+ } catch {
+  if (Test-Path $signLog) { Write-Host '--- signing log ---'; Get-Content $signLog | Select-Object -Last 40 | ForEach-Object { Write-Host $_ } }
+  throw
+ }
  $fullSetup = Join-Path $output "Jouzu Launcher_${Version}_x64-setup.exe"
  Copy-Item -LiteralPath $setupPath -Destination $fullSetup -Force
 
- npm run tauri -- bundle --config (New-Config (New-Template '!define JOUZU_LAUNCHER_ONLY 1') $false)
- if ($LASTEXITCODE) { throw 'Launcher-only package bundling failed' }
+ try {
+  npm run tauri -- bundle --config (New-Config (New-Template '!define JOUZU_LAUNCHER_ONLY 1') $false)
+  if ($LASTEXITCODE) { throw 'Launcher-only package bundling failed' }
+ } catch {
+  if (Test-Path $signLog) { Write-Host '--- signing log ---'; Get-Content $signLog | Select-Object -Last 40 | ForEach-Object { Write-Host $_ } }
+  throw
+ }
  $updateSetup = Join-Path $output "Jouzu Launcher_${Version}_x64-update.exe"
  Copy-Item -LiteralPath $setupPath -Destination $updateSetup -Force
 

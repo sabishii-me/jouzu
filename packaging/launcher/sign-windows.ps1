@@ -1,29 +1,46 @@
 param(
-    [Parameter(Mandatory=$true)][string]$File,
-    [Parameter(Mandatory=$true)][string]$SignTool,
-    [Parameter(Mandatory=$true)][string]$Dlib,
-    [Parameter(Mandatory=$true)][string]$Metadata,
-    [Parameter(Mandatory=$true)][string]$ExpectedSubject,
-    [string]$SkipRoots = ''
+    [Parameter(Mandatory=$true,Position=0)][string]$File,
+    [string]$SignTool = $env:JOUZU_SIGN_SIGNTOOL,
+    [string]$Dlib = $env:JOUZU_SIGN_DLIB,
+    [string]$Metadata = $env:JOUZU_SIGN_METADATA,
+    [string]$ExpectedSubject = $env:JOUZU_SIGN_SUBJECT,
+    [string]$SkipRoots = $env:JOUZU_SIGN_SKIP_ROOTS
 )
+# Invoked by the bundler for every own binary, every signable resource and the NSIS-generated
+# uninstaller. Configuration arrives in the environment so the bundler only has to substitute one
+# argument, and every failure is reported to the log file the release script prints.
 $ErrorActionPreference = 'Stop'
-# Third-party components of the application payload keep the exact bytes their own manifests
-# pin: `textguard-native.js` refuses a binary whose size or SHA256 differs from it, and a
-# signed vendor binary would also carry our publisher identity. Only the launcher's own
-# artifacts are bootstrapped by this command.
-$full = [IO.Path]::GetFullPath($File)
-foreach ($root in @($SkipRoots -split ';' | Where-Object { $_ })) {
-    $skip = [IO.Path]::GetFullPath($root).TrimEnd('\') + '\'
-    if ($full.StartsWith($skip, [StringComparison]::OrdinalIgnoreCase)) { exit 0 }
+$log = $env:JOUZU_SIGN_LOG
+function Write-SignLog([string]$Message) {
+    if ($log) { Add-Content -LiteralPath $log -Value $Message -Encoding utf8 }
 }
-foreach ($path in @($File,$SignTool,$Dlib,$Metadata)) {
-    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw 'Missing signing input' }
+function Write-SignOutput([string]$Text) {
+    if ($log -and $Text) { Add-Content -LiteralPath $log -Value $Text.TrimEnd() -Encoding utf8 }
 }
-& $SignTool sign /fd SHA256 /tr http://timestamp.acs.microsoft.com /td SHA256 /dlib $Dlib /dmdf $Metadata $File
-if ($LASTEXITCODE -ne 0) { throw 'Artifact signing failed' }
-& $SignTool verify /pa /all $File
-if ($LASTEXITCODE -ne 0) { throw 'Authenticode verification failed' }
-$signature = Get-AuthenticodeSignature -LiteralPath $File
-if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -ne $ExpectedSubject -or -not $signature.TimeStamperCertificate) {
-    throw 'Unexpected signer, missing timestamp, or invalid signature'
+try {
+    $full = [IO.Path]::GetFullPath($File)
+    foreach ($root in @($SkipRoots -split ';' | Where-Object { $_ })) {
+        $skip = [IO.Path]::GetFullPath($root).TrimEnd('\') + '\'
+        if ($full.StartsWith($skip, [StringComparison]::OrdinalIgnoreCase)) {
+            Write-SignLog "skipped payload file: $full"
+            exit 0
+        }
+    }
+    foreach ($path in @($File,$SignTool,$Dlib,$Metadata)) {
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Missing signing input: $path" }
+    }
+    $sign = & $SignTool sign /fd SHA256 /tr http://timestamp.acs.microsoft.com /td SHA256 /dlib $Dlib /dmdf $Metadata $File 2>&1
+    Write-SignOutput ($sign -join "`n")
+    if ($LASTEXITCODE -ne 0) { throw "Artifact signing failed for $full (exit $LASTEXITCODE)" }
+    $verify = & $SignTool verify /pa /all $File 2>&1
+    Write-SignOutput ($verify -join "`n")
+    if ($LASTEXITCODE -ne 0) { throw "Authenticode verification failed for $full" }
+    $signature = Get-AuthenticodeSignature -LiteralPath $File
+    if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -ne $ExpectedSubject -or -not $signature.TimeStamperCertificate) {
+        throw "Unexpected signer or missing timestamp for $full (status=$($signature.Status), subject=$($signature.SignerCertificate.Subject), expected=$ExpectedSubject)"
+    }
+    Write-SignLog "signed: $full"
+} catch {
+    Write-SignLog ("FAILED: " + $_.Exception.Message)
+    exit 1
 }

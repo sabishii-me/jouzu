@@ -50,8 +50,12 @@ test('the payload is excluded from signing so vendor bytes stay pinned', () => {
  // textguard-native.js rejects a binary whose size or SHA256 differs from its manifest, so a
  // signed payload binary would break the feature and carry our publisher identity.
  assert.match(signer, /SkipRoots/);
- assert.match(signer, /StartsWith\(\$skip, \[StringComparison\]::OrdinalIgnoreCase\)\) \{ exit 0 \}/);
+ assert.match(signer, /StartsWith\(\$skip, \[StringComparison\]::OrdinalIgnoreCase\)\) \{/);
+ // A failing signature must reach the log the release prints.
+ assert.match(signer, /FAILED: /);
  const finalize = read('finalize-windows-bundle.ps1');
  assert.match(finalize, /\$skipRoots = @\("\$inputRoot\/app","\$inputRoot\/runtime"/);
- assert.match(finalize, /'-SkipRoots',\(\$skipRoots -join ';'\)/);
+ // Configuration reaches the signer through the environment, so the bundler only substitutes one argument.
+ assert.match(finalize, /\$env:JOUZU_SIGN_SKIP_ROOTS = \(\$skipRoots -join ';'\)/);
+ assert.match(finalize, /sign-windows\.ps1",'%1'/);
 });
