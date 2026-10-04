@@ -105,6 +105,30 @@ test("Runs keeps the selected child when new runs are inserted", () => {
 	f.view.dispose();
 });
 
+test("a fresh open lands on Runs while children are running and lists active runs first", () => {
+	const f = fixture();
+	const run = (id, status, createdAt) => ({
+		id,
+		status,
+		role: { id },
+		model: { provider: "test", id: "model" },
+		cwd: "/workspace",
+		task: id,
+		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 },
+		createdAt,
+	});
+	f.service.runs = () => [
+		run("finished", "completed", "2026-01-02T00:00:00.000Z"),
+		run("working", "running", "2026-01-01T00:00:00.000Z"),
+	];
+	const view = new WorkflowComponent(f.context, f.service);
+	view.focused = true;
+	const text = view.render(100).join("\n");
+	assert.match(text, /1 running · 2 in session/);
+	assert.ok(text.indexOf("working") < text.indexOf("finished"), "active runs lead the list");
+	assert.doesNotMatch(text, /orchestrator/, "definitions are not the fresh view while children run");
+	view.dispose();
+});
 test("subagents toggle supports Enter, arrows and Space without leaking into edits", async () => {
 	const f = fixture();
 	assert.match(f.text(), /Subagents.*On/);

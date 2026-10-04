@@ -145,19 +145,29 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 		private readonly service: WorkflowService,
 		initialRoute: PaletteRoute = { view: "workflow" },
 	) {
-		this.section = initialRoute.query === "runs" ? "runs" : "agents";
+		// A fresh `/workflow` open lands on live work: Runs while children are queued or running,
+		// and definitions otherwise. An explicit route, such as the View toggle or /subagents, wins.
+		this.section =
+			initialRoute.query === "runs" || (initialRoute.query === undefined && service.runs().some(isActiveRun))
+				? "runs"
+				: "agents";
 		this.wordmark = renderBrandGradient("JOUZU", detectBannerColorMode());
 		this.unsubscribe = service.subscribe(() => {
 			if (this.closed) return;
 			if (this.mode === "browse" && this.section === "runs" && this.selected >= 2) {
 				const selectedId = this.listedRunIds[this.selected - 2];
-				const runs = this.service.runs();
+				const runs = this.listedRuns();
 				const index = runs.findIndex((run) => run.id === selectedId);
 				if (index >= 0) this.selected = index + 2;
 				this.listedRunIds = runs.map((run) => run.id);
 			}
 			this.context.tui.requestRender();
 		});
+	}
+	/** Active runs lead the Runs view; each group keeps the manager's newest-first order. */
+	private listedRuns(): AgentRun[] {
+		const runs = this.service.runs();
+		return [...runs.filter(isActiveRun), ...runs.filter((run) => !isActiveRun(run))];
 	}
 	get focused(): boolean {
 		return this._focused;
@@ -400,7 +410,8 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 				);
 				rows.push({ label: "+ Add agent", run: () => this.edit() });
 			} else {
-				const runs = this.service.runs();
+				const runs = this.listedRuns();
+				const active = runs.filter(isActiveRun).length;
 				this.listedRunIds = runs.map((run) => run.id);
 				rows.push(
 					...runs.map((run, index) => ({
@@ -408,7 +419,12 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 						labelRole: "palette.identity" as const,
 						value: run.status,
 						meta: run.currentTool ?? run.task.replace(/\s+/g, " "),
-						...(index === 0 ? { heading: "Runs", headingMeta: `${runs.length} in session` } : {}),
+						...(index === 0
+							? {
+									heading: "Runs",
+									headingMeta: `${active ? `${active} running · ` : ""}${runs.length} in session`,
+								}
+							: {}),
 						run: () => {
 							this.runId = run.id;
 							this.setMode("run");

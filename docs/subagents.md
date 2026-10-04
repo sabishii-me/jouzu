@@ -89,7 +89,7 @@ The dashboard sits above the Session Line, which stays directly on top of the pr
 
 The `!N` count on the Session Line shows how many items need attention. It stays visible when the dashboard is hidden and takes priority over the model name when space is tight. A child's result stays counted until it is delivered to the model or read in full; seeing the row does not clear it. Its row leaves the panel after 30 seconds, but the count remains. A flow condition clears once flow control resolves it, and `/flow` shows the details.
 
-Settings / Catalogs has a **Dashboard** choice: `compact` (up to five lines), `expanded` (up to ten), or `hidden`. The panel also limits itself to one third of the terminal height and the space left by the prompt and other dock components. Finished runs stay listed for 30 seconds.
+Settings / Catalogs has a **Dashboard** choice: `compact` (up to 12 lines), `expanded` (up to 24), or `hidden`. The panel also limits itself to one third of the terminal height and the space left by the prompt and other dock components, so running children stay listed while the terminal has room. Finished runs stay listed for 30 seconds.
 
 - `/subagents` opens **Workflow → Runs**, with output, message, Stop, and Resume controls.
 - `/subagents hide` hides the dashboard for this session without stopping work or clearing attention.
