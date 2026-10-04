@@ -89,7 +89,8 @@ timestamp, and a release token, refuses locks held by a live process, and
 recovers a dead owner's or owner-unknown lock after the stale threshold.
 
 A subagent session's `owner.sqlite` and each workspace-writer
-`<digest>.sqlite` use `process-lock.ts` instead, because those locks are held
+`<digest>.sqlite`, which the `serialize` writer policy takes, use
+`process-lock.ts` instead, because those locks are held
 for as long as a session or a child agent runs. Ownership is a held SQLite
 write transaction on that file. The lock connection disables journaling and performs
 no data writes, schema changes, or commits. The operating system releases ownership when the

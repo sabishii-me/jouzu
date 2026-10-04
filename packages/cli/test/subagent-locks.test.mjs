@@ -49,6 +49,7 @@ for (const kind of ["owner", "workspace"]) {
 			if (kind === "owner") {
 				assert.throws(() => manager.attach(), /controlled by another Jouzu process/);
 			} else {
+				manager.setWorkspaceWriters("serialize");
 				const run = manager.launch({
 					role: defaultAgentConfig().roles[1],
 					model: { provider: "fixture", id: "test" },
@@ -94,6 +95,7 @@ test("a damaged workspace lock fails the run without starting a worker or retryi
 		},
 		(run) => completions.push(run),
 	);
+	manager.setWorkspaceWriters("serialize");
 	try {
 		const run = manager.launch({
 			role: defaultAgentConfig().roles[1],
@@ -122,7 +124,7 @@ test("a damaged workspace lock fails the run without starting a worker or retryi
 	}
 });
 
-test("the parallel writer policy starts a writer while another process holds the workspace lock", async () => {
+test("the default policy starts a writer while another process holds the workspace lock", async () => {
 	const root = realpathSync(mkdtempSync(join(tmpdir(), "jouzu-lock-parallel-")));
 	const paths = { cwd: root, stateDir: join(root, "state") };
 	const path = join(paths.stateDir, "subagent-writers", `${pathDigest(root)}.sqlite`);
@@ -139,7 +141,6 @@ test("the parallel writer policy starts a writer while another process holds the
 	});
 	const held = await hold(path);
 	try {
-		manager.setWorkspaceWriters("parallel");
 		const run = manager.launch({
 			role: defaultAgentConfig().roles[1],
 			model: { provider: "fixture", id: "test" },
@@ -147,7 +148,7 @@ test("the parallel writer policy starts a writer while another process holds the
 			cwd: root,
 			task: "Test parallel writers",
 		});
-		assert.equal(starts, 1, "the parallel policy does not wait for the cross-session workspace lock");
+		assert.equal(starts, 1, "the default policy does not wait for the cross-session workspace lock");
 		assert.equal(manager.get(run.id).status, "starting");
 	} finally {
 		await manager.dispose();
@@ -180,6 +181,7 @@ test("a failed writer-lock release fails completed and queued runs and rejects f
 		},
 		(run) => completions.push(run),
 	);
+	manager.setWorkspaceWriters("serialize");
 	const launch = {
 		role: defaultAgentConfig().roles[1],
 		model: { provider: "fixture", id: "test" },

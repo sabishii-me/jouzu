@@ -210,7 +210,7 @@ About shows the running and installed Jouzu builds, Pi version, and process star
 
 Workflow uses one top-level tab and a visible **View: ‹ Agents ›** / **View: ‹ Runs ›** choice. The choice uses `←`/`→`; `Tab` remains reserved for Models / Workflow / Settings. Opening `/workflow` shows definitions. A **Subagents: ‹ On › / ‹ Off ›** row controls child execution for this session with `Enter`, `Space`, or `←`/`→`. Disabling asks for confirmation if children are queued or running, then stops them without undoing file changes. Definition editing and result inspection remain available. `/workflow on`, `/workflow off`, and `/workflow toggle` provide command shortcuts; off/toggle apply directly. Run updates request a redraw without changing the selected view.
 
-Two rows below it write `agents.json` as soon as they change. **Concurrency** opens a form whose number field accepts 1–32 and saves on `Enter`. **Child writers** is a choice between **‹ One at a time ›**, which runs one writer per workspace and takes the cross-session workspace lock, and **‹ In parallel ›**, which lets writers share a workspace. The saving session applies either change at once; other sessions pick it up when they next save or attach. An assignment form adds a **Workspace** row that names the child's directory; it defaults to the parent session's.
+Two rows below it write `agents.json` as soon as they change. **Concurrency** opens a form whose number field accepts 1–32 and saves on `Enter`. **Child writers** is a choice between **‹ In parallel ›** (the default), which lets writers share a workspace, and **‹ One at a time ›**, which runs one writer per workspace and takes the cross-session workspace lock. The saving session applies either change at once; other sessions pick it up when they next save or attach. An assignment form adds a **Workspace** row that names the child's directory; it defaults to the parent session's.
 
 ```text
 ╭ Workflow ─────────────────────────────────────╮
@@ -218,7 +218,7 @@ Two rows below it write `agents.json` as soon as they change. **Concurrency** op
 │ → View: ‹ Agents ›                            │
 │   Subagents: ‹ On › · this session             │
 │   Concurrency: 4 · 1–32                        │
-│   Child writers: ‹ One at a time ›             │
+│   Child writers: ‹ In parallel ›               │
 │   orchestrator · provider/planner-model        │
 │   coder · provider/coder-model                 │
 │   reviewer · provider/review-model             │

@@ -31,6 +31,7 @@ import {
 	type AgentModel,
 	type AgentRole,
 	AgentRoleStore,
+	DEFAULT_WORKSPACE_WRITERS,
 	defaultAgentConfig,
 	digest,
 	isSameModelSelector,
@@ -463,7 +464,7 @@ export function createWorkflowIntegration(
 						} catch {}
 					}
 				let concurrency = defaultAgentConfig().maxConcurrent;
-				let workspaceWriters: WorkspaceWriterPolicy = "serialize";
+				let workspaceWriters: WorkspaceWriterPolicy = DEFAULT_WORKSPACE_WRITERS;
 				try {
 					const config = roles().config;
 					concurrency = config.maxConcurrent;

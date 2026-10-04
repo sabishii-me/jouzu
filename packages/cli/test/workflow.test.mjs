@@ -435,12 +435,12 @@ test("concurrency and child-writer settings save from the Agents view", () => {
 	assert.match(f.text(80), /Concurrent agents must be 1–32/);
 	cancel(f.view);
 	select(f, "Child writers");
-	assert.match(f.text(80), /One at a time/);
-	enter(f.view);
-	assert.equal(f.config.workspaceWriters, "parallel");
 	assert.match(f.text(80), /In parallel/);
-	f.view.handleInput("\x1b[C");
+	enter(f.view);
 	assert.equal(f.config.workspaceWriters, "serialize");
+	assert.match(f.text(80), /One at a time/);
+	f.view.handleInput("\x1b[C");
+	assert.equal(f.config.workspaceWriters, "parallel");
 	f.view.dispose();
 });
 

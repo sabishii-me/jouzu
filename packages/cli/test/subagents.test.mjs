@@ -170,16 +170,16 @@ test("role definitions are arbitrary, revision checked, and judging tools cannot
 test("concurrency and workspace-writer settings default, validate, and accept the widened limit", () => {
 	const config = defaultAgentConfig();
 	assert.equal(config.maxConcurrent, 4);
-	assert.equal(config.workspaceWriters, "serialize");
+	assert.equal(config.workspaceWriters, "parallel");
 	assert.equal(parseAgentConfig({ ...config, maxConcurrent: 32 }).maxConcurrent, 32);
 	assert.throws(() => parseAgentConfig({ ...config, maxConcurrent: 33 }), /Concurrent agents must be 1–32/);
 	assert.throws(() => parseAgentConfig({ ...config, maxConcurrent: 0 }), /Concurrent agents must be 1–32/);
 	assert.equal(
 		parseAgentConfig({ ...config, workspaceWriters: undefined }).workspaceWriters,
-		"serialize",
-		"configuration written before the setting existed keeps the historical behavior",
+		"parallel",
+		"configuration written before the setting existed follows the default",
 	);
-	assert.equal(parseAgentConfig({ ...config, workspaceWriters: "parallel" }).workspaceWriters, "parallel");
+	assert.equal(parseAgentConfig({ ...config, workspaceWriters: "serialize" }).workspaceWriters, "serialize");
 	assert.throws(() => parseAgentConfig({ ...config, workspaceWriters: "sometimes" }), /serialize or parallel/);
 });
 test("raised concurrency starts queued work in another workspace immediately", async () => {
@@ -196,19 +196,23 @@ test("raised concurrency starts queued work in another workspace immediately", a
 	assert.throws(() => f.manager.setWorkspaceWriters("sometimes"), /serialize or parallel/);
 	await f.manager.dispose();
 });
-test("parallel child writers may share one workspace on the user's instruction", async () => {
-	const f = fixture();
+test("child writers share one workspace by default and serialize on request", async () => {
+	const f = fixture(3);
 	const role = defaultAgentConfig().roles[1];
 	f.launch(role);
 	f.launch(role);
-	assert.equal(f.children.length, 1, "writers serialize in one workspace by default");
-	f.manager.setWorkspaceWriters("parallel");
-	assert.equal(f.children.length, 2, "the parallel policy starts the queued writer beside the running one");
+	assert.equal(f.children.length, 2, "the default policy admits writers in one workspace");
 	f.manager.setWorkspaceWriters("serialize");
+	const third = f.launch(role);
+	assert.equal(f.children.length, 2, "the serialize policy holds the next writer while one runs");
+	assert.equal(f.manager.get(third.id).status, "queued");
+	f.manager.setWorkspaceWriters("parallel");
+	assert.equal(f.children.length, 3, "sharing again starts the queued writer beside the running ones");
 	await f.manager.dispose();
 });
-test("writer children serialize; result is terminal only after process exit; secrets stay out of records", async () => {
+test("writer children serialize on request; result is terminal only after process exit; secrets stay out of records", async () => {
 	const f = fixture();
+	f.manager.setWorkspaceWriters("serialize");
 	const first = f.launch();
 	const second = f.launch();
 	assert.equal(f.children.length, 1);

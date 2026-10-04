@@ -22,6 +22,7 @@ import type { WorkerCommand, WorkerEvent, WorkerLaunch } from "./protocol.js";
 import { captureReviewCandidate, type ReviewCandidate } from "./review.js";
 import {
 	type AgentRole,
+	DEFAULT_WORKSPACE_WRITERS,
 	digest,
 	parseAgentConfig,
 	parseConcurrency,
@@ -252,7 +253,7 @@ export class SubagentManager {
 	private storageError?: string;
 	private releaseError?: Error;
 	private maxConcurrent: number;
-	private workspaceWriters: WorkspaceWriterPolicy = "serialize";
+	private workspaceWriters: WorkspaceWriterPolicy = DEFAULT_WORKSPACE_WRITERS;
 	constructor(
 		private readonly paths: JouzuPaths,
 		readonly parentSessionId: string,

@@ -35,12 +35,14 @@ export interface AgentRole {
 }
 /**
  * What children that can write may do to one workspace at the same time.
- * `serialize` keeps one writer per workspace and holds the cross-session
- * workspace lock; `parallel` lets writers share a workspace on the user's
- * instruction, including two children editing the same worktree.
+ * `parallel` (the default) lets writers share a workspace on the user's
+ * instruction, including two children editing the same worktree, and skips the
+ * cross-session workspace lock. `serialize` keeps one writer per workspace and
+ * holds that lock.
  */
 export const WORKSPACE_WRITER_POLICIES = ["serialize", "parallel"] as const;
 export type WorkspaceWriterPolicy = (typeof WORKSPACE_WRITER_POLICIES)[number];
+export const DEFAULT_WORKSPACE_WRITERS: WorkspaceWriterPolicy = "parallel";
 export const CONCURRENCY_BOUNDS = { minimum: 1, maximum: 32 } as const;
 export interface AgentConfig {
 	schemaVersion: 1;
@@ -60,7 +62,7 @@ export function defaultAgentConfig(): AgentConfig {
 	return {
 		schemaVersion: 1,
 		maxConcurrent: 4,
-		workspaceWriters: "serialize",
+		workspaceWriters: DEFAULT_WORKSPACE_WRITERS,
 		roles: [
 			{
 				...common,
@@ -113,10 +115,10 @@ export function parseConcurrency(value: unknown): number {
 }
 /**
  * Workspace-writer policy is optional so configuration written before the
- * setting existed keeps loading; the historical behavior is `serialize`.
+ * setting existed keeps loading; a missing field follows the default.
  */
 export function parseWorkspaceWriters(value: unknown): WorkspaceWriterPolicy {
-	if (value === undefined) return "serialize";
+	if (value === undefined) return DEFAULT_WORKSPACE_WRITERS;
 	if (!WORKSPACE_WRITER_POLICIES.includes(value as WorkspaceWriterPolicy))
 		throw new Error("Validation: child writers must be serialize or parallel.");
 	return value as WorkspaceWriterPolicy;
