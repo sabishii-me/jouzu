@@ -31,6 +31,9 @@ export function ComponentSection({ title, status, note, tone, busy, error, insta
   </section>;
 }
 
+/** Joins what is known about a component, leaving out what is not. */
+export const describe = (parts: (string | undefined)[]) => parts.filter(part => part).join(' · ');
+
 export interface ComponentApi<State> {
   state: State | null;
   busy: boolean;

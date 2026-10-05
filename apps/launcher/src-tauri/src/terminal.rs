@@ -43,21 +43,28 @@ pub fn host(root: &Path, managed: &Path) -> Option<PathBuf> {
 
 /// What the interface shows: which copies exist, which one is used, and whether the archive is here.
 pub fn report(root: &Path, managed: &Path) -> Result<serde_json::Value, String> {
-    let output = launcher_script::run(root, SCRIPT, &["-Report".to_string()])?;
+    let mut arguments = vec!["-Report".to_string()];
+    if let Some(path) = preferred(managed) {
+        arguments.push("-Preferred".to_string());
+        arguments.push(path);
+    }
+    let output = launcher_script::run(root, SCRIPT, &arguments)?;
     if !output.status.success() {
         return Err(launcher_script::failure(&output, "Cannot read the Windows Terminal state"));
     }
     let mut value: serde_json::Value = serde_json::from_slice(&output.stdout).map_err(|_| "Invalid Windows Terminal state".to_string())?;
     let provider = choice(managed).get("provider").and_then(|item| item.as_str()).unwrap_or("bundled").to_string();
+    // A chosen copy that cannot be used is reported, never silently replaced by another one.
+    if provider == "system" && value["preferred"].is_null() {
+        return Err("That Windows Terminal is no longer usable. Choose another copy.".to_string());
+    }
     value["choice"] = serde_json::json!(provider);
-    value["effective"] = if provider == "system" && !value["preferred"].is_null() {
-        value["effective"].clone()
-    } else if provider == "system" {
-        value["system"].clone()
+    value["effective"] = if provider == "system" {
+        value["preferred"].clone()
     } else if !value["bundled"].is_null() {
         value["bundled"]["path"].clone()
     } else {
-        value["effective"].clone()
+        value["system"]["path"].clone()
     };
     Ok(value)
 }

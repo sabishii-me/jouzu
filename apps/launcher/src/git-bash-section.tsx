@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { messages, type Locale } from './i18n';
-import { ComponentSection, useComponent, type ComponentApi } from './components/component-row';
+import { ComponentSection, describe, useComponent, type ComponentApi } from './components/component-row';
 
 interface Environment { path: string; git: string; bash: string }
 export interface GitBashState {
@@ -14,7 +14,8 @@ export interface GitBashState {
 }
 
 /** The version without the prefix the command prints, for display in the row. */
-const version = (reported?: string) => reported?.replace(/^git version\s+/i, '');
+const version = (reported?: string) => reported?.replace(/^git version\s+/i, '') ?? '';
+
 
 /** The Git Bash component: the copy in use, and the other copy the user can move to. */
 export function GitBashSection({ locale, api }: { locale: Locale; api: ComponentApi<GitBashState> }) {
@@ -35,7 +36,7 @@ export function GitBashSection({ locale, api }: { locale: Locale; api: Component
   ];
   return <ComponentSection
     title={t.gitBash}
-    status={installed ? `${usingSystem ? t.gitBashSystem : t.gitBashBundled} · ${version(state.effective?.git)}` : t.gitBashMissing}
+    status={installed ? describe([usingSystem ? t.gitBashSystem : t.gitBashBundled, version(state.effective?.git)]) : t.gitBashMissing}
     tone={installed ? 'ok' : 'missing'}
     note={installed ? undefined : t.gitBashRequired}
     busy={busy} error={error}

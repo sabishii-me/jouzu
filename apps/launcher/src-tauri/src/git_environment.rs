@@ -29,14 +29,23 @@ fn preferred(managed: &Path) -> Option<String> {
 /// What the interface needs: which sources exist, their versions, which one is chosen and which one
 /// would be used. Nothing here uses a system Git on its own.
 pub fn report(root: &Path, managed: &Path) -> Result<serde_json::Value, String> {
-    let output = helper_with(root, &["-Report".to_string()])?;
+    let mut arguments = vec!["-Report".to_string()];
+    if let Some(path) = preferred(managed) {
+        arguments.push("-Preferred".to_string());
+        arguments.push(path);
+    }
+    let output = helper_with(root, &arguments)?;
     if !output.status.success() {
         return Err(crate::launcher_script::failure(&output, "Cannot read the Git Bash state"));
     }
     let mut value: serde_json::Value = serde_json::from_slice(&output.stdout).map_err(|_| "Invalid Git Bash state")?;
     let provider = choice(managed).get("provider").and_then(|item| item.as_str()).unwrap_or("bundled").to_string();
+    // A chosen copy that cannot be used is reported, never silently replaced by another one.
+    if provider == "system" && value["preferred"].is_null() {
+        return Err("That Git Bash is no longer usable. Choose another copy.".to_string());
+    }
     let effective = if provider == "system" && !value["preferred"].is_null() {
-        value["preferred"].clone()
+        value["system"].clone()
     } else if !value["bundled"].is_null() {
         value["bundled"].clone()
     } else if !value["managed"].is_null() {

@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import { ComponentSection, useComponent } from './components/component-row';
+import { ComponentSection, describe, useComponent } from './components/component-row';
 import { messages, type Locale } from './i18n';
 
 interface Terminal { path: string; version: string }
@@ -31,7 +31,7 @@ export function TerminalSection({ locale }: { locale: Locale }) {
   ];
   return <ComponentSection
     title={t.windowsTerminal}
-    status={installed ? `${usingSystem ? t.terminalSystem : t.terminalBundled} · ${detail?.version ?? state.version}` : t.terminalMissing}
+    status={installed ? describe([usingSystem ? t.terminalSystem : t.terminalBundled, detail?.version ?? state.version]) : t.terminalMissing}
     tone={installed ? 'ok' : 'missing'}
     busy={busy} error={error}
     installLabel={t.terminalInstall} busyLabel={t.terminalInstalling}
