@@ -3,6 +3,12 @@
 One section per released Launcher version. The update feed shows the section for the released
 version verbatim, so a release without a section is refused.
 
+## 0.3.3
+
+- Jouzu uses the Git Bash that ships with the launcher on every machine, so a machine's own Git
+  installation no longer decides how Jouzu runs. An older installation receives the bundled Git when it
+  updates.
+
 ## 0.3.2
 
 - Rebuilt from the current packaging tree. Installing, updating and uninstalling are unchanged, and
