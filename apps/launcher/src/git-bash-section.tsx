@@ -20,16 +20,18 @@ export function GitBashSection({ locale, api }: { locale: Locale; api: Component
   const t = messages[locale];
   const { state, busy, error, run } = api;
   if (!state) return null;
-  const source = state.choice === 'system' && state.effective ? t.gitBashSystem : t.gitBashBundled;
+  const own = state.bundled ?? state.managed;
+  const installed = Boolean(state.effective);
+  const usingSystem = installed && state.effective?.path === state.system?.path;
   return <ComponentSection
     title={t.gitBash}
-    status={state.effective ? `${source} · ${state.effective.git}` : t.gitBashMissing}
-    tone={state.effective ? 'ok' : 'missing'}
-    note={state.choice === 'system' && state.effective ? t.gitBashPrompt : state.effective ? undefined : t.gitBashRequired}
+    status={installed ? `${usingSystem ? t.gitBashSystem : t.gitBashBundled} · ${state.effective?.git}` : t.gitBashMissing}
+    tone={installed ? 'ok' : 'missing'}
+    note={installed ? undefined : t.gitBashRequired}
     busy={busy} error={error}
-    install={() => void run(() => invoke<GitBashState>('git_bash_install'))}
+    install={installed ? undefined : () => void run(() => invoke<GitBashState>('git_bash_install'))}
     installLabel={t.gitBashInstall} busyLabel={t.gitBashInstalling}
-    extra={state.system ? (state.choice === 'system'
+    extra={own && state.system ? (usingSystem
       ? { label: t.gitBashUseBundled, run: () => void run(() => invoke<GitBashState>('git_bash_choose', { provider: 'bundled', path: null })) }
       : { label: t.gitBashUseSystem, run: () => void run(() => invoke<GitBashState>('git_bash_choose', { provider: 'system', path: state.system!.path })) }) : undefined}
   />;

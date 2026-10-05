@@ -16,15 +16,15 @@ export function TerminalSection({ locale }: { locale: Locale }) {
   const t = messages[locale];
   const { state, busy, error, run } = useComponent<TerminalState>('terminal');
   if (!state) return null;
-  const source = state.system ? t.terminalSystem : t.terminalBundled;
-  const detail = state.system ?? state.bundled;
+  const installed = Boolean(state.effective);
+  const usingSystem = installed && state.effective === state.system?.path;
+  const detail = usingSystem ? state.system : state.bundled;
   return <ComponentSection
     title={t.windowsTerminal}
-    status={state.effective ? `${source} · ${detail?.version ?? state.version}` : t.terminalMissing}
-    tone={state.effective ? 'ok' : 'missing'}
-    note={t.terminalHint}
+    status={installed ? `${usingSystem ? t.terminalSystem : t.terminalBundled} · ${detail?.version ?? state.version}` : t.terminalMissing}
+    tone={installed ? 'ok' : 'missing'}
     busy={busy} error={error}
-    install={() => void run(() => invoke<TerminalState>('terminal_install'))}
+    install={installed ? undefined : () => void run(() => invoke<TerminalState>('terminal_install'))}
     installLabel={t.terminalInstall} busyLabel={t.terminalInstalling}
   />;
 }
