@@ -46,6 +46,9 @@ export function App() {
   const updater = useLauncherUpdate(components?.launcherUpdaterConfigured === true);
   const gitBash = useGitBash();
   const [settingsTab,setSettingsTab] = useState("providers");
+  // A machine whose console host draws the interface incorrectly is told so, and the fix is one step away.
+  const [consoleNotice, setConsoleNotice] = useState(false);
+  useEffect(() => { void invoke<boolean>("console_notice").then(value => setConsoleNotice(value === true)).catch(() => setConsoleNotice(false)); }, []);
   const [sort, setSort] = useState(() => localStorage.getItem("jouzu.folder.sort") ?? "added");
   const [connectionMode, setConnectionMode] = useState<"builtin" | "custom">("builtin");
   const [providerQuery, setProviderQuery] = useState("");
@@ -183,7 +186,7 @@ export function App() {
       <div className="absolute left-0 right-0 top-0 h-3" data-tauri-drag-region />
       <div className="pointer-events-none flex items-center gap-3"><img src={jouzuIcon} alt="" draggable={false} className="size-9" /><h1 className="min-w-16 flex-1 text-lg font-semibold tracking-tight">Jouzu</h1></div>
       <div className="pointer-events-none flex items-center gap-1 [&>*]:pointer-events-auto"><Dialog open={settingsOpen} onOpenChange={value => { if (!value && device) void invoke("cancel_control"); setSettingsOpen(value); }}>
-        <>{(updater.version || jouzuUpdater.version) && <Button variant="outline" onClick={() => {setSettingsTab("system");setSettingsOpen(true);}}>{t.updateAvailable}</Button>}</><DialogTrigger asChild><Button variant="ghost" aria-label={t.settings} title={t.settings}><Settings /></Button></DialogTrigger>
+        <>{consoleNotice && <Button variant="outline" onClick={() => {setSettingsTab("system");setSettingsOpen(true);}}>{t.consoleNotice}</Button>}{(updater.version || jouzuUpdater.version) && <Button variant="outline" onClick={() => {setSettingsTab("system");setSettingsOpen(true);}}>{t.updateAvailable}</Button>}</><DialogTrigger asChild><Button variant="ghost" aria-label={t.settings} title={t.settings}><Settings /></Button></DialogTrigger>
         <DialogContent showCloseButton={false} className="flex h-[min(560px,85dvh)] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl border-border p-0 sm:max-w-3xl">
           {error && <p role="alert" className="border-b border-border bg-red-50 px-4 py-2 text-sm text-red-900">{error}</p>}
           <DialogDescription className="sr-only">{t.preferences}</DialogDescription>

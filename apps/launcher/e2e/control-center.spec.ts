@@ -252,3 +252,30 @@ test('a component row keeps its height while an action runs', async ({page})=>{
  const during=(await row.boundingBox())!.height;
  expect(during).toBe(before);
 });
+
+test('a machine whose console host draws the interface incorrectly is offered the fix', async ({page})=>{
+ await page.addInitScript(()=>{
+  (window as any).isTauri=true;
+  (window as any).__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener:()=>{}};
+  localStorage.setItem('jouzu.ui.language','en');
+  (window as any).__TAURI_INTERNALS__={
+   metadata:{currentWindow:{label:'main'},currentWebview:{label:'main'}},
+   transformCallback:()=>1,unregisterCallback:()=>{},
+   invoke:async(command:string)=>{
+    if(command==='console_notice')return true;
+    if(command==='launcher_state')return {ready:true,bash:true,recent:[],platform:'windows'};
+    if(command==='component_versions')return {jouzu:'0.1.18',development:true};
+    if(command==='environment_read')return [];
+    if(command==='git_bash'||command==='terminal')return 1;
+    if(command.includes('version'))return '0.1.0';
+    return 1;
+   }
+  };
+ });
+ await page.goto('http://localhost:1420');
+ const notice=page.getByRole('button',{name:'Fix the console window',exact:true});
+ await expect(notice).toBeVisible();
+ await notice.click();
+ const dialog=page.getByRole('dialog');
+ await expect(dialog.getByRole('tab',{name:'System',exact:true})).toHaveAttribute('data-state','active');
+});

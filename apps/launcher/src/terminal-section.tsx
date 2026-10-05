@@ -25,8 +25,8 @@ export function TerminalSection({ locale }: { locale: Locale }) {
   const options = [
     ...(state.system ? [{ value: 'system', label: describe([t.terminalUseSystem, state.system.version]), run: () => choose('system'), selected: usingSystem }] : []),
     state.bundled
-      ? { value: 'bundled', label: describe([t.terminalUseBundled, state.bundled.version]), run: () => choose('bundled'), selected: installed && !usingSystem }
-      : { value: 'bundled', label: t.terminalInstall, run: () => void run(() => invoke<TerminalState>('terminal_install')), selected: false },
+      ? { value: 'bundled', label: describe([`${t.terminalUseBundled} (${t.recommended})`, state.bundled.version]), run: () => choose('bundled'), selected: installed && !usingSystem }
+      : { value: 'bundled', label: `${t.terminalInstall} (${t.recommended})`, run: () => void run(() => invoke<TerminalState>('terminal_install')), selected: false },
   ];
   return <ComponentSection
     title={t.windowsTerminal}

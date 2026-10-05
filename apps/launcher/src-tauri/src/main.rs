@@ -195,6 +195,19 @@ fn component_versions(app: tauri::AppHandle) -> Result<serde_json::Value, String
 }
 
 #[tauri::command]
+fn console_notice(app: tauri::AppHandle) -> Result<bool, String> {
+    let root = runtime::application_root(&app)?;
+    let managed = runtime::managed_root()?;
+    // A machine that has Windows Terminal already shows the interface correctly, so nothing is
+    // reported; the rest is only a problem where Windows uses the legacy console host.
+    if terminal::any_copy(&root, &managed) {
+        return Ok(false);
+    }
+    let report = terminal::report(&root, &managed)?;
+    Ok(report["legacy"].as_bool().unwrap_or(false))
+}
+
+#[tauri::command]
 fn terminal(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
     terminal::report(&runtime::application_root(&app)?, &runtime::managed_root()?)
 }
@@ -302,6 +315,7 @@ fn main() {
             terminal_install,
             git_bash,
             git_bash_install,
+            console_notice,
             terminal_choose,
             git_bash_choose,
             environment::environment_read,

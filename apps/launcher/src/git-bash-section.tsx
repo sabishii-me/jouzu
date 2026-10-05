@@ -31,8 +31,8 @@ export function GitBashSection({ locale, api }: { locale: Locale; api: Component
   const options = [
     ...(state.system ? [{ value: 'system', label: describe([t.gitBashUseSystem, version(state.system.git)]), run: () => choose('system'), selected: usingSystem }] : []),
     own
-      ? { value: 'bundled', label: describe([t.gitBashUseBundled, version(own.git)]), run: () => choose('bundled'), selected: installed && !usingSystem }
-      : { value: 'bundled', label: t.gitBashInstall, run: () => void run(() => invoke<GitBashState>('git_bash_install')), selected: false },
+      ? { value: 'bundled', label: describe([`${t.gitBashUseBundled} (${t.recommended})`, version(own.git)]), run: () => choose('bundled'), selected: installed && !usingSystem }
+      : { value: 'bundled', label: `${t.gitBashInstall} (${t.recommended})`, run: () => void run(() => invoke<GitBashState>('git_bash_install')), selected: false },
   ];
   return <ComponentSection
     title={t.gitBash}

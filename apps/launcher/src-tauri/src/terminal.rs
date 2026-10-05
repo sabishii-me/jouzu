@@ -41,6 +41,20 @@ pub fn host(root: &Path, managed: &Path) -> Option<PathBuf> {
     path.is_file().then_some(path)
 }
 
+/// Whether any copy of Windows Terminal is already on this machine, checked without running the helper.
+pub fn any_copy(root: &Path, managed: &Path) -> bool {
+    if preferred(managed).is_some() {
+        return true;
+    }
+    if root.join("runtime/terminal/installed/WindowsTerminal.exe").is_file() {
+        return true;
+    }
+    std::env::var_os("LOCALAPPDATA")
+        .map(|value| PathBuf::from(value).join("Microsoft/WindowsApps/wt.exe"))
+        .filter(|path| path.is_file())
+        .is_some()
+}
+
 /// What the interface shows: which copies exist, which one is used, and whether the archive is here.
 pub fn report(root: &Path, managed: &Path) -> Result<serde_json::Value, String> {
     let mut arguments = vec!["-Report".to_string()];
