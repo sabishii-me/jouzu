@@ -24,7 +24,8 @@ function Get-Terminal([string]$Root) {
  return $null
 }
 
-$preferredInfo = if ($Preferred) { Get-Terminal ([IO.Path]::GetFullPath($Preferred)) } else { $null }
+# The interface reports the executable, so the chosen copy is resolved from its directory.
+$preferredInfo = if ($Preferred) { Get-Terminal (Split-Path -Parent ([IO.Path]::GetFullPath($Preferred))) } else { $null }
 $bundledInfo = Get-Terminal $installed
 $systemInfo = if ($system -and (Test-Path -LiteralPath $system -PathType Leaf)) { [pscustomobject]@{ path = $system; root = $null } } else { $null }
 

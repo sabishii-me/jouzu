@@ -4,16 +4,19 @@ import { test } from 'node:test';
 
 const script = readFileSync(new URL('./git-environment.ps1', import.meta.url), 'utf8');
 
-test('the Git Bash resolver uses only Jouzu-owned copies', () => {
-  // A system Git is reported so the interface can offer it, and never resolved on its own: the
-  // PortableGit we ship is the version this build was qualified against.
+test('the Git Bash resolver prefers Jouzu copies and can use the one this PC has', () => {
+  // Jouzu's own copies come first, and a Git Bash this PC already has answers a launch or an
+  // installation preparation; only an installation asks for a copy of ours.
   assert.ok(script.includes('Get-SystemEnvironment'));
   assert.ok(script.includes(String.raw`Join-Path $InstallRoot 'runtime\git\installed'`));
   assert.ok(script.includes(String.raw`Join-Path $env:LOCALAPPDATA 'Shisa.ai\Jouzu\tools\git'`));
   const resolution = script.slice(script.indexOf('# The chosen source first'));
   assert.ok(resolution.length > 0, 'the resolution section is present');
-  assert.ok(resolution.includes(String.raw`@($preferredInfo, $bundledInfo, $managedInfo)`));
-  assert.ok(!resolution.includes('$systemInfo'), 'a detected system Git is never used implicitly');
+  const own = resolution.indexOf(String.raw`@($preferredInfo, $bundledInfo, $managedInfo)`);
+  const fallback = resolution.indexOf('if (-not $Install -and $systemInfo)');
+  const gate = resolution.indexOf('if (-not ($Prepare -or $Install))');
+  assert.ok(own >= 0 && fallback > own, 'our own copies are resolved before the one this PC has');
+  assert.ok(gate > fallback, 'installation follows the fallback, so a copy on this PC never ends it');
 });
 
 test('the interface can install the bundled Git Bash and verify what it installs', () => {

@@ -16,12 +16,15 @@ test('the terminal component pins the release it bundles and verifies it', () =>
   assert.ok(script.includes('Unblock-File'));
 });
 
-test('an installed Windows Terminal is preferred, and the bundled one covers machines without it', () => {
-  // The order matters: the user's own terminal keeps their settings, and the bundled copy is what
-  // fixes the machines whose legacy console host damages the interface.
-  const resolution = script.slice(script.indexOf('foreach ($info in @($systemInfo, $bundledInfo))'));
+test("the Windows Terminal resolver takes the chosen copy, then the bundled one, then this PC's", () => {
+  // The chosen copy comes first, a terminal this PC has answers a launch or a preparation, and only
+  // an installation asks for a copy of ours.
+  const resolution = script.slice(script.indexOf('foreach ($info in @($preferredInfo, $bundledInfo))'));
   assert.ok(resolution.length > 0, 'the resolution order is present');
-  assert.ok(resolution.indexOf('$systemInfo') < resolution.indexOf('$bundledInfo'));
+  assert.ok(resolution.indexOf('$preferredInfo') < resolution.indexOf('$bundledInfo'));
+  const fallback = resolution.indexOf('if (-not $Install -and $systemInfo)');
+  const gate = resolution.indexOf('if (-not ($Prepare -or $Install))');
+  assert.ok(fallback > 0 && gate > fallback, 'a terminal on this PC never ends an installation');
 });
 
 test('the report names both sources, the effective one and the archive', () => {
