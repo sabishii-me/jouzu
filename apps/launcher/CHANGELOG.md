@@ -5,9 +5,10 @@ version verbatim, so a release without a section is refused.
 
 ## 0.3.3
 
-- Jouzu uses the Git Bash that ships with the launcher on every machine, so a machine's own Git
-  installation no longer decides how Jouzu runs. An older installation receives the bundled Git when it
-  updates.
+- Git Bash is a component under System: it shows which Git Bash Jouzu uses, installs the bundled one
+  when it is missing, and lets you keep the Git Bash installed on this PC instead.
+- Jouzu uses its own Git Bash by default, so the Git installed on a machine no longer decides how Jouzu
+  runs. An installation that predates this component receives the bundled Git when it updates.
 
 ## 0.3.2
 

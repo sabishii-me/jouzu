@@ -151,3 +151,47 @@ test('each update item shows what changed', async ({page})=>{
  await expect(rows.nth(1).getByText(/install only launcher-owned files/)).toBeVisible();
  await expect(rows.nth(1).getByText(/Git Bash is prepared during installation/)).toHaveCount(0);
 });
+test('the System section installs and selects the Git Bash component', async ({page})=>{
+ await page.addInitScript(()=>{
+  (window as any).isTauri=true;
+  (window as any).__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener:()=>{}};
+  localStorage.setItem('jouzu.ui.language','en');
+  const environment=(git:string,root:string)=>({path:`${root}\bin\bash.exe`,git,bash:'GNU bash, version 5.2.37(1)-release'});
+  const state:any={bundled:null,managed:null,system:environment('git version 2.51.0.windows.1','C:\Program Files\Git'),preferred:null,archive:true,choice:'bundled',effective:null};
+  const settle=()=>{state.effective=state.choice==='system'?state.system:state.bundled;return {...state};};
+  (window as any).__TAURI_INTERNALS__={
+   metadata:{currentWindow:{label:'main'},currentWebview:{label:'main'}},
+   transformCallback:()=>1,unregisterCallback:()=>{},
+   invoke:async(command:string,args?:any)=>{
+    if(command==='launcher_state')return {ready:true,bash:false,recent:[],platform:'windows'};
+    if(command==='component_versions')return {jouzu:'0.1.18',development:true};
+    if(command==='environment_read')return [];
+    if(command==='git_bash')return {...state};
+    if(command==='git_bash_install'){
+     state.bundled=environment('git version 2.55.0.windows.5','C:\Users\test\AppData\Local\Shisa.ai\Jouzu\runtime\git\installed');
+     return settle();
+    }
+    if(command==='git_bash_choose'){state.choice=args.provider;return settle();}
+    if(command.includes('version'))return '0.1.0';
+    return 1;
+   }
+  };
+ });
+ await page.goto('http://localhost:1420');
+ await page.getByRole('button',{name:'Settings',exact:true}).click();
+ const dialog=page.getByRole('dialog');
+ await dialog.getByRole('tab',{name:'System',exact:true}).click();
+ const row=dialog.locator('section[aria-label="Git Bash"]');
+ // An installation without the bundled Git says so and offers both choices.
+ await expect(row.getByText('Not installed',{exact:true})).toBeVisible();
+ await expect(row.getByText(/Jouzu needs a Git Bash to open folders/)).toBeVisible();
+ await expect(row.getByRole('button',{name:"Use this PC's Git Bash",exact:true})).toBeVisible();
+ // Installing the bundled Git Bash replaces the state without a reload.
+ await row.getByRole('button',{name:'Install the bundled Git Bash',exact:true}).click();
+ await expect(row.getByText(/2\.55\.0\.windows\.5/)).toBeVisible();
+ await expect(row.getByText('Not installed',{exact:true})).toHaveCount(0);
+ // Choosing the machine's own Git Bash says so and offers the way back.
+ await row.getByRole('button',{name:"Use this PC's Git Bash",exact:true}).click();
+ await expect(row.getByText(/Jouzu is using this PC's Git Bash/)).toBeVisible();
+ await expect(row.getByRole('button',{name:'Use the bundled Git Bash',exact:true})).toBeVisible();
+});

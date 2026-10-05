@@ -192,6 +192,32 @@ fn component_versions(app: tauri::AppHandle) -> Result<serde_json::Value, String
     )
 }
 
+#[tauri::command]
+fn git_bash(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    git_environment::report(&runtime::application_root(&app)?, &runtime::managed_root()?)
+}
+
+#[tauri::command]
+async fn git_bash_install(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    let root = runtime::application_root(&app)?;
+    tauri::async_runtime::spawn_blocking(move || git_environment::install(&root))
+        .await
+        .map_err(|_| "Git Bash installation failed".to_string())??;
+    git_environment::report(&runtime::application_root(&app)?, &runtime::managed_root()?)
+}
+
+#[tauri::command]
+fn git_bash_choose(app: tauri::AppHandle, provider: String, path: Option<String>) -> Result<serde_json::Value, String> {
+    let managed = runtime::managed_root()?;
+    let choice = match provider.as_str() {
+        "bundled" => serde_json::json!({ "provider": "bundled" }),
+        "system" => serde_json::json!({ "provider": "system", "path": path.ok_or("A system Git Bash path is required")? }),
+        _ => return Err("Unknown Git Bash source".into()),
+    };
+    git_environment::set_choice(&managed, choice)?;
+    git_environment::report(&runtime::application_root(&app)?, &managed)
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -228,6 +254,9 @@ fn main() {
             jouzu_update::jouzu_update,
             control::control_request,
             control::cancel_control,
+            git_bash,
+            git_bash_install,
+            git_bash_choose,
             environment::environment_read,
             environment::environment_save,
 

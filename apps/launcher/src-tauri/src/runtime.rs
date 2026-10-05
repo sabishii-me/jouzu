@@ -57,7 +57,8 @@ pub fn application_root(_app: &tauri::AppHandle) -> Result<PathBuf, String> {
 }
 
 pub fn find_bash(app: &tauri::AppHandle) -> Option<PathBuf> {
-    application_root(app).ok().and_then(|root| crate::git_environment::find(&root).ok())
+    let root = application_root(app).ok()?;
+    crate::git_environment::find(&root, &managed_root().ok()?).ok()
 }
 
 pub fn launch(app: &tauri::AppHandle, path: &str) -> Result<(), String> {

@@ -2,6 +2,7 @@ import { LauncherPage } from "./components/launcher-page";
 import { ProviderPicker } from "./components/ui/provider-picker";
 import { recoveryText } from "./recovery-text";
 import { UpdatePreview } from "./update-preview";
+import { GitBashSection, useGitBash } from "./git-bash-section";
 import { useJouzuUpdate } from "./use-jouzu-update";
 import { useLauncherUpdate } from "./use-launcher-update";
 import { Label } from "./components/ui/label";
@@ -42,6 +43,7 @@ export function App() {
   const [components, setComponents] = useState<Components | null>(null);
   const jouzuUpdater = useJouzuUpdate(!import.meta.env.DEV && components?.jouzuUpdaterConfigured === true, () => {void invoke<Components>("component_versions").then(setComponents).catch(error => setError(String(error)));});
   const updater = useLauncherUpdate(!import.meta.env.DEV && components?.launcherUpdaterConfigured === true);
+  const gitBash = useGitBash();
   const [settingsTab,setSettingsTab] = useState("providers");
   const [sort, setSort] = useState(() => localStorage.getItem("jouzu.folder.sort") ?? "added");
   const [connectionMode, setConnectionMode] = useState<"builtin" | "custom">("builtin");
@@ -182,7 +184,7 @@ export function App() {
       <div className="absolute left-0 right-0 top-0 h-3" data-tauri-drag-region />
       <div className="pointer-events-none flex items-center gap-3"><img src={jouzuIcon} alt="" draggable={false} className="size-9" /><h1 className="min-w-16 flex-1 text-lg font-semibold tracking-tight">Jouzu</h1></div>
       <div className="pointer-events-none flex items-center gap-1 [&>*]:pointer-events-auto"><Dialog open={settingsOpen} onOpenChange={value => { if (!value && device) void invoke("cancel_control"); setSettingsOpen(value); }}>
-        <>{(updatePreview || updater.version || jouzuUpdater.version) && <Button variant="outline" onClick={() => {setSettingsTab("about");setSettingsOpen(true);}}>{t.updateAvailable}</Button>}</><DialogTrigger asChild><Button variant="ghost" aria-label={t.settings} title={t.settings}><Settings /></Button></DialogTrigger>
+        <>{(updatePreview || updater.version || jouzuUpdater.version) && <Button variant="outline" onClick={() => {setSettingsTab("system");setSettingsOpen(true);}}>{t.updateAvailable}</Button>}</><DialogTrigger asChild><Button variant="ghost" aria-label={t.settings} title={t.settings}><Settings /></Button></DialogTrigger>
         <DialogContent showCloseButton={false} className="flex h-[min(560px,85dvh)] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl border-border p-0 sm:max-w-3xl">
           {error && <p role="alert" className="border-b border-border bg-red-50 px-4 py-2 text-sm text-red-900">{error}</p>}
           <DialogDescription className="sr-only">{t.preferences}</DialogDescription>
@@ -192,7 +194,7 @@ export function App() {
               <TabsList aria-label={t.settings} className="h-auto w-full items-stretch gap-1 bg-transparent p-0">
                 <TabsTrigger value="providers" className="min-h-10 justify-start gap-2 px-3"><KeyRound className="size-4 shrink-0" aria-hidden="true" />{t.providers}</TabsTrigger>
                 <TabsTrigger value="environment" className="min-h-10 justify-start gap-2 px-3"><SlidersHorizontal className="size-4 shrink-0" aria-hidden="true" />{t.environment}</TabsTrigger><TabsTrigger value="general" className="min-h-10 justify-start gap-2 px-3"><Languages className="size-4 shrink-0" aria-hidden="true" />{t.general}</TabsTrigger>
-                <TabsTrigger value="about" className="min-h-10 justify-start gap-2 whitespace-normal px-3 text-left"><RefreshCw className="size-4 shrink-0" aria-hidden="true" />{t.versions}</TabsTrigger>
+                <TabsTrigger value="system" className="min-h-10 justify-start gap-2 whitespace-normal px-3 text-left"><RefreshCw className="size-4 shrink-0" aria-hidden="true" />{t.system}</TabsTrigger>
               </TabsList>
             </aside>
             <ScrollArea className="min-w-0 flex-1">
@@ -215,7 +217,7 @@ export function App() {
                   </CardContent></Card>
 
                 </TabsContent>
-                <TabsContent value="about" className="m-0 space-y-4">
+                <TabsContent value="system" className="m-0 space-y-4">
                   <details><summary className="cursor-pointer text-sm">{recoveryText[locale].title}</summary>
                     <p className="my-2 text-sm text-muted-foreground">{recoveryText[locale].description}</p>
                     <Button variant="outline" disabled={busy || updater.busy || jouzuUpdater.busy || import.meta.env.DEV} onClick={async()=>{
@@ -237,6 +239,7 @@ export function App() {
                     check:()=>{void jouzuUpdater.check();void updater.refresh();},
                     install:index=>{if(index===0)void jouzuUpdater.install();else void updater.install();}
                   }}/>
+                  {gitBash.state && <div className="rounded-lg border border-border"><GitBashSection locale={locale} state={gitBash.state} busy={gitBash.busy} error={gitBash.error} onInstall={gitBash.install} onChoose={gitBash.choose} /></div>}
                 </TabsContent>
               </div>
             </ScrollArea>
