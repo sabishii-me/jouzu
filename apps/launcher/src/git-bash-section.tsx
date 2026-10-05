@@ -25,20 +25,22 @@ export function GitBashSection({ locale, api }: { locale: Locale; api: Component
   const installed = Boolean(state.effective);
   const usingSystem = installed && state.effective?.path === state.system?.path;
   const choose = (provider: 'bundled' | 'system') => void run(() => invoke<GitBashState>('git_bash_choose', { provider, path: provider === 'system' ? state.system!.path : null }));
-  // Jouzu's copy is absent: install it and use it, or use the Git Bash this PC already has. Both are
-  // there: switch between them. The copy that is already in use is never offered as an action.
-  const action = own
-    ? usingSystem ? { label: t.gitBashUseBundled, run: () => choose('bundled') } : { label: t.gitBashUseSystem, run: () => choose('system') }
-    : usingSystem ? undefined : { label: t.gitBashUseSystem, run: () => choose('system') };
+  // Two ways to have a Git Bash: the copy Jouzu ships and the one this PC already has. The row shows
+  // both, marks the one in use, and offers installing the shipped copy until it is there.
+  const options = [
+    ...(state.system ? [{ label: t.gitBashUseSystem, run: () => choose('system'), selected: usingSystem }] : []),
+    own
+      ? { label: t.gitBashUseBundled, run: () => choose('bundled'), selected: installed && !usingSystem }
+      : { label: t.gitBashInstall, run: () => void run(() => invoke<GitBashState>('git_bash_install')), selected: false },
+  ];
   return <ComponentSection
     title={t.gitBash}
     status={installed ? `${usingSystem ? t.gitBashSystem : t.gitBashBundled} · ${version(state.effective?.git)}` : t.gitBashMissing}
     tone={installed ? 'ok' : 'missing'}
     note={installed ? undefined : t.gitBashRequired}
     busy={busy} error={error}
-    install={own ? undefined : () => void run(() => invoke<GitBashState>('git_bash_install'))}
     installLabel={t.gitBashInstall} busyLabel={t.gitBashInstalling}
-    extra={action && state.system ? action : undefined}
+    options={options}
   />;
 }
 

@@ -198,18 +198,21 @@ test('the System section shows each component state and installs one only while 
  const dialog=page.getByRole('dialog');
  await dialog.getByRole('tab',{name:'System',exact:true}).click();
  const row=dialog.locator('section[aria-label="Git Bash"]');
- // A Git Bash this PC already has is the copy in use, and Jouzu's own copy stays on offer.
+ // Both ways are offered: this PC's copy is marked as the one in use, the shipped copy for install.
+ const system = row.getByRole('button',{name:"Use this PC's Git Bash",exact:true});
+ const shipped = row.getByRole('button',{name:"Install and use Jouzu's Git Bash",exact:true});
+ await expect(system).toHaveAttribute('aria-pressed','true');
+ await expect(shipped).toHaveAttribute('aria-pressed','false');
  await expect(row.getByText(/Git Bash installed on this PC/)).toBeVisible();
- await expect(row.getByRole('button',{name:"Install and use Jouzu's Git Bash",exact:true})).toBeVisible();
- await expect(row.getByRole('button',{name:"Use this PC's Git Bash",exact:true})).toHaveCount(0);
- await row.getByRole('button',{name:"Install and use Jouzu's Git Bash",exact:true}).click();
+ // Installing the shipped copy selects it.
+ await shipped.click();
  await expect(row.getByText(/2\.55\.0\.windows\.5/)).toBeVisible();
- await expect(row.getByRole('button',{name:"Install and use Jouzu's Git Bash",exact:true})).toHaveCount(0);
- // Both copies are there now, so the row switches between them.
- await expect(row.getByRole('button',{name:"Use this PC's Git Bash",exact:true})).toBeVisible();
- await row.getByRole('button',{name:"Use this PC's Git Bash",exact:true}).click();
- await expect(row.getByText(/Git Bash installed on this PC/)).toBeVisible();
- await expect(row.getByRole('button',{name:"Use Jouzu's Git Bash",exact:true})).toBeVisible();
+ await expect(row.getByRole('button',{name:"Use Jouzu's Git Bash",exact:true})).toHaveAttribute('aria-pressed','true');
+ await expect(system).toHaveAttribute('aria-pressed','false');
+ // And either can be selected afterwards.
+ await system.click();
+ await expect(system).toHaveAttribute('aria-pressed','true');
+ await expect(row.getByRole('button',{name:"Use Jouzu's Git Bash",exact:true})).toHaveAttribute('aria-pressed','false');
  // The terminal host follows the same rule.
  const terminalRow=dialog.locator('section[aria-label="Windows Terminal"]');
  await expect(terminalRow.getByText('Not installed',{exact:true})).toBeVisible();
