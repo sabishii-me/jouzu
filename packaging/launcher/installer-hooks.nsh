@@ -57,20 +57,18 @@
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
-  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\runtime\launcher-update\git-environment.ps1" -InstallRoot "$INSTDIR" -Prepare'
-  Pop $0
-  Pop $1
-  ${If} $0 != 0
-    SetErrorLevel 1
-    IfSilent +2
-    MessageBox MB_OK|MB_ICONSTOP "$1"
-    Abort
-  ${EndIf}
-  ; The terminal host is a component the launcher can install later, and a launcher-only package
-  ; carries no archive, so preparing it here is best effort and never fails the installation.
-  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\runtime\launcher-update\terminal-environment.ps1" -InstallRoot "$INSTDIR" -Prepare'
-  Pop $0
-  Pop $1
+  ; Components belong to the launcher: the installer prepares whatever the package carries and never
+  ; fails the installation for one. A component that is missing or could not be prepared shows up in
+  ; the System section, which installs it from the shipped archive or the pinned release.
+  IfFileExists "$INSTDIR\runtime\git\PortableGit.exe" 0 jouzu_components_done
+    nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\runtime\launcher-update\git-environment.ps1" -InstallRoot "$INSTDIR" -Prepare'
+    Pop $0
+    Pop $1
+  IfFileExists "$INSTDIR\runtime\terminal\WindowsTerminal.zip" 0 jouzu_components_done
+    nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\runtime\launcher-update\terminal-environment.ps1" -InstallRoot "$INSTDIR" -Prepare'
+    Pop $0
+    Pop $1
+  jouzu_components_done:
 !macroend
 
 !macro NSIS_HOOK_POSTUNINSTALL

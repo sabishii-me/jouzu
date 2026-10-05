@@ -93,10 +93,16 @@ test('ordinary uninstall removes managed program versions before user-data decis
  assert.ok(cleanup<section.indexOf('Delete "$INSTDIR'));
 });
 
-test("Git preparation belongs to installer and failure aborts installation", () => {
-  const post = hooks.slice(hooks.indexOf('!macro NSIS_HOOK_POSTINSTALL'));
+test("component preparation belongs to the installer and never fails it", () => {
+  const start = hooks.indexOf('!macro NSIS_HOOK_POSTINSTALL');
+  const post = hooks.slice(start, hooks.indexOf('!macroend', start));
+  // Components belong to the launcher: the installer prepares what the package carries and never
+  // fails the installation for one, because the System section can install it afterwards.
   assert.match(post, /git-environment\.ps1.*-InstallRoot.*-Prepare/);
-  assert.match(post, /SetErrorLevel 1[\s\S]*Abort/);
+  assert.match(post, /terminal-environment\.ps1.*-InstallRoot.*-Prepare/);
+  assert.ok(post.includes(String.raw`IfFileExists "$INSTDIR\runtime\git\PortableGit.exe" 0 `));
+  assert.ok(post.includes(String.raw`IfFileExists "$INSTDIR\runtime\terminal\WindowsTerminal.zip" 0 `));
+  assert.doesNotMatch(post, /Abort/, 'a component never fails the installation');
   const build = readFileSync(new URL('./prepare-windows-bundle.ps1', import.meta.url), 'utf8');
   assert.doesNotMatch(build, /Start-Process|signCommand/);
   assert.match(build, /runtime\/git\/PortableGit\.exe/);
