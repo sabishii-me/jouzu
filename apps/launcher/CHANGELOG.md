@@ -5,10 +5,14 @@ version verbatim, so a release without a section is refused.
 
 ## 0.3.3
 
-- Git Bash is a component under System: it shows which Git Bash Jouzu uses, installs the bundled one
-  when it is missing, and lets you keep the Git Bash installed on this PC instead.
+- The console window is hosted by Windows Terminal, which redraws the interface correctly where the
+  standard console host damages it. The full package carries Windows Terminal, and a machine that has
+  its own keeps using it.
+- System lists the components the launcher manages. Git Bash shows which Git Bash Jouzu uses, installs
+  the bundled one when it is missing, and keeps the one installed on this PC when asked. Windows
+  Terminal shows the same way.
 - Jouzu uses its own Git Bash by default, so the Git installed on a machine no longer decides how Jouzu
-  runs. An installation that predates this component receives the bundled Git when it updates.
+  runs. An installation that predates these components receives the bundled copies when it updates.
 
 ## 0.3.2
 

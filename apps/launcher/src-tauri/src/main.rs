@@ -1,6 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod active_app;
+mod launcher_script;
+mod terminal;
 mod git_environment;
 mod recovery;
 mod node_path;
@@ -193,6 +195,20 @@ fn component_versions(app: tauri::AppHandle) -> Result<serde_json::Value, String
 }
 
 #[tauri::command]
+fn terminal(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    terminal::report(&runtime::application_root(&app)?)
+}
+
+#[tauri::command]
+async fn terminal_install(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    let root = runtime::application_root(&app)?;
+    tauri::async_runtime::spawn_blocking(move || terminal::install(&root))
+        .await
+        .map_err(|_| "Windows Terminal installation failed".to_string())??;
+    terminal::report(&runtime::application_root(&app)?)
+}
+
+#[tauri::command]
 fn git_bash(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
     git_environment::report(&runtime::application_root(&app)?, &runtime::managed_root()?)
 }
@@ -254,6 +270,8 @@ fn main() {
             jouzu_update::jouzu_update,
             control::control_request,
             control::cancel_control,
+            terminal,
+            terminal_install,
             git_bash,
             git_bash_install,
             git_bash_choose,

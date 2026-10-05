@@ -69,19 +69,35 @@ pub fn launch(app: &tauri::AppHandle, path: &str) -> Result<(), String> {
     let bash = find_bash(app)
         .ok_or("Git Bash is missing. Repair the Jouzu installation.")?;
     let executable = std::env::current_exe().map_err(|e| e.to_string())?;
-    let mut command = Command::new(executable.with_file_name("console.exe"));
+    let console = executable.with_file_name("console.exe");
+    let managed = managed_root()?;
+    // The console window's host decides how the terminal redraws. Windows Terminal renders it
+    // correctly where the legacy console host damages a high-repaint interface, so it hosts the
+    // window whenever one is available; otherwise the window keeps the standard console host.
+    let mut command = match terminal_host(&root, path) {
+        Some(host) => {
+            let mut command = Command::new(host);
+            command
+                .args(["-w", "new", "new-tab", "--title", "Jouzu", "--startingDirectory", path, "--"])
+                .arg(&console)
+                .arg(&root)
+                .arg(&managed);
+            command
+        }
+        None => {
+            let mut command = Command::new(&console);
+            command.arg(&root).arg(&managed);
+            #[cfg(windows)]
+            {
+                use std::os::windows::process::CommandExt;
+                command.creation_flags(0x00000010);
+            }
+            command
+        }
+    };
     command.env("JOUZU_HOME", effective_home()?);
     crate::environment::apply(&mut command)?;
-    command
-        .arg(&root)
-        .arg(managed_root()?)
-        .current_dir(path)
-        .env("JOUZU_LAUNCHER_BASH", bash);
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        command.creation_flags(0x00000010);
-    }
+    command.current_dir(path).env("JOUZU_LAUNCHER_BASH", bash);
     let mut child = command
         .spawn()
         .map_err(|e| format!("Could not start Jouzu: {e}"))?;
@@ -89,6 +105,15 @@ pub fn launch(app: &tauri::AppHandle, path: &str) -> Result<(), String> {
         let _ = child.wait();
     });
     Ok(())
+}
+
+/// Windows Terminal treats a semicolon as a command separator, so a path carrying one keeps the
+/// standard console host instead of being split into separate arguments.
+fn terminal_host(root: &Path, project: &str) -> Option<PathBuf> {
+    if root.to_string_lossy().contains(';') || project.contains(';') {
+        return None;
+    }
+    crate::terminal::host(root)
 }
 
 #[cfg(test)]

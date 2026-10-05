@@ -23,6 +23,11 @@ if ((Get-FileHash "$Output/$archive" -Algorithm SHA256).Hash.ToLowerInvariant() 
 Expand-Archive "$Output/$archive" -DestinationPath $Output
 Move-Item "$Output/node-v$nodeVersion-win-x64" "$runtime/node"
 Copy-Item $Pnpm "$runtime/pnpm" -Recurse
+$terminalVersion = '1.25.2733.0'
+$terminalArchive = "$runtime/terminal/WindowsTerminal.zip"
+New-Item -ItemType Directory -Path "$runtime/terminal" -Force | Out-Null
+Invoke-WebRequest "https://github.com/microsoft/terminal/releases/download/v$terminalVersion/Microsoft.WindowsTerminal_${terminalVersion}_x64.zip" -OutFile $terminalArchive
+if ((Get-FileHash $terminalArchive -Algorithm SHA256).Hash.ToLowerInvariant() -ne 'bf3ef2012f6c44d8340a4c58125acc9498d19b580f9890dc043cdf831852e796') { throw 'Windows Terminal archive integrity mismatch' }
 $gitUrl = 'https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.5/PortableGit-2.55.0.5-64-bit.7z.exe'
 $gitArchive = "$runtime/git/PortableGit.exe"
 Invoke-WebRequest $gitUrl -OutFile $gitArchive

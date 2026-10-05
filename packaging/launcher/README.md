@@ -23,6 +23,20 @@ Pinned and hash-verified: Node 24.19.0 from nodejs.org (SHA-256 checked against 
 PortableGit 2.55.0.5 from git-for-windows (pinned SHA-256), and pnpm 10.21.0. `NOTICES.md` lists the
 bundled components and their licences.
 
+## Components
+
+The full package carries the launcher, the console, the Jouzu payload, and the runtime components those
+need: Node, pnpm, PortableGit and Windows Terminal. The launcher-only package carries launcher-owned
+files only, so an update never rewrites a component. A component that is missing or unusable is
+installed from the launcher: the shipped archive when the package carries one, otherwise the pinned
+release, verified by digest (and by publisher for PortableGit) before it is extracted.
+
+Windows Terminal hosts the console window, because the standard console host redraws a high-repaint
+interface incorrectly on Windows 10. An installed Windows Terminal is used when the machine has one, so
+the user's own settings apply; the bundled copy covers the machines that have none. A folder whose path
+contains a semicolon keeps the standard console host, because Windows Terminal treats a semicolon as a
+command separator.
+
 ## Application staging
 
 `stage-application.mjs` copies a **prepared npm installation prefix** into a separate application directory. It does not install dependencies, execute package scripts, download runtimes, or create an installer.

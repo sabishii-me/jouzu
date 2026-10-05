@@ -1,31 +1,8 @@
-use std::{
-    path::{Path, PathBuf},
-    process::{Command, Output},
-};
+use std::path::{Path, PathBuf};
 
-fn helper(root: &Path) -> PathBuf {
-    root.join("runtime/launcher-update/git-environment.ps1")
-}
-
-/// Runs the Git Bash helper, which owns every Windows-specific detail: which trees are signed and
-/// runnable, which versions they report, and how the bundled archive is verified.
-fn helper_with(root: &Path, arguments: &[String]) -> Result<Output, String> {
-    let windows = std::env::var_os("SystemRoot").ok_or("Windows directory unavailable")?;
-    let mut command = Command::new(PathBuf::from(windows).join("System32/WindowsPowerShell/v1.0/powershell.exe"));
-    command
-        .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File"])
-        .arg(helper(root))
-        .arg("-InstallRoot")
-        .arg(root);
-    for argument in arguments {
-        command.arg(argument);
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        command.creation_flags(0x08000000);
-    }
-    command.output().map_err(|_| "Cannot run the Git Bash helper".to_string())
+/// Runs the Git Bash helper through the shared runner.
+fn helper_with(root: &Path, arguments: &[String]) -> Result<std::process::Output, String> {
+    crate::launcher_script::run(root, "git-environment.ps1", arguments)
 }
 
 /// The stored choice: Jouzu's own Git Bash, or one the user picked from this machine.
@@ -54,7 +31,7 @@ fn preferred(managed: &Path) -> Option<String> {
 pub fn report(root: &Path, managed: &Path) -> Result<serde_json::Value, String> {
     let output = helper_with(root, &["-Report".to_string()])?;
     if !output.status.success() {
-        return Err(failure(&output, "Cannot read the Git Bash state"));
+        return Err(crate::launcher_script::failure(&output, "Cannot read the Git Bash state"));
     }
     let mut value: serde_json::Value = serde_json::from_slice(&output.stdout).map_err(|_| "Invalid Git Bash state")?;
     let provider = choice(managed).get("provider").and_then(|item| item.as_str()).unwrap_or("bundled").to_string();
@@ -77,7 +54,7 @@ pub fn find(root: &Path, managed: &Path) -> Result<PathBuf, String> {
     }
     let output = helper_with(root, &arguments)?;
     if !output.status.success() {
-        return Err(failure(&output, "Git Bash is unavailable. Install it from the launcher."));
+        return Err(crate::launcher_script::failure(&output, "Git Bash is unavailable. Install it from the launcher."));
     }
     let path = PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
     if !path.is_file() {
@@ -91,29 +68,13 @@ pub fn find(root: &Path, managed: &Path) -> Result<PathBuf, String> {
 pub fn install(root: &Path) -> Result<PathBuf, String> {
     let output = helper_with(root, &["-Install".to_string()])?;
     if !output.status.success() {
-        return Err(failure(&output, "Git Bash installation failed"));
+        return Err(crate::launcher_script::failure(&output, "Git Bash installation failed"));
     }
     let path = PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
     if !path.is_file() {
         return Err("Git Bash installation did not produce a usable path".into());
     }
     Ok(path)
-}
-
-/// PowerShell puts the message we wrote first and its own frames after it.
-fn failure(output: &Output, fallback: &str) -> String {
-    let text = String::from_utf8_lossy(&output.stderr);
-    text.lines()
-        .map(str::trim)
-        .find(|line| {
-            !line.is_empty()
-                && !line.starts_with("At ")
-                && !line.starts_with('+')
-                && !line.starts_with("CategoryInfo")
-                && !line.starts_with("FullyQualifiedErrorId")
-        })
-        .unwrap_or(fallback)
-        .to_string()
 }
 
 #[cfg(test)]

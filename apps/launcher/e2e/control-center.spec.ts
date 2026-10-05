@@ -159,6 +159,7 @@ test('the System section installs and selects the Git Bash component', async ({p
   const environment=(git:string,root:string)=>({path:`${root}\bin\bash.exe`,git,bash:'GNU bash, version 5.2.37(1)-release'});
   const state:any={bundled:null,managed:null,system:environment('git version 2.51.0.windows.1','C:\Program Files\Git'),preferred:null,archive:true,choice:'bundled',effective:null};
   const settle=()=>{state.effective=state.choice==='system'?state.system:state.bundled;return {...state};};
+  const terminal:any={bundled:null,system:null,effective:null,archive:false,version:'1.25.2733.0'};
   (window as any).__TAURI_INTERNALS__={
    metadata:{currentWindow:{label:'main'},currentWebview:{label:'main'}},
    transformCallback:()=>1,unregisterCallback:()=>{},
@@ -166,6 +167,8 @@ test('the System section installs and selects the Git Bash component', async ({p
     if(command==='launcher_state')return {ready:true,bash:false,recent:[],platform:'windows'};
     if(command==='component_versions')return {jouzu:'0.1.18',development:true};
     if(command==='environment_read')return [];
+    if(command==='terminal')return {...terminal};
+    if(command==='terminal_install'){terminal.bundled={path:'C:\\Program Files\\Jouzu\\terminal\\WindowsTerminal.exe',version:'1.25.2733.0'};terminal.effective=terminal.bundled.path;return {...terminal};}
     if(command==='git_bash')return {...state};
     if(command==='git_bash_install'){
      state.bundled=environment('git version 2.55.0.windows.5','C:\Users\test\AppData\Local\Shisa.ai\Jouzu\runtime\git\installed');
@@ -194,4 +197,9 @@ test('the System section installs and selects the Git Bash component', async ({p
  await row.getByRole('button',{name:"Use this PC's Git Bash",exact:true}).click();
  await expect(row.getByText(/Jouzu is using this PC's Git Bash/)).toBeVisible();
  await expect(row.getByRole('button',{name:'Use the bundled Git Bash',exact:true})).toBeVisible();
+ // The terminal host is the second component, and it installs the same way.
+ const terminalRow=dialog.locator('section[aria-label="Windows Terminal"]');
+ await expect(terminalRow.getByText('Not installed',{exact:true})).toBeVisible();
+ await terminalRow.getByRole('button',{name:'Install the bundled Windows Terminal',exact:true}).click();
+ await expect(terminalRow.getByText(/1\.25\.2733\.0/)).toBeVisible();
 });

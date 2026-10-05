@@ -3,6 +3,7 @@ import { ProviderPicker } from "./components/ui/provider-picker";
 import { recoveryText } from "./recovery-text";
 import { UpdatePreview } from "./update-preview";
 import { GitBashSection, useGitBash } from "./git-bash-section";
+import { TerminalSection } from "./terminal-section";
 import { useJouzuUpdate } from "./use-jouzu-update";
 import { useLauncherUpdate } from "./use-launcher-update";
 import { Label } from "./components/ui/label";
@@ -239,7 +240,7 @@ export function App() {
                     check:()=>{void jouzuUpdater.check();void updater.refresh();},
                     install:index=>{if(index===0)void jouzuUpdater.install();else void updater.install();}
                   }}/>
-                  {gitBash.state && <div className="rounded-lg border border-border"><GitBashSection locale={locale} state={gitBash.state} busy={gitBash.busy} error={gitBash.error} onInstall={gitBash.install} onChoose={gitBash.choose} /></div>}
+                  {gitBash.state && <div className="rounded-lg border border-border"><GitBashSection locale={locale} api={gitBash} /><TerminalSection locale={locale} /></div>}
                 </TabsContent>
               </div>
             </ScrollArea>

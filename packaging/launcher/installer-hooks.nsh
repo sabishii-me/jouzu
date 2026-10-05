@@ -66,6 +66,11 @@
     MessageBox MB_OK|MB_ICONSTOP "$1"
     Abort
   ${EndIf}
+  ; The terminal host is a component the launcher can install later, and a launcher-only package
+  ; carries no archive, so preparing it here is best effort and never fails the installation.
+  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\runtime\launcher-update\terminal-environment.ps1" -InstallRoot "$INSTDIR" -Prepare'
+  Pop $0
+  Pop $1
 !macroend
 
 !macro NSIS_HOOK_POSTUNINSTALL

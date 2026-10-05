@@ -1,3 +1,5 @@
+#[path = "../launcher_script.rs"]
+mod launcher_script;
 #[path = "../git_environment.rs"]
 mod git_environment;
 #[path = "../node_path.rs"]
