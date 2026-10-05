@@ -2,8 +2,7 @@ param(
  [Parameter(Mandatory=$true)][string]$InstallRoot,
  [switch]$Prepare,
  [switch]$Report,
- [switch]$Install,
- [string]$Preferred
+ [switch]$Install
 )
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
@@ -38,8 +37,6 @@ function Get-Terminal([string]$Root) {
  return $null
 }
 
-# The interface reports the executable, so the chosen copy is resolved from its directory.
-$preferredInfo = if ($Preferred) { Get-Terminal (Split-Path -Parent ([IO.Path]::GetFullPath($Preferred))) } else { $null }
 $bundledInfo = Get-Terminal $installed
 $systemInfo = if ($system -and (Test-Path -LiteralPath $system -PathType Leaf)) { [pscustomobject]@{ path = $system; root = $null } } else { $null }
 
@@ -48,7 +45,6 @@ if ($Report) {
   bundled = if ($bundledInfo) { [ordered]@{ path = $bundledInfo.path; version = (Get-FileVersion $bundledInfo.path) } } else { $null }
   system = if ($systemInfo) { [ordered]@{ path = $systemInfo.path; version = (Get-FileVersion $systemInfo.path) } } else { $null }
   effective = if ($systemInfo) { $systemInfo.path } elseif ($bundledInfo) { $bundledInfo.path } else { $null }
-  preferred = if ($preferredInfo) { $preferredInfo.path } else { $null }
   archive = (Test-Path -LiteralPath $archive -PathType Leaf)
   legacy = (Test-LegacyConsole)
   version = $version
@@ -59,10 +55,12 @@ if ($Report) {
 
 # The chosen copy first, then the bundled one. A Windows Terminal this PC has answers a launch or an
 # installation preparation; installing asks for one of ours, so only that request installs.
-foreach ($info in @($preferredInfo, $bundledInfo)) {
+foreach ($info in @($bundledInfo)) {
  if ($info) { Write-Output $info.path; exit 0 }
 }
-if (-not $Install -and $systemInfo) { Write-Output $systemInfo.path; exit 0 }
+# Windows 10 draws the interface incorrectly with the standard console host, so the copy Jouzu ships
+# replaces it during installation; other machines keep the terminal this PC already has.
+if ($systemInfo -and -not (Test-LegacyConsole)) { Write-Output $systemInfo.path; exit 0 }
 if (-not ($Prepare -or $Install)) { throw 'Windows Terminal is unavailable. Install it from the launcher.' }
 
 New-Item -ItemType Directory -Path $parent -Force | Out-Null

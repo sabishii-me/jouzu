@@ -17,23 +17,16 @@ export interface TerminalState {
 export function TerminalSection({ locale }: { locale: Locale }) {
   const t = messages[locale];
   const { state, busy, error, run } = useComponent<TerminalState>('terminal');
-  if (!state) return <ComponentSection title={t.windowsTerminal} status={t.unavailable} tone="missing" busy={busy} error={error} installLabel={t.terminalInstall} busyLabel={t.terminalInstalling} />;
+  if (!state) return <ComponentSection title={t.windowsTerminal} status={t.unavailable} tone="missing" busy={busy} error={error} installLabel={t.terminalInstall} />;
   const installed = Boolean(state.effective);
   const usingSystem = installed && state.effective === state.system?.path;
-  const choose = (provider: 'bundled' | 'system') => void run(() => invoke<TerminalState>('terminal_choose', { provider, path: provider === 'system' ? state.system!.path : null }));
-  // The same two ways: the copy Jouzu ships, installed on request, and the one this PC has.
-  const options = [
-    ...(state.system ? [{ value: 'system', label: describe([t.terminalUseSystem, state.system.version]), run: () => choose('system'), selected: usingSystem }] : []),
-    state.bundled
-      ? { value: 'bundled', label: describe([`${t.terminalUseBundled} (${t.recommended})`, state.bundled.version]), run: () => choose('bundled'), selected: installed && !usingSystem }
-      : { value: 'bundled', label: `${t.terminalInstall} (${t.recommended})`, run: () => void run(() => invoke<TerminalState>('terminal_install')), selected: false },
-  ];
+  const detail = usingSystem ? state.system : state.bundled;
   return <ComponentSection
     title={t.windowsTerminal}
-    status={installed ? undefined : t.terminalMissing}
+    status={installed ? describe([usingSystem ? t.terminalSystem : t.terminalBundled, detail?.version]) : t.terminalMissing}
     tone={installed ? 'ok' : 'missing'}
     busy={busy} error={error}
-    installLabel={t.terminalInstall} busyLabel={t.terminalInstalling}
-    options={options}
+    install={state.bundled ? undefined : () => void run(() => invoke<TerminalState>('terminal_install'))}
+    installLabel={`${t.terminalInstall} (${t.recommended})`}
   />;
 }

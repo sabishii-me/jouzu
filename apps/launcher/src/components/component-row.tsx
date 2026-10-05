@@ -2,16 +2,13 @@ import { LoaderCircle } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Button } from '../components/ui/button';
-import { Label } from './ui/label';
-import { RadioGroup, RadioGroupItem } from './ui/radio-group';
 
 /** One row of the System section: which copy a component uses, and what is still missing. */
-export function ComponentSection({ title, status, note, tone, busy, error, install, installLabel, busyLabel, extra, options }: {
+export function ComponentSection({ title, status, note, tone, busy, error, install, installLabel, extra }: {
   title: string; status?: string; note?: string; tone?: 'ok' | 'missing';
   busy: boolean; error: string | null;
-  install?: () => void; installLabel: string; busyLabel: string;
+  install?: () => void; installLabel: string;
   extra?: { label: string; run: () => void };
-  options?: { value: string; label: string; run: () => void; selected: boolean }[];
 }) {
   return <section className="flex flex-col gap-2 border-t border-border px-5 py-4" aria-label={title}>
     <div className="flex flex-wrap items-center justify-between gap-3">
@@ -21,9 +18,8 @@ export function ComponentSection({ title, status, note, tone, busy, error, insta
       </div>
       <div className="flex flex-wrap items-center gap-2">
         {<span className="flex size-4 items-center justify-center">{busy && <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />}</span>}
-        {options && <RadioGroup value={options.find(option => option.selected)?.value ?? ''} onValueChange={value => options.find(option => option.value === value)?.run()} disabled={busy} aria-label={title} className="flex flex-wrap gap-2">{options.map(option => <Label key={option.value} htmlFor={`${title}-${option.value}`} className={`flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm font-normal transition-colors ${option.selected ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted'}`}><RadioGroupItem value={option.value} id={`${title}-${option.value}`} />{option.label}</Label>)}</RadioGroup>}
         {extra && <Button variant="outline" disabled={busy} onClick={extra.run}>{extra.label}</Button>}
-        {install && <Button disabled={busy} onClick={install}>{busy ? busyLabel : installLabel}</Button>}
+        {install && <Button disabled={busy} onClick={install}>{installLabel}</Button>}
       </div>
     </div>
     {note && <p role="status" className="text-xs text-muted-foreground">{note}</p>}

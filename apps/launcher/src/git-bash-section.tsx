@@ -21,27 +21,19 @@ const version = (reported?: string) => reported?.replace(/^git version\s+/i, '')
 export function GitBashSection({ locale, api }: { locale: Locale; api: ComponentApi<GitBashState> }) {
   const t = messages[locale];
   const { state, busy, error, run } = api;
-  if (!state) return <ComponentSection title={t.gitBash} status={t.unavailable} tone="missing" busy={busy} error={error} installLabel={t.gitBashInstall} busyLabel={t.gitBashInstalling} />;
+  if (!state) return <ComponentSection title={t.gitBash} status={t.unavailable} tone="missing" busy={busy} error={error} installLabel={t.gitBashInstall} />;
   const own = state.bundled ?? state.managed;
   const installed = Boolean(state.effective);
   const usingSystem = installed && state.effective?.path === state.system?.path;
-  const choose = (provider: 'bundled' | 'system') => void run(() => invoke<GitBashState>('git_bash_choose', { provider, path: provider === 'system' ? state.system!.path : null }));
-  // Two ways to have a Git Bash: the copy Jouzu ships and the one this PC already has. The row shows
-  // both, marks the one in use, and offers installing the shipped copy until it is there.
-  const options = [
-    ...(state.system ? [{ value: 'system', label: describe([t.gitBashUseSystem, version(state.system.git)]), run: () => choose('system'), selected: usingSystem }] : []),
-    own
-      ? { value: 'bundled', label: describe([`${t.gitBashUseBundled} (${t.recommended})`, version(own.git)]), run: () => choose('bundled'), selected: installed && !usingSystem }
-      : { value: 'bundled', label: `${t.gitBashInstall} (${t.recommended})`, run: () => void run(() => invoke<GitBashState>('git_bash_install')), selected: false },
-  ];
+  // The copy in use is named, and the copy Jouzu ships is offered for installation until it is here.
   return <ComponentSection
     title={t.gitBash}
-    status={installed ? undefined : t.gitBashMissing}
+    status={installed ? describe([usingSystem ? t.gitBashSystem : t.gitBashBundled, version(state.effective?.git)]) : t.gitBashMissing}
     tone={installed ? 'ok' : 'missing'}
     note={installed ? undefined : t.gitBashRequired}
     busy={busy} error={error}
-    installLabel={t.gitBashInstall} busyLabel={t.gitBashInstalling}
-    options={options}
+    install={own ? undefined : () => void run(() => invoke<GitBashState>('git_bash_install'))}
+    installLabel={`${t.gitBashInstall} (${t.recommended})`}
   />;
 }
 

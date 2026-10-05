@@ -19,10 +19,10 @@ test('the terminal component pins the release it bundles and verifies it', () =>
 test("the Windows Terminal resolver takes the chosen copy, then the bundled one, then this PC's", () => {
   // The chosen copy comes first, a terminal this PC has answers a launch or a preparation, and only
   // an installation asks for a copy of ours.
-  const resolution = script.slice(script.indexOf('foreach ($info in @($preferredInfo, $bundledInfo))'));
+  const resolution = script.slice(script.indexOf('foreach ($info in @($bundledInfo))'));
   assert.ok(resolution.length > 0, 'the resolution order is present');
-  assert.ok(resolution.indexOf('$preferredInfo') < resolution.indexOf('$bundledInfo'));
-  const fallback = resolution.indexOf('if (-not $Install -and $systemInfo)');
+  // Windows 10 replaces the console host with the copy Jouzu ships, which is why the fallback skips it there.
+  const fallback = resolution.indexOf('if ($systemInfo -and -not (Test-LegacyConsole))');
   const gate = resolution.indexOf('if (-not ($Prepare -or $Install))');
   assert.ok(fallback > 0 && gate > fallback, 'a terminal on this PC never ends an installation');
 });

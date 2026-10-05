@@ -197,46 +197,32 @@ fn component_versions(app: tauri::AppHandle) -> Result<serde_json::Value, String
 #[tauri::command]
 fn console_notice(app: tauri::AppHandle) -> Result<bool, String> {
     let root = runtime::application_root(&app)?;
-    let managed = runtime::managed_root()?;
     // A machine that has Windows Terminal already shows the interface correctly, so nothing is
     // reported; the rest is only a problem where Windows uses the legacy console host.
-    if terminal::any_copy(&root, &managed) {
+    if terminal::any_copy(&root) {
         return Ok(false);
     }
-    let report = terminal::report(&root, &managed)?;
+    let report = terminal::report(&root)?;
     Ok(report["legacy"].as_bool().unwrap_or(false))
 }
 
 #[tauri::command]
 fn terminal(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
-    terminal::report(&runtime::application_root(&app)?, &runtime::managed_root()?)
+    terminal::report(&runtime::application_root(&app)?)
 }
 
 #[tauri::command]
 async fn terminal_install(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
     let root = runtime::application_root(&app)?;
-    let managed = runtime::managed_root()?;
-    tauri::async_runtime::spawn_blocking(move || terminal::install(&root, &managed))
+    tauri::async_runtime::spawn_blocking(move || terminal::install(&root))
         .await
         .map_err(|_| "Windows Terminal installation failed".to_string())??;
-    terminal::report(&runtime::application_root(&app)?, &runtime::managed_root()?)
-}
-
-#[tauri::command]
-fn terminal_choose(app: tauri::AppHandle, provider: String, path: Option<String>) -> Result<serde_json::Value, String> {
-    let managed = runtime::managed_root()?;
-    let choice = match provider.as_str() {
-        "bundled" => serde_json::json!({ "provider": "bundled" }),
-        "system" => serde_json::json!({ "provider": "system", "path": path.ok_or("A Windows Terminal path is required")? }),
-        _ => return Err("Unknown Windows Terminal source".into()),
-    };
-    terminal::set_choice(&managed, choice)?;
-    terminal::report(&runtime::application_root(&app)?, &managed)
+    terminal::report(&runtime::application_root(&app)?)
 }
 
 #[tauri::command]
 fn git_bash(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
-    git_environment::report(&runtime::application_root(&app)?, &runtime::managed_root()?)
+    git_environment::report(&runtime::application_root(&app)?)
 }
 
 #[tauri::command]
@@ -245,22 +231,7 @@ async fn git_bash_install(app: tauri::AppHandle) -> Result<serde_json::Value, St
     tauri::async_runtime::spawn_blocking(move || git_environment::install(&root))
         .await
         .map_err(|_| "Git Bash installation failed".to_string())??;
-    let managed = runtime::managed_root()?;
-    // Installing the shipped copy is how a user asks for it.
-    git_environment::set_choice(&managed, serde_json::json!({ "provider": "bundled" }))?;
-    git_environment::report(&runtime::application_root(&app)?, &managed)
-}
-
-#[tauri::command]
-fn git_bash_choose(app: tauri::AppHandle, provider: String, path: Option<String>) -> Result<serde_json::Value, String> {
-    let managed = runtime::managed_root()?;
-    let choice = match provider.as_str() {
-        "bundled" => serde_json::json!({ "provider": "bundled" }),
-        "system" => serde_json::json!({ "provider": "system", "path": path.ok_or("A system Git Bash path is required")? }),
-        _ => return Err("Unknown Git Bash source".into()),
-    };
-    git_environment::set_choice(&managed, choice)?;
-    git_environment::report(&runtime::application_root(&app)?, &managed)
+    git_environment::report(&runtime::application_root(&app)?)
 }
 
 /// The webview loads a development server when the frontend is not embedded, and a user runs no such
@@ -316,8 +287,6 @@ fn main() {
             git_bash,
             git_bash_install,
             console_notice,
-            terminal_choose,
-            git_bash_choose,
             environment::environment_read,
             environment::environment_save,
 

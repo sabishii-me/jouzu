@@ -47,7 +47,7 @@ fn main() {
         let managed = std::env::args_os().nth(2).map(PathBuf::from).or_else(|| std::env::var_os("LOCALAPPDATA").map(|p| PathBuf::from(p).join("Shisa.ai/Jouzu"))).ok_or("Missing managed directory")?;
         let _lease = update_lock::lock(&managed, false)?;
         let app = active_app::resolve_app(&root, &managed)?;
-        let bash = git_environment::find(&root, &managed)?;
+        let bash = git_environment::find(&root)?;
         let status = Command::new(root.join("runtime/node/node.exe"))
             .arg(node_path::node_path(&app.join("bootstrap.mjs")))
             .env("JOUZU_LAUNCHER_BASH", bash)

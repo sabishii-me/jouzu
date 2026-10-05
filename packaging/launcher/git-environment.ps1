@@ -2,8 +2,7 @@ param(
  [Parameter(Mandatory=$true)][string]$InstallRoot,
  [switch]$Prepare,
  [switch]$Report,
- [switch]$Install,
- [string]$Preferred
+ [switch]$Install
 )
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
@@ -62,7 +61,6 @@ function Get-SystemEnvironment {
 
 $bundledInfo = Get-GitEnvironment $bundled
 $managedInfo = Get-GitEnvironment $managed
-$preferredInfo = if ($Preferred) { Get-GitEnvironment ([IO.Path]::GetFullPath((Join-Path $Preferred '..\..'))) } else { $null }
 $systemInfo = Get-SystemEnvironment
 $archive = Join-Path (Join-Path $InstallRoot 'runtime\git') 'PortableGit.exe'
 
@@ -71,7 +69,6 @@ if ($Report) {
   bundled = if ($bundledInfo) { [ordered]@{ path = $bundledInfo.path; git = $bundledInfo.git; bash = $bundledInfo.bash } } else { $null }
   managed = if ($managedInfo) { [ordered]@{ path = $managedInfo.path; git = $managedInfo.git; bash = $managedInfo.bash } } else { $null }
   system = if ($systemInfo) { [ordered]@{ path = $systemInfo.path; git = $systemInfo.git; bash = $systemInfo.bash } } else { $null }
-  preferred = if ($preferredInfo) { $preferredInfo.path } else { $null }
   archive = (Test-Path -LiteralPath $archive -PathType Leaf)
  }
  Write-Output ($value | ConvertTo-Json -Compress -Depth 4)
@@ -80,7 +77,7 @@ if ($Report) {
 
 # The chosen source first, then Jouzu's own copies. A copy this PC already has answers a launch or an
 # installation preparation, but installing asks for one of ours, so only that request installs.
-foreach ($info in @($preferredInfo, $bundledInfo, $managedInfo)) {
+foreach ($info in @($bundledInfo, $managedInfo)) {
  if ($info) { Write-Output $info.path; exit 0 }
 }
 if (-not $Install -and $systemInfo) { Write-Output $systemInfo.path; exit 0 }

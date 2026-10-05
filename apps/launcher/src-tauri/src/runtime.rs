@@ -58,7 +58,7 @@ pub fn application_root(_app: &tauri::AppHandle) -> Result<PathBuf, String> {
 
 pub fn find_bash(app: &tauri::AppHandle) -> Option<PathBuf> {
     let root = application_root(app).ok()?;
-    crate::git_environment::find(&root, &managed_root().ok()?).ok()
+    crate::git_environment::find(&root).ok()
 }
 
 pub fn launch(app: &tauri::AppHandle, path: &str) -> Result<(), String> {
@@ -113,7 +113,7 @@ fn terminal_host(root: &Path, project: &str) -> Option<PathBuf> {
     if root.to_string_lossy().contains(';') || project.contains(';') {
         return None;
     }
-    crate::terminal::host(root, &managed_root().ok()?)
+    crate::terminal::host(root)
 }
 
 #[cfg(test)]
