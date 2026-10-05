@@ -33,16 +33,10 @@ function Test-GitEnvironment([string]$Root) {
  return $true
 }
 
+# Only Jouzu-owned copies are candidates. The version we ship is the one this build was qualified
+# against, so a system Git of unknown age must never decide how Jouzu runs.
 $candidates = @((Join-Path $InstallRoot 'runtime\git\installed'))
 if ($env:LOCALAPPDATA) { $candidates += Join-Path $env:LOCALAPPDATA 'Shisa.ai\Jouzu\tools\git' }
-foreach ($base in @($env:ProgramFiles, ${env:ProgramFiles(x86)})) {
- if ($base) { $candidates += Join-Path $base 'Git' }
-}
-foreach ($directory in ($env:PATH -split ';')) {
- if ($directory -and (Test-Path -LiteralPath (Join-Path $directory 'git.exe') -PathType Leaf)) {
-  $candidates += [IO.Path]::GetFullPath((Join-Path $directory '..'))
- }
-}
 foreach ($candidate in ($candidates | Select-Object -Unique)) {
  if (Test-GitEnvironment $candidate) { Write-Output (Join-Path $candidate 'bin\bash.exe'); exit 0 }
 }
