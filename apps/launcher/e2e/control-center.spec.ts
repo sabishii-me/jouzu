@@ -197,24 +197,23 @@ test('the System section shows each component state and installs one only while 
  const dialog=page.getByRole('dialog');
  await dialog.getByRole('tab',{name:'System',exact:true}).click();
  const row=dialog.locator('section[aria-label="Git Bash"]');
- // Nothing is in use yet: the shipped copy is offered for installation, and the Git Bash this PC
- // already has can be used as it is.
+ // Jouzu's copy is absent: install and use it, or use the Git Bash this PC already has.
  await expect(row.getByText('Not installed',{exact:true})).toBeVisible();
- await expect(row.getByText(/This PC has Git Bash/)).toBeVisible();
- await expect(row.getByRole('button',{name:'Install Git Bash',exact:true})).toBeVisible();
+ await expect(row.getByText(/Jouzu needs a Git Bash/)).toBeVisible();
+ await expect(row.getByRole('button',{name:"Install and use Jouzu's Git Bash",exact:true})).toBeVisible();
  await row.getByRole('button',{name:"Use this PC's Git Bash",exact:true}).click();
  await expect(row.getByText(/Git Bash installed on this PC/)).toBeVisible();
- // Using this PC's copy leaves the recommended installation on offer.
- await expect(row.getByRole('button',{name:'Install Git Bash',exact:true})).toBeVisible();
- // Installing replaces the state without a reload, and a usable component offers nothing to install.
- await row.getByRole('button',{name:'Install Git Bash',exact:true}).click();
+ // With this PC's copy in use the shipped copy is still offered, and the copy in use is not.
+ await expect(row.getByRole('button',{name:"Install and use Jouzu's Git Bash",exact:true})).toBeVisible();
+ await expect(row.getByRole('button',{name:"Use this PC's Git Bash",exact:true})).toHaveCount(0);
+ await row.getByRole('button',{name:"Install and use Jouzu's Git Bash",exact:true}).click();
  await expect(row.getByText(/2\.55\.0\.windows\.5/)).toBeVisible();
- await expect(row.getByRole('button',{name:'Install Git Bash',exact:true})).toHaveCount(0);
- // Both copies exist now, so the row offers the other one, and switching keeps the installation off.
+ await expect(row.getByRole('button',{name:"Install and use Jouzu's Git Bash",exact:true})).toHaveCount(0);
+ // Both copies are there now, so the row switches between them.
+ await expect(row.getByRole('button',{name:"Use this PC's Git Bash",exact:true})).toBeVisible();
  await row.getByRole('button',{name:"Use this PC's Git Bash",exact:true}).click();
  await expect(row.getByText(/Git Bash installed on this PC/)).toBeVisible();
- await expect(row.getByRole('button',{name:'Install Git Bash',exact:true})).toHaveCount(0);
- await expect(row.getByRole('button',{name:'Use the bundled Git Bash',exact:true})).toBeVisible();
+ await expect(row.getByRole('button',{name:"Use Jouzu's Git Bash",exact:true})).toBeVisible();
  // The terminal host follows the same rule.
  const terminalRow=dialog.locator('section[aria-label="Windows Terminal"]');
  await expect(terminalRow.getByText('Not installed',{exact:true})).toBeVisible();
