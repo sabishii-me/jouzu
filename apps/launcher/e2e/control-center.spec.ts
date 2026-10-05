@@ -218,3 +218,37 @@ test('the System section lists each component with its copies and the one in use
  await expect(terminal.getByRole('radio',{name:"Use Jouzu's Windows Terminal"})).toHaveAttribute('aria-checked','true');
  await expect(systemTerminal).toHaveAttribute('aria-checked','false');
 });
+
+test('a component row keeps its height while an action runs', async ({page})=>{
+ await page.addInitScript(()=>{
+  (window as any).isTauri=true;
+  (window as any).__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener:()=>{}};
+  localStorage.setItem('jouzu.ui.language','en');
+  const terminal={bundled:null,system:null,preferred:null,effective:null,archive:true,version:'1.25.2733.0',choice:'bundled'};
+  (window as any).__TAURI_INTERNALS__={
+   metadata:{currentWindow:{label:'main'},currentWebview:{label:'main'}},
+   transformCallback:()=>1,unregisterCallback:()=>{},
+   invoke:async(command:string)=>{
+    if(command==='launcher_state')return {ready:true,bash:false,recent:[],platform:'windows'};
+    if(command==='component_versions')return {jouzu:'0.1.18',development:true};
+    if(command==='environment_read')return [];
+    if(command==='terminal')return {...terminal};
+    if(command==='terminal_install')return new Promise(()=>{});
+    if(command==='git_bash')return 1;
+    if(command.includes('version'))return '0.1.0';
+    return 1;
+   }
+  };
+ });
+ await page.goto('http://localhost:1420');
+ await page.getByRole('button',{name:'Settings',exact:true}).click();
+ const dialog=page.getByRole('dialog');
+ await dialog.getByRole('tab',{name:'System',exact:true}).click();
+ const row=dialog.locator('section[aria-label="Windows Terminal"]');
+ const before=(await row.boundingBox())!.height;
+ await row.getByRole('radio',{name:"Install and use Jouzu's Windows Terminal"}).click();
+ await expect(row.locator('svg.animate-spin')).toBeVisible();
+ await page.waitForTimeout(600);
+ const during=(await row.boundingBox())!.height;
+ expect(during).toBe(before);
+});

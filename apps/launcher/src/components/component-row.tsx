@@ -20,8 +20,8 @@ export function ComponentSection({ title, status, note, tone, busy, error, insta
         {status && <p className={`mt-1 text-sm ${tone === 'missing' ? 'text-destructive' : 'text-muted-foreground'}`}>{status}</p>}
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        {busy && <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />}
-        {options && <RadioGroup value={options.find(option => option.selected)?.value ?? ''} onValueChange={value => options.find(option => option.value === value)?.run()} disabled={busy} aria-label={title} className="flex flex-wrap gap-4">{options.map(option => <div key={option.value} className="flex items-center gap-2"><RadioGroupItem value={option.value} id={`${title}-${option.value}`} /><Label htmlFor={`${title}-${option.value}`} className="text-sm font-normal">{option.label}</Label></div>)}</RadioGroup>}
+        {<span className="flex size-4 items-center justify-center">{busy && <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />}</span>}
+        {options && <RadioGroup value={options.find(option => option.selected)?.value ?? ''} onValueChange={value => options.find(option => option.value === value)?.run()} disabled={busy} aria-label={title} className="flex flex-wrap gap-2">{options.map(option => <Label key={option.value} htmlFor={`${title}-${option.value}`} className={`flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm font-normal transition-colors ${option.selected ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted'}`}><RadioGroupItem value={option.value} id={`${title}-${option.value}`} />{option.label}</Label>)}</RadioGroup>}
         {extra && <Button variant="outline" disabled={busy} onClick={extra.run}>{extra.label}</Button>}
         {install && <Button disabled={busy} onClick={install}>{busy ? busyLabel : installLabel}</Button>}
       </div>
