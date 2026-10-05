@@ -43,6 +43,10 @@ $target = Join-Path $repo 'apps/launcher/src-tauri/target/release'
 New-Item -ItemType Directory $target -Force | Out-Null
 Copy-Item "$inputRoot/bin/*" $target
 Copy-Item "$inputRoot/dist" "$repo/apps/launcher/dist" -Recurse -Force
+# A launcher whose webview loads a development server is unusable for a user, so the binary the
+# bundler carries has to answer the check the launcher itself performs.
+$check = Start-Process -FilePath (Join-Path $target 'launcher.exe') -ArgumentList '--production-build-check' -Wait -PassThru
+if ($check.ExitCode -ne 0) { throw 'launcher.exe does not embed the frontend; produce the binaries with the Tauri CLI (tauri build --no-bundle) before bundling' }
 $setupPath = Join-Path $target "bundle/nsis/Jouzu Launcher_${Version}_x64-setup.exe"
 
 # The bundler calls this for every own binary, every resource it considers signable and the

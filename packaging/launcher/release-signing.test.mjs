@@ -72,3 +72,16 @@ test('the payload is excluded from signing so vendor bytes stay pinned', () => {
  assert.match(finalize, /\$env:JOUZU_SIGN_SKIP_ROOTS = \(\$skipRoots -join ';'\)/);
  assert.match(finalize, /sign-windows\.ps1",'%1'/);
 });
+
+test('the bundler refuses a launcher that would load a development server', () => {
+ const finalize = read('finalize-windows-bundle.ps1');
+ // The check is compiled into the launcher and answers through its exit code.
+ assert.match(finalize, /launcher\.exe'\) -ArgumentList '--production-build-check'/);
+ assert.match(finalize, /\$check\.ExitCode -ne 0\) \{ throw /);
+ const main = readFileSync(
+  new URL('../../apps/launcher/src-tauri/src/main.rs', import.meta.url),
+  'utf8',
+ );
+ assert.match(main, /--production-build-check/);
+ assert.match(main, /tauri::is_dev\(\)/);
+});

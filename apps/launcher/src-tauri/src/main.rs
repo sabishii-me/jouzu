@@ -234,7 +234,19 @@ fn git_bash_choose(app: tauri::AppHandle, provider: String, path: Option<String>
     git_environment::report(&runtime::application_root(&app)?, &managed)
 }
 
+/// The webview loads a development server when the frontend is not embedded, and a user runs no such
+/// server. `--production-build-check` reports that state through the exit code, which the packaging
+/// step refuses to accept.
+fn production_build_check(mut arguments: impl Iterator<Item = String>) -> Option<i32> {
+    arguments
+        .any(|argument| argument == "--production-build-check")
+        .then(|| i32::from(tauri::is_dev()))
+}
+
 fn main() {
+    if let Some(code) = production_build_check(std::env::args()) {
+        std::process::exit(code);
+    }
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -305,5 +317,27 @@ mod tests {
     fn rejects_invalid_preferences() {
         assert!(legacy_workspace("not json").is_err());
         assert!(legacy_workspace(r#"{"schemaVersion":2,"remember":true,"folder":"x"}"#).is_err());
+    }
+}
+
+#[cfg(test)]
+mod build_check_tests {
+    use super::production_build_check;
+
+    fn arguments(values: &[&str]) -> std::vec::IntoIter<String> {
+        values
+            .iter()
+            .map(|value| value.to_string())
+            .collect::<Vec<_>>()
+            .into_iter()
+    }
+
+    #[test]
+    fn the_production_build_check_reports_the_embedded_frontend() {
+        assert_eq!(
+            production_build_check(arguments(&["launcher.exe", "--production-build-check"])),
+            Some(i32::from(tauri::is_dev()))
+        );
+        assert_eq!(production_build_check(arguments(&["launcher.exe"])), None);
     }
 }

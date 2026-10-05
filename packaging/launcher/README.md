@@ -19,6 +19,10 @@ installing it does not rewrite the payload.
 
 ## Build inputs
 
+The launcher binaries come from the Tauri CLI (`tauri build --no-bundle`), which is what embeds the
+frontend into them; a binary from a plain `cargo build` would load the development URL instead, so the
+packaging step runs the launcher's own production build check and refuses to bundle one.
+
 Pinned and hash-verified: Node 24.19.0 from nodejs.org (SHA-256 checked against `SHASUMS256.txt`),
 PortableGit 2.55.0.5 from git-for-windows (pinned SHA-256), and pnpm 10.21.0. `NOTICES.md` lists the
 bundled components and their licences.
