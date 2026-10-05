@@ -2,7 +2,8 @@ param(
  [Parameter(Mandatory=$true)][string]$InstallRoot,
  [switch]$Prepare,
  [switch]$Report,
- [switch]$Install
+ [switch]$Install,
+ [string]$Preferred
 )
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
@@ -23,6 +24,7 @@ function Get-Terminal([string]$Root) {
  return $null
 }
 
+$preferredInfo = if ($Preferred) { Get-Terminal ([IO.Path]::GetFullPath($Preferred)) } else { $null }
 $bundledInfo = Get-Terminal $installed
 $systemInfo = if ($system -and (Test-Path -LiteralPath $system -PathType Leaf)) { [pscustomobject]@{ path = $system; root = $null } } else { $null }
 
@@ -31,6 +33,7 @@ if ($Report) {
   bundled = if ($bundledInfo) { [ordered]@{ path = $bundledInfo.path; version = (Get-Item -LiteralPath $bundledInfo.path).VersionInfo.FileVersion } } else { $null }
   system = if ($systemInfo) { [ordered]@{ path = $systemInfo.path; version = (Get-Item -LiteralPath $systemInfo.path).VersionInfo.FileVersion } } else { $null }
   effective = if ($systemInfo) { $systemInfo.path } elseif ($bundledInfo) { $bundledInfo.path } else { $null }
+  preferred = if ($preferredInfo) { $preferredInfo.path } else { $null }
   archive = (Test-Path -LiteralPath $archive -PathType Leaf)
   version = $version
  }
@@ -40,7 +43,7 @@ if ($Report) {
 
 # Windows Terminal installed on this PC is kept when it exists, so the user's own settings apply; the
 # bundled copy covers machines that have none, which is where the legacy console host damages the TUI.
-foreach ($info in @($systemInfo, $bundledInfo)) {
+foreach ($info in @($preferredInfo, $bundledInfo, $systemInfo)) {
  if ($info) { Write-Output $info.path; exit 0 }
 }
 if (-not ($Prepare -or $Install)) { throw 'Windows Terminal is unavailable. Install it from the launcher.' }

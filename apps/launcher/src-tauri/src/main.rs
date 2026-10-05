@@ -196,16 +196,29 @@ fn component_versions(app: tauri::AppHandle) -> Result<serde_json::Value, String
 
 #[tauri::command]
 fn terminal(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
-    terminal::report(&runtime::application_root(&app)?)
+    terminal::report(&runtime::application_root(&app)?, &runtime::managed_root()?)
 }
 
 #[tauri::command]
 async fn terminal_install(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
     let root = runtime::application_root(&app)?;
-    tauri::async_runtime::spawn_blocking(move || terminal::install(&root))
+    let managed = runtime::managed_root()?;
+    tauri::async_runtime::spawn_blocking(move || terminal::install(&root, &managed))
         .await
         .map_err(|_| "Windows Terminal installation failed".to_string())??;
-    terminal::report(&runtime::application_root(&app)?)
+    terminal::report(&runtime::application_root(&app)?, &runtime::managed_root()?)
+}
+
+#[tauri::command]
+fn terminal_choose(app: tauri::AppHandle, provider: String, path: Option<String>) -> Result<serde_json::Value, String> {
+    let managed = runtime::managed_root()?;
+    let choice = match provider.as_str() {
+        "bundled" => serde_json::json!({ "provider": "bundled" }),
+        "system" => serde_json::json!({ "provider": "system", "path": path.ok_or("A Windows Terminal path is required")? }),
+        _ => return Err("Unknown Windows Terminal source".into()),
+    };
+    terminal::set_choice(&managed, choice)?;
+    terminal::report(&runtime::application_root(&app)?, &managed)
 }
 
 #[tauri::command]
@@ -289,6 +302,7 @@ fn main() {
             terminal_install,
             git_bash,
             git_bash_install,
+            terminal_choose,
             git_bash_choose,
             environment::environment_read,
             environment::environment_save,

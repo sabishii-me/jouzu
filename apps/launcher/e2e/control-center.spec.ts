@@ -162,16 +162,18 @@ test('a failed install offers Retry and the launcher update confirms once', asyn
   expect(await page.evaluate(() => (window as any).__confirms)).toBe(0);
 });
 
-test('the System section shows each component state and installs one only while it is missing', async ({page})=>{
+test('the System section lists each component with its copies and the one in use', async ({page})=>{
  await page.addInitScript(()=>{
   (window as any).isTauri=true;
   (window as any).__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener:()=>{}};
   localStorage.setItem('jouzu.ui.language','en');
-  const environment=(git:string,root:string)=>({path:`${root}\bin\bash.exe`,git,bash:'GNU bash, version 5.2.37(1)-release'});
+  const environment=(git:string,root:string)=>({path:root+'\bin\bash.exe',git,bash:'GNU bash, version 5.2.37(1)-release'});
   const state:any={bundled:null,managed:null,system:environment('git version 2.51.0.windows.1','C:\Program Files\Git'),preferred:null,archive:true,choice:'bundled',effective:null};
   const settle=()=>({...state,effective:state.choice==='system'?state.system:(state.bundled??state.managed??state.system)});
   state.effective=settle().effective;
-  const terminal:any={bundled:null,system:null,effective:null,archive:false,version:'1.25.2733.0'};
+  const terminal:any={bundled:null,system:{path:'C:\Program Files\WindowsApps\wt.exe',version:'1.25.2733.0'},preferred:null,archive:false,version:'1.25.2733.0',choice:'bundled',effective:null};
+  const settleTerminal=()=>({...terminal,effective:terminal.choice==='system'?terminal.system.path:(terminal.bundled?.path??terminal.system?.path)});
+  terminal.effective=settleTerminal().effective;
   (window as any).__TAURI_INTERNALS__={
    metadata:{currentWindow:{label:'main'},currentWebview:{label:'main'}},
    transformCallback:()=>1,unregisterCallback:()=>{},
@@ -180,13 +182,10 @@ test('the System section shows each component state and installs one only while 
     if(command==='component_versions')return {jouzu:'0.1.18',development:true};
     if(command==='environment_read')return [];
     if(command==='terminal')return {...terminal};
-    if(command==='terminal_install'){terminal.bundled={path:'C:\Program Files\Jouzu\terminal\WindowsTerminal.exe',version:'1.25.2733.0'};terminal.effective=terminal.bundled.path;return {...terminal};}
+    if(command==='terminal_install'){terminal.bundled={path:'C:\Program Files\Jouzu\terminal\WindowsTerminal.exe',version:'1.25.2733.0'};terminal.choice='bundled';return settleTerminal();}
+    if(command==='terminal_choose'){terminal.choice=args.provider;return settleTerminal();}
     if(command==='git_bash')return {...state};
-    if(command==='git_bash_install'){
-     state.bundled=environment('git version 2.55.0.windows.5','C:\Users\test\AppData\Local\Shisa.ai\Jouzu\runtime\git\installed');
-     state.choice='bundled';
-     return settle();
-    }
+    if(command==='git_bash_install'){state.bundled=environment('git version 2.55.0.windows.5','C:\Users\test\AppData\Local\Shisa.ai\Jouzu\runtime\git\installed');state.choice='bundled';return settle();}
     if(command==='git_bash_choose'){state.choice=args.provider;return settle();}
     if(command.includes('version'))return '0.1.0';
     return 1;
@@ -197,27 +196,26 @@ test('the System section shows each component state and installs one only while 
  await page.getByRole('button',{name:'Settings',exact:true}).click();
  const dialog=page.getByRole('dialog');
  await dialog.getByRole('tab',{name:'System',exact:true}).click();
- const row=dialog.locator('section[aria-label="Git Bash"]');
- // Both ways are offered: this PC's copy is marked as the one in use, the shipped copy for install.
- const system = row.getByRole('button',{name:"Use this PC's Git Bash",exact:true});
- const shipped = row.getByRole('button',{name:"Install and use Jouzu's Git Bash",exact:true});
- await expect(system).toHaveAttribute('aria-pressed','true');
- await expect(shipped).toHaveAttribute('aria-pressed','false');
- await expect(row.getByText(/Git Bash installed on this PC/)).toBeVisible();
- // Installing the shipped copy selects it.
- await shipped.click();
- await expect(row.getByText(/2\.55\.0\.windows\.5/)).toBeVisible();
- await expect(row.getByRole('button',{name:"Use Jouzu's Git Bash",exact:true})).toHaveAttribute('aria-pressed','true');
- await expect(system).toHaveAttribute('aria-pressed','false');
- // And either can be selected afterwards.
- await system.click();
- await expect(system).toHaveAttribute('aria-pressed','true');
- await expect(row.getByRole('button',{name:"Use Jouzu's Git Bash",exact:true})).toHaveAttribute('aria-pressed','false');
- // The terminal host follows the same rule.
- const terminalRow=dialog.locator('section[aria-label="Windows Terminal"]');
- await expect(terminalRow.getByText('Not installed',{exact:true})).toBeVisible();
- await terminalRow.getByRole('button',{name:'Install Windows Terminal',exact:true}).click();
- await expect(terminalRow.getByText(/1\.25\.2733\.0/)).toBeVisible();
- await expect(terminalRow.getByRole('button',{name:'Install Windows Terminal',exact:true})).toHaveCount(0);
+ const bash=dialog.locator('section[aria-label="Git Bash"]');
+ // Both ways are choices and the copy in use is the selected one.
+ const systemBash=bash.getByRole('radio',{name:"Use this PC's Git Bash"});
+ const installBash=bash.getByRole('radio',{name:"Install and use Jouzu's Git Bash"});
+ await expect(systemBash).toHaveAttribute('aria-checked','true');
+ await expect(installBash).toHaveAttribute('aria-checked','false');
+ await expect(bash.getByText(/Git Bash installed on this PC/)).toBeVisible();
+ await installBash.click();
+ await expect(bash.getByRole('radio',{name:"Use Jouzu's Git Bash"})).toHaveAttribute('aria-checked','true');
+ await expect(systemBash).toHaveAttribute('aria-checked','false');
+ await systemBash.click();
+ await expect(systemBash).toHaveAttribute('aria-checked','true');
+ await expect(bash.getByRole('radio',{name:"Use Jouzu's Git Bash"})).toHaveAttribute('aria-checked','false');
+ // The console host offers the same choices.
+ const terminal=dialog.locator('section[aria-label="Windows Terminal"]');
+ const systemTerminal=terminal.getByRole('radio',{name:"Use this PC's Windows Terminal"});
+ const installTerminal=terminal.getByRole('radio',{name:"Install and use Jouzu's Windows Terminal"});
+ await expect(systemTerminal).toHaveAttribute('aria-checked','true');
+ await expect(installTerminal).toHaveAttribute('aria-checked','false');
+ await installTerminal.click();
+ await expect(terminal.getByRole('radio',{name:"Use Jouzu's Windows Terminal"})).toHaveAttribute('aria-checked','true');
+ await expect(systemTerminal).toHaveAttribute('aria-checked','false');
 });
-

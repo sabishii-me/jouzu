@@ -1,4 +1,4 @@
-import { LoaderCircle } from 'lucide-react';
+import { Circle, CircleDot, LoaderCircle } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Button } from '../components/ui/button';
@@ -19,7 +19,7 @@ export function ComponentSection({ title, status, note, tone, busy, error, insta
       </div>
       <div className="flex flex-wrap items-center gap-2">
         {busy && <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />}
-        {options?.map(option => <Button key={option.label} variant={option.selected ? 'default' : 'outline'} aria-pressed={option.selected} disabled={busy} onClick={option.run}>{option.label}</Button>)}
+        {options && <div role="radiogroup" aria-label={title} className="flex flex-wrap gap-2">{options.map(option => <button key={option.label} type="button" role="radio" aria-checked={option.selected} disabled={busy} onClick={option.run} className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm ${option.selected ? 'border-primary font-medium' : 'border-border text-muted-foreground hover:bg-muted'}`}>{option.selected ? <CircleDot className="size-4" aria-hidden="true" /> : <Circle className="size-4" aria-hidden="true" />}{option.label}</button>)}</div>}
         {extra && <Button variant="outline" disabled={busy} onClick={extra.run}>{extra.label}</Button>}
         {install && <Button disabled={busy} onClick={install}>{busy ? busyLabel : installLabel}</Button>}
       </div>

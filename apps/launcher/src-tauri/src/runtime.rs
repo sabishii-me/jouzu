@@ -113,7 +113,7 @@ fn terminal_host(root: &Path, project: &str) -> Option<PathBuf> {
     if root.to_string_lossy().contains(';') || project.contains(';') {
         return None;
     }
-    crate::terminal::host(root)
+    crate::terminal::host(root, &managed_root().ok()?)
 }
 
 #[cfg(test)]
