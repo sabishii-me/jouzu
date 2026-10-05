@@ -169,7 +169,8 @@ test('the System section shows each component state and installs one only while 
   localStorage.setItem('jouzu.ui.language','en');
   const environment=(git:string,root:string)=>({path:`${root}\bin\bash.exe`,git,bash:'GNU bash, version 5.2.37(1)-release'});
   const state:any={bundled:null,managed:null,system:environment('git version 2.51.0.windows.1','C:\Program Files\Git'),preferred:null,archive:true,choice:'bundled',effective:null};
-  const settle=()=>{state.effective=state.choice==='system'?state.system:state.bundled;return {...state};};
+  const settle=()=>({...state,effective:state.choice==='system'?state.system:(state.bundled??state.managed??state.system)});
+  state.effective=settle().effective;
   const terminal:any={bundled:null,system:null,effective:null,archive:false,version:'1.25.2733.0'};
   (window as any).__TAURI_INTERNALS__={
    metadata:{currentWindow:{label:'main'},currentWebview:{label:'main'}},
@@ -197,13 +198,8 @@ test('the System section shows each component state and installs one only while 
  const dialog=page.getByRole('dialog');
  await dialog.getByRole('tab',{name:'System',exact:true}).click();
  const row=dialog.locator('section[aria-label="Git Bash"]');
- // Jouzu's copy is absent: install and use it, or use the Git Bash this PC already has.
- await expect(row.getByText('Not installed',{exact:true})).toBeVisible();
- await expect(row.getByText(/Jouzu needs a Git Bash/)).toBeVisible();
- await expect(row.getByRole('button',{name:"Install and use Jouzu's Git Bash",exact:true})).toBeVisible();
- await row.getByRole('button',{name:"Use this PC's Git Bash",exact:true}).click();
+ // A Git Bash this PC already has is the copy in use, and Jouzu's own copy stays on offer.
  await expect(row.getByText(/Git Bash installed on this PC/)).toBeVisible();
- // With this PC's copy in use the shipped copy is still offered, and the copy in use is not.
  await expect(row.getByRole('button',{name:"Install and use Jouzu's Git Bash",exact:true})).toBeVisible();
  await expect(row.getByRole('button',{name:"Use this PC's Git Bash",exact:true})).toHaveCount(0);
  await row.getByRole('button',{name:"Install and use Jouzu's Git Bash",exact:true}).click();

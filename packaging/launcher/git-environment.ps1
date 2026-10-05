@@ -78,8 +78,9 @@ if ($Report) {
  exit 0
 }
 
-# The chosen source first, then Jouzu's own copies. A system Git is never used implicitly.
-foreach ($info in @($preferredInfo, $bundledInfo, $managedInfo)) {
+# The chosen source first, then Jouzu's own copies, then the one this PC has: a machine that already
+# has Git Bash can open folders without installing anything else.
+foreach ($info in @($preferredInfo, $bundledInfo, $managedInfo, $systemInfo)) {
  if ($info) { Write-Output $info.path; exit 0 }
 }
 if (-not ($Prepare -or $Install)) { throw 'Git Bash is unavailable. Install it from the launcher.' }

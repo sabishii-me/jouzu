@@ -35,10 +35,14 @@ pub fn report(root: &Path, managed: &Path) -> Result<serde_json::Value, String> 
     }
     let mut value: serde_json::Value = serde_json::from_slice(&output.stdout).map_err(|_| "Invalid Git Bash state")?;
     let provider = choice(managed).get("provider").and_then(|item| item.as_str()).unwrap_or("bundled").to_string();
-    let effective = match provider.as_str() {
-        "system" if !value["preferred"].is_null() => value["preferred"].clone(),
-        _ if !value["bundled"].is_null() => value["bundled"].clone(),
-        _ => value["managed"].clone(),
+    let effective = if provider == "system" && !value["preferred"].is_null() {
+        value["preferred"].clone()
+    } else if !value["bundled"].is_null() {
+        value["bundled"].clone()
+    } else if !value["managed"].is_null() {
+        value["managed"].clone()
+    } else {
+        value["system"].clone()
     };
     value["choice"] = serde_json::json!(provider);
     value["effective"] = effective;

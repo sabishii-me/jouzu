@@ -5,7 +5,7 @@ import { Button } from '../components/ui/button';
 
 /** One row of the System section: which copy a component uses, and what is still missing. */
 export function ComponentSection({ title, status, note, tone, busy, error, install, installLabel, busyLabel, extra }: {
-  title: string; status: string; note?: string; tone: 'ok' | 'missing';
+  title: string; status?: string; note?: string; tone?: 'ok' | 'missing';
   busy: boolean; error: string | null;
   install?: () => void; installLabel: string; busyLabel: string;
   extra?: { label: string; run: () => void };
@@ -14,7 +14,7 @@ export function ComponentSection({ title, status, note, tone, busy, error, insta
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div>
         <h3 className="font-medium">{title}</h3>
-        <p className={`mt-1 text-sm ${tone === 'missing' ? 'text-destructive' : 'text-muted-foreground'}`}>{status}</p>
+        {status && <p className={`mt-1 text-sm ${tone === 'missing' ? 'text-destructive' : 'text-muted-foreground'}`}>{status}</p>}
       </div>
       <div className="flex flex-wrap items-center gap-2">
         {busy && <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />}
