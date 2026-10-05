@@ -14,6 +14,17 @@ $installed = Join-Path $parent 'installed'
 $archive = Join-Path $parent 'WindowsTerminal.zip'
 $system = if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps\wt.exe' } else { $null }
 
+# An app execution alias carries no version, so the file it points to is read.
+function Get-FileVersion([string]$Path) {
+ $item = Get-Item -LiteralPath $Path
+ $version = $item.VersionInfo.FileVersion
+ if (-not $version -and $Path -like '*\WindowsApps\*') {
+  $package = Get-AppxPackage -Name Microsoft.WindowsTerminal -ErrorAction SilentlyContinue
+  if ($package) { $version = $package.Version.ToString() }
+ }
+ return $version
+}
+
 # A portable Windows Terminal tree is usable when its host executable is there.
 function Get-Terminal([string]$Root) {
  if (-not $Root) { return $null }
@@ -31,8 +42,8 @@ $systemInfo = if ($system -and (Test-Path -LiteralPath $system -PathType Leaf)) 
 
 if ($Report) {
  $value = [ordered]@{
-  bundled = if ($bundledInfo) { [ordered]@{ path = $bundledInfo.path; version = (Get-Item -LiteralPath $bundledInfo.path).VersionInfo.FileVersion } } else { $null }
-  system = if ($systemInfo) { [ordered]@{ path = $systemInfo.path; version = (Get-Item -LiteralPath $systemInfo.path).VersionInfo.FileVersion } } else { $null }
+  bundled = if ($bundledInfo) { [ordered]@{ path = $bundledInfo.path; version = (Get-FileVersion $bundledInfo.path) } } else { $null }
+  system = if ($systemInfo) { [ordered]@{ path = $systemInfo.path; version = (Get-FileVersion $systemInfo.path) } } else { $null }
   effective = if ($systemInfo) { $systemInfo.path } elseif ($bundledInfo) { $bundledInfo.path } else { $null }
   preferred = if ($preferredInfo) { $preferredInfo.path } else { $null }
   archive = (Test-Path -LiteralPath $archive -PathType Leaf)
