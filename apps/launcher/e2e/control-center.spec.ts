@@ -202,7 +202,6 @@ test('the System section lists each component with its copies and the one in use
  const installBash=bash.getByRole('radio',{name:"Install and use Jouzu's Git Bash"});
  await expect(systemBash).toHaveAttribute('aria-checked','true');
  await expect(installBash).toHaveAttribute('aria-checked','false');
- await expect(bash.getByText(/Git Bash installed on this PC/)).toBeVisible();
  await installBash.click();
  await expect(bash.getByRole('radio',{name:"Use Jouzu's Git Bash"})).toHaveAttribute('aria-checked','true');
  await expect(systemBash).toHaveAttribute('aria-checked','false');

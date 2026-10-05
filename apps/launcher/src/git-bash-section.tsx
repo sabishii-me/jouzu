@@ -29,14 +29,14 @@ export function GitBashSection({ locale, api }: { locale: Locale; api: Component
   // Two ways to have a Git Bash: the copy Jouzu ships and the one this PC already has. The row shows
   // both, marks the one in use, and offers installing the shipped copy until it is there.
   const options = [
-    ...(state.system ? [{ value: 'system', label: t.gitBashUseSystem, run: () => choose('system'), selected: usingSystem }] : []),
+    ...(state.system ? [{ value: 'system', label: describe([t.gitBashUseSystem, version(state.system.git)]), run: () => choose('system'), selected: usingSystem }] : []),
     own
-      ? { value: 'bundled', label: t.gitBashUseBundled, run: () => choose('bundled'), selected: installed && !usingSystem }
+      ? { value: 'bundled', label: describe([t.gitBashUseBundled, version(own.git)]), run: () => choose('bundled'), selected: installed && !usingSystem }
       : { value: 'bundled', label: t.gitBashInstall, run: () => void run(() => invoke<GitBashState>('git_bash_install')), selected: false },
   ];
   return <ComponentSection
     title={t.gitBash}
-    status={installed ? describe([usingSystem ? t.gitBashSystem : t.gitBashBundled, version(state.effective?.git)]) : t.gitBashMissing}
+    status={installed ? undefined : t.gitBashMissing}
     tone={installed ? 'ok' : 'missing'}
     note={installed ? undefined : t.gitBashRequired}
     busy={busy} error={error}
