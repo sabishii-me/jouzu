@@ -24,10 +24,10 @@ export function TerminalSection({ locale }: { locale: Locale }) {
   const choose = (provider: 'bundled' | 'system') => void run(() => invoke<TerminalState>('terminal_choose', { provider, path: provider === 'system' ? state.system!.path : null }));
   // The same two ways: the copy Jouzu ships, installed on request, and the one this PC has.
   const options = [
-    ...(state.system ? [{ label: t.terminalUseSystem, run: () => choose('system'), selected: usingSystem }] : []),
+    ...(state.system ? [{ value: 'system', label: t.terminalUseSystem, run: () => choose('system'), selected: usingSystem }] : []),
     state.bundled
-      ? { label: t.terminalUseBundled, run: () => choose('bundled'), selected: installed && !usingSystem }
-      : { label: t.terminalInstall, run: () => void run(() => invoke<TerminalState>('terminal_install')), selected: false },
+      ? { value: 'bundled', label: t.terminalUseBundled, run: () => choose('bundled'), selected: installed && !usingSystem }
+      : { value: 'bundled', label: t.terminalInstall, run: () => void run(() => invoke<TerminalState>('terminal_install')), selected: false },
   ];
   return <ComponentSection
     title={t.windowsTerminal}
