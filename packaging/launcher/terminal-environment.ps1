@@ -6,9 +6,6 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
-# Windows 10 uses the legacy console host, which is where the interface is redrawn incorrectly.
-function Test-LegacyConsole { try { return [int](Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion').CurrentBuildNumber -lt 22000 } catch { return $false } }
-
 $version = '1.25.2733.0'
 $digest = 'bf3ef2012f6c44d8340a4c58125acc9498d19b580f9890dc043cdf831852e796'
 $parent = Join-Path $InstallRoot 'runtime\terminal'
@@ -46,7 +43,6 @@ if ($Report) {
   system = if ($systemInfo) { [ordered]@{ path = $systemInfo.path; version = (Get-FileVersion $systemInfo.path) } } else { $null }
   effective = if ($systemInfo) { $systemInfo.path } elseif ($bundledInfo) { $bundledInfo.path } else { $null }
   archive = (Test-Path -LiteralPath $archive -PathType Leaf)
-  legacy = (Test-LegacyConsole)
   version = $version
  }
  Write-Output ($value | ConvertTo-Json -Compress -Depth 3)

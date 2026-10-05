@@ -3,6 +3,14 @@
 One section per released Launcher version. The update feed shows the section for the released
 version verbatim, so a release without a section is refused.
 
+## 0.3.4
+
+- Windows 10 draws the console window incorrectly with the standard console host, so Jouzu installs the
+  Windows Terminal it ships before it starts on such a machine, and only starts once that is done. The
+  update package downloads that copy, because it carries no archives.
+- System names the copy of each component that is in use and offers installing the one Jouzu ships. A
+  Git Bash already installed on the machine keeps working.
+
 ## 0.3.3
 
 - The console window is hosted by Windows Terminal, which redraws the interface correctly where the

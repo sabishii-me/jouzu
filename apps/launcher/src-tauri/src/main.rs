@@ -197,13 +197,9 @@ fn component_versions(app: tauri::AppHandle) -> Result<serde_json::Value, String
 #[tauri::command]
 fn console_repair_needed(app: tauri::AppHandle) -> Result<bool, String> {
     let root = runtime::application_root(&app)?;
-    // The copy Jouzu ships is what draws the console correctly, so a machine that draws it with the
-    // host that damages the interface installs that copy before Jouzu starts, whatever else is on it.
-    if terminal::bundled_copy(&root) {
-        return Ok(false);
-    }
-    let report = terminal::report(&root)?;
-    Ok(report["legacy"].as_bool().unwrap_or(false))
+    // The console is drawn by the terminal Jouzu ships, so a machine that does not have that copy yet
+    // installs it before Jouzu starts, whatever terminal it already has.
+    Ok(!terminal::bundled_copy(&root))
 }
 
 #[tauri::command]
