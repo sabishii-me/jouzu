@@ -183,6 +183,7 @@ test('the System section shows each component state and installs one only while 
     if(command==='git_bash')return {...state};
     if(command==='git_bash_install'){
      state.bundled=environment('git version 2.55.0.windows.5','C:\Users\test\AppData\Local\Shisa.ai\Jouzu\runtime\git\installed');
+     state.choice='bundled';
      return settle();
     }
     if(command==='git_bash_choose'){state.choice=args.provider;return settle();}
@@ -196,16 +197,20 @@ test('the System section shows each component state and installs one only while 
  const dialog=page.getByRole('dialog');
  await dialog.getByRole('tab',{name:'System',exact:true}).click();
  const row=dialog.locator('section[aria-label="Git Bash"]');
- // No copy is usable yet, so the row asks for an installation and offers no source to switch to.
+ // Nothing is in use yet: the shipped copy is offered for installation, and the Git Bash this PC
+ // already has can be used as it is.
  await expect(row.getByText('Not installed',{exact:true})).toBeVisible();
- await expect(row.getByText(/Jouzu needs a Git Bash/)).toBeVisible();
+ await expect(row.getByText(/This PC has Git Bash/)).toBeVisible();
  await expect(row.getByRole('button',{name:'Install Git Bash',exact:true})).toBeVisible();
- await expect(row.getByRole('button',{name:"Use this PC's Git Bash",exact:true})).toHaveCount(0);
+ await row.getByRole('button',{name:"Use this PC's Git Bash",exact:true}).click();
+ await expect(row.getByText(/Git Bash installed on this PC/)).toBeVisible();
+ // Using this PC's copy leaves the recommended installation on offer.
+ await expect(row.getByRole('button',{name:'Install Git Bash',exact:true})).toBeVisible();
  // Installing replaces the state without a reload, and a usable component offers nothing to install.
  await row.getByRole('button',{name:'Install Git Bash',exact:true}).click();
  await expect(row.getByText(/2\.55\.0\.windows\.5/)).toBeVisible();
  await expect(row.getByRole('button',{name:'Install Git Bash',exact:true})).toHaveCount(0);
- // Both copies exist now, so the row offers the other one, and switching is not an installation.
+ // Both copies exist now, so the row offers the other one, and switching keeps the installation off.
  await row.getByRole('button',{name:"Use this PC's Git Bash",exact:true}).click();
  await expect(row.getByText(/Git Bash installed on this PC/)).toBeVisible();
  await expect(row.getByRole('button',{name:'Install Git Bash',exact:true})).toHaveCount(0);

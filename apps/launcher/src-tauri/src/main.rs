@@ -219,7 +219,10 @@ async fn git_bash_install(app: tauri::AppHandle) -> Result<serde_json::Value, St
     tauri::async_runtime::spawn_blocking(move || git_environment::install(&root))
         .await
         .map_err(|_| "Git Bash installation failed".to_string())??;
-    git_environment::report(&runtime::application_root(&app)?, &runtime::managed_root()?)
+    let managed = runtime::managed_root()?;
+    // Installing the shipped copy is how a user asks for it.
+    git_environment::set_choice(&managed, serde_json::json!({ "provider": "bundled" }))?;
+    git_environment::report(&runtime::application_root(&app)?, &managed)
 }
 
 #[tauri::command]

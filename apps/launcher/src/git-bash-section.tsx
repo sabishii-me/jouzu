@@ -24,17 +24,20 @@ export function GitBashSection({ locale, api }: { locale: Locale; api: Component
   const own = state.bundled ?? state.managed;
   const installed = Boolean(state.effective);
   const usingSystem = installed && state.effective?.path === state.system?.path;
+  const install = () => void run(() => invoke<GitBashState>('git_bash_install'));
+  const useSystem = state.system ? { label: t.gitBashUseSystem, run: () => void run(() => invoke<GitBashState>('git_bash_choose', { provider: 'system', path: state.system!.path })) } : undefined;
+  const useBundled = { label: t.gitBashUseBundled, run: () => void run(() => invoke<GitBashState>('git_bash_choose', { provider: 'bundled', path: null })) };
+  // A Git Bash this PC already has can be used; the copy Jouzu ships is the one it is qualified
+  // against, so installing it stays on offer until it is there.
   return <ComponentSection
     title={t.gitBash}
     status={installed ? `${usingSystem ? t.gitBashSystem : t.gitBashBundled} · ${state.effective?.git}` : t.gitBashMissing}
     tone={installed ? 'ok' : 'missing'}
-    note={installed ? undefined : t.gitBashRequired}
+    note={installed ? undefined : state.system ? `${t.gitBashSystemAvailable} · ${state.system.git}` : t.gitBashRequired}
     busy={busy} error={error}
-    install={installed ? undefined : () => void run(() => invoke<GitBashState>('git_bash_install'))}
+    install={own ? undefined : install}
     installLabel={t.gitBashInstall} busyLabel={t.gitBashInstalling}
-    extra={own && state.system ? (usingSystem
-      ? { label: t.gitBashUseBundled, run: () => void run(() => invoke<GitBashState>('git_bash_choose', { provider: 'bundled', path: null })) }
-      : { label: t.gitBashUseSystem, run: () => void run(() => invoke<GitBashState>('git_bash_choose', { provider: 'system', path: state.system!.path })) }) : undefined}
+    extra={installed ? (usingSystem ? (own ? useBundled : undefined) : useSystem) : useSystem}
   />;
 }
 
