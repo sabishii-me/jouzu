@@ -19,7 +19,8 @@ export interface GitBashState {
 export function GitBashSection({ locale, api }: { locale: Locale; api: ComponentApi<GitBashState> }) {
   const t = messages[locale];
   const { state, busy, error, run } = api;
-  if (!state) return null;
+  // A component keeps its row when the launcher reports nothing, so a failure is visible.
+  if (!state) return <ComponentSection title={t.gitBash} status={t.unavailable} tone="missing" busy={busy} error={error} installLabel={t.gitBashInstall} busyLabel={t.gitBashInstalling} />;
   const own = state.bundled ?? state.managed;
   const installed = Boolean(state.effective);
   const usingSystem = installed && state.effective?.path === state.system?.path;

@@ -15,7 +15,7 @@ export interface TerminalState {
 export function TerminalSection({ locale }: { locale: Locale }) {
   const t = messages[locale];
   const { state, busy, error, run } = useComponent<TerminalState>('terminal');
-  if (!state) return null;
+  if (!state) return <ComponentSection title={t.windowsTerminal} status={t.unavailable} tone="missing" busy={busy} error={error} installLabel={t.terminalInstall} busyLabel={t.terminalInstalling} />;
   const installed = Boolean(state.effective);
   const usingSystem = installed && state.effective === state.system?.path;
   const detail = usingSystem ? state.system : state.bundled;
