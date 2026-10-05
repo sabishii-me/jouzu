@@ -78,11 +78,12 @@ if ($Report) {
  exit 0
 }
 
-# The chosen source first, then Jouzu's own copies, then the one this PC has: a machine that already
-# has Git Bash can open folders without installing anything else.
-foreach ($info in @($preferredInfo, $bundledInfo, $managedInfo, $systemInfo)) {
+# The chosen source first, then Jouzu's own copies. A copy this PC already has answers a launch or an
+# installation preparation, but installing asks for one of ours, so only that request installs.
+foreach ($info in @($preferredInfo, $bundledInfo, $managedInfo)) {
  if ($info) { Write-Output $info.path; exit 0 }
 }
+if (-not $Install -and $systemInfo) { Write-Output $systemInfo.path; exit 0 }
 if (-not ($Prepare -or $Install)) { throw 'Git Bash is unavailable. Install it from the launcher.' }
 
 $parent = Join-Path $InstallRoot 'runtime\git'

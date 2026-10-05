@@ -41,11 +41,12 @@ if ($Report) {
  exit 0
 }
 
-# Windows Terminal installed on this PC is kept when it exists, so the user's own settings apply; the
-# bundled copy covers machines that have none, which is where the legacy console host damages the TUI.
-foreach ($info in @($preferredInfo, $bundledInfo, $systemInfo)) {
+# The chosen copy first, then the bundled one. A Windows Terminal this PC has answers a launch or an
+# installation preparation; installing asks for one of ours, so only that request installs.
+foreach ($info in @($preferredInfo, $bundledInfo)) {
  if ($info) { Write-Output $info.path; exit 0 }
 }
+if (-not $Install -and $systemInfo) { Write-Output $systemInfo.path; exit 0 }
 if (-not ($Prepare -or $Install)) { throw 'Windows Terminal is unavailable. Install it from the launcher.' }
 
 New-Item -ItemType Directory -Path $parent -Force | Out-Null
