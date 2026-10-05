@@ -197,9 +197,9 @@ fn component_versions(app: tauri::AppHandle) -> Result<serde_json::Value, String
 #[tauri::command]
 fn console_repair_needed(app: tauri::AppHandle) -> Result<bool, String> {
     let root = runtime::application_root(&app)?;
-    // A machine that has any Windows Terminal already shows the interface correctly; the rest is only
-    // a problem where Windows draws the console with the host that damages it.
-    if terminal::any_copy(&root) {
+    // The copy Jouzu ships is what draws the console correctly, so a machine that draws it with the
+    // host that damages the interface installs that copy before Jouzu starts, whatever else is on it.
+    if terminal::bundled_copy(&root) {
         return Ok(false);
     }
     let report = terminal::report(&root)?;

@@ -9,17 +9,6 @@ pub fn bundled_copy(root: &Path) -> bool {
     root.join("runtime/terminal/installed/WindowsTerminal.exe").is_file()
 }
 
-/// Whether this machine has a Windows Terminal at all, answered without running the helper.
-pub fn any_copy(root: &Path) -> bool {
-    if bundled_copy(root) {
-        return true;
-    }
-    std::env::var_os("LOCALAPPDATA")
-        .map(|value| PathBuf::from(value).join("Microsoft/WindowsApps/wt.exe"))
-        .filter(|path| path.is_file())
-        .is_some()
-}
-
 /// The Windows Terminal that should host the console: the copy Jouzu ships once it is installed,
 /// otherwise the one this PC has. Nothing here means the standard console host.
 pub fn host(root: &Path) -> Option<PathBuf> {

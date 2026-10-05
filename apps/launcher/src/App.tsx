@@ -265,7 +265,7 @@ export function App() {
           <div className="flex items-center gap-3">
             {!repair?.error && <span role="status" className="flex items-center gap-2 text-sm text-muted-foreground"><span className="flex size-4 items-center justify-center"><LoaderCircle className="size-4 animate-spin" aria-hidden="true" /></span>{t.installingUpdate}</span>}
             {repair?.error && <p role="alert" className="text-sm text-destructive">{t.consoleRepairFailed}</p>}
-            <div className="ml-auto flex gap-2"><Button variant="outline" onClick={() => setRepair(null)}>{t.cancel}</Button>{repair?.error && <Button onClick={() => void repairConsole()}>{t.retry}</Button>}</div>
+            <div className="ml-auto flex gap-2">{repair?.error && <Button onClick={() => void repairConsole()}>{t.retry}</Button>}</div>
           </div>
         </DialogContent>
       </Dialog>
