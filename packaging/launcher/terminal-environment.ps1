@@ -58,10 +58,10 @@ if ($Report) {
 foreach ($info in @($bundledInfo)) {
  if ($info) { Write-Output $info.path; exit 0 }
 }
-# Windows 10 draws the interface incorrectly with the standard console host, so the copy Jouzu ships
-# replaces it during installation; other machines keep the terminal this PC already has.
-if ($systemInfo -and -not (Test-LegacyConsole)) { Write-Output $systemInfo.path; exit 0 }
-if (-not ($Prepare -or $Install)) { throw 'Windows Terminal is unavailable. Install it from the launcher.' }
+if (-not ($Prepare -or $Install)) {
+ if ($systemInfo) { Write-Output $systemInfo.path; exit 0 }
+ throw 'Windows Terminal is unavailable. Install it from the launcher.'
+}
 
 New-Item -ItemType Directory -Path $parent -Force | Out-Null
 if (-not (Test-Path -LiteralPath $archive -PathType Leaf)) {

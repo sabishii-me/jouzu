@@ -75,13 +75,15 @@ if ($Report) {
  exit 0
 }
 
-# The chosen source first, then Jouzu's own copies. A copy this PC already has answers a launch or an
-# installation preparation, but installing asks for one of ours, so only that request installs.
+# Jouzu's own copies first. Installing and preparing an installation ask for one of them, so a copy
+# this PC has never answers either; launching may use it until one of ours is installed.
 foreach ($info in @($bundledInfo, $managedInfo)) {
  if ($info) { Write-Output $info.path; exit 0 }
 }
-if (-not $Install -and $systemInfo) { Write-Output $systemInfo.path; exit 0 }
-if (-not ($Prepare -or $Install)) { throw 'Git Bash is unavailable. Install it from the launcher.' }
+if (-not ($Prepare -or $Install)) {
+ if ($systemInfo) { Write-Output $systemInfo.path; exit 0 }
+ throw 'Git Bash is unavailable. Install it from the launcher.'
+}
 
 $parent = Join-Path $InstallRoot 'runtime\git'
 New-Item -ItemType Directory -Path $parent -Force | Out-Null

@@ -47,8 +47,7 @@ export function App() {
   const gitBash = useGitBash();
   const [settingsTab,setSettingsTab] = useState("providers");
   // A machine whose console host draws the interface incorrectly is told so, and the fix is one step away.
-  const [consoleNotice, setConsoleNotice] = useState(false);
-  useEffect(() => { void invoke<boolean>("console_notice").then(value => setConsoleNotice(value === true)).catch(() => setConsoleNotice(false)); }, []);
+  const [repair, setRepair] = useState<{ error: string | null } | null>(null);
   const [sort, setSort] = useState(() => localStorage.getItem("jouzu.folder.sort") ?? "added");
   const [connectionMode, setConnectionMode] = useState<"builtin" | "custom">("builtin");
   const [providerQuery, setProviderQuery] = useState("");
@@ -137,12 +136,19 @@ export function App() {
     getVersion().then(setVersion).catch(error => setError(String(error)));
     invoke<Components>("component_versions").then(setComponents).catch(error => setError(String(error)));
   }, []);
+  async function repairConsole(): Promise<boolean> {
+    setRepair({ error: null });
+    try { await invoke("terminal_install"); setRepair(null); return true; }
+    catch (failure) { setRepair({ error: String(failure) }); return false; }
+  }
   async function launch(path: string) {
     if (!state?.ready) return;
     setOperation("launching"); setError(null); setNotice(null);
     try {
       if (needsSetup) {setWorkspacePage(false);return;}
       setOperation("launching");
+      // A console this machine cannot draw correctly is repaired before Jouzu starts, not instead of it.
+      if ((await invoke<boolean>("console_repair_needed").catch(() => false)) === true && !(await repairConsole())) return;
       await invoke("launch_jouzu", { path });
       setNotice("requested");
       await refresh();
@@ -186,7 +192,7 @@ export function App() {
       <div className="absolute left-0 right-0 top-0 h-3" data-tauri-drag-region />
       <div className="pointer-events-none flex items-center gap-3"><img src={jouzuIcon} alt="" draggable={false} className="size-9" /><h1 className="min-w-16 flex-1 text-lg font-semibold tracking-tight">Jouzu</h1></div>
       <div className="pointer-events-none flex items-center gap-1 [&>*]:pointer-events-auto"><Dialog open={settingsOpen} onOpenChange={value => { if (!value && device) void invoke("cancel_control"); setSettingsOpen(value); }}>
-        <>{consoleNotice && <Button variant="outline" onClick={() => {setSettingsTab("system");setSettingsOpen(true);}}>{t.consoleNotice}</Button>}{(updater.version || jouzuUpdater.version) && <Button variant="outline" onClick={() => {setSettingsTab("system");setSettingsOpen(true);}}>{t.updateAvailable}</Button>}</><DialogTrigger asChild><Button variant="ghost" aria-label={t.settings} title={t.settings}><Settings /></Button></DialogTrigger>
+        <>{(updater.version || jouzuUpdater.version) && <Button variant="outline" onClick={() => {setSettingsTab("system");setSettingsOpen(true);}}>{t.updateAvailable}</Button>}</><DialogTrigger asChild><Button variant="ghost" aria-label={t.settings} title={t.settings}><Settings /></Button></DialogTrigger>
         <DialogContent showCloseButton={false} className="flex h-[min(560px,85dvh)] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl border-border p-0 sm:max-w-3xl">
           {error && <p role="alert" className="border-b border-border bg-red-50 px-4 py-2 text-sm text-red-900">{error}</p>}
           <DialogDescription className="sr-only">{t.preferences}</DialogDescription>
@@ -252,6 +258,17 @@ export function App() {
       {isTauri() && <><Button variant="ghost" aria-label={t.minimize} onClick={() => getCurrentWindow().minimize().catch(error => setError(String(error)))}><Minus /></Button><Button variant="ghost" aria-label={t.closeWindow} onClick={() => getCurrentWindow().close().catch(error => setError(String(error)))}><X /></Button></>}
       </div>
     </header>
+      <Dialog open={repair !== null} onOpenChange={open => { if (!open) setRepair(null); }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogTitle>{t.consoleRepairTitle}</DialogTitle>
+          <DialogDescription>{t.consoleRepairHint}</DialogDescription>
+          <div className="flex items-center gap-3">
+            {!repair?.error && <span role="status" className="flex items-center gap-2 text-sm text-muted-foreground"><span className="flex size-4 items-center justify-center"><LoaderCircle className="size-4 animate-spin" aria-hidden="true" /></span>{t.installingUpdate}</span>}
+            {repair?.error && <p role="alert" className="text-sm text-destructive">{t.consoleRepairFailed}</p>}
+            <div className="ml-auto flex gap-2"><Button variant="outline" onClick={() => setRepair(null)}>{t.cancel}</Button>{repair?.error && <Button onClick={() => void repairConsole()}>{t.retry}</Button>}</div>
+          </div>
+        </DialogContent>
+      </Dialog>
     {error && <div role="alert" className="mt-5 flex items-start justify-between gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-900"><div><p className="font-medium">{t.error}</p><details className="mt-2 break-all"><summary className="cursor-pointer">{t.details}</summary><p className="mt-2">{error}</p></details></div><button onClick={() => setError(null)} aria-label={t.dismiss}><X className="size-4" /></button></div>}
     {!setup ? <LauncherPage title={t.heading} description={t.connecting}><div className="p-6"><Button disabled={busy} onClick={()=>void configure({action:"status"})}>{busy ? t.loading : t.retry}</Button></div></LauncherPage> : showSetup ? <LauncherPage title={setup?.profile ? t.setupConnect : t.setupMake} description={setup?.profile ? t.setupHint : t.setupPreferencesHint} action={!!state?.recent.length && <Button variant="ghost" onClick={()=>setWorkspacePage(true)}>{t.setupWorkspaces}</Button>}>
       <ScrollArea className="min-h-0 flex-1"><div className="p-5 sm:p-6">

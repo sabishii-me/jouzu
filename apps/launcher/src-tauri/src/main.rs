@@ -195,10 +195,10 @@ fn component_versions(app: tauri::AppHandle) -> Result<serde_json::Value, String
 }
 
 #[tauri::command]
-fn console_notice(app: tauri::AppHandle) -> Result<bool, String> {
+fn console_repair_needed(app: tauri::AppHandle) -> Result<bool, String> {
     let root = runtime::application_root(&app)?;
-    // A machine that has Windows Terminal already shows the interface correctly, so nothing is
-    // reported; the rest is only a problem where Windows uses the legacy console host.
+    // A machine that has any Windows Terminal already shows the interface correctly; the rest is only
+    // a problem where Windows draws the console with the host that damages it.
     if terminal::any_copy(&root) {
         return Ok(false);
     }
@@ -286,7 +286,7 @@ fn main() {
             terminal_install,
             git_bash,
             git_bash_install,
-            console_notice,
+            console_repair_needed,
             environment::environment_read,
             environment::environment_save,
 

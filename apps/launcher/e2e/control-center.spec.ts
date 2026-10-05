@@ -245,29 +245,41 @@ test('a component row keeps its height while an action runs', async ({page})=>{
  expect(during).toBe(before);
 });
 
-test('a machine whose console host draws text incorrectly is told so on the main window', async ({page})=>{
+test('a console this machine cannot draw is repaired before Jouzu starts', async ({page})=>{
  await page.addInitScript(()=>{
   (window as any).isTauri=true;
   (window as any).__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener:()=>{}};
   localStorage.setItem('jouzu.ui.language','en');
+  (window as any).__calls={installs:0, launches:0};
+  const terminal={bundled:null,system:null,preferred:null,effective:null,archive:false,legacy:true,version:'1.25.2733.0'};
   (window as any).__TAURI_INTERNALS__={
    metadata:{currentWindow:{label:'main'},currentWebview:{label:'main'}},
    transformCallback:()=>1,unregisterCallback:()=>{},
    invoke:async(command:string)=>{
-    if(command==='console_notice')return true;
-    if(command==='launcher_state')return {ready:true,bash:true,recent:[],platform:'windows'};
+    if(command==='console_repair_needed')return true;
+    if(command==='terminal')return {...terminal};
+    if(command==='terminal_install'){
+     (window as any).__calls.installs++;
+     return new Promise(resolve => { (window as any).__finishRepair = () => { terminal.bundled={path:'C:\Program Files\Jouzu\terminal\WindowsTerminal.exe',version:'1.25.2733.0'}; resolve({...terminal,effective:terminal.bundled.path}); }; });
+    }
+    if(command==='launch_jouzu'){(window as any).__calls.launches++;return null;}
+    if(command==='control_request')return {schemaVersion:1,profile:'core',account:{signedIn:true},credentials:[],customProviders:[],providers:[],models:[]};
+    if(command==='launcher_state')return {ready:true,bash:true,recent:[{id:'1',path:'E:\AI\ideas\jouzu',environment:{kind:'native'}}],platform:'windows'};
     if(command==='component_versions')return {jouzu:'0.1.18',development:true};
     if(command==='environment_read')return [];
-    if(command==='git_bash'||command==='terminal')return 1;
+    if(command==='git_bash')return 1;
     if(command.includes('version'))return '0.1.0';
     return 1;
    }
   };
  });
  await page.goto('http://localhost:1420');
- const notice=page.getByRole('button',{name:'Console text appears broken',exact:true});
- await expect(notice).toBeVisible();
- await notice.click();
+ await page.getByRole('button',{name:/Open Jouzu here/}).click();
+ // The repair is shown while it runs, and Jouzu only starts once it is done.
  const dialog=page.getByRole('dialog');
- await expect(dialog.getByRole('tab',{name:'System',exact:true})).toHaveAttribute('data-state','active');
+ await expect(dialog.getByText('Installing Windows Terminal',{exact:true})).toBeVisible();
+ expect(await page.evaluate(()=>(window as any).__calls.launches)).toBe(0);
+ await page.evaluate(()=>(window as any).__finishRepair());
+ await expect.poll(()=>page.evaluate(()=>(window as any).__calls.launches)).toBe(1);
+ expect(await page.evaluate(()=>(window as any).__calls.installs)).toBe(1);
 });

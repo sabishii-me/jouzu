@@ -4,19 +4,17 @@ import { test } from 'node:test';
 
 const script = readFileSync(new URL('./git-environment.ps1', import.meta.url), 'utf8');
 
-test('the Git Bash resolver prefers Jouzu copies and can use the one this PC has', () => {
-  // Jouzu's own copies come first, and a Git Bash this PC already has answers a launch or an
-  // installation preparation; only an installation asks for a copy of ours.
+test('the Git Bash resolver installs Jouzu copies and only launches with the one this PC has', () => {
+  // Preparing an installation and installing ask for a copy of Jouzu's, so a Git Bash this PC already
+  // has is only the answer when Jouzu's own copies are absent and nothing was asked for.
   assert.ok(script.includes('Get-SystemEnvironment'));
   assert.ok(script.includes(String.raw`Join-Path $InstallRoot 'runtime\git\installed'`));
   assert.ok(script.includes(String.raw`Join-Path $env:LOCALAPPDATA 'Shisa.ai\Jouzu\tools\git'`));
-  const resolution = script.slice(script.indexOf('# The chosen source first'));
-  assert.ok(resolution.length > 0, 'the resolution section is present');
-  const own = resolution.indexOf(String.raw`@($bundledInfo, $managedInfo)`);
-  const fallback = resolution.indexOf('if (-not $Install -and $systemInfo)');
-  const gate = resolution.indexOf('if (-not ($Prepare -or $Install))');
-  assert.ok(own >= 0 && fallback > own, 'our own copies are resolved before the one this PC has');
-  assert.ok(gate > fallback, 'installation follows the fallback, so a copy on this PC never ends it');
+  const own = script.indexOf(String.raw`@($bundledInfo, $managedInfo)`);
+  const gate = script.indexOf('if (-not ($Prepare -or $Install))');
+  const system = script.indexOf('if ($systemInfo)');
+  assert.ok(own > 0 && gate > own, 'our own copies are resolved first');
+  assert.ok(gate > 0 && script.indexOf('if ($systemInfo)', gate) > gate, 'a copy this PC has never answers an installation or a preparation');
 });
 
 test('the interface can install the bundled Git Bash and verify what it installs', () => {
