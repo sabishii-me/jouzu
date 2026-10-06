@@ -2,11 +2,7 @@
 //! The draft itself is written by the payload's own reporter; nothing here describes it.
 
 use crate::{active_app, git_environment, logs, runtime, terminal};
-use std::{
-    io::Write,
-    path::Path,
-    process::{Command, Stdio},
-};
+use std::{path::Path, process::Command};
 
 /// The last line of a log about a given subject, which is what a report should carry.
 fn last_line(managed: &Path, file: &str, needle: &str) -> Option<String> {
@@ -83,50 +79,3 @@ pub fn draft(
     serde_json::from_slice(&output.stdout).map_err(|_| "Invalid report draft".to_string())
 }
 
-/// Whether `gh` can post at all, so the interface offers the web form instead of a disabled action.
-pub fn can_submit() -> bool {
-    Command::new("gh")
-        .args(["api", "user", "--hostname", "github.com", "--jq", ".login"])
-        .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false)
-}
-
-/// Post the reviewed draft with `gh`. The account is asked for first, so a machine that is not signed in
-/// answers before anything is sent.
-pub fn submit(title: &str, body: &str) -> Result<String, String> {
-    let account = Command::new("gh")
-        .args(["api", "user", "--hostname", "github.com", "--jq", ".login"])
-        .output()
-        .map_err(|error| error.to_string())?;
-    if !account.status.success() {
-        return Err("gh is not signed in. Copy the draft or open the issue form.".into());
-    }
-    let mut child = Command::new("gh")
-        .args([
-            "issue",
-            "create",
-            "--repo",
-            "https://github.com/shisa-ai/jouzu",
-            "--title",
-            title,
-            "--body-file",
-            "-",
-        ])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|error| error.to_string())?;
-    child
-        .stdin
-        .take()
-        .ok_or("Cannot send the report")?
-        .write_all(body.as_bytes())
-        .map_err(|error| error.to_string())?;
-    let output = child.wait_with_output().map_err(|error| error.to_string())?;
-    if !output.status.success() {
-        return Err("The issue was not created. Check the issue list before trying again.".into());
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-}

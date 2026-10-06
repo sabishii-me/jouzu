@@ -112,18 +112,6 @@ fn bug_report(
 }
 
 #[tauri::command]
-/// Whether a report can be posted from here, so the interface can offer the web form when it cannot.
-fn bug_report_can_submit() -> bool {
-    bug_report::can_submit()
-}
-
-#[tauri::command]
-/// Post the reviewed draft; nothing leaves the machine before the user asked for this.
-fn bug_report_submit(title: String, body: String) -> Result<String, String> {
-    bug_report::submit(&title, &body)
-}
-
-#[tauri::command]
 /// Open a terminal in a folder with the environment this installation manages, without starting Jouzu.
 /// The session itself is built by the script the installer carries, so the window, a terminal entry and
 /// this button describe one environment in one place.
@@ -414,8 +402,6 @@ fn main() {
             crash_dismiss,
             log_event,
             bug_report,
-            bug_report_can_submit,
-            bug_report_submit,
             terminal_open,
             command_entry_report,
             command_entry_use,

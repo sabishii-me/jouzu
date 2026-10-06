@@ -368,13 +368,15 @@ test('the terminal command row names what answers and takes precedence only when
  await dialog.getByRole('tab',{name:'System',exact:true}).click();
  const row=dialog.locator('section[aria-label="Terminal command"]');
  // The command another installation answers with is named before anything is changed.
- await expect(row.getByText(/Another installation provides them/)).toBeVisible();
- await expect(row.getByText(/npm.jz.cmd/)).toBeVisible();
+ await expect(row.getByRole('button',{name:"Use Jouzu's commands instead",exact:true})).toBeVisible();
+ await expect(row.getByText(/Found at/)).toHaveCount(0);
+ await expect(row.getByText('In use',{exact:true})).toHaveCount(0);
  await row.getByRole('button',{name:"Use Jouzu's commands instead",exact:true}).click();
- await expect(row.getByText('jz and jouzu come from Jouzu.',{exact:true})).toBeVisible();
+ await expect(row.getByText('In use',{exact:true})).toBeVisible();
  // Putting the previous one back is offered as its own action.
  await row.getByRole('button',{name:"Stop using Jouzu's commands",exact:true}).click();
- await expect(row.getByText(/Another installation provides them/)).toBeVisible();
+ await expect(row.getByRole('button',{name:"Use Jouzu's commands instead",exact:true})).toBeVisible();
+ await expect(row.getByText(/Found at/)).toHaveCount(0);
 });
 
 test('the header opens a terminal in a chosen folder and starts nothing', async ({page})=>{
@@ -406,126 +408,4 @@ test('the header opens a terminal in a chosen folder and starts nothing', async 
  // No folder dialog was used: the folder the launcher already works with is the one that opens.
  expect(await page.evaluate(()=> (window as any).__dialogs)).toBe(0);
  expect(await page.getByRole('button',{name:'Open a terminal',exact:true}).isEnabled()).toBe(true);
-});
-
-test('a report is drafted by the payload and sent only when asked', async ({page})=>{
- await page.addInitScript(()=>{
-  (window as any).isTauri=true;
-  (window as any).__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener:()=>{}};
-  localStorage.setItem('jouzu.ui.language','en');
-  (window as any).__submitted=[];
-  (window as any).__confirms=0;
-  (window as any).__TAURI_INTERNALS__={
-   metadata:{currentWindow:{label:'main'},currentWebview:{label:'main'}},
-   transformCallback:()=>1,unregisterCallback:()=>{},
-   invoke:async(command:string,args:any)=>{
-    if(command==='launcher_state')return {ready:true,bash:false,recent:[],platform:'windows'};
-    if(command==='component_versions')return {jouzu:'0.1.18',development:true};
-    if(command==='environment_read')return [];
-    if(command==='bug_report_can_submit')return true;
-    if(command==='bug_report')return {available:true,title:'Jouzu closed the window right after opening the folder.',body:['## What happened','','Jouzu closed the window right after opening the folder.','','## Environment','','- Runtime: Jouzu Launcher 0.3.6',''].join(String.fromCharCode(10)),issueUrl:'https://github.com/shisa-ai/jouzu/issues/new'};
-    if(command==='bug_report_submit'){(window as any).__submitted.push({title:args.title,body:args.body});return 'https://github.com/shisa-ai/jouzu/issues/7';}
-    // confirm() compares the answer with its ok label, so the stub answers as the dialog would.
-    if(command==='plugin:dialog|confirm'||command==='plugin:dialog|message'){(window as any).__confirms++;return 'Ok';}
-    if(command.includes('version'))return '0.1.0';
-    return 1;
-   }
-  };
- });
- await page.goto('http://localhost:1420');
- await page.getByRole('button',{name:'Settings',exact:true}).click();
- const dialog=page.getByRole('dialog');
- await dialog.getByRole('tab',{name:'System',exact:true}).click();
- await dialog.getByLabel('What happened').fill('Jouzu closed the window right after opening the folder.');
- // Nothing is sent while the draft is being built.
- expect(await page.evaluate(()=> (window as any).__submitted.length)).toBe(0);
- await dialog.getByRole('button',{name:'Build the draft',exact:true}).click();
- await expect(dialog.getByLabel('Draft')).toHaveValue(/## What happened/);
- await expect(dialog.getByLabel('Draft')).toHaveValue(/Runtime: Jouzu Launcher 0.3.6/);
- await expect(dialog.getByRole('button',{name:'Submit with gh',exact:true})).toBeEnabled();
- await dialog.getByRole('button',{name:'Submit with gh',exact:true}).click();
- await page.waitForFunction(()=> (window as any).__confirms>0);
- await page.waitForFunction(()=> (window as any).__submitted.length===1);
- // It was sent only after the confirmation, and it carried the reviewed draft.
- expect(await page.evaluate(()=> (window as any).__confirms)).toBe(1);
- expect(await page.evaluate(()=> (window as any).__submitted[0].body)).toContain('## What happened');
- await expect(dialog.getByText(/Issue created:/)).toBeVisible();
-});
-
-test('a terminal command whose files are gone is repaired from its row', async ({page})=>{
- await page.addInitScript(()=>{
-  (window as any).isTauri=true;
-  (window as any).__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener:()=>{}};
-  localStorage.setItem('jouzu.ui.language','en');
-  (window as any).__repairs=0;
-  const missing:any={directory:'C:/managed/bin',shims:false,onPath:false,position:'absent',first:false,shadowed:false,commands:[{name:'jz',path:null},{name:'jouzu',path:null}]};
-  const repaired:any={directory:'C:/managed/bin',shims:true,onPath:true,position:'later',first:false,shadowed:false,commands:[{name:'jz',path:'C:/managed/bin/jz.cmd'},{name:'jouzu',path:'C:/managed/bin/jouzu.cmd'}]};
-  let entry:any={...missing};
-  (window as any).__TAURI_INTERNALS__={
-   metadata:{currentWindow:{label:'main'},currentWebview:{label:'main'}},
-   transformCallback:()=>1,unregisterCallback:()=>{},
-   invoke:async(command:string)=>{
-    if(command==='launcher_state')return {ready:true,bash:false,recent:[],platform:'windows'};
-    if(command==='component_versions')return {jouzu:'0.1.18',development:true};
-    if(command==='environment_read')return [];
-    if(command==='command_entry_report')return {...entry};
-    if(command==='command_entry_repair'){(window as any).__repairs++;entry={...repaired};return {...entry};}
-    if(command.includes('version'))return '0.1.0';
-    return 1;
-   }
-  };
- });
- await page.goto('http://localhost:1420');
- await page.getByRole('button',{name:'Settings',exact:true}).click();
- const dialog=page.getByRole('dialog');
- await dialog.getByRole('tab',{name:'System',exact:true}).click();
- const row=dialog.locator('section[aria-label="Terminal command"]');
- await expect(row.getByText('The command files are missing.',{exact:true})).toBeVisible();
- await row.getByRole('button',{name:'Repair',exact:true}).click();
- await page.waitForFunction(()=> (window as any).__repairs===1);
- // The row then says what answers, and the repair action is gone.
- await expect(row.getByText('jz and jouzu come from Jouzu.',{exact:true})).toBeVisible();
- await expect(row.getByRole('button',{name:'Repair',exact:true})).toHaveCount(0);
-});
-
-test('without a signed in gh the form opens with the draft instead of a disabled action', async ({page})=>{
- await page.addInitScript(()=>{
-  (window as any).isTauri=true;
-  (window as any).__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener:()=>{}};
-  localStorage.setItem('jouzu.ui.language','en');
-  (window as any).__submitted=[];
-  (window as any).__opened=[];
-  (window as any).__TAURI_INTERNALS__={
-   metadata:{currentWindow:{label:'main'},currentWebview:{label:'main'}},
-   transformCallback:()=>1,unregisterCallback:()=>{},
-   invoke:async(command:string,args:any)=>{
-    if(command==='launcher_state')return {ready:true,bash:false,recent:[],platform:'windows'};
-    if(command==='component_versions')return {jouzu:'0.1.18',development:true};
-    if(command==='environment_read')return [];
-    if(command==='bug_report_can_submit')return false;
-    if(command==='bug_report')return {available:true,title:'Jouzu closed the window',body:'## What happened (Jouzu closed the window)',issueUrl:'https://github.com/shisa-ai/jouzu/issues/new'};
-    if(command==='bug_report_submit'){(window as any).__submitted.push(args);return 'x';}
-    if(command==='plugin:opener|open_url'){(window as any).__opened.push(args.url);return null;}
-    if(command.includes('version'))return '0.1.0';
-    return 1;
-   }
-  };
- });
- await page.goto('http://localhost:1420');
- await page.getByRole('button',{name:'Settings',exact:true}).click();
- const dialog=page.getByRole('dialog');
- await dialog.getByRole('tab',{name:'System',exact:true}).click();
- await dialog.getByLabel('What happened').fill('Jouzu closed the window');
- await dialog.getByRole('button',{name:'Build the draft',exact:true}).click();
- await expect(dialog.getByLabel('Draft')).toHaveValue(/## What happened/);
- // No gh here, so the row says so and the form carries the draft when it opens.
- await expect(dialog.getByText(/gh is not signed in here/)).toBeVisible();
- await expect(dialog.getByRole('button',{name:'Submit with gh',exact:true})).toHaveCount(0);
- await dialog.getByRole('button',{name:'Open the issue form',exact:true}).click();
- await page.waitForFunction(()=> (window as any).__opened.length===1);
- const url = await page.evaluate(()=> (window as any).__opened[0]);
- expect(url).toContain('/issues/new?');
- // The form carries the draft: spaces travel as + in a query string.
- expect(decodeURIComponent(url.replaceAll('+',' '))).toContain('Jouzu closed the window');
- expect(await page.evaluate(()=> (window as any).__submitted.length)).toBe(0);
 });

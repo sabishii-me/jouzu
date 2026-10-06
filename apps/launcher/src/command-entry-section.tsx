@@ -27,18 +27,10 @@ export function CommandEntrySection({ locale }: { locale: Locale }) {
   // supersedes and the user has to know it before taking precedence.
   const foreign = state.commands.find(entry => entry.path && !within(entry.path, state.directory))?.path ?? null;
   const answers = state.first || (state.onPath && !foreign);
-  const status = !state.shims
-    ? t.commandEntryBroken
-    : state.first ? t.commandEntryFirst
-    : foreign ? t.commandEntryShadowed
-    : state.onPath ? t.commandEntryFirst
-    : t.commandEntryAbsent;
-  // The path is a fact of its own rather than part of the sentence, and every change needs a terminal
-  // that has been started since it was made.
-  const note = foreign && state.shims
-    ? `${t.commandEntryFound} ${foreign}`
-    : state.shims ? t.commandEntryHint
-    : undefined;
+  // The row says what is true for the user, and offers the change it can make. Where a command was found
+  // and which installation put it there are support details, and a support detail belongs in a report.
+  const status = !state.shims ? t.commandEntryBroken : answers ? t.gitBashInUse : undefined;
+  const note = state.shims && !answers ? t.commandEntryHint : undefined;
   return <ComponentSection
     title={t.commandEntry}
     status={status}
