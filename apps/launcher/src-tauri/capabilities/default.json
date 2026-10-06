@@ -17,6 +17,9 @@
       "allow": [
         {
           "url": "https://platform.shisa.ai/connect*"
+        },
+        {
+          "url": "https://github.com/shisa-ai/jouzu/*"
         }
       ]
     },
