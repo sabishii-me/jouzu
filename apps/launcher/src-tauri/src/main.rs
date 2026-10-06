@@ -259,6 +259,10 @@ fn main() {
     if let Some(code) = production_build_check(std::env::args()) {
         std::process::exit(code);
     }
+    // A panic in the Launcher would otherwise close the window and leave nothing behind.
+    if let Ok(managed) = runtime::managed_root() {
+        logs::install_panic_hook(managed, env!("CARGO_PKG_VERSION"));
+    }
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())

@@ -66,6 +66,67 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
     (if month <= 2 { year + 1 } else { year }, month, day)
 }
 
+
+/// Crash records are kept next to the logs and pruned to this many files, so a repeated failure cannot
+/// fill the disk.
+const MAX_CRASHES: usize = 5;
+
+/// A panic otherwise closes the window with nothing on disk. The record is one JSON line so a report
+/// can carry it once the user reviews it.
+pub fn write_crash(managed: &Path, message: &str, location: &str, version: &str) -> Option<PathBuf> {
+    let directory = directory(managed);
+    create_dir_all(&directory).ok()?;
+    let stamp = match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(elapsed) => elapsed.as_secs(),
+        Err(_) => 0,
+    };
+    let path = directory.join(format!("crash-{stamp}.json"));
+    let record = serde_json::json!({
+        "time": stamp,
+        "version": version,
+        "location": location,
+        "message": message,
+    });
+    let mut handle = OpenOptions::new().create(true).truncate(true).write(true).open(&path).ok()?;
+    writeln!(handle, "{record}").ok()?;
+    prune_crashes(&directory, MAX_CRASHES);
+    Some(path)
+}
+
+/// Remove the oldest records beyond `keep`, newest first by the stamp in the file name.
+fn prune_crashes(directory: &Path, keep: usize) {
+    let Ok(entries) = std::fs::read_dir(directory) else {
+        return;
+    };
+    let mut records: Vec<(u64, PathBuf)> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            let name = path.file_name()?.to_str()?;
+            let stamp = name.strip_prefix("crash-")?.strip_suffix(".json")?.parse::<u64>().ok()?;
+            Some((stamp, path))
+        })
+        .collect();
+    records.sort_by_key(|(stamp, _)| *stamp);
+    while records.len() > keep {
+        let (_, path) = records.remove(0);
+        let _ = std::fs::remove_file(path);
+    }
+}
+
+/// Install the record keeper. The previous hook still runs, so the default panic output survives.
+pub fn install_panic_hook(managed: PathBuf, version: &'static str) {
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let location = info
+            .location()
+            .map(|place| format!("{}:{}", place.file(), place.line()))
+            .unwrap_or_default();
+        write_crash(&managed, &info.to_string(), &location, version);
+        previous(info);
+    }));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -104,5 +165,29 @@ mod tests {
         let current = std::fs::read_to_string(directory(managed).join("launcher.log")).unwrap();
         assert!(current.ends_with(" after rotation\n"));
         assert!(current.len() < 64);
+    }
+
+    #[test]
+    fn keeps_the_newest_crash_records_and_writes_one_json_line() {
+        let temp = tempfile::tempdir().unwrap();
+        let managed = temp.path();
+        let path = write_crash(managed, "boom", "src/main.rs:1", "0.0.0").unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(text.lines().count(), 1);
+        let record: serde_json::Value = serde_json::from_str(text.trim()).unwrap();
+        assert_eq!(record["message"], "boom");
+        assert_eq!(record["location"], "src/main.rs:1");
+
+        for stamp in 1..=8u64 {
+            std::fs::write(directory(managed).join(format!("crash-{stamp}.json")), "{}").unwrap();
+        }
+        prune_crashes(&directory(managed), MAX_CRASHES);
+        let kept = std::fs::read_dir(directory(managed))
+            .unwrap()
+            .flatten()
+            .filter(|entry| entry.file_name().to_string_lossy().starts_with("crash-"))
+            .count();
+        assert_eq!(kept, MAX_CRASHES);
+        assert!(!directory(managed).join("crash-1.json").exists());
     }
 }
