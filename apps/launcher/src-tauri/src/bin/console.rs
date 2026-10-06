@@ -1,3 +1,7 @@
+// The console shares the launcher's modules rather than copying them, so a part the launcher uses and
+// the console does not is not dead code: it is a part of the same source serving the other binary.
+#![allow(dead_code)]
+
 #[path = "../launcher_script.rs"]
 mod launcher_script;
 #[path = "../git_environment.rs"]
