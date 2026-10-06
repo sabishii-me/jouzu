@@ -3,6 +3,20 @@
 One section per released Launcher version. The update feed shows the section for the released
 version verbatim, so a release without a section is refused.
 
+## 0.3.6
+
+- A component that is here but does not run is repaired from its own row in System, instead of being
+  installed again.
+- `jz` and `jouzu` are put on the PATH when the Launcher installs and when it updates, and they never
+  take the place of a command another program provides without asking first. The same row takes them
+  away again.
+- A terminal opens in the environment this installation manages, from the header, without starting
+  Jouzu.
+- Reporting opens the project's issue list, and the folder that holds the logs opens from the card
+  beside it.
+- The Launcher keeps checking for updates while it stays open, and the header says whether one waits.
+- Logs and crash records are kept under the managed folder, and the Launcher runs one at a time.
+
 ## 0.3.5
 
 - The installers and the Launcher report Shisa, Inc. as their publisher, which is the organization the
