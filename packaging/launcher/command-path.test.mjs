@@ -65,7 +65,12 @@ test('the entry is added at the end, moved to the front when authorized, and rem
   // order, so the previous resolution answers again.
   const back = run(['-Directory', space.bin, '-Action', 'Append', '-PathValue', front.value.join(';')]);
   assert.deepEqual(back.value, [space.bin, 'C:/one', 'C:/two']);
-  const removed = run(['-Directory', space.bin, '-Action', 'Remove', '-PathValue', back.value.join(';')]);
+  // Putting the previous resolution back is the same move the other way: the entry goes to the end and
+  // nothing else moves.
+  const restored = run(['-Directory', space.bin, '-Action', 'Restore', '-PathValue', back.value.join(';')]);
+  assert.deepEqual(restored.value, ['C:/one', 'C:/two', space.bin]);
+  assert.equal(restored.position, 'later');
+  const removed = run(['-Directory', space.bin, '-Action', 'Remove', '-PathValue', restored.value.join(';')]);
   assert.deepEqual(removed.value, ['C:/one', 'C:/two']);
   assert.equal(removed.onPath, false);
 });

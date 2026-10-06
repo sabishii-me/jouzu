@@ -37,7 +37,6 @@ export async function stageJouzuUpdate({recipe, runtime, store, destination, tar
   // The launcher-owned bootstrap is part of every runnable app slot, not supplied
   // by a recipe. Copy only after the installed runtime has passed verification.
   cpSync(fileURLToPath(new URL('./bootstrap.mjs', import.meta.url)),join(app,'bootstrap.mjs'));
-cpSync(fileURLToPath(new URL('./session-environment.mjs', import.meta.url)),join(app,'session-environment.mjs'));
   signal?.throwIfAborted();
   renameSync(temporary,output);
   onProgress({phase:'staged'});

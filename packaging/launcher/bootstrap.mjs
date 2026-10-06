@@ -1,9 +1,8 @@
 import { createRequire } from "node:module";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, delimiter, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { randomUUID } from "node:crypto";
-import { sessionEnvironment } from "./session-environment.mjs";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const app = join(root, "node_modules", "jouzu");
@@ -14,14 +13,18 @@ const { resolveJouzuPaths } = await import(pathToFileURL(join(app, "dist", "path
 const parsed = parseJouzuArgs(args);
 process.env.JOUZU_HOME ||= join(process.env.LOCALAPPDATA, "Shisa.ai", "Jouzu", "data");
 const paths = resolveJouzuPaths({ homeOverride: parsed.options.home });
+const node = dirname(process.execPath);
+const npm = join(node, "node_modules", "npm", "bin", "npm-cli.js");
 const shell = process.env.JOUZU_LAUNCHER_BASH;
-Object.assign(process.env, sessionEnvironment({
-  app: root,
-  shell,
-  home: process.env.JOUZU_HOME,
-  cacheDir: paths.cacheDir,
-  configDir: paths.configDir,
-}));
+process.env.PATH = [node, join(root, "..", "tools"), ...(shell ? [dirname(shell), join(dirname(shell), "..", "cmd"), join(dirname(shell), "..", "usr", "bin")] : []), process.env.PATH || ""].join(delimiter);
+process.env.JOUZU_NO_UPDATE = "1";
+process.env.PI_SKIP_VERSION_CHECK = "1";
+process.env.NODE_USE_SYSTEM_CA = "1";
+process.env.NODE_USE_ENV_PROXY = "1";
+process.env.npm_execpath = npm;
+process.env.npm_node_execpath = process.execPath;
+process.env.npm_config_cache = join(paths.cacheDir, "npm");
+process.env.npm_config_prefix = join(paths.configDir, "npm");
 mkdirSync(paths.agentDir, { recursive: true });
 const settingsPath = join(paths.agentDir, "settings.json");
 const markerPath = join(paths.agentDir, "launcher-runtime.json");

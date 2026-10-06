@@ -165,13 +165,15 @@ export function App() {
     } catch (error) { setError(String(error)); } finally { setOperation(null); }
   }
   // A terminal in a folder with the environment this installation manages, which is also where jz and
-  // jouzu can be started from. It does not start Jouzu.
+  // jouzu can be started from. It does not start Jouzu. The folder the launcher already works with is
+  // used as it is; only a launcher with no folder at all asks for one.
   async function openTerminal() {
-    setOperation("choosing"); setError(null);
+    setError(null);
     try {
-      const path = await open({ directory: true, multiple: false, title: t.picker });
+      const known = state?.recent[0]?.path;
+      const path = known ?? await open({ directory: true, multiple: false, title: t.terminalFolder });
       if (typeof path === "string") await invoke("terminal_open", { path });
-    } catch (error) { setError(String(error)); } finally { setOperation(null); }
+    } catch (error) { setError(String(error)); }
   }
   async function chooseFolder() {
     setOperation("choosing"); setError(null);

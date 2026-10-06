@@ -53,7 +53,6 @@ export async function preparePublishedRuntime({version,output,pnpm}) {
  run(process.execPath,[resolve(pnpm),...installArguments(app,store)],root);
  assertInstalledTarget(app);
  cpSync(fileURLToPath(new URL('./bootstrap.mjs',import.meta.url)),join(app,'bootstrap.mjs'));
-cpSync(fileURLToPath(new URL('./session-environment.mjs',import.meta.url)),join(app,'session-environment.mjs'));
  await checkStagedHealth({node:process.execPath,app,version});
  return {root,app,recipe,receipt};
 }

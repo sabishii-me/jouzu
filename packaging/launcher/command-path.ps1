@@ -1,6 +1,6 @@
 param(
  [Parameter(Mandatory=$true)][string]$Directory,
- [ValidateSet('Report','Install','Append','Precedence','Remove')][string]$Action = 'Report',
+ [ValidateSet('Report','Install','Append','Precedence','Restore','Remove')][string]$Action = 'Report',
  [string]$InstallRoot,
  [string]$ValueName = 'Path',
  [string]$PathValue,
@@ -131,11 +131,16 @@ if ($Action -eq 'Precedence') {
  $entries = @($Directory) + @($entries | Where-Object { (Get-Comparison $_) -ne $target })
  $changed = $true
 }
+if ($Action -eq 'Restore') {
+ # The entry goes back to the end, where it answers for neither name unless nothing else does. Every
+ # other entry keeps its place, so the resolution the user had is what answers again.
+ if ($at -ge 0) { $entries = @($entries | Where-Object { (Get-Comparison $_) -ne $target }) + $Directory; $changed = $true }
+}
 if ($Action -eq 'Remove') {
  $entries = @($entries | Where-Object { (Get-Comparison $_) -ne $target })
  $changed = $at -ge 0
 }
-if ($Action -in @('Append', 'Precedence', 'Remove') -and $changed) { [void](Set-Entries $entries) }
+if ($Action -in @('Append', 'Precedence', 'Restore', 'Remove') -and $changed) { [void](Set-Entries $entries) }
 
 # The report describes the state after the action, so a caller does not have to run it twice.
 if ($changed) { $entries = @(Get-Entries ($entries -join ';')) } else { $entries = @(Get-Entries $user) }
