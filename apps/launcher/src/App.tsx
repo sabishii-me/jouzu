@@ -5,6 +5,7 @@ import { UpdatePreview } from "./update-preview";
 import { GitBashSection, useGitBash } from "./git-bash-section";
 import { TerminalSection } from "./terminal-section";
 import { CommandEntrySection } from "./command-entry-section";
+import { ReportSection } from "./report-section";
 import { useJouzuUpdate } from "./use-jouzu-update";
 import { useLauncherUpdate } from "./use-launcher-update";
 import { Label } from "./components/ui/label";
@@ -276,6 +277,7 @@ export function App() {
                       <div className="flex justify-end"><Button variant="ghost" onClick={async()=>{ try { await invoke("crash_dismiss",{path:record.path}); } finally { await refreshDiagnostics(); } }}>{t.dismiss}</Button></div>
                     </div>)}</CardContent>
                   </Card>}
+                  <ReportSection locale={locale} />
                   {diagnostics !== null && <><p className="text-xs text-muted-foreground">{t.logsTitle}: <span className="break-all font-mono">{diagnostics.logs}</span></p><p className="text-xs text-muted-foreground">{t.logsHint}</p></>}
                 </TabsContent>
               </div>

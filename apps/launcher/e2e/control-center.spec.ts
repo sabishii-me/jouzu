@@ -404,3 +404,46 @@ test('the header opens a terminal in a chosen folder and starts nothing', async 
  expect(await page.evaluate(()=> (window as any).__terminals)).toEqual(['C:/work/prts-web']);
  expect(await page.getByRole('button',{name:'Open a terminal here',exact:true}).isEnabled()).toBe(true);
 });
+
+test('a report is drafted by the payload and sent only when asked', async ({page})=>{
+ await page.addInitScript(()=>{
+  (window as any).isTauri=true;
+  (window as any).__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener:()=>{}};
+  localStorage.setItem('jouzu.ui.language','en');
+  (window as any).__submitted=[];
+  (window as any).__confirms=0;
+  (window as any).__TAURI_INTERNALS__={
+   metadata:{currentWindow:{label:'main'},currentWebview:{label:'main'}},
+   transformCallback:()=>1,unregisterCallback:()=>{},
+   invoke:async(command:string,args:any)=>{
+    if(command==='launcher_state')return {ready:true,bash:false,recent:[],platform:'windows'};
+    if(command==='component_versions')return {jouzu:'0.1.18',development:true};
+    if(command==='environment_read')return [];
+    if(command==='bug_report')return {available:true,title:'Jouzu closed the window right after opening the folder.',body:['## What happened','','Jouzu closed the window right after opening the folder.','','## Environment','','- Runtime: Jouzu Launcher 0.3.6',''].join(String.fromCharCode(10)),issueUrl:'https://github.com/shisa-ai/jouzu/issues/new'};
+    if(command==='bug_report_submit'){(window as any).__submitted.push({title:args.title,body:args.body});return 'https://github.com/shisa-ai/jouzu/issues/7';}
+    // confirm() compares the answer with its ok label, so the stub answers as the dialog would.
+    if(command==='plugin:dialog|confirm'||command==='plugin:dialog|message'){(window as any).__confirms++;return 'Ok';}
+    if(command.includes('version'))return '0.1.0';
+    return 1;
+   }
+  };
+ });
+ await page.goto('http://localhost:1420');
+ await page.getByRole('button',{name:'Settings',exact:true}).click();
+ const dialog=page.getByRole('dialog');
+ await dialog.getByRole('tab',{name:'System',exact:true}).click();
+ await dialog.getByLabel('What happened').fill('Jouzu closed the window right after opening the folder.');
+ // Nothing is sent while the draft is being built.
+ expect(await page.evaluate(()=> (window as any).__submitted.length)).toBe(0);
+ await dialog.getByRole('button',{name:'Build the draft',exact:true}).click();
+ await expect(dialog.getByLabel('Draft')).toHaveValue(/## What happened/);
+ await expect(dialog.getByLabel('Draft')).toHaveValue(/Runtime: Jouzu Launcher 0.3.6/);
+ await expect(dialog.getByRole('button',{name:'Submit with gh',exact:true})).toBeEnabled();
+ await dialog.getByRole('button',{name:'Submit with gh',exact:true}).click();
+ await page.waitForFunction(()=> (window as any).__confirms>0);
+ await page.waitForFunction(()=> (window as any).__submitted.length===1);
+ // It was sent only after the confirmation, and it carried the reviewed draft.
+ expect(await page.evaluate(()=> (window as any).__confirms)).toBe(1);
+ expect(await page.evaluate(()=> (window as any).__submitted[0].body)).toContain('## What happened');
+ await expect(dialog.getByText(/Issue created:/)).toBeVisible();
+});

@@ -5,6 +5,7 @@ mod launcher_script;
 mod terminal;
 mod git_environment;
 mod logs;
+mod bug_report;
 mod command_path;
 mod managed_paths;
 mod recovery;
@@ -95,6 +96,25 @@ fn diagnostics() -> Result<serde_json::Value, String> {
 fn crash_dismiss(path: String) -> Result<(), String> {
     let managed = runtime::managed_root()?;
     logs::dismiss_crash(&managed, &path)
+}
+
+#[tauri::command]
+/// Build the report draft with the payload's own reporter, and answer what the Launcher knows about this
+/// installation when that reporter is not there.
+fn bug_report(
+    app: tauri::AppHandle,
+    description: String,
+    expected: String,
+    actual: String,
+    reproduction: String,
+) -> Result<serde_json::Value, String> {
+    bug_report::draft(&app, &description, &expected, &actual, &reproduction)
+}
+
+#[tauri::command]
+/// Post the reviewed draft; nothing leaves the machine before the user asked for this.
+fn bug_report_submit(title: String, body: String) -> Result<String, String> {
+    bug_report::submit(&title, &body)
 }
 
 #[tauri::command]
@@ -378,6 +398,8 @@ fn main() {
             diagnostics,
             crash_dismiss,
             log_event,
+            bug_report,
+            bug_report_submit,
             terminal_open,
             command_entry_report,
             command_entry_use,
