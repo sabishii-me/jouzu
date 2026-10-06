@@ -24,7 +24,10 @@ export function useJouzuUpdate(configured:boolean, onInstalled:()=>void) {
    else{setVersion(null);setPhase('complete');onInstalled();}
   }catch(e){if(!silent){setError(String(e));setPhase('error');}}finally{lock.current=false;}
  }
- const schedule=useRef(createUpdateSchedule(silent=>{void run('check',silent);}));
+ // The schedule lives for the whole session, so it reads the current run through a ref: the first
+ // render happens before the configuration arrives, and a captured run would answer from it.
+ const runRef=useRef(run);runRef.current=run;
+ const schedule=useRef(createUpdateSchedule(silent=>{void runRef.current('check',silent);}));
  useEffect(()=>{if(!configured)return;return startUpdateChecks(schedule.current);},[configured]);
  return {version,notes,notesSource,phase,error,progress,busy:!['idle','available','current','complete','error'].includes(phase),check:()=>run('check'),install:()=>run('install')};
 }

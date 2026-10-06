@@ -33,7 +33,10 @@ export function useLauncherUpdate(configured: boolean) {
    await candidate.current.install({restartAfterInstall:true});
   }catch(e){setError(String(e));setPhase("error");}finally{lock.current=false;}
  }
- const schedule=useRef(createUpdateSchedule(silent=>{void refresh(silent);}));
+ // The schedule lives for the whole session, so it reads the current refresh through a ref: the first
+ // render happens before the configuration arrives, and a captured refresh would answer from it.
+ const refreshRef=useRef(refresh);refreshRef.current=refresh;
+ const schedule=useRef(createUpdateSchedule(silent=>{void refreshRef.current(silent);}));
  useEffect(()=>{ if(!configured)return; return startUpdateChecks(schedule.current); },[configured]);
  return {version,notes,phase,progress,error,refresh:()=>refresh(),install,busy:phase==="checking"||phase==="downloading"||phase==="installing"};
 }
