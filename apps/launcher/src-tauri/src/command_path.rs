@@ -66,9 +66,9 @@ pub fn repair(root: &Path, managed: &Path) -> Result<serde_json::Value, String> 
     report(root, managed)
 }
 
-/// Put the previous resolution back: the entry returns to the end, where it shadows nothing.
-pub fn restore(root: &Path, managed: &Path) -> Result<serde_json::Value, String> {
-    ask(root, managed, "Restore", true)
+/// Take the entry out of the user PATH: the names answer from wherever they did before this installation.
+pub fn remove(root: &Path, managed: &Path) -> Result<serde_json::Value, String> {
+    ask(root, managed, "Remove", true)
 }
 
 #[cfg(test)]

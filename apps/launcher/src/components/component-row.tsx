@@ -10,17 +10,15 @@ export function ComponentSection({ title, status, note, tone, busy, error, insta
   install?: () => void; installLabel: string;
 }) {
   return <section className="flex flex-col gap-2 border-t border-border px-5 py-4" aria-label={title}>
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <div>
-        <h3 className="font-medium">{title}</h3>
-        {status && <p className={`mt-1 text-sm ${tone === 'missing' ? 'text-destructive' : 'text-muted-foreground'}`}>{status}</p>}
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
+    <div>
+      <h3 className="font-medium">{title}</h3>
+      {status && <p className={`mt-1 text-sm ${tone === 'missing' ? 'text-destructive' : 'text-muted-foreground'}`}>{status}</p>}
+    </div>
+    <div className="flex flex-wrap items-center gap-2">
         {<span className="flex size-4 items-center justify-center">{busy && <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />}</span>}
         {/* The action is always in the row: without an action it is disabled, so nothing the row shows
             arriving or leaving moves the layout. */}
         {<Button disabled={busy || !install} onClick={install}>{installLabel}</Button>}
-      </div>
     </div>
     {note && <p role="status" className="text-xs text-muted-foreground">{note}</p>}
     {error && <p role="alert" className="text-xs text-destructive">{error}</p>}

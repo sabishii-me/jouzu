@@ -39,7 +39,7 @@ export function CommandEntrySection({ locale }: { locale: Locale }) {
   const action = !state.shims
     ? { label: t.commandEntryRepair, run: () => void run(() => invoke<CommandEntryState>('command_entry_repair')) }
     : installed
-      ? { label: t.commandEntryRestore, run: () => void run(() => invoke<CommandEntryState>('command_entry_restore')) }
+      ? { label: t.commandEntryRemove, run: () => void run(() => invoke<CommandEntryState>('command_entry_remove')) }
       : { label: t.commandEntryInstall, run: install };
   return <ComponentSection
     title={t.commandEntry}
