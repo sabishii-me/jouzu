@@ -32,7 +32,9 @@ $notes = (& node "$PSScriptRoot/launcher-notes.mjs" (Join-Path $PSScriptRoot '..
 if ($LASTEXITCODE) { throw 'Missing launcher changelog for this version; feed unchanged' }
 $feed = @{version=$Version;notes=$notes;pub_date=[DateTime]::UtcNow.ToString('o');platforms=@{'windows-x86_64'=@{url=$url;signature=(Get-Content "$updateSetup.sig" -Raw).Trim()}}}
 $feedFile = Join-Path $Directory 'latest.json'
-$feed | ConvertTo-Json -Depth 5 | Set-Content $feedFile -Encoding utf8
+# The feed is read by a JSON parser on the other side, so it is written without a byte order mark:
+# `Set-Content -Encoding utf8` writes one under Windows PowerShell, and a mark makes the feed undecodable.
+[IO.File]::WriteAllText($feedFile, ($feed | ConvertTo-Json -Depth 5), (New-Object Text.UTF8Encoding($false)))
 & gh release view launcher-update --repo $repository *> $null
 if ($LASTEXITCODE) {
  & gh release create launcher-update --repo $repository --target $env:GITHUB_SHA --title 'Jouzu launcher updates' --notes 'Signed launcher update feed.'
