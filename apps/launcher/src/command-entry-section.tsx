@@ -23,7 +23,7 @@ const within = (path: string, directory: string) => {
 export function CommandEntrySection({ locale }: { locale: Locale }) {
   const t = messages[locale];
   const { state, busy, error, run } = useComponent<CommandEntryState>('command_entry_report');
-  if (!state) return <ComponentSection title={t.commandEntry} busy={busy} error={error} installLabel={t.commandEntryInstall} />;
+  if (!state) return <ComponentSection title={t.commandEntry} status={t.checking} busy={busy} error={error} installLabel={t.commandEntryInstall} />;
   // A command another program provides is not Jouzu's to replace without asking, and a command that does
   // not run is repaired rather than installed again.
   const provided = state.commands.some(entry => entry.path && !within(entry.path, state.directory));
@@ -41,6 +41,5 @@ export function CommandEntrySection({ locale }: { locale: Locale }) {
     busy={busy} error={error}
     install={installed ? undefined : install}
     installLabel={!state.shims ? t.commandEntryRepair : t.commandEntryInstall}
-    extra={installed ? { label: t.commandEntryRestore, run: () => void run(() => invoke<CommandEntryState>('command_entry_restore')) } : undefined}
   />;
 }

@@ -23,7 +23,7 @@ const version = (reported?: string) => reported?.replace(/^git version\s+/i, '')
 export function GitBashSection({ locale, api }: { locale: Locale; api: ComponentApi<GitBashState> }) {
   const t = messages[locale];
   const { state, busy, error, run } = api;
-  if (!state) return <ComponentSection title={t.gitBash} busy={busy} error={error} installLabel={t.gitBashInstall} />;
+  if (!state) return <ComponentSection title={t.gitBash} status={t.checking} busy={busy} error={error} installLabel={t.gitBashInstall} />;
   const own = state.bundled ?? state.managed;
   const installed = Boolean(state.effective);
   const usingSystem = installed && state.effective?.path === state.system?.path;
