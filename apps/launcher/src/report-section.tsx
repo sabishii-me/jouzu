@@ -13,6 +13,15 @@ export function ReportSection({ locale }: { locale: Locale }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  async function openLogs() {
+    setError(null);
+    try {
+      await invoke('open_logs');
+    } catch (failure) {
+      setError(String(failure));
+    }
+  }
+
   async function open() {
     setBusy(true);
     setError(null);
@@ -29,7 +38,10 @@ export function ReportSection({ locale }: { locale: Locale }) {
   return <Card className="border-border shadow-none">
     <CardHeader><CardTitle>{t.reportTitle}</CardTitle></CardHeader>
     <CardContent className="space-y-2">
-      <Button disabled={busy} onClick={() => void open()}>{t.reportAction}</Button>
+      <div className="flex flex-wrap gap-2">
+        <Button disabled={busy} onClick={() => void open()}>{t.reportAction}</Button>
+        <Button variant="outline" onClick={() => void openLogs()}>{t.logsOpen}</Button>
+      </div>
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     </CardContent>
   </Card>;

@@ -277,7 +277,6 @@ export function App() {
                     </div>)}</CardContent>
                   </Card>}
                   <ReportSection locale={locale} />
-                  {diagnostics !== null && <><p className="text-xs text-muted-foreground">{t.logsTitle}: <span className="break-all font-mono">{diagnostics.logs}</span></p><p className="text-xs text-muted-foreground">{t.logsHint}</p></>}
                 </TabsContent>
               </div>
             </ScrollArea>

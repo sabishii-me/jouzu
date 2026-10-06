@@ -166,6 +166,16 @@ fn command_entry_remove(app: tauri::AppHandle) -> Result<serde_json::Value, Stri
 }
 
 #[tauri::command]
+/// The log folder is where a report's evidence lives; the folder opens, and the interface names no path.
+fn open_logs(app: tauri::AppHandle) -> Result<(), String> {
+    let directory = logs::directory(&runtime::managed_root()?);
+    std::fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
+    tauri_plugin_opener::OpenerExt::opener(&app)
+        .open_path(directory.to_string_lossy().to_string(), None::<&str>)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 /// The interface watches the Launcher's own update through a plugin, which no command sees, and a
 /// silent check has to leave a trace somewhere, so both hand one line here.
 fn log_event(message: String) -> Result<(), String> {
@@ -403,6 +413,7 @@ fn main() {
             log_event,
             bug_report,
             terminal_open,
+            open_logs,
             command_entry_report,
             command_entry_use,
             command_entry_remove,
