@@ -27,6 +27,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from ".
 import { Button } from "./components/ui/button";
 import { messages, locales, resolveLocale, type Locale } from "./i18n";
 import { type Workspace } from "./history";
+import { parseDiagnostics, type Diagnostics } from "./diagnostics";
 interface LauncherState { platform: "windows" | "macos" | "linux"; recent: Workspace[]; ready: boolean; bash: boolean; bundled_git: boolean }
 interface Components { jouzu: string | null; development: boolean; launcherUpdaterConfigured?: boolean; jouzuUpdaterConfigured?: boolean }
 export function App() {
@@ -41,6 +42,7 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [operation, setOperation] = useState<"choosing" | "launching" | "preparing" | "saving" | null>(null);
   const [version, setVersion] = useState<string | null>(null);
+  const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
   const [components, setComponents] = useState<Components | null>(null);
   const jouzuUpdater = useJouzuUpdate(components?.jouzuUpdaterConfigured === true, () => {void invoke<Components>("component_versions").then(setComponents).catch(error => setError(String(error)));});
   const updater = useLauncherUpdate(components?.launcherUpdaterConfigured === true);
@@ -129,9 +131,15 @@ export function App() {
   useEffect(() => { if (!notice) return; const timer = setTimeout(() => setNotice(null), 4000); return () => clearTimeout(timer); }, [notice]);
   useEffect(() => { if (settingsOpen && isTauri()) { if (!setup && !busyRef.current) void configure({ action: "status" }); void readEnvironment(); } }, [settingsOpen]);
   const refresh = async () => setState(await invoke<LauncherState>("launcher_state"));
+  // Diagnostics are separate from the launcher state: a missing record must not fail the window.
+  const refreshDiagnostics = async () => {
+    try { setDiagnostics(parseDiagnostics(await invoke<unknown>("diagnostics"))); }
+    catch { setDiagnostics(null); }
+  };
   useEffect(() => {
     if (!isTauri()) return;
     refresh().catch(error => setError(String(error)));
+    void refreshDiagnostics();
     if (!initialStatusRequested.current) { initialStatusRequested.current = true; void configure({action:"status"}); }
     getVersion().then(setVersion).catch(error => setError(String(error)));
     invoke<Components>("component_versions").then(setComponents).catch(error => setError(String(error)));
@@ -226,15 +234,17 @@ export function App() {
 
                 </TabsContent>
                 <TabsContent value="system" className="m-0 space-y-4">
-                  <details><summary className="cursor-pointer text-sm">{recoveryText[locale].title}</summary>
-                    <p className="my-2 text-sm text-muted-foreground">{recoveryText[locale].description}</p>
-                    <Button variant="outline" disabled={busy || updater.busy || jouzuUpdater.busy || import.meta.env.DEV} onClick={async()=>{
-                      if (!await confirm(recoveryText[locale].description,{title:recoveryText[locale].title,kind:"warning"})) return;
-                      setOperation("saving");setError(null);
-                      try {await invoke("repair_jouzu");setComponents(await invoke<Components>("component_versions"));await refresh();}
-                      catch(error){setError(String(error));}finally{setOperation(null);}
-                    }}>{recoveryText[locale].action}</Button>
-                  </details>
+                  <Card className="border-border shadow-none">
+                    <CardHeader><CardTitle>{t.repairTitle}</CardTitle><CardDescription>{recoveryText[locale].description}</CardDescription></CardHeader>
+                    <CardContent className="flex justify-end">
+                      <Button variant="outline" disabled={busy || updater.busy || jouzuUpdater.busy || import.meta.env.DEV} onClick={async()=>{
+                        if (!await confirm(recoveryText[locale].description,{title:recoveryText[locale].title,kind:"warning"})) return;
+                        setOperation("saving");setError(null);
+                        try {await invoke("repair_jouzu");setComponents(await invoke<Components>("component_versions"));await refresh();await refreshDiagnostics();}
+                        catch(error){setError(String(error));}finally{setOperation(null);}
+                      }}>{recoveryText[locale].action}</Button>
+                    </CardContent>
+                  </Card>
                   <UpdatePreview locale={locale} live={{
                     phases:[jouzuUpdater.phase === 'preparing' || jouzuUpdater.phase === 'verifying' || jouzuUpdater.phase === 'activating' || jouzuUpdater.phase === 'staged' ? 'installing' : jouzuUpdater.phase as 'idle'|'checking'|'available'|'current'|'downloading'|'installing'|'complete'|'error', updater.phase],
                     versions:[components?.jouzu ?? t.unavailable, version ?? t.unavailable],
@@ -248,6 +258,15 @@ export function App() {
                     install:index=>{if(index===0)void jouzuUpdater.install();else void updater.install();}
                   }}/>
                   <div className="rounded-lg border border-border"><GitBashSection locale={locale} api={gitBash} /><TerminalSection locale={locale} /></div>
+                  {diagnostics !== null && diagnostics.crashes.length > 0 && <Card className="border-border shadow-none">
+                    <CardHeader><CardTitle>{t.crashTitle}</CardTitle><CardDescription>{t.crashHint}</CardDescription></CardHeader>
+                    <CardContent className="space-y-3">{diagnostics.crashes.map(record => <div key={record.path} className="space-y-1 rounded-lg border border-border p-3">
+                      <p className="text-xs text-muted-foreground">{new Date(record.time * 1000).toLocaleString()} | {record.version} | {record.location}</p>
+                      <p className="break-words text-sm">{record.message}</p>
+                      <div className="flex justify-end"><Button variant="ghost" onClick={async()=>{ try { await invoke("crash_dismiss",{path:record.path}); } finally { await refreshDiagnostics(); } }}>{t.dismiss}</Button></div>
+                    </div>)}</CardContent>
+                  </Card>}
+                  {diagnostics !== null && <><p className="text-xs text-muted-foreground">{t.logsTitle}: <span className="break-all font-mono">{diagnostics.logs}</span></p><p className="text-xs text-muted-foreground">{t.logsHint}</p></>}
                 </TabsContent>
               </div>
             </ScrollArea>
