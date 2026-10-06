@@ -5,6 +5,7 @@ mod launcher_script;
 mod terminal;
 mod git_environment;
 mod logs;
+mod managed_paths;
 mod recovery;
 mod node_path;
 mod renderer;

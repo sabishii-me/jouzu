@@ -3,25 +3,9 @@ use std::{
     process::Command,
 };
 
-pub fn managed_root() -> Result<PathBuf, String> {
-    #[cfg(debug_assertions)]
-    if let Some(root) = std::env::var_os("JOUZU_LAUNCHER_DEV_HOME") {
-        return Ok(PathBuf::from(root));
-    }
-    let local = std::env::var_os("LOCALAPPDATA").ok_or("LOCALAPPDATA is unavailable")?;
-    Ok(PathBuf::from(local).join("Shisa.ai").join("Jouzu"))
-}
-
-pub fn effective_home() -> Result<PathBuf, String> {
-    #[cfg(debug_assertions)]
-    if std::env::var_os("JOUZU_LAUNCHER_DEV_HOME").is_some() {
-        return Ok(managed_root()?.join("data"));
-    }
-    if let Some(home) = std::env::var_os("JOUZU_HOME").filter(|value| !value.is_empty()) {
-        return Ok(PathBuf::from(home));
-    }
-    Ok(managed_root()?.join("data"))
-}
+// The paths an installation resolves live on their own, so the console binary and a terminal entry
+// read the same installation without pulling in the window.
+pub use crate::managed_paths::{effective_home, managed_root};
 
 /// Leftovers from replacing a running launcher executable are deleted once no session
 /// holds them; anything still in use stays until a later start.
