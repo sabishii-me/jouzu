@@ -10,9 +10,9 @@ version verbatim, so a release without a section is refused.
 
 ## 0.3.4
 
-- Windows 10 draws the console window incorrectly with the standard console host, so Jouzu installs the
-  Windows Terminal it ships before it starts on such a machine, and only starts once that is done. The
-  update package downloads that copy, because it carries no archives.
+- The standard console host draws the console window incorrectly, so a machine that does not have the
+  Windows Terminal copy Jouzu ships installs it before Jouzu starts, and Jouzu starts only once that is
+  done. The update package downloads that copy, because it carries no archives.
 - System names the copy of each component that is in use and offers installing the one Jouzu ships. A
   Git Bash already installed on the machine keeps working.
 
