@@ -13,7 +13,7 @@ test('the Git Bash resolver installs Jouzu copies and only launches with the one
   const own = script.indexOf(String.raw`@($bundledInfo, $managedInfo)`);
   const gate = script.indexOf('if (-not ($Prepare -or $Install))');
   const system = script.indexOf('if ($systemInfo)');
-  assert.ok(own > 0 && gate > own, 'our own copies are resolved first');
+  assert.ok(own > 0 && gate > own, "Jouzu's own copies are resolved first");
   assert.ok(gate > 0 && script.indexOf('if ($systemInfo)', gate) > gate, 'a copy this PC has never answers an installation or a preparation');
 });
 

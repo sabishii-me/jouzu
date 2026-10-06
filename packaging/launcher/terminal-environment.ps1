@@ -49,8 +49,8 @@ if ($Report) {
  exit 0
 }
 
-# The chosen copy first, then the bundled one. A Windows Terminal this PC has answers a launch or an
-# installation preparation; installing asks for one of ours, so only that request installs.
+# The copy Jouzu ships resolves first. A Windows Terminal this PC already has answers a launch, and
+# never a preparation or an installation.
 foreach ($info in @($bundledInfo)) {
  if ($info) { Write-Output $info.path; exit 0 }
 }

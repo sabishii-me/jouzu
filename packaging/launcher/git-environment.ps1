@@ -75,8 +75,8 @@ if ($Report) {
  exit 0
 }
 
-# Jouzu's own copies first. Installing and preparing an installation ask for one of them, so a copy
-# this PC has never answers either; launching may use it until one of ours is installed.
+# Jouzu's own copies resolve first. A Git Bash this PC already has answers a launch, and never a
+# preparation or an installation.
 foreach ($info in @($bundledInfo, $managedInfo)) {
  if ($info) { Write-Output $info.path; exit 0 }
 }

@@ -36,8 +36,9 @@ installed from the launcher: the shipped archive when the package carries one, o
 release, verified by digest (and by publisher for PortableGit) before it is extracted.
 
 Windows Terminal hosts the console window, because the standard console host redraws a high-repaint
-interface incorrectly on Windows 10. An installed Windows Terminal is used when the machine has one, so
-the user's own settings apply; the bundled copy covers the machines that have none. A folder whose path
+interface incorrectly on Windows 10. The launcher installs the copy it ships before Jouzu starts on a
+machine that lacks it, and that copy hosts the console; a Windows Terminal the machine already has is
+used only when Jouzu's copy is absent. A folder whose path
 contains a semicolon keeps the standard console host, because Windows Terminal treats a semicolon as a
 command separator.
 

@@ -6,11 +6,9 @@ interface Terminal { path: string; version: string }
 export interface TerminalState {
   bundled: Terminal | null;
   system: Terminal | null;
-  preferred: string | null;
   effective: string | null;
   archive: boolean;
   version: string;
-  choice: 'bundled' | 'system';
 }
 
 /** The Windows Terminal component: the host of the console window. */

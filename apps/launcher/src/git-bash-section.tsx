@@ -7,9 +7,7 @@ export interface GitBashState {
   bundled: Environment | null;
   managed: Environment | null;
   system: Environment | null;
-  preferred: string | null;
   archive: boolean;
-  choice: 'bundled' | 'system';
   effective: Environment | null;
 }
 

@@ -24,7 +24,7 @@ pub fn run(root: &Path, script: &str, arguments: &[String]) -> Result<Output, St
     command.output().map_err(|_| "Cannot run a launcher helper".to_string())
 }
 
-/// PowerShell puts the message we wrote first and its own frames after it.
+/// PowerShell puts the message the script printed first, and its own frames after it.
 pub fn failure(output: &Output, fallback: &str) -> String {
     let text = String::from_utf8_lossy(&output.stderr);
     text.lines()
