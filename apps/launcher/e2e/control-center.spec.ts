@@ -447,3 +447,39 @@ test('a report is drafted by the payload and sent only when asked', async ({page
  expect(await page.evaluate(()=> (window as any).__submitted[0].body)).toContain('## What happened');
  await expect(dialog.getByText(/Issue created:/)).toBeVisible();
 });
+
+test('a terminal command whose files are gone is repaired from its row', async ({page})=>{
+ await page.addInitScript(()=>{
+  (window as any).isTauri=true;
+  (window as any).__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener:()=>{}};
+  localStorage.setItem('jouzu.ui.language','en');
+  (window as any).__repairs=0;
+  const missing:any={directory:'C:/managed/bin',shims:false,onPath:false,position:'absent',first:false,shadowed:false,commands:[{name:'jz',path:null},{name:'jouzu',path:null}]};
+  const repaired:any={directory:'C:/managed/bin',shims:true,onPath:true,position:'later',first:false,shadowed:false,commands:[{name:'jz',path:'C:/managed/bin/jz.cmd'},{name:'jouzu',path:'C:/managed/bin/jouzu.cmd'}]};
+  let entry:any={...missing};
+  (window as any).__TAURI_INTERNALS__={
+   metadata:{currentWindow:{label:'main'},currentWebview:{label:'main'}},
+   transformCallback:()=>1,unregisterCallback:()=>{},
+   invoke:async(command:string)=>{
+    if(command==='launcher_state')return {ready:true,bash:false,recent:[],platform:'windows'};
+    if(command==='component_versions')return {jouzu:'0.1.18',development:true};
+    if(command==='environment_read')return [];
+    if(command==='command_entry_report')return {...entry};
+    if(command==='command_entry_repair'){(window as any).__repairs++;entry={...repaired};return {...entry};}
+    if(command.includes('version'))return '0.1.0';
+    return 1;
+   }
+  };
+ });
+ await page.goto('http://localhost:1420');
+ await page.getByRole('button',{name:'Settings',exact:true}).click();
+ const dialog=page.getByRole('dialog');
+ await dialog.getByRole('tab',{name:'System',exact:true}).click();
+ const row=dialog.locator('section[aria-label="Terminal command"]');
+ await expect(row.getByText('The command files are missing',{exact:true})).toBeVisible();
+ await row.getByRole('button',{name:'Repair the command',exact:true}).click();
+ await page.waitForFunction(()=> (window as any).__repairs===1);
+ // The row then says what answers, and the repair action is gone.
+ await expect(row.getByText('jz and jouzu answer from Jouzu',{exact:true})).toBeVisible();
+ await expect(row.getByRole('button',{name:'Repair the command',exact:true})).toHaveCount(0);
+});

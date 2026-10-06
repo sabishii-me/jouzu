@@ -158,6 +158,11 @@ fn command_entry_use(app: tauri::AppHandle) -> Result<serde_json::Value, String>
 }
 
 #[tauri::command]
+fn command_entry_repair(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    command_path::repair(&runtime::application_root(&app)?, &runtime::managed_root()?)
+}
+
+#[tauri::command]
 fn command_entry_restore(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
     command_path::restore(&runtime::application_root(&app)?, &runtime::managed_root()?)
 }
@@ -404,6 +409,7 @@ fn main() {
             command_entry_report,
             command_entry_use,
             command_entry_restore,
+            command_entry_repair,
             jouzu_update::jouzu_update,
             control::control_request,
             control::cancel_control,

@@ -41,6 +41,36 @@ pub fn use_jouzu(root: &Path, managed: &Path) -> Result<serde_json::Value, Strin
     ask(root, managed, "Precedence", true)
 }
 
+/// Repair the entry: the copies and the shim files are written again by the scripts the installer uses,
+/// so a command that was deleted or damaged is restored without reinstalling anything.
+pub fn repair(root: &Path, managed: &Path) -> Result<serde_json::Value, String> {
+    let directory = directory(managed);
+    let copies = crate::launcher_script::run(
+        root,
+        "command-entries.ps1",
+        &["-InstallRoot".to_string(), root.to_string_lossy().into_owned()],
+    )?;
+    if !copies.status.success() {
+        return Err(crate::launcher_script::failure(&copies, "Cannot restore the terminal command"));
+    }
+    let shims = crate::launcher_script::run(
+        root,
+        SCRIPT,
+        &[
+            "-Directory".to_string(),
+            directory.to_string_lossy().into_owned(),
+            "-Action".to_string(),
+            "Install".to_string(),
+            "-InstallRoot".to_string(),
+            root.to_string_lossy().into_owned(),
+        ],
+    )?;
+    if !shims.status.success() {
+        return Err(crate::launcher_script::failure(&shims, "Cannot restore the terminal command"));
+    }
+    report(root, managed)
+}
+
 /// Put the previous resolution back: the entry returns to the end, where it shadows nothing.
 pub fn restore(root: &Path, managed: &Path) -> Result<serde_json::Value, String> {
     ask(root, managed, "Restore", true)

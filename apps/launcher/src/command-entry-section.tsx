@@ -27,7 +27,10 @@ export function CommandEntrySection({ locale }: { locale: Locale }) {
   // supersedes and the user has to know it before taking precedence.
   const foreign = state.commands.find(entry => entry.path && !within(entry.path, state.directory))?.path ?? null;
   const answers = state.first || (state.onPath && !foreign);
-  const status = state.first
+  // A command whose files are gone is repaired here; the Launcher itself is what the installer repairs.
+  const status = !state.shims
+    ? t.commandEntryBroken
+    : state.first
     ? t.commandEntryFirst
     : foreign ? describe([t.commandEntryShadowed, foreign])
     : state.onPath ? t.commandEntryFirst
@@ -38,8 +41,8 @@ export function CommandEntrySection({ locale }: { locale: Locale }) {
     tone={answers ? 'ok' : 'missing'}
     note={answers ? undefined : t.commandEntryHint}
     busy={busy} error={error}
-    install={state.first ? undefined : () => void run(() => invoke<CommandEntryState>('command_entry_use'))}
-    installLabel={t.commandEntryUse}
-    extra={state.first ? { label: t.commandEntryRestore, run: () => void run(() => invoke<CommandEntryState>('command_entry_restore')) } : undefined}
+    install={!state.shims ? () => void run(() => invoke<CommandEntryState>('command_entry_repair')) : state.first ? undefined : () => void run(() => invoke<CommandEntryState>('command_entry_use'))}
+    installLabel={!state.shims ? t.commandEntryRepair : t.commandEntryUse}
+    extra={state.shims && state.first ? { label: t.commandEntryRestore, run: () => void run(() => invoke<CommandEntryState>('command_entry_restore')) } : undefined}
   />;
 }
