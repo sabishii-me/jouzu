@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import { ComponentSection, describe, useComponent } from './components/component-row';
+import { ComponentSection, useComponent } from './components/component-row';
 import { messages, type Locale } from './i18n';
 
 interface Resolution { name: string; path: string | null }
@@ -23,18 +23,21 @@ export function CommandEntrySection({ locale }: { locale: Locale }) {
   const t = messages[locale];
   const { state, busy, error, run } = useComponent<CommandEntryState>('command_entry_report');
   if (!state) return <ComponentSection title={t.commandEntry} status={t.unavailable} tone="missing" busy={busy} error={error} installLabel={t.commandEntryUse} />;
-  // What another installation answers with is named, because that is what the authorized action
-  // supersedes and the user has to know it before taking precedence.
+  // A command from another program is not an answer from Jouzu, and Jouzu does not take its place
+  // unless the user asks.
   const foreign = state.commands.find(entry => entry.path && !within(entry.path, state.directory))?.path ?? null;
   const answers = state.first || (state.onPath && !foreign);
   // The row says what is true for the user, and offers the change it can make. Where a command was found
   // and which installation put it there are support details, and a support detail belongs in a report.
-  const status = !state.shims ? t.commandEntryBroken : answers ? t.gitBashInUse : undefined;
-  const note = state.shims && !answers ? t.commandEntryHint : undefined;
+  const status = !state.shims ? t.commandEntryBroken : answers ? t.gitBashInUse : t.commandEntryOff;
+  // The row says whether Jouzu's commands are the ones that answer, and offers the change it can make.
+  // Where a command was found and what another program did is support work, and support work belongs in
+  // the report, never in a row.
+  const note = answers ? t.commandEntryHint : undefined;
   return <ComponentSection
     title={t.commandEntry}
     status={status}
-    tone={answers ? 'ok' : 'missing'}
+    tone={state.shims ? 'ok' : 'missing'}
     note={note}
     busy={busy} error={error}
     install={!state.shims ? () => void run(() => invoke<CommandEntryState>('command_entry_repair')) : state.first ? undefined : () => void run(() => invoke<CommandEntryState>('command_entry_use'))}
