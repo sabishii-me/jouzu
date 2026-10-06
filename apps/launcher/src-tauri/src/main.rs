@@ -108,7 +108,16 @@ fn bug_report(
     actual: String,
     reproduction: String,
 ) -> Result<serde_json::Value, String> {
-    bug_report::draft(&app, &description, &expected, &actual, &reproduction)
+    Ok(
+        bug_report::draft(&app, &description, &expected, &actual, &reproduction).unwrap_or_else(|_| {
+            serde_json::json!({
+                "available": false,
+                "title": "",
+                "body": "",
+                "issueUrl": bug_report::ISSUE_NEW_URL,
+            })
+        }),
+    )
 }
 
 #[tauri::command]

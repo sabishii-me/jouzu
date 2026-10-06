@@ -47,6 +47,10 @@ pub fn facts(root: &Path, managed: &Path, slot: &Path) -> serde_json::Value {
 
 /// The draft as the payload's reporter writes it, with what the user typed and what this installation
 /// knows. A release whose reporter is not there answers that instead of a draft.
+/// The page a report is written on. The payload's own report carries the same address; this copy answers
+/// when the payload cannot be asked, so the action never leads nowhere.
+pub const ISSUE_NEW_URL: &str = "https://github.com/shisa-ai/jouzu/issues/new";
+
 pub fn draft(
     app: &tauri::AppHandle,
     description: &str,
