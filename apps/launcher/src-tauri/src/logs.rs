@@ -8,6 +8,9 @@ use std::{
 /// A log file rotates once it reaches this size, so diagnostics cannot grow without bound.
 const MAX_BYTES: u64 = 1024 * 1024;
 
+/// The most a single note may carry, so one caller cannot fill the log with one message.
+const MAX_NOTE: usize = 300;
+
 /// Logs live beside the managed state: one root holds everything an installation writes, and the
 /// uninstaller removes it with the rest.
 pub fn directory(managed: &Path) -> PathBuf {
@@ -27,6 +30,20 @@ pub fn append(managed: &Path, file: &str, message: &str) {
     }
     if let Ok(mut handle) = OpenOptions::new().create(true).append(true).open(&path) {
         let _ = writeln!(handle, "{} {message}", timestamp());
+    }
+}
+
+/// A note from a caller outside Rust, such as the interface watching the Launcher's own update. A
+/// note stays one line: control characters are dropped and its length is bounded, so a caller cannot
+/// forge the lines around it.
+pub fn note(managed: &Path, message: &str) {
+    let line: String = message
+        .chars()
+        .filter(|character| !character.is_control())
+        .take(MAX_NOTE)
+        .collect();
+    if !line.trim().is_empty() {
+        append(managed, "launcher.log", &line);
     }
 }
 
@@ -202,6 +219,21 @@ mod tests {
         let current = std::fs::read_to_string(directory(managed).join("launcher.log")).unwrap();
         assert!(current.ends_with(" after rotation\n"));
         assert!(current.len() < 64);
+    }
+
+    #[test]
+    fn keeps_a_note_on_one_line_and_bounded() {
+        let temp = tempfile::tempdir().unwrap();
+        let managed = temp.path();
+        note(managed, "first\nsecond\tthird");
+        note(managed, "   ");
+        note(managed, &"x".repeat(2_000));
+        let text = std::fs::read_to_string(directory(managed).join("launcher.log")).unwrap();
+        assert_eq!(text.lines().count(), 2);
+        assert!(text.lines().next().unwrap().ends_with(" firstsecondthird"));
+        let bounded = text.lines().nth(1).unwrap();
+        assert!(bounded.ends_with(&"x".repeat(MAX_NOTE)));
+        assert!(bounded.len() <= 20 + 1 + MAX_NOTE);
     }
 
     #[test]

@@ -52,7 +52,7 @@ for (const legacy of [false,true]) {
 const updateStub = (config: {
   jouzuVersion: string; jouzuTarget: string; jouzuNotes?: string;
   launcherVersion: string; launcherTarget?: string; launcherAvailable: boolean;
-  configured: [boolean, boolean]; failInstall?: boolean;
+  configured: [boolean, boolean]; failInstall?: boolean; launcherCheckFails?: boolean;
 }) => {
   const callbacks: Record<number, Function> = {};
   const listeners: Record<string, number[]> = {};
@@ -60,6 +60,7 @@ const updateStub = (config: {
   (window as any).isTauri = true;
   (window as any).__confirms = 0;
   (window as any).__installs = 0;
+  (window as any).__logs = [];
   (window as any).__emit = (event: string, payload: any) => (listeners[event] ?? []).forEach(id => callbacks[id]({event, id, payload}));
   (window as any).__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} };
   (window as any).__TAURI_INTERNALS__ = {
@@ -84,9 +85,13 @@ const updateStub = (config: {
         if (config.failInstall && (window as any).__installs === 1) throw new Error('Download failed. Your current version is unchanged.');
         return new Promise(resolve => { (window as any).__finishInstall = () => resolve({ version: config.jouzuTarget, available: false }); });
       }
-      if (command === 'plugin:updater|check') return config.launcherAvailable
+      if (command === 'log_event') { (window as any).__logs.push(args.message); return null; }
+      if (command === 'plugin:updater|check') {
+        if (config.launcherCheckFails) throw new Error('network');
+        return config.launcherAvailable
         ? { rid: 1, currentVersion: config.launcherVersion, version: config.launcherTarget, body: 'Launcher only', date: null, rawJson: '{}' }
         : null;
+      }
       if (command.startsWith('plugin:updater|')) return { rid: 1 };
       if (command.includes('version')) return config.launcherVersion;
       return 1;
@@ -119,6 +124,20 @@ test('the System section shows both update rows with their state and notes', asy
   const launcher = dialog.locator('section[aria-label="Launcher"]');
   await expect(launcher.getByText('Current version 0.1.20', { exact: true })).toBeVisible();
   await expect(launcher.getByText('Up to date', { exact: true })).toBeVisible();
+  // The check's outcome reaches the log, because the interface is where that check runs.
+  expect(await page.evaluate(() => (window as any).__logs)).toContain('launcher update check result=current');
+});
+
+test('a failed update check is reported and recorded', async ({ page }) => {
+  await page.addInitScript(updateStub, {
+    jouzuVersion: '0.1.17', jouzuTarget: '0.1.18', launcherVersion: '0.1.20',
+    launcherAvailable: false, configured: [true, true], launcherCheckFails: true,
+  });
+  const dialog = await openSystem(page);
+  const launcher = dialog.locator('section[aria-label="Launcher"]');
+  await expect(launcher.getByRole('alert')).toContainText('Error: network');
+  const logs: string[] = await page.evaluate(() => (window as any).__logs);
+  expect(logs.some(line => line.startsWith('launcher update check failed error='))).toBe(true);
 });
 
 test('installing a Jouzu update reports progress and needs no further confirmation', async ({ page }) => {

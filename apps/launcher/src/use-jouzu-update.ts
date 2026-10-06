@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { createUpdateSchedule, startUpdateChecks } from './update-schedule';
+import { logEvent } from './log-event';
 export function useJouzuUpdate(configured:boolean, onInstalled:()=>void) {
  const [version,setVersion]=useState<string|null>(null);
  const [notes,setNotes]=useState<string|null>(null);
@@ -22,7 +23,7 @@ export function useJouzuUpdate(configured:boolean, onInstalled:()=>void) {
    const result=await invoke<{version:string;available:boolean;notes?:string;notesSource?:string}>('jouzu_update',{action,version:action==='install'?version:null});
    if(action==='check'){setVersion(result.available?result.version:null);setNotes(result.notes??null);setNotesSource(result.notesSource??null);setPhase(result.available?'available':'current');}
    else{setVersion(null);setPhase('complete');onInstalled();}
-  }catch(e){if(!silent){setError(String(e));setPhase('error');}}finally{lock.current=false;}
+  }catch(e){logEvent(`jouzu update check failed error=${String(e)}`);if(!silent){setError(String(e));setPhase('error');}}finally{lock.current=false;}
  }
  // The schedule lives for the whole session, so it reads the current run through a ref: the first
  // render happens before the configuration arrives, and a captured run would answer from it.

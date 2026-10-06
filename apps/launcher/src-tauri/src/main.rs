@@ -95,6 +95,14 @@ fn crash_dismiss(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+/// The interface watches the Launcher's own update through a plugin, which no command sees, and a
+/// silent check has to leave a trace somewhere, so both hand one line here.
+fn log_event(message: String) -> Result<(), String> {
+    logs::note(&runtime::managed_root()?, &message);
+    Ok(())
+}
+
+#[tauri::command]
 fn launcher_state(app: tauri::AppHandle) -> Result<LauncherState, String> {
     let history = runtime::managed_root()?.join("recent.json");
     let recent = if cfg!(target_os = "windows") {
@@ -320,6 +328,7 @@ fn main() {
             recovery::repair_jouzu,
             diagnostics,
             crash_dismiss,
+            log_event,
             jouzu_update::jouzu_update,
             control::control_request,
             control::cancel_control,
