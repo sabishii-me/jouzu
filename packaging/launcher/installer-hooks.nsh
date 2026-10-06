@@ -77,16 +77,15 @@
     Pop $1
   jouzu_entries_done:
   ; The terminal entries are names in a per-user directory that one PATH entry points at. The entry is
-  ; added by default, and only when neither name would answer from another installation first.
+  ; added by default, at an install and at an update alike: adding it again writes nothing, and it is
+  ; added only when neither name would answer from another installation first.
   IfFileExists "$INSTDIR\runtime\launcher-update\command-path.ps1" 0 jouzu_path_done
     nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\runtime\launcher-update\command-path.ps1" -Directory "$LOCALAPPDATA\Shisa.ai\Jouzu\bin" -Action Install -InstallRoot "$INSTDIR"'
     Pop $0
     Pop $1
-    ${If} $UpdateMode <> 1
-      nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\runtime\launcher-update\command-path.ps1" -Directory "$LOCALAPPDATA\Shisa.ai\Jouzu\bin" -Action Append -Write'
-      Pop $0
-      Pop $1
-    ${EndIf}
+    nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\runtime\launcher-update\command-path.ps1" -Directory "$LOCALAPPDATA\Shisa.ai\Jouzu\bin" -Action Append -Write'
+    Pop $0
+    Pop $1
   jouzu_path_done:
 !macroend
 
