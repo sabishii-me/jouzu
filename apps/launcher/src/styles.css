@@ -1,4 +1,8 @@
 @import "tailwindcss";
+/* The sources are the page and the interface, named rather than discovered, so a compile never walks a
+   directory that holds none of this project's markup. */
+@source "../index.html";
+@source "./**/*.{ts,tsx}";
 @theme inline {
   --color-card: #18191f;
   --color-card-foreground: #eeeeF2;
