@@ -5,6 +5,12 @@ $repo = (Resolve-Path "$PSScriptRoot/../..").Path
 if (-not $Version) { $Version = (Get-Content (Join-Path $repo 'apps/launcher/package.json') -Raw | ConvertFrom-Json).version }
 if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid launcher version' }
 $inputRoot = (Resolve-Path $InputDirectory).Path
+
+# Windows shows the publisher next to the signature, so the configured publisher and the organization
+# the certificate carries have to name the same entity.
+$configured = (Get-Content (Join-Path $repo 'apps/launcher/src-tauri/tauri.conf.json') -Raw | ConvertFrom-Json).bundle.publisher
+if ($env:EXPECTED_SIGNER -notmatch 'O="([^"]+)"') { throw 'EXPECTED_SIGNER does not name an organization' }
+if ($configured -ne $Matches[1]) { throw "The configured publisher '$configured' is not the organization EXPECTED_SIGNER names ('$($Matches[1])')" }
 $output = Join-Path $env:RUNNER_TEMP 'launcher-release'
 New-Item -ItemType Directory $output -Force | Out-Null
 

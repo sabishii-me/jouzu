@@ -3,6 +3,11 @@
 One section per released Launcher version. The update feed shows the section for the released
 version verbatim, so a release without a section is refused.
 
+## 0.3.5
+
+- The installers and the Launcher report Shisa, Inc. as their publisher, which is the organization the
+  published files are signed under. The account area names the service Shisa.AI.
+
 ## 0.3.4
 
 - Windows 10 draws the console window incorrectly with the standard console host, so Jouzu installs the

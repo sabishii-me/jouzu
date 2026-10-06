@@ -85,3 +85,15 @@ test('the bundler refuses a launcher that would load a development server', () =
  assert.match(main, /--production-build-check/);
  assert.match(main, /tauri::is_dev\(\)/);
 });
+
+test('the installer publisher is the organization the release verifies against', () => {
+ // The Windows installer records the publisher, and it sits next to the Authenticode signature, so
+ // the two have to name one entity; the release compares them before bundling anything.
+ const config = JSON.parse(readFileSync(new URL('../../apps/launcher/src-tauri/tauri.conf.json', import.meta.url), 'utf8'));
+ assert.equal(config.bundle.publisher, 'Shisa, Inc.');
+ assert.match(config.bundle.copyright, /Shisa, Inc\./);
+ const finalize = read('finalize-windows-bundle.ps1');
+ assert.match(finalize, /bundle\.publisher/);
+ assert.match(finalize, /EXPECTED_SIGNER -notmatch 'O="\(\[\^"\]\+\)"'/);
+ assert.match(finalize, /EXPECTED_SIGNER names/);
+});
