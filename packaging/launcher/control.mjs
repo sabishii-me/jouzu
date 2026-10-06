@@ -118,8 +118,8 @@ try {
     'provider-remove': 'Could not remove the provider key. Refresh its state before retrying.',
     'custom-provider': 'Could not save the custom connection. Check its unique ID, endpoint and model. Existing advanced configurations cannot be edited with this form.',
     'default-model': 'Could not save the default model. Refresh the model list and retry.',
-    'shisa-login': 'Shisa sign-in did not complete. Refresh its state before retrying.',
-    'shisa-logout': 'Shisa sign-out could not be fully confirmed. Refresh its state and check the Shisa dashboard.',
+    'shisa-login': 'Shisa.AI sign-in did not complete. Refresh its state before retrying.',
+    'shisa-logout': 'Shisa.AI sign-out could not be fully confirmed. Refresh its state and check the Shisa.AI dashboard.',
   };
   console.log(JSON.stringify({ error: messages[action] ?? 'Unsupported configuration operation.' }));
   process.exitCode = 1;

@@ -93,9 +93,9 @@ test('Japanese-first follows the language until explicitly chosen', async ({page
  await expect(toggle).toBeChecked();
 });
 
-test('Shisa authorization keeps its actions together and cancels cleanly', async ({page}) => {
+test('Shisa.AI authorization keeps its actions together and cancels cleanly', async ({page}) => {
  await openSetup(page,{profile:'core'});
- await page.getByRole('button',{name:'Sign in to Shisa',exact:true}).click();
+ await page.getByRole('button',{name:'Sign in to Shisa.AI',exact:true}).click();
  const open=page.getByRole('button',{name:'Open in browser',exact:true});
  const cancel=page.getByRole('button',{name:'Cancel',exact:true});
  await expect(open).toBeVisible();
@@ -104,5 +104,5 @@ test('Shisa authorization keeps its actions together and cancels cleanly', async
  expect(b!.x+b!.width).toBeLessThan(a!.x);
  await cancel.click();
  await expect(open).toHaveCount(0);
- await expect(page.getByRole('button',{name:'Sign in to Shisa',exact:true})).toBeVisible();
+ await expect(page.getByRole('button',{name:'Sign in to Shisa.AI',exact:true})).toBeVisible();
 });
