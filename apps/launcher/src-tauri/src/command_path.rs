@@ -45,11 +45,8 @@ pub fn use_jouzu(root: &Path, managed: &Path) -> Result<serde_json::Value, Strin
 /// so a command that was deleted or damaged is restored without reinstalling anything.
 pub fn repair(root: &Path, managed: &Path) -> Result<serde_json::Value, String> {
     let directory = directory(managed);
-    let copies = crate::launcher_script::run(
-        root,
-        "command-entries.ps1",
-        &["-InstallRoot".to_string(), root.to_string_lossy().into_owned()],
-    )?;
+    // The helper already passes -InstallRoot, which the script takes once.
+    let copies = crate::launcher_script::run(root, "command-entries.ps1", &[])?;
     if !copies.status.success() {
         return Err(crate::launcher_script::failure(&copies, "Cannot restore the terminal command"));
     }
@@ -61,8 +58,6 @@ pub fn repair(root: &Path, managed: &Path) -> Result<serde_json::Value, String> 
             directory.to_string_lossy().into_owned(),
             "-Action".to_string(),
             "Install".to_string(),
-            "-InstallRoot".to_string(),
-            root.to_string_lossy().into_owned(),
         ],
     )?;
     if !shims.status.success() {
