@@ -98,6 +98,36 @@ fn crash_dismiss(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+/// Open a terminal in a folder with the environment this installation manages, without starting Jouzu.
+/// The session itself is built by the script the installer carries, so the window, a terminal entry and
+/// this button describe one environment in one place.
+fn terminal_open(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    if !Path::new(&path).is_dir() {
+        return Err("This folder is unavailable. Choose another folder.".into());
+    }
+    let root = runtime::application_root(&app)?;
+    let managed = runtime::managed_root()?;
+    let slot = active_app::resolve_app(&root, &managed)?;
+    let bash = git_environment::find(&root)?;
+    let host = terminal::host(&root)
+        .ok_or("Windows Terminal is unavailable. Install it from the launcher.")?;
+    let status = std::process::Command::new(root.join("runtime/node/node.exe"))
+        .arg(root.join("runtime/launcher-update/open-terminal.mjs"))
+        .arg(&slot)
+        .arg(&managed)
+        .arg(&host)
+        .arg(&bash)
+        .arg(runtime::effective_home()?)
+        .arg(&path)
+        .status()
+        .map_err(|error| error.to_string())?;
+    if !status.success() {
+        return Err("The terminal could not be opened.".into());
+    }
+    Ok(())
+}
+
+#[tauri::command]
 fn command_entry_report(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
     command_path::report(&runtime::application_root(&app)?, &runtime::managed_root()?)
 }
@@ -348,6 +378,7 @@ fn main() {
             diagnostics,
             crash_dismiss,
             log_event,
+            terminal_open,
             command_entry_report,
             command_entry_use,
             command_entry_restore,

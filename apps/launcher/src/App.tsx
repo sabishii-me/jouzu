@@ -19,7 +19,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Input } from "./components/ui/input";
 import { getVersion } from "@tauri-apps/api/app";
 import { open, confirm } from "@tauri-apps/plugin-dialog";
-import { FolderOpen, Search, X, ArrowUpRight, Settings, Languages, KeyRound, SlidersHorizontal, RefreshCw, LoaderCircle, Minus, Plus } from "lucide-react";
+import { FolderOpen, Search, X, ArrowUpRight, Settings, Languages, KeyRound, SlidersHorizontal, RefreshCw, LoaderCircle, Minus, Plus, SquareTerminal } from "lucide-react";
 import { Dialog, DialogTrigger, DialogContent, DialogTitle, DialogDescription, DialogClose } from "./components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "./components/ui/tabs";
 import { ScrollArea } from "./components/ui/scroll-area";
@@ -163,6 +163,15 @@ export function App() {
       await refresh();
     } catch (error) { setError(String(error)); } finally { setOperation(null); }
   }
+  // A terminal in a folder with the environment this installation manages, which is also where jz and
+  // jouzu can be started from. It does not start Jouzu.
+  async function openTerminal() {
+    setOperation("choosing"); setError(null);
+    try {
+      const path = await open({ directory: true, multiple: false, title: t.picker });
+      if (typeof path === "string") await invoke("terminal_open", { path });
+    } catch (error) { setError(String(error)); } finally { setOperation(null); }
+  }
   async function chooseFolder() {
     setOperation("choosing"); setError(null);
     try {
@@ -200,7 +209,7 @@ export function App() {
     <header data-tauri-drag-region className="flex items-center justify-between border-b border-border py-3">
       <div className="absolute left-0 right-0 top-0 h-3" data-tauri-drag-region />
       <div className="pointer-events-none flex items-center gap-3"><img src={jouzuIcon} alt="" draggable={false} className="size-9" /><h1 className="min-w-16 flex-1 text-lg font-semibold tracking-tight">Jouzu</h1></div>
-      <div className="pointer-events-none flex items-center gap-1 [&>*]:pointer-events-auto"><Dialog open={settingsOpen} onOpenChange={value => { if (!value && device) void invoke("cancel_control"); setSettingsOpen(value); }}>
+      <div className="pointer-events-none flex items-center gap-1 [&>*]:pointer-events-auto"><Button variant="ghost" aria-label={t.openTerminal} title={t.openTerminal} disabled={busy || !state?.ready} onClick={() => void openTerminal()}><SquareTerminal /></Button><Dialog open={settingsOpen} onOpenChange={value => { if (!value && device) void invoke("cancel_control"); setSettingsOpen(value); }}>
         <>{(updater.version || jouzuUpdater.version) && <Button variant="outline" onClick={() => {setSettingsTab("system");setSettingsOpen(true);}}>{t.updateAvailable}</Button>}</><DialogTrigger asChild><Button variant="ghost" aria-label={t.settings} title={t.settings}><Settings /></Button></DialogTrigger>
         <DialogContent showCloseButton={false} className="flex h-[min(560px,85dvh)] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl border-border p-0 sm:max-w-3xl">
           {error && <p role="alert" className="border-b border-border bg-red-50 px-4 py-2 text-sm text-red-900">{error}</p>}

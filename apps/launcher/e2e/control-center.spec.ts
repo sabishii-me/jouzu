@@ -376,3 +376,31 @@ test('the terminal command row names what answers and takes precedence only when
  await row.getByRole('button',{name:"Put the previous jz back",exact:true}).click();
  await expect(row.getByText(/Another jz answers first/)).toBeVisible();
 });
+
+test('the header opens a terminal in a chosen folder and starts nothing', async ({page})=>{
+ await page.addInitScript(()=>{
+  (window as any).isTauri=true;
+  (window as any).__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener:()=>{}};
+  localStorage.setItem('jouzu.ui.language','en');
+  (window as any).__terminals=[];
+  (window as any).__TAURI_INTERNALS__={
+   metadata:{currentWindow:{label:'main'},currentWebview:{label:'main'}},
+   transformCallback:()=>1,unregisterCallback:()=>{},
+   invoke:async(command:string,args:any)=>{
+    if(command==='launcher_state')return {ready:true,bash:false,recent:[],platform:'windows'};
+    if(command==='component_versions')return {jouzu:'0.1.18',development:true};
+    if(command==='environment_read')return [];
+    if(command==='plugin:dialog|open')return 'C:/work/prts-web';
+    if(command==='terminal_open'){(window as any).__terminals.push(args.path);return null;}
+    if(command.includes('version'))return '0.1.0';
+    return 1;
+   }
+  };
+ });
+ await page.goto('http://localhost:1420');
+ await page.getByRole('button',{name:'Open a terminal here',exact:true}).click();
+ await page.waitForFunction(()=> (window as any).__terminals.length===1);
+ // The folder the picker returned is the one the terminal opens in, and nothing else ran.
+ expect(await page.evaluate(()=> (window as any).__terminals)).toEqual(['C:/work/prts-web']);
+ expect(await page.getByRole('button',{name:'Open a terminal here',exact:true}).isEnabled()).toBe(true);
+});
