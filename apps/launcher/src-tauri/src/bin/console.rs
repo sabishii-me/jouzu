@@ -12,16 +12,23 @@ mod active_app;
 mod logs;
 #[path = "../managed_paths.rs"]
 mod runtime;
-#[path = "../environment.rs"]
-mod environment;
 #[path = "../terminal.rs"]
 mod terminal;
+#[path = "../environment.rs"]
+mod environment;
 use std::{
     ffi::OsString,
     io,
     path::{Path, PathBuf},
     process::{Command, Stdio},
 };
+
+/// A terminal that already draws the interface keeps the session. Anything else continues in Windows
+/// Terminal, because the legacy console host damages a high-repaint interface and that is why the
+/// installation carries a copy.
+fn continue_in_host(wt_session: bool) -> bool {
+    !wt_session
+}
 
 /// Which contract this copy answers. The launcher starts `console.exe` with the roots it resolved; a
 /// copy named `jz` or `jouzu` is the terminal entry, which takes what the user typed. Any other name is
@@ -32,13 +39,6 @@ fn entry_name(executable: &Path) -> Option<&'static str> {
         "jouzu" => Some("jouzu"),
         _ => None,
     }
-}
-
-/// A terminal that already draws the interface keeps the session; anything else starts inside the copy
-/// Jouzu ships. The defect is a property of the host, not of a Windows version, so the host is asked
-/// directly.
-fn start_in_host(wt_session: bool) -> bool {
-    !wt_session
 }
 
 #[cfg(windows)]
@@ -86,11 +86,11 @@ fn run_console(forwarded: &[OsString]) -> Result<i32, String> {
 /// arguments the user typed forwarded to Jouzu.
 fn run_entry(entry: &str, executable: &Path, forwarded: &[OsString], managed: &Path) -> Result<i32, String> {
     let root = executable.parent().ok_or("Cannot find the installation directory")?.to_path_buf();
-    // A session in a host that already draws the interface stays where it is; any other host is
-    // replaced by the copy Jouzu ships.
-    if start_in_host(std::env::var_os("WT_SESSION").is_some()) {
+    // The shell the user is in keeps the session when it draws the interface; otherwise the session
+    // continues in Windows Terminal, in the window that is already open when there is one.
+    if continue_in_host(std::env::var_os("WT_SESSION").is_some()) {
         if let Some(host) = terminal::host(&root) {
-            start_in(host, executable, forwarded)?;
+            continue_in(host, executable, forwarded)?;
             return Ok(0);
         }
     }
@@ -128,17 +128,23 @@ fn apply_saved_settings(command: &mut Command, managed: &Path) {
     }
 }
 
-/// Start this entry again in the given host, in the directory the user is standing in.
-fn start_in(host: PathBuf, executable: &Path, forwarded: &[OsString]) -> Result<(), String> {
-    let directory = std::env::current_dir().map_err(|error| error.to_string())?;
-    let mut command = Command::new(&host);
+/// The command line Windows Terminal is asked for: a tab in the window that is already open when there
+/// is one, from the directory the user is standing in, running this entry with what it was given.
+fn host_line(host: &Path, executable: &Path, directory: &Path, forwarded: &[OsString]) -> Command {
+    let mut command = Command::new(host);
     command
-        .args(["-w", "new", "new-tab", "--title", "Jouzu", "--startingDirectory"])
-        .arg(&directory)
+        .args(["-w", "0", "new-tab", "--title", "Jouzu", "--startingDirectory"])
+        .arg(directory)
         .arg("--")
         .arg(executable);
     command.args(forwarded);
     command
+}
+
+/// Continue this entry in the given host.
+fn continue_in(host: PathBuf, executable: &Path, forwarded: &[OsString]) -> Result<(), String> {
+    let directory = std::env::current_dir().map_err(|error| error.to_string())?;
+    host_line(&host, executable, &directory, forwarded)
         .spawn()
         .map(|_| ())
         .map_err(|error| format!("Could not start {}: {error}", host.display()))
@@ -188,6 +194,30 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_continuation_asks_for_a_tab_and_forwards_what_it_was_given() {
+        let line = host_line(
+            Path::new("C:/wt.exe"),
+            Path::new("C:/app/jz.exe"),
+            Path::new("C:/work"),
+            &[OsString::from("--version")],
+        );
+        let arguments: Vec<String> = line
+            .get_args()
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            arguments,
+            ["-w", "0", "new-tab", "--title", "Jouzu", "--startingDirectory", "C:/work", "--", "C:/app/jz.exe", "--version"]
+        );
+    }
+
+    #[test]
+    fn a_host_that_already_draws_the_interface_keeps_the_session() {
+        assert!(continue_in_host(false));
+        assert!(!continue_in_host(true));
+    }
+
+    #[test]
     fn a_copy_named_jz_or_jouzu_answers_the_terminal_contract() {
         assert_eq!(entry_name(Path::new("C:/app/jz.exe")), Some("jz"));
         assert_eq!(entry_name(Path::new("C:/app/Jouzu.exe")), Some("jouzu"));
@@ -195,9 +225,4 @@ mod tests {
         assert_eq!(entry_name(Path::new("C:/app/jouzu-launcher.exe")), None);
     }
 
-    #[test]
-    fn a_host_that_already_draws_the_interface_keeps_the_session() {
-        assert!(start_in_host(false));
-        assert!(!start_in_host(true));
-    }
 }
