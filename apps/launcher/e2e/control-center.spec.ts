@@ -338,3 +338,41 @@ test('a component copy that is here but does not run is repaired, not installed'
  await expect(terminalRow.getByRole('button',{name:"Repair and use Jouzu's Windows Terminal",exact:true})).toBeVisible();
  await expect(terminalRow.getByRole('button',{name:/Install and use/})).toHaveCount(0);
 });
+
+test('the terminal command row names what answers and takes precedence only when asked', async ({page})=>{
+ await page.addInitScript(()=>{
+  (window as any).isTauri=true;
+  (window as any).__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener:()=>{}};
+  localStorage.setItem('jouzu.ui.language','en');
+  const shadowed:any={directory:'C:/managed/bin',shims:true,onPath:true,position:'later',first:false,shadowed:true,commands:[{name:'jz',path:'C:/Users/test/AppData/Roaming/npm/jz.cmd'},{name:'jouzu',path:null}]};
+  const answered:any={directory:'C:/managed/bin',shims:true,onPath:true,position:'first',first:true,shadowed:false,commands:[{name:'jz',path:'C:/managed/bin/jz.cmd'},{name:'jouzu',path:'C:/managed/bin/jouzu.cmd'}]};
+  let entry:any={...shadowed};
+  (window as any).__TAURI_INTERNALS__={
+   metadata:{currentWindow:{label:'main'},currentWebview:{label:'main'}},
+   transformCallback:()=>1,unregisterCallback:()=>{},
+   invoke:async(command:string)=>{
+    if(command==='launcher_state')return {ready:true,bash:false,recent:[],platform:'windows'};
+    if(command==='component_versions')return {jouzu:'0.1.18',development:true};
+    if(command==='environment_read')return [];
+    if(command==='command_entry_report')return {...entry};
+    if(command==='command_entry_use'){entry={...answered};return {...entry};}
+    if(command==='command_entry_restore'){entry={...shadowed,commands:[{name:'jz',path:'C:/managed/bin/jz.cmd'},{name:'jouzu',path:'C:/Users/test/AppData/Roaming/npm/jouzu.cmd'}]};return {...entry};}
+    if(command.includes('version'))return '0.1.0';
+    return 1;
+   }
+  };
+ });
+ await page.goto('http://localhost:1420');
+ await page.getByRole('button',{name:'Settings',exact:true}).click();
+ const dialog=page.getByRole('dialog');
+ await dialog.getByRole('tab',{name:'System',exact:true}).click();
+ const row=dialog.locator('section[aria-label="Terminal command"]');
+ // The command another installation answers with is named before anything is changed.
+ await expect(row.getByText(/Another jz answers first/)).toBeVisible();
+ await expect(row.getByText(/npm.jz.cmd/)).toBeVisible();
+ await row.getByRole('button',{name:"Use Jouzu's jz instead",exact:true}).click();
+ await expect(row.getByText('jz and jouzu answer from Jouzu',{exact:true})).toBeVisible();
+ // Putting the previous one back is offered as its own action.
+ await row.getByRole('button',{name:"Put the previous jz back",exact:true}).click();
+ await expect(row.getByText(/Another jz answers first/)).toBeVisible();
+});

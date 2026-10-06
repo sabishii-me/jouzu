@@ -4,6 +4,7 @@ import { recoveryText } from "./recovery-text";
 import { UpdatePreview } from "./update-preview";
 import { GitBashSection, useGitBash } from "./git-bash-section";
 import { TerminalSection } from "./terminal-section";
+import { CommandEntrySection } from "./command-entry-section";
 import { useJouzuUpdate } from "./use-jouzu-update";
 import { useLauncherUpdate } from "./use-launcher-update";
 import { Label } from "./components/ui/label";
@@ -257,7 +258,7 @@ export function App() {
                     check:()=>{void jouzuUpdater.check();void updater.refresh();},
                     install:index=>{if(index===0)void jouzuUpdater.install();else void updater.install();}
                   }}/>
-                  <div className="rounded-lg border border-border"><GitBashSection locale={locale} api={gitBash} /><TerminalSection locale={locale} /></div>
+                  <div className="rounded-lg border border-border"><GitBashSection locale={locale} api={gitBash} /><TerminalSection locale={locale} /><CommandEntrySection locale={locale} /></div>
                   {diagnostics !== null && diagnostics.crashes.length > 0 && <Card className="border-border shadow-none">
                     <CardHeader><CardTitle>{t.crashTitle}</CardTitle><CardDescription>{t.crashHint}</CardDescription></CardHeader>
                     <CardContent className="space-y-3">{diagnostics.crashes.map(record => <div key={record.path} className="space-y-1 rounded-lg border border-border p-3">

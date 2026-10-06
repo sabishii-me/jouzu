@@ -5,6 +5,7 @@ mod launcher_script;
 mod terminal;
 mod git_environment;
 mod logs;
+mod command_path;
 mod managed_paths;
 mod recovery;
 mod node_path;
@@ -94,6 +95,21 @@ fn diagnostics() -> Result<serde_json::Value, String> {
 fn crash_dismiss(path: String) -> Result<(), String> {
     let managed = runtime::managed_root()?;
     logs::dismiss_crash(&managed, &path)
+}
+
+#[tauri::command]
+fn command_entry_report(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    command_path::report(&runtime::application_root(&app)?, &runtime::managed_root()?)
+}
+
+#[tauri::command]
+fn command_entry_use(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    command_path::use_jouzu(&runtime::application_root(&app)?, &runtime::managed_root()?)
+}
+
+#[tauri::command]
+fn command_entry_restore(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    command_path::restore(&runtime::application_root(&app)?, &runtime::managed_root()?)
 }
 
 #[tauri::command]
@@ -332,6 +348,9 @@ fn main() {
             diagnostics,
             crash_dismiss,
             log_event,
+            command_entry_report,
+            command_entry_use,
+            command_entry_restore,
             jouzu_update::jouzu_update,
             control::control_request,
             control::cancel_control,
