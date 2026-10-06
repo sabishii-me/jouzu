@@ -31,7 +31,6 @@ import { messages, locales, resolveLocale, type Locale } from "./i18n";
 import { type Workspace } from "./history";
 import { parseDiagnostics, type Diagnostics } from "./diagnostics";
 import { openReport } from "./report";
-import { ComponentSection } from "./components/component-row";
 interface LauncherState { platform: "windows" | "macos" | "linux"; recent: Workspace[]; ready: boolean; bash: boolean; bundled_git: boolean }
 interface Components { jouzu: string | null; development: boolean; launcherUpdaterConfigured?: boolean; jouzuUpdaterConfigured?: boolean }
 export function App() {
@@ -246,20 +245,6 @@ export function App() {
 
                 </TabsContent>
                 <TabsContent value="system" className="m-0 space-y-4">
-                  <ComponentSection
-                    title={recoveryText[locale].title}
-                    status={recoveryText[locale].description}
-                    tone="missing"
-                    busy={busy || updater.busy || jouzuUpdater.busy}
-                    error={error}
-                    install={import.meta.env.DEV ? undefined : async () => {
-                      if (!await confirm(recoveryText[locale].description, {title: recoveryText[locale].title, kind: "warning"})) return;
-                      setOperation("saving"); setError(null);
-                      try { await invoke("repair_jouzu"); setComponents(await invoke<Components>("component_versions")); await refresh(); await refreshDiagnostics(); }
-                      catch (failure) { setError(String(failure)); } finally { setOperation(null); }
-                    }}
-                    installLabel={recoveryText[locale].action}
-                  />
                   <UpdatePreview locale={locale} live={{
                     phases:[jouzuUpdater.phase === 'preparing' || jouzuUpdater.phase === 'verifying' || jouzuUpdater.phase === 'activating' || jouzuUpdater.phase === 'staged' ? 'installing' : jouzuUpdater.phase as 'idle'|'checking'|'available'|'current'|'downloading'|'installing'|'complete'|'error', updater.phase],
                     versions:[components?.jouzu ?? t.unavailable, version ?? t.unavailable],
@@ -269,6 +254,12 @@ export function App() {
                     errors:[jouzuUpdater.error,updater.error],
                     notes:[jouzuUpdater.notes ?? '',updater.notes ?? ''],
                     sources:[jouzuUpdater.notesSource ?? '', ''],
+                    repair: components?.jouzu || import.meta.env.DEV ? undefined : { label: recoveryText[locale].action, run: () => { void (async () => {
+                      if (!await confirm(recoveryText[locale].description, {title: recoveryText[locale].title, kind: "warning"})) return;
+                      setOperation("saving"); setError(null);
+                      try { await invoke("repair_jouzu"); setComponents(await invoke<Components>("component_versions")); await refresh(); await refreshDiagnostics(); }
+                      catch (failure) { setError(String(failure)); } finally { setOperation(null); }
+                    })(); } },
                     check:()=>{void jouzuUpdater.check();void updater.refresh();},
                     install:index=>{if(index===0)void jouzuUpdater.install();else void updater.install();}
                   }}/>

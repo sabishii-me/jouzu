@@ -62,6 +62,8 @@ export interface UpdateViewState {
   phases: Phase[]; versions: string[]; targets: (string | null)[]; progress?: number;
   configured: boolean[]; errors: (string | null)[]; notes: string[]; sources: string[];
   check: () => void; install: (index: number) => void;
+  /** The Jouzu row offers this when the application files are not there to run. */
+  repair?: { label: string; run: () => void };
 }
 
 const noteItems = (value: string) => value.split('\n').map(line => line.trim()).filter(Boolean).map((line, index) =>
@@ -81,7 +83,7 @@ export function UpdatePreview({ locale, live }: { locale: Locale; live: UpdateVi
     <Dialog open={confirmRestart} onOpenChange={setConfirmRestart}><DialogContent className="sm:max-w-sm"><DialogTitle>{t.updateLauncher}</DialogTitle><DialogDescription>{t.restart}</DialogDescription><div className="flex justify-end gap-2"><DialogClose asChild><Button variant="outline">{t.cancel}</Button></DialogClose><Button onClick={() => { setConfirmRestart(false); live.install(1); }}>{t.updateLauncher}</Button></div></DialogContent></Dialog>
     <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-lg font-semibold">{t.title}</h2><p className="mt-1 text-sm text-muted-foreground">{t.description}</p></div><Button variant="ghost" className="h-9 w-9 p-0" aria-label={t.check} title={t.check} disabled={busy} onClick={live.check}><RefreshCw className={`size-4 ${live.phases.includes('checking') ? 'animate-spin' : ''}`} /></Button></div>
     <div className="divide-y divide-border rounded-lg border border-border px-5">{live.phases.map((phase, index) => <section key={index} aria-label={index === 0 ? 'Jouzu' : t.launcher} className="flex min-h-32 flex-col gap-2 py-4">
-      <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-medium">{index === 0 ? 'Jouzu' : t.launcher}</h3><p className="mt-1 text-sm text-muted-foreground">{t.currentVersion} {live.versions[index]}</p></div>
+      <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-medium">{index === 0 ? 'Jouzu' : t.launcher}</h3><p className="mt-1 text-sm text-muted-foreground">{t.currentVersion} {live.versions[index]}</p>{index === 0 && live.repair && <p className="mt-2"><Button variant="outline" disabled={busy} onClick={live.repair.run}>{live.repair.label}</Button></p>}</div>
         {phase === 'available' ? <Button className="h-9 w-9 p-0" aria-label={index === 0 ? t.updateJouzu : t.updateLauncher} title={index === 0 ? t.updateJouzu : t.updateLauncher} disabled={busy} onClick={() => start(index)}><Download className="size-4" /></Button>
           : phase === 'error' ? <Button variant="outline" className="h-9 w-9 p-0" aria-label={t.retry} title={t.retry} disabled={busy} onClick={() => (live.targets[index] ? start(index) : live.check())}><RefreshCw className="size-4" /></Button>
             : <span role="status" className="flex items-center gap-2 text-sm text-muted-foreground">{['checking', 'downloading', 'installing'].includes(phase) && <LoaderCircle className="size-4 animate-spin" />}{phase === 'current' ? t.upToDate : phase === 'complete' ? t.updated : phase === 'checking' ? t.checking : phase === 'downloading' ? t.downloading : phase === 'installing' ? t.installing : ''}</span>}
