@@ -378,6 +378,14 @@ fn main() {
         logs::install_panic_hook(managed, env!("CARGO_PKG_VERSION"));
     }
     tauri::Builder::default()
+        // The launcher is one window for one installation: a second start hands its wish to the window
+        // that is open and leaves, so two launchers never work on the same update or the same session.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = tauri::Manager::get_webview_window(app, "main") {
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())

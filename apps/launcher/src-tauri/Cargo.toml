@@ -25,6 +25,7 @@ reqwest = { version = "0.12", default-features = false, features = ["blocking", 
 tempfile = "3"
 tauri-plugin-opener = "2"
 tauri-plugin-updater = "2"
+tauri-plugin-single-instance = "2"
 
 # The renderer failure record reads WebView2's own event, which Tauri hands over through with_webview.
 [target.'cfg(windows)'.dependencies]
