@@ -20,7 +20,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Input } from "./components/ui/input";
 import { getVersion } from "@tauri-apps/api/app";
 import { open, confirm } from "@tauri-apps/plugin-dialog";
-import { FolderOpen, Search, X, ArrowUpRight, Settings, Languages, KeyRound, SlidersHorizontal, RefreshCw, LoaderCircle, Minus, Plus, SquareTerminal } from "lucide-react";
+import { Bug, FolderOpen, Search, X, ArrowUpRight, Settings, Languages, KeyRound, SlidersHorizontal, RefreshCw, LoaderCircle, Minus, Plus, SquareTerminal } from "lucide-react";
 import { Dialog, DialogTrigger, DialogContent, DialogTitle, DialogDescription, DialogClose } from "./components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "./components/ui/tabs";
 import { ScrollArea } from "./components/ui/scroll-area";
@@ -30,6 +30,7 @@ import { Button } from "./components/ui/button";
 import { messages, locales, resolveLocale, type Locale } from "./i18n";
 import { type Workspace } from "./history";
 import { parseDiagnostics, type Diagnostics } from "./diagnostics";
+import { openReport } from "./report";
 interface LauncherState { platform: "windows" | "macos" | "linux"; recent: Workspace[]; ready: boolean; bash: boolean; bundled_git: boolean }
 interface Components { jouzu: string | null; development: boolean; launcherUpdaterConfigured?: boolean; jouzuUpdaterConfigured?: boolean }
 export function App() {
@@ -209,8 +210,8 @@ export function App() {
     <header data-tauri-drag-region className="flex items-center justify-between border-b border-border py-3">
       <div className="absolute left-0 right-0 top-0 h-3" data-tauri-drag-region />
       <div className="pointer-events-none flex items-center gap-3"><img src={jouzuIcon} alt="" draggable={false} className="size-9" /><h1 className="min-w-16 flex-1 text-lg font-semibold tracking-tight">Jouzu</h1></div>
-      <div className="pointer-events-none flex items-center gap-1 [&>*]:pointer-events-auto"><Button variant="ghost" aria-label={t.openTerminal} title={t.openTerminal} disabled={busy || !state?.ready} onClick={() => void openTerminal()}><SquareTerminal /></Button><Dialog open={settingsOpen} onOpenChange={value => { if (!value && device) void invoke("cancel_control"); setSettingsOpen(value); }}>
-        <>{(updater.version || jouzuUpdater.version) && <Button variant="outline" onClick={() => {setSettingsTab("system");setSettingsOpen(true);}}>{t.updateAvailable}</Button>}</><DialogTrigger asChild><Button variant="ghost" aria-label={t.settings} title={t.settings}><Settings /></Button></DialogTrigger>
+      <div className="pointer-events-none flex items-center gap-1 [&>*]:pointer-events-auto"><Button variant="ghost" aria-label={t.openTerminal} title={t.openTerminal} disabled={busy || !state?.ready} onClick={() => void openTerminal()}><SquareTerminal /></Button><Button variant="ghost" aria-label={t.reportTitle} title={t.reportTitle} disabled={busy || !state?.ready} onClick={() => void openReport()}><Bug /></Button><Dialog open={settingsOpen} onOpenChange={value => { if (!value && device) void invoke("cancel_control"); setSettingsOpen(value); }}>
+        <Button variant="ghost" className="relative" aria-label={t.checkUpdates} title={t.checkUpdates} disabled={busy} onClick={() => {void jouzuUpdater.check();void updater.refresh();}}><RefreshCw />{<span className={(updater.version || jouzuUpdater.version) ? "absolute right-1 top-1 size-2 rounded-full bg-destructive" : "absolute right-1 top-1 size-2 rounded-full bg-muted-foreground"} aria-hidden="true" />}</Button><DialogTrigger asChild><Button variant="ghost" aria-label={t.settings} title={t.settings}><Settings /></Button></DialogTrigger>
         <DialogContent showCloseButton={false} className="flex h-[min(560px,85dvh)] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl border-border p-0 sm:max-w-3xl">
           {error && <p role="alert" className="border-b border-border bg-red-50 px-4 py-2 text-sm text-red-900">{error}</p>}
           <DialogDescription className="sr-only">{t.preferences}</DialogDescription>

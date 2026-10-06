@@ -1,12 +1,10 @@
 import { useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { openUrl } from '@tauri-apps/plugin-opener';
 import { Bug, ExternalLink } from 'lucide-react';
 import { Button } from './components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './components/ui/card';
 import { messages, type Locale } from './i18n';
-
-interface Report { issueUrl: string }
+import { openReport } from './report';
 
 /** Reporting opens the project's own issue page, which is where a report is written and sent. */
 export function ReportSection({ locale }: { locale: Locale }) {
@@ -27,8 +25,7 @@ export function ReportSection({ locale }: { locale: Locale }) {
     setBusy(true);
     setError(null);
     try {
-      const report = await invoke<Report>('bug_report', { description: '', expected: '', actual: '', reproduction: '' });
-      await openUrl(report.issueUrl);
+      await openReport();
     } catch (failure) {
       setError(String(failure));
     } finally {
