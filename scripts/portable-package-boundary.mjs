@@ -9,9 +9,9 @@ export function assertPortableBundledPackages(packageDirectory, packedFiles) {
 	for (const file of packedFiles) {
 		if (!file.path.startsWith("node_modules/") || !file.path.endsWith("/package.json")) continue;
 		const metadata = JSON.parse(readFileSync(join(packageDirectory, file.path), "utf8"));
-		const restrictions = ["os", "cpu", "libc"].filter(key => {
+		const restrictions = ["os", "cpu", "libc"].filter((key) => {
 			const values = metadata[key];
-			return Array.isArray(values) && values.some(value => value !== "any");
+			return Array.isArray(values) && values.some((value) => value !== "any");
 		});
 		if (restrictions.length) {
 			throw new Error(
