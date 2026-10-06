@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { createUpdateSchedule, startUpdateChecks } from './update-schedule';
 export function useJouzuUpdate(configured:boolean, onInstalled:()=>void) {
  const [version,setVersion]=useState<string|null>(null);
  const [notes,setNotes]=useState<string|null>(null);
@@ -13,14 +14,17 @@ export function useJouzuUpdate(configured:boolean, onInstalled:()=>void) {
   if(!lock.current)return;
   setPhase(payload.phase);setProgress(payload.total ? (payload.downloaded??0)/payload.total*100:undefined);
  });return ()=>{void event.then(unlisten=>unlisten()).catch(()=>{});};},[]);
- async function run(action:'check'|'install') {
-  if(!configured || lock.current)return;lock.current=true;setError(null);setPhase(action==='check'?'checking':'downloading');
+ // A silent check runs on its own schedule and must not move the interface while it asks.
+ async function run(action:'check'|'install', silent=false) {
+  if(!configured || lock.current)return;lock.current=true;
+  if(!silent){setError(null);setPhase(action==='check'?'checking':'downloading');}
   try{
    const result=await invoke<{version:string;available:boolean;notes?:string;notesSource?:string}>('jouzu_update',{action,version:action==='install'?version:null});
    if(action==='check'){setVersion(result.available?result.version:null);setNotes(result.notes??null);setNotesSource(result.notesSource??null);setPhase(result.available?'available':'current');}
    else{setVersion(null);setPhase('complete');onInstalled();}
-  }catch(e){setError(String(e));setPhase('error');}finally{lock.current=false;}
+  }catch(e){if(!silent){setError(String(e));setPhase('error');}}finally{lock.current=false;}
  }
- useEffect(()=>{if(configured)void run('check');},[configured]);
+ const schedule=useRef(createUpdateSchedule(silent=>{void run('check',silent);}));
+ useEffect(()=>{if(!configured)return;return startUpdateChecks(schedule.current);},[configured]);
  return {version,notes,notesSource,phase,error,progress,busy:!['idle','available','current','complete','error'].includes(phase),check:()=>run('check'),install:()=>run('install')};
 }
