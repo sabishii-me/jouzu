@@ -1,11 +1,22 @@
 import { fetchUpdateFile, recipeFileUrl } from './update-transport.mjs';
-import { readFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { authenticateRecipe } from './authenticate-recipe.mjs';
 import { installJouzuUpdate } from './install-update.mjs';
 
 // Backend-only JSON bridge. No URLs/keys supplied by renderer or command line.
 const [install,managed,action]=process.argv.slice(2);
+// One line per failed update, without the error message: package and network errors can carry
+// credential-bearing URLs, which the interface already strips. A log write never fails the update.
+function appendLog(message){
+ try{
+  const directory=join(managed,'logs');mkdirSync(directory,{recursive:true});
+  const path=join(directory,'update.log');
+  if(statSync(path,{throwIfNoEntry:false})?.size>1024*1024)rmSync(path,{force:true});
+  appendFileSync(path,`${new Date().toISOString()} ${message}
+`);
+ }catch{}
+}
 try {
  const config=JSON.parse(readFileSync(join(install,'jouzu-update.json'),'utf8'));
  if(!['check','install'].includes(action))throw Error('Invalid update action');
@@ -36,6 +47,7 @@ try {
   console.log(JSON.stringify({version:result.version,cleanupPending:result.cleanupPending}));
  }
 }catch(error){
+ appendLog(`update ${typeof action==='string'?action:'unknown'} failed${typeof error?.code==='string'?` code=${error.code}`:''}`);
  // Package or network errors may contain credential-bearing URLs; never echo them.
  console.log(JSON.stringify({error:'Jouzu update failed. Check the update source, permissions and available disk space; the active version was not intentionally removed.'}));
  process.exitCode=1;

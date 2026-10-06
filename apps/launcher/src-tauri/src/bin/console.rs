@@ -8,6 +8,8 @@ mod node_path;
 mod update_lock;
 #[path = "../active_app.rs"]
 mod active_app;
+#[path = "../logs.rs"]
+mod logs;
 use std::{
     io,
     path::PathBuf,
@@ -38,16 +40,22 @@ fn bind_console() -> io::Result<()> {
 fn main() {
     #[cfg(windows)]
     let _ = bind_console();
+    // Both the launcher and a later detached entry start this program, so the managed root may arrive
+    // as an argument or be the default location; the log line uses the same path the session does.
+    let managed_hint = std::env::args_os().nth(2).map(PathBuf::from).or_else(|| {
+        std::env::var_os("LOCALAPPDATA").map(|p| PathBuf::from(p).join("Shisa.ai/Jouzu"))
+    });
     let result = (|| -> Result<i32, String> {
         let root = PathBuf::from(
             std::env::args_os()
                 .nth(1)
                 .ok_or("Missing application directory")?,
         );
-        let managed = std::env::args_os().nth(2).map(PathBuf::from).or_else(|| std::env::var_os("LOCALAPPDATA").map(|p| PathBuf::from(p).join("Shisa.ai/Jouzu"))).ok_or("Missing managed directory")?;
+        let managed = managed_hint.clone().ok_or("Missing managed directory")?;
         let _lease = update_lock::lock(&managed, false)?;
         let app = active_app::resolve_app(&root, &managed)?;
         let bash = git_environment::find(&root)?;
+        logs::append(&managed, "session.log", &format!("start app={}", app.display()));
         let status = Command::new(root.join("runtime/node/node.exe"))
             .arg(node_path::node_path(&app.join("bootstrap.mjs")))
             .env("JOUZU_LAUNCHER_BASH", bash)
@@ -56,11 +64,16 @@ fn main() {
             .stderr(Stdio::inherit())
             .status()
             .map_err(|e| e.to_string())?;
-        Ok(status.code().unwrap_or(1))
+        let code = status.code().unwrap_or(1);
+        logs::append(&managed, "session.log", &format!("end exit={code}"));
+        Ok(code)
     })();
     let code = match result {
         Ok(code) => code,
         Err(error) => {
+            if let Some(managed) = &managed_hint {
+                logs::append(managed, "session.log", &format!("end exit=1 error={error}"));
+            }
             eprintln!("Jouzu: {error}");
             1
         }

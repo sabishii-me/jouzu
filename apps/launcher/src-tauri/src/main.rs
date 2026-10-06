@@ -4,6 +4,7 @@ mod active_app;
 mod launcher_script;
 mod terminal;
 mod git_environment;
+mod logs;
 mod recovery;
 mod node_path;
 mod update_lock;
@@ -109,7 +110,15 @@ fn launcher_state(app: tauri::AppHandle) -> Result<LauncherState, String> {
 
 #[tauri::command]
 fn launch_jouzu(app: tauri::AppHandle, path: String) -> Result<(), String> {
-    runtime::launch(&app, &path)?;
+    if let Err(error) = runtime::launch(&app, &path) {
+        if let Ok(managed) = runtime::managed_root() {
+            logs::append(&managed, "launcher.log", &format!("launch failed folder={path} error={error}"));
+        }
+        return Err(error);
+    }
+    if let Ok(managed) = runtime::managed_root() {
+        logs::append(&managed, "launcher.log", &format!("launch folder={path}"));
+    }
     let mut state = launcher_state(app.clone())?;
     if !state.recent.iter().any(|item| item.path == path) {
         state.recent.push(Workspace {
@@ -210,9 +219,16 @@ fn terminal(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
 #[tauri::command]
 async fn terminal_install(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
     let root = runtime::application_root(&app)?;
-    tauri::async_runtime::spawn_blocking(move || terminal::install(&root))
-        .await
-        .map_err(|_| "Windows Terminal installation failed".to_string())??;
+    let outcome = tauri::async_runtime::spawn_blocking(move || terminal::install(&root)).await;
+    if let Ok(managed) = runtime::managed_root() {
+        let result = match &outcome {
+            Ok(Ok(path)) => format!("installed {}", path.display()),
+            Ok(Err(error)) => format!("failed {error}"),
+            Err(_) => "failed task".to_string(),
+        };
+        logs::append(&managed, "launcher.log", &format!("windows terminal install {result}"));
+    }
+    outcome.map_err(|_| "Windows Terminal installation failed".to_string())??;
     terminal::report(&runtime::application_root(&app)?)
 }
 
@@ -248,6 +264,13 @@ fn main() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
+            if let Ok(managed) = runtime::managed_root() {
+                logs::append(
+                    &managed,
+                    "launcher.log",
+                    &format!("launcher start version={}", env!("CARGO_PKG_VERSION")),
+                );
+            }
             if let Ok(executable) = std::env::current_exe() {
                 if let Ok(root) = runtime::install_root_for_executable(&executable) {
                     runtime::cleanup_superseded_executables(&root);

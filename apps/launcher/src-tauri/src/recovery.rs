@@ -36,7 +36,16 @@ pub fn restore_bundled(root: &Path, managed: &Path) -> Result<(), String> {
 pub async fn repair_jouzu(app: tauri::AppHandle) -> Result<(), String> {
     let root = crate::runtime::application_root(&app)?;
     let managed = crate::runtime::managed_root()?;
-    tauri::async_runtime::spawn_blocking(move || restore_bundled(&root, &managed)).await.map_err(|_| "Recovery task failed")?
+    let log = managed.clone();
+    let outcome = tauri::async_runtime::spawn_blocking(move || restore_bundled(&root, &managed))
+        .await
+        .map_err(|_| "Recovery task failed".to_string())?;
+    let result = match &outcome {
+        Ok(()) => "restored the bundled version".to_string(),
+        Err(error) => format!("failed {error}"),
+    };
+    crate::logs::append(&log, "launcher.log", &format!("restore bundled Jouzu {result}"));
+    outcome
 }
 
 #[cfg(test)]
