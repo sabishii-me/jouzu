@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { openUrl } from '@tauri-apps/plugin-opener';
+import { Bug, ExternalLink } from 'lucide-react';
 import { Button } from './components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './components/ui/card';
 import { messages, type Locale } from './i18n';
@@ -39,8 +40,10 @@ export function ReportSection({ locale }: { locale: Locale }) {
     <CardHeader><CardTitle>{t.reportTitle}</CardTitle></CardHeader>
     <CardContent className="space-y-2">
       <div className="flex flex-wrap gap-2">
-        <Button disabled={busy} onClick={() => void open()}>{t.reportAction}</Button>
-        <Button variant="outline" onClick={() => void openLogs()}>{t.logsOpen}</Button>
+        <Button disabled={busy} onClick={() => void open()}>
+          <Bug aria-hidden="true" />{t.reportAction}<ExternalLink aria-hidden="true" />
+        </Button>
+        <Button onClick={() => void openLogs()}>{t.logsOpen}</Button>
       </div>
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     </CardContent>
