@@ -22,7 +22,7 @@ try {
     if ($RefuseActiveSessions) {
         $sessions = @(Get-CimInstance Win32_Process | Where-Object {
             $_.ExecutablePath -and $_.ExecutablePath.StartsWith($root, [StringComparison]::OrdinalIgnoreCase) -and
-            $_.Name -match '^(console|node)\.exe$'
+            $_.Name -match '^(console|jz|jouzu|node)\.exe$'
         })
         if ($sessions.Count -gt 0) { throw 'Close active Jouzu sessions before updating.' }
     }

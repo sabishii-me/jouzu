@@ -76,10 +76,30 @@
     Pop $0
     Pop $1
   jouzu_entries_done:
+  ; The terminal entries are names in a per-user directory that one PATH entry points at. The entry is
+  ; added by default, and only when neither name would answer from another installation first.
+  IfFileExists "$INSTDIR\runtime\launcher-update\command-path.ps1" 0 jouzu_path_done
+    nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\runtime\launcher-update\command-path.ps1" -Directory "$LOCALAPPDATA\Shisa.ai\Jouzu\bin" -Action Install -InstallRoot "$INSTDIR"'
+    Pop $0
+    Pop $1
+    ${If} $UpdateMode <> 1
+      nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\runtime\launcher-update\command-path.ps1" -Directory "$LOCALAPPDATA\Shisa.ai\Jouzu\bin" -Action Append -Write'
+      Pop $0
+      Pop $1
+    ${EndIf}
+  jouzu_path_done:
 !macroend
 
 !macro NSIS_HOOK_POSTUNINSTALL
   ${If} $UpdateMode <> 1
+    ; The entry leaves the PATH before the commands it names leave the disk, and only the value this
+    ; installation wrote is removed.
+    IfFileExists "$INSTDIR\runtime\launcher-update\command-path.ps1" 0 jouzu_path_gone
+      nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\runtime\launcher-update\command-path.ps1" -Directory "$LOCALAPPDATA\Shisa.ai\Jouzu\bin" -Action Remove -Write'
+      Pop $0
+      Pop $1
+    jouzu_path_gone:
+    RmDir /r "\\?\$LOCALAPPDATA\Shisa.ai\Jouzu\bin"
     ; A launcher-only package does not carry the payload file list, so remove it explicitly. An
     ; update keeps the payload: it replaces the launcher, it does not remove the installation.
     RmDir /r "\\?\$INSTDIR\app"
