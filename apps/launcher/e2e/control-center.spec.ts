@@ -116,7 +116,7 @@ test('the System section shows both update rows with their state and notes', asy
   const dialog = await openSystem(page);
   const jouzu = dialog.locator('section[aria-label="Jouzu"]');
   await expect(jouzu.getByText('0.1.17')).toBeVisible();
-  await expect(jouzu.getByText('0.1.18')).toBeVisible();
+  await expect(jouzu.getByText('0.1.18').first()).toBeVisible();
   // Notes live in a bounded, scrollable area rather than a clipped box.
   const notes = jouzu.locator('div.max-h-40');
   await expect(notes).toHaveClass(/overflow-auto/);
@@ -196,7 +196,7 @@ test('the System section names the copy in use and offers installing the ones Jo
   (window as any).__TAURI_INTERNALS__={
    metadata:{currentWindow:{label:'main'},currentWebview:{label:'main'}},
    transformCallback:()=>1,unregisterCallback:()=>{},
-   invoke:async(command:string)=>{(window as any).__invoked=((window as any).__invoked??[]).concat(command);
+   invoke:async(command:string)=>{(window as any).__invoked=((window as any).__invoked??[]).concat(command);if(command==='plugin:dialog|message')return 'Ok';
     if(command==='launcher_state')return {ready:true,bash:false,recent:[],platform:'windows'};
     if(command==='component_versions')return {jouzu:'0.1.18',development:true};
     if(command==='environment_read')return [];
@@ -237,7 +237,7 @@ test('a component row keeps its height while an action runs', async ({page})=>{
   (window as any).__TAURI_INTERNALS__={
    metadata:{currentWindow:{label:'main'},currentWebview:{label:'main'}},
    transformCallback:()=>1,unregisterCallback:()=>{},
-   invoke:async(command:string)=>{(window as any).__invoked=((window as any).__invoked??[]).concat(command);
+   invoke:async(command:string)=>{(window as any).__invoked=((window as any).__invoked??[]).concat(command);if(command==='plugin:dialog|message')return 'Ok';
     if(command==='launcher_state')return {ready:true,bash:false,recent:[],platform:'windows'};
     if(command==='component_versions')return {jouzu:'0.1.18',development:true};
     if(command==='environment_read')return [];
@@ -272,7 +272,7 @@ test('a console this machine cannot draw is repaired before Jouzu starts', async
   (window as any).__TAURI_INTERNALS__={
    metadata:{currentWindow:{label:'main'},currentWebview:{label:'main'}},
    transformCallback:()=>1,unregisterCallback:()=>{},
-   invoke:async(command:string)=>{(window as any).__invoked=((window as any).__invoked??[]).concat(command);
+   invoke:async(command:string)=>{(window as any).__invoked=((window as any).__invoked??[]).concat(command);if(command==='plugin:dialog|message')return 'Ok';
     if(command==='console_repair_needed')return true;
     if(command==='terminal')return {...terminal};
     if(command==='terminal_install'){
@@ -312,7 +312,7 @@ test('a component copy that is here but does not run is repaired, not installed'
   (window as any).__TAURI_INTERNALS__={
    metadata:{currentWindow:{label:'main'},currentWebview:{label:'main'}},
    transformCallback:()=>1,unregisterCallback:()=>{},
-   invoke:async(command:string)=>{(window as any).__invoked=((window as any).__invoked??[]).concat(command);
+   invoke:async(command:string)=>{(window as any).__invoked=((window as any).__invoked??[]).concat(command);if(command==='plugin:dialog|message')return 'Ok';
     if(command==='launcher_state')return {ready:true,bash:false,recent:[],platform:'windows'};
     if(command==='component_versions')return {jouzu:'0.1.18',development:true};
     if(command==='environment_read')return [];
@@ -346,7 +346,7 @@ test('the terminal command row names what answers and takes precedence only when
   (window as any).__TAURI_INTERNALS__={
    metadata:{currentWindow:{label:'main'},currentWebview:{label:'main'}},
    transformCallback:()=>1,unregisterCallback:()=>{},
-   invoke:async(command:string)=>{(window as any).__invoked=((window as any).__invoked??[]).concat(command);
+   invoke:async(command:string)=>{(window as any).__invoked=((window as any).__invoked??[]).concat(command);if(command==='plugin:dialog|message')return 'Ok';
     if(command==='launcher_state')return {ready:true,bash:false,recent:[],platform:'windows'};
     if(command==='component_versions')return {jouzu:'0.1.18',development:true};
     if(command==='environment_read')return [];
@@ -382,7 +382,7 @@ test('the header opens a terminal in a chosen folder and starts nothing', async 
   (window as any).__TAURI_INTERNALS__={
    metadata:{currentWindow:{label:'main'},currentWebview:{label:'main'}},
    transformCallback:()=>1,unregisterCallback:()=>{},
-   invoke:async(command:string,args:any)=>{(window as any).__invoked=((window as any).__invoked??[]).concat(command);
+   invoke:async(command:string,args:any)=>{(window as any).__invoked=((window as any).__invoked??[]).concat(command);if(command==='plugin:dialog|message')return 'Ok';
     if(command==='launcher_state')return {ready:true,bash:false,recent:[{id:'windows:C:/work/prts-web',path:'C:/work/prts-web',environment:{kind:'windows'}}],platform:'windows'};
     if(command==='component_versions')return {jouzu:'0.1.18',development:true};
     if(command==='environment_read')return [];
