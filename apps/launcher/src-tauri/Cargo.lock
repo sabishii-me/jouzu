@@ -1999,6 +1999,8 @@ dependencies = [
  "tauri-plugin-updater",
  "tempfile",
  "url",
+ "webview2-com",
+ "windows",
 ]
 
 [[package]]

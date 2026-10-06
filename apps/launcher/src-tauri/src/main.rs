@@ -7,6 +7,7 @@ mod git_environment;
 mod logs;
 mod recovery;
 mod node_path;
+mod renderer;
 mod update_lock;
 mod jouzu_update;
 mod control;
@@ -314,9 +315,10 @@ fn main() {
                 .windows
                 .first()
                 .ok_or("Missing window configuration")?;
-            tauri::WebviewWindowBuilder::from_config(app, config)?
+            let window = tauri::WebviewWindowBuilder::from_config(app, config)?
                 .data_directory(data)
                 .build()?;
+            renderer::watch(&window, runtime::managed_root().ok());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
