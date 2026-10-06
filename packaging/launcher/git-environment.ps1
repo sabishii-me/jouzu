@@ -41,8 +41,9 @@ function Get-GitEnvironment([string]$Root) {
  return [pscustomobject]@{ path = (Join-Path $Root 'bin\bash.exe'); root = $Root; bash = $versions['bash']; git = $versions['git'] }
 }
 
-# A system Git is reported so the interface can offer it, never used on its own.
-function Get-SystemEnvironment {
+# The roots this PC could keep a Git in. A root is a candidate whether or not a Git runs from it, so a
+# copy that is there but does not run can be told apart from no copy at all.
+function Get-SystemRoots {
  $roots = @()
  foreach ($base in @($env:ProgramFiles, ${env:ProgramFiles(x86)})) {
   if ($base) { $roots += Join-Path $base 'Git' }
@@ -52,12 +53,26 @@ function Get-SystemEnvironment {
    $roots += [IO.Path]::GetFullPath((Join-Path $directory '..'))
   }
  }
- foreach ($root in ($roots | Select-Object -Unique)) {
+ return ($roots | Select-Object -Unique)
+}
+
+# A system Git is reported so the interface can offer it, never used on its own.
+function Get-SystemEnvironment {
+ foreach ($root in (Get-SystemRoots)) {
   $info = Get-GitEnvironment $root
   if ($info) { return $info }
  }
  return $null
 }
+
+# A copy that is on disk but does not run is reported as present, so the interface offers a repair
+# rather than an installation.
+function Test-CopyPresent([string]$Root) {
+ return [bool]($Root -and (Test-Path -LiteralPath $Root -PathType Container))
+}
+$bundledPresent = Test-CopyPresent $bundled
+$managedPresent = Test-CopyPresent $managed
+$systemPresent = [bool](@(Get-SystemRoots | Where-Object { Test-CopyPresent $_ }).Count)
 
 $bundledInfo = Get-GitEnvironment $bundled
 $managedInfo = Get-GitEnvironment $managed
@@ -69,6 +84,9 @@ if ($Report) {
   bundled = if ($bundledInfo) { [ordered]@{ path = $bundledInfo.path; git = $bundledInfo.git; bash = $bundledInfo.bash } } else { $null }
   managed = if ($managedInfo) { [ordered]@{ path = $managedInfo.path; git = $managedInfo.git; bash = $managedInfo.bash } } else { $null }
   system = if ($systemInfo) { [ordered]@{ path = $systemInfo.path; git = $systemInfo.git; bash = $systemInfo.bash } } else { $null }
+  bundled_present = $bundledPresent
+  managed_present = $managedPresent
+  system_present = $systemPresent
   archive = (Test-Path -LiteralPath $archive -PathType Leaf)
  }
  Write-Output ($value | ConvertTo-Json -Compress -Depth 4)

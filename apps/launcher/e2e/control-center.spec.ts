@@ -302,3 +302,39 @@ test('a console this machine cannot draw is repaired before Jouzu starts', async
  await expect.poll(()=>page.evaluate(()=>(window as any).__calls.launches)).toBe(1);
  expect(await page.evaluate(()=>(window as any).__calls.installs)).toBe(1);
 });
+
+test('a component copy that is here but does not run is repaired, not installed', async ({page})=>{
+ await page.addInitScript(()=>{
+  (window as any).isTauri=true;
+  (window as any).__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener:()=>{}};
+  localStorage.setItem('jouzu.ui.language','en');
+  // Both components have a directory on disk and nothing in it that answers a launch.
+  const git:any={bundled:null,managed:null,system:null,bundled_present:true,managed_present:false,system_present:false,archive:true,effective:null};
+  const terminal:any={bundled:null,system:null,bundled_present:true,archive:false,version:'1.25.2733.0',effective:null};
+  (window as any).__TAURI_INTERNALS__={
+   metadata:{currentWindow:{label:'main'},currentWebview:{label:'main'}},
+   transformCallback:()=>1,unregisterCallback:()=>{},
+   invoke:async(command:string)=>{
+    if(command==='launcher_state')return {ready:true,bash:false,recent:[],platform:'windows'};
+    if(command==='component_versions')return {jouzu:'0.1.18',development:true};
+    if(command==='environment_read')return [];
+    if(command==='git_bash')return {...git};
+    if(command==='terminal')return {...terminal};
+    if(command.includes('version'))return '0.1.0';
+    return 1;
+   }
+  };
+ });
+ await page.goto('http://localhost:1420');
+ await page.getByRole('button',{name:'Settings',exact:true}).click();
+ const dialog=page.getByRole('dialog');
+ await dialog.getByRole('tab',{name:'System',exact:true}).click();
+ const bash=dialog.locator('section[aria-label="Git Bash"]');
+ await expect(bash.getByText("Jouzu's Git Bash is here but does not run",{exact:true})).toBeVisible();
+ await expect(bash.getByRole('button',{name:"Repair and use Jouzu's Git Bash",exact:true})).toBeVisible();
+ await expect(bash.getByRole('button',{name:/Install and use/})).toHaveCount(0);
+ const terminalRow=dialog.locator('section[aria-label="Windows Terminal"]');
+ await expect(terminalRow.getByText("Jouzu's Windows Terminal is here but does not run",{exact:true})).toBeVisible();
+ await expect(terminalRow.getByRole('button',{name:"Repair and use Jouzu's Windows Terminal",exact:true})).toBeVisible();
+ await expect(terminalRow.getByRole('button',{name:/Install and use/})).toHaveCount(0);
+});

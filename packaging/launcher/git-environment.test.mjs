@@ -93,12 +93,18 @@ test('the managed copy answers a launch that has no bundled copy', () => {
   assert.equal(result.stdout.trim(), join(managed, 'bin', 'bash.exe'));
 });
 
-test('an unsigned tree is not a copy', () => {
+test('an unsigned tree is not a copy, and is still reported as present', () => {
   const space = workspace('git-unsigned-');
   unsignedTree(join(space.install, 'runtime', 'git', 'installed'));
   const report = run(['-InstallRoot', space.install, '-Report'], machineEnv(space));
   assert.equal(report.status, 0, report.stderr);
   assert.equal(JSON.parse(report.stdout).bundled, null);
+  // The tree is on disk, so the interface offers a repair instead of an installation.
+  const value = JSON.parse(report.stdout);
+  assert.equal(value.bundled_present, true);
+  assert.equal(value.managed_present, false);
+  // Whether this PC has a Git of its own is the machine's business; it is reported either way.
+  assert.equal(typeof value.system_present, 'boolean');
   const prepare = run(['-InstallRoot', space.install, '-Prepare'], machineEnv(space));
   assert.notEqual(prepare.status, 0);
   assert.equal(prepare.stdout.trim(), '');
@@ -118,4 +124,7 @@ test('the report names every location and the version it read', () => {
   assert.ok(report.system.path.endsWith(join('bin', 'bash.exe')), report.system.path);
   assert.equal(report.bundled.git, report.bundled.bash);
   assert.equal(report.archive, false);
+  assert.equal(report.bundled_present, true);
+  assert.equal(report.managed_present, true);
+  assert.equal(report.system_present, true);
 });

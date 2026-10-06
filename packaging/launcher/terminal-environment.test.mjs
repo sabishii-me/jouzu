@@ -59,6 +59,18 @@ test('a launch falls back to the machine copy, and preparation never does', () =
   assert.equal(prepare.stdout.trim(), '');
 });
 
+test('a tree that is on disk without its host is reported as present', () => {
+  const space = workspace('wt-broken-');
+  mkdirSync(join(space.install, 'runtime', 'terminal', 'installed'), { recursive: true });
+  const result = run(['-InstallRoot', space.install, '-Report'], { LOCALAPPDATA: space.local });
+  assert.equal(result.status, 0, result.stderr);
+  const report = JSON.parse(result.stdout);
+  // Nothing answers a launch, and the directory is still there, so a repair is what the row offers.
+  assert.equal(report.bundled, null);
+  assert.equal(report.effective, null);
+  assert.equal(report.bundled_present, true);
+});
+
 test('the report separates the copies and names the one in use', () => {
   const space = workspace('wt-report-');
   const bundled = terminalTree(join(space.install, 'runtime', 'terminal', 'installed'), 'WindowsTerminal.exe');
@@ -71,5 +83,6 @@ test('the report separates the copies and names the one in use', () => {
   // The copy Jouzu ships is the one a launch resolves when both exist.
   assert.equal(report.effective, bundled);
   assert.equal(report.archive, false);
+  assert.equal(report.bundled_present, true);
   assert.match(report.version, /^\d+\.\d+\.\d+\.\d+$/);
 });

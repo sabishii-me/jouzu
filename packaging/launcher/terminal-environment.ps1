@@ -34,6 +34,8 @@ function Get-Terminal([string]$Root) {
  return $null
 }
 
+# The directory is what an installation writes, so its presence tells a broken copy from a missing one.
+$bundledPresent = Test-Path -LiteralPath $installed -PathType Container
 $bundledInfo = Get-Terminal $installed
 $systemInfo = if ($system -and (Test-Path -LiteralPath $system -PathType Leaf)) { [pscustomobject]@{ path = $system; root = $null } } else { $null }
 
@@ -41,6 +43,7 @@ if ($Report) {
  $value = [ordered]@{
   bundled = if ($bundledInfo) { [ordered]@{ path = $bundledInfo.path; version = (Get-FileVersion $bundledInfo.path) } } else { $null }
   system = if ($systemInfo) { [ordered]@{ path = $systemInfo.path; version = (Get-FileVersion $systemInfo.path) } } else { $null }
+  bundled_present = $bundledPresent
   effective = if ($bundledInfo) { $bundledInfo.path } elseif ($systemInfo) { $systemInfo.path } else { $null }
   archive = (Test-Path -LiteralPath $archive -PathType Leaf)
   version = $version
