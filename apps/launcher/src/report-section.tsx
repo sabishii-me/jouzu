@@ -21,12 +21,14 @@ export function ReportSection({ locale }: { locale: Locale }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState<string | null>(null);
+  const [canSubmit, setCanSubmit] = useState(false);
 
   async function build() {
     setBusy(true); setError(null); setSent(null);
     try {
       const answer = await invoke<Draft>('bug_report', { description, expected: '', actual: '', reproduction: '' });
       setDraft(answer); setTitle(answer.title ?? ''); setBody(answer.body ?? '');
+      setCanSubmit(await invoke<boolean>('bug_report_can_submit').catch(() => false));
     } catch (failure) { setError(String(failure)); } finally { setBusy(false); }
   }
   async function submit() {
@@ -34,6 +36,14 @@ export function ReportSection({ locale }: { locale: Locale }) {
     setBusy(true); setError(null);
     try { setSent(await invoke<string>('bug_report_submit', { title, body })); }
     catch (failure) { setError(String(failure)); } finally { setBusy(false); }
+  }
+  // The web form takes what fits in a URL and is opened plainly when it does not; a machine without an
+  // authenticated gh still gets a working way to report.
+  function form() {
+    const url = new URL(draft?.issueUrl ?? 'https://github.com/shisa-ai/jouzu/issues/new');
+    url.searchParams.set('title', title);
+    url.searchParams.set('body', body);
+    void openUrl(url.href.length <= 7000 ? url.href : (draft?.issueUrl ?? url.origin));
   }
   return <Card className="border-border shadow-none">
     <CardHeader><CardTitle>{t.reportTitle}</CardTitle><CardDescription>{t.reportHint}</CardDescription></CardHeader>
@@ -43,10 +53,12 @@ export function ReportSection({ locale }: { locale: Locale }) {
       {draft && <>
         <p className="text-xs text-muted-foreground">{draft.available ? t.reportReady : t.reportUnavailable}</p>
         <textarea aria-label={t.reportDraft} className={area} value={body} onChange={event => setBody(event.target.value)} />
-        <div className="flex flex-wrap justify-end gap-2">
+        <div className="flex flex-wrap items-end justify-end gap-2">
           <Button variant="outline" disabled={busy} onClick={() => void navigator.clipboard.writeText(body)}>{t.reportCopy}</Button>
-          <Button variant="outline" disabled={busy} onClick={() => void openUrl(draft.issueUrl)}>{t.reportOpenForm}</Button>
-          <Button disabled={busy || !draft.available} onClick={() => void submit()}>{t.reportSubmit}</Button>
+          <Button variant="outline" disabled={busy} onClick={form}>{t.reportOpenForm}</Button>
+          {canSubmit
+            ? <Button disabled={busy} onClick={() => void submit()}>{t.reportSubmit}</Button>
+            : <p className="text-xs text-muted-foreground">{t.reportNoGh}</p>}
         </div>
       </>}
       {sent && <p role="status" className="break-all text-sm text-muted-foreground">{t.reportSent} {sent}</p>}

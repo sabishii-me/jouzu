@@ -27,19 +27,23 @@ export function CommandEntrySection({ locale }: { locale: Locale }) {
   // supersedes and the user has to know it before taking precedence.
   const foreign = state.commands.find(entry => entry.path && !within(entry.path, state.directory))?.path ?? null;
   const answers = state.first || (state.onPath && !foreign);
-  // A command whose files are gone is repaired here; the Launcher itself is what the installer repairs.
   const status = !state.shims
     ? t.commandEntryBroken
-    : state.first
-    ? t.commandEntryFirst
-    : foreign ? describe([t.commandEntryShadowed, foreign])
+    : state.first ? t.commandEntryFirst
+    : foreign ? t.commandEntryShadowed
     : state.onPath ? t.commandEntryFirst
     : t.commandEntryAbsent;
+  // The path is a fact of its own rather than part of the sentence, and every change needs a terminal
+  // that has been started since it was made.
+  const note = foreign && state.shims
+    ? `${t.commandEntryFound} ${foreign}`
+    : state.shims ? t.commandEntryHint
+    : undefined;
   return <ComponentSection
     title={t.commandEntry}
     status={status}
     tone={answers ? 'ok' : 'missing'}
-    note={answers ? undefined : t.commandEntryHint}
+    note={note}
     busy={busy} error={error}
     install={!state.shims ? () => void run(() => invoke<CommandEntryState>('command_entry_repair')) : state.first ? undefined : () => void run(() => invoke<CommandEntryState>('command_entry_use'))}
     installLabel={!state.shims ? t.commandEntryRepair : t.commandEntryUse}

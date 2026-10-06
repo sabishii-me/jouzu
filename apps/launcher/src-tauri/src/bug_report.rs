@@ -83,6 +83,15 @@ pub fn draft(
     serde_json::from_slice(&output.stdout).map_err(|_| "Invalid report draft".to_string())
 }
 
+/// Whether `gh` can post at all, so the interface offers the web form instead of a disabled action.
+pub fn can_submit() -> bool {
+    Command::new("gh")
+        .args(["api", "user", "--hostname", "github.com", "--jq", ".login"])
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
+}
+
 /// Post the reviewed draft with `gh`. The account is asked for first, so a machine that is not signed in
 /// answers before anything is sent.
 pub fn submit(title: &str, body: &str) -> Result<String, String> {
