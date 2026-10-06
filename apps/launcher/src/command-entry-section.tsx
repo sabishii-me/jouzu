@@ -34,12 +34,19 @@ export function CommandEntrySection({ locale }: { locale: Locale }) {
         if (provided && !await confirm(t.commandEntryConfirm, { kind: 'warning' })) return state;
         return invoke<CommandEntryState>('command_entry_use');
       });
+  // One action, and which one it is follows the state: the file that does not answer is repaired, a
+  // command that is not the one answering is installed, and an answer of Jouzu's is given back.
+  const action = !state.shims
+    ? { label: t.commandEntryRepair, run: () => void run(() => invoke<CommandEntryState>('command_entry_repair')) }
+    : installed
+      ? { label: t.commandEntryRestore, run: () => void run(() => invoke<CommandEntryState>('command_entry_restore')) }
+      : { label: t.commandEntryInstall, run: install };
   return <ComponentSection
     title={t.commandEntry}
     status={!state.shims ? t.commandEntryBroken : installed ? t.commandEntryOn : t.gitBashMissing}
     tone={state.shims ? 'ok' : 'missing'}
     busy={busy} error={error}
-    install={installed ? undefined : install}
-    installLabel={!state.shims ? t.commandEntryRepair : t.commandEntryInstall}
+    install={action.run}
+    installLabel={action.label}
   />;
 }
