@@ -84,6 +84,20 @@ The recipe contains `package.json`, `pnpm-lock.yaml`, and optional `patches/`. P
 
 The resulting directory contains `node/`, `pnpm/`, and installed `app/`. Installation uses a frozen lock, production dependencies, disabled lifecycle scripts, a hoisted layout and copied package content. The source store is not copied: shipping a second copy of package content is not required for startup. Packages requiring build scripts must be explicitly prepared and qualified separately; this command does not silently enable scripts.
 
+## Updates
+
+The launcher and the Jouzu application update separately, from their own signed feeds and with their
+own key pairs:
+
+- The launcher updates itself through the Tauri updater, from the `launcher-update` feed in the release
+  repository, verified with `LAUNCHER_PUBLIC_KEY`. Its version is the Launcher version.
+- The Jouzu application updates from the signed recipe described below, verified with
+  `JOUZU_RECIPE_PUBLIC_KEY`. Its version is the npm version.
+
+`update-configuration.mjs` writes both feed addresses and both public keys into the build, so an
+installation only follows the address it was built with and only accepts a release signed by a key it
+already trusts.
+
 ## Jouzu updates
 
 A Jouzu update is described by a signed recipe: the npm tarballs, a frozen lock, a manifest and a

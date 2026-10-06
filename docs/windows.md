@@ -36,7 +36,7 @@ For real global npm installations, the first eligible interactive launch checks 
 
 Jouzu uses `%APPDATA%\Jouzu\agent` for configuration and `%LOCALAPPDATA%\Jouzu` for state and cache by default. `--jouzu-home <path>` or `JOUZU_HOME` can select one portable root. The compatibility suite covers spaces, Japanese characters, full-width spaces, UTF-8, UTF-8 BOM, CRLF, and normalization-sensitive names without rewriting user files.
 
-The launcher keeps configuration, sessions, and caches under `%LOCALAPPDATA%\Shisa.ai\Jouzu\data` unless `JOUZU_HOME` overrides it. It updates the launcher and the Jouzu application independently of npm.
+The launcher keeps configuration, sessions, and caches under `%LOCALAPPDATA%\Shisa.ai\Jouzu\data` unless `JOUZU_HOME` overrides it. The launcher and the Jouzu application update separately, each from its own signed feed, and neither update needs npm.
 
 CP932/Shift-JIS is not a managed-profile encoding. If an existing profile target is not valid UTF-8, Jouzu reports an `unsupported-encoding` conflict and leaves its bytes unchanged.
 
