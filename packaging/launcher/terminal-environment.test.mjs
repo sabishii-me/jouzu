@@ -1,33 +1,75 @@
+import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { test } from 'node:test';
+import { spawnSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const script = readFileSync(new URL('./terminal-environment.ps1', import.meta.url), 'utf8');
-const bundle = readFileSync(new URL('./prepare-windows-bundle.ps1', import.meta.url), 'utf8');
+const script = fileURLToPath(new URL('./terminal-environment.ps1', import.meta.url));
+const pwsh = process.env.JOUZU_TEST_PWSH ?? 'pwsh';
 
-test('the terminal component pins the release it bundles and verifies it', () => {
-  const url = 'https://github.com/microsoft/terminal/releases/download/v';
-  assert.ok(script.includes(url));
-  assert.ok(script.includes('Microsoft.WindowsTerminal_${version}_x64.zip'));
-  assert.ok(bundle.includes(url));
-  assert.ok(script.includes('bf3ef2012f6c44d8340a4c58125acc9498d19b580f9890dc043cdf831852e796'));
-  assert.ok(bundle.includes('bf3ef2012f6c44d8340a4c58125acc9498d19b580f9890dc043cdf831852e796'));
-  assert.ok(script.includes('Get-FileHash -LiteralPath $archive -Algorithm SHA256'));
-  assert.ok(script.includes('Unblock-File'));
-});
-
-test("the Windows Terminal resolver installs Jouzu's copy and only launches with this PC's", () => {
-  const resolution = script.slice(script.indexOf('foreach ($info in @($bundledInfo))'));
-  assert.ok(resolution.length > 0, 'the resolution order is present');
-  const gate = resolution.indexOf('if (-not ($Prepare -or $Install))');
-  const system = resolution.indexOf('if ($systemInfo)');
-  assert.ok(gate > 0 && system > gate, 'a terminal on this PC never ends an installation');
-});
-
-test('the report names both sources, the effective one and the archive', () => {
-  assert.ok(script.includes('[switch]$Report'));
-  assert.ok(script.includes('[switch]$Install'));
-  for (const key of ['bundled =', 'system =', 'effective =', 'archive =']) {
-    assert.ok(script.includes(key), `the report carries ${key}`);
+// Windows environment names are case-insensitive, so an override has to replace every existing
+// spelling; adding PATH beside an inherited Path leaves whichever Windows reads first.
+function withEnv(overrides) {
+  const env = { ...process.env };
+  for (const [name, value] of Object.entries(overrides)) {
+    for (const key of Object.keys(env)) if (key.toLowerCase() === name.toLowerCase()) delete env[key];
+    env[name] = value;
   }
+  return env;
+}
+function run(args, env) {
+  return spawnSync(pwsh, ['-NoProfile', '-NonInteractive', '-File', script, ...args], {
+    encoding: 'utf8',
+    windowsHide: true,
+    env: withEnv(env),
+  });
+}
+function workspace(prefix) {
+  const root = mkdtempSync(join(tmpdir(), prefix));
+  return { root, install: join(root, 'install'), local: join(root, 'local') };
+}
+// A portable tree is usable when its host executable is present; the script never runs it.
+function terminalTree(root, name) {
+  mkdirSync(root, { recursive: true });
+  writeFileSync(join(root, name), '');
+  return join(root, name);
+}
+
+test('a launch uses the copy Jouzu ships', () => {
+  const space = workspace('wt-bundled-');
+  const bundled = terminalTree(join(space.install, 'runtime', 'terminal', 'installed'), 'WindowsTerminal.exe');
+  const result = run(['-InstallRoot', space.install], { LOCALAPPDATA: space.local });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), bundled);
+});
+
+test('a launch falls back to the machine copy, and preparation never does', () => {
+  const space = workspace('wt-machine-');
+  const machine = terminalTree(join(space.local, 'Microsoft', 'WindowsApps'), 'wt.exe');
+  const env = { LOCALAPPDATA: space.local };
+  const launch = run(['-InstallRoot', space.install], env);
+  assert.equal(launch.status, 0, launch.stderr);
+  assert.equal(launch.stdout.trim(), machine);
+
+  // Preparation needs the copy Jouzu ships, so it fails without printing the machine's copy.
+  const prepare = run(['-InstallRoot', space.install, '-Prepare'], env);
+  assert.notEqual(prepare.status, 0);
+  assert.equal(prepare.stdout.trim(), '');
+});
+
+test('the report separates the copies and names the one in use', () => {
+  const space = workspace('wt-report-');
+  const bundled = terminalTree(join(space.install, 'runtime', 'terminal', 'installed'), 'WindowsTerminal.exe');
+  const machine = terminalTree(join(space.local, 'Microsoft', 'WindowsApps'), 'wt.exe');
+  const result = run(['-InstallRoot', space.install, '-Report'], { LOCALAPPDATA: space.local });
+  assert.equal(result.status, 0, result.stderr);
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.bundled.path, bundled);
+  assert.equal(report.system.path, machine);
+  // The copy Jouzu ships is the one a launch resolves when both exist.
+  assert.equal(report.effective, bundled);
+  assert.equal(report.archive, false);
+  assert.match(report.version, /^\d+\.\d+\.\d+\.\d+$/);
 });

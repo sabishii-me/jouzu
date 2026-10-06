@@ -41,7 +41,7 @@ if ($Report) {
  $value = [ordered]@{
   bundled = if ($bundledInfo) { [ordered]@{ path = $bundledInfo.path; version = (Get-FileVersion $bundledInfo.path) } } else { $null }
   system = if ($systemInfo) { [ordered]@{ path = $systemInfo.path; version = (Get-FileVersion $systemInfo.path) } } else { $null }
-  effective = if ($systemInfo) { $systemInfo.path } elseif ($bundledInfo) { $bundledInfo.path } else { $null }
+  effective = if ($bundledInfo) { $bundledInfo.path } elseif ($systemInfo) { $systemInfo.path } else { $null }
   archive = (Test-Path -LiteralPath $archive -PathType Leaf)
   version = $version
  }
