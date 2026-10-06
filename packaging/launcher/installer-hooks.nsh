@@ -69,6 +69,13 @@
     Pop $0
     Pop $1
   jouzu_components_done:
+  ; The terminal entries are byte copies of the signed console, so no second binary ships. A copy that
+  ; could not be refreshed leaves the previous one in place; the System section reports the state.
+  IfFileExists "$INSTDIR\runtime\launcher-update\command-entries.ps1" 0 jouzu_entries_done
+    nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\runtime\launcher-update\command-entries.ps1" -InstallRoot "$INSTDIR"'
+    Pop $0
+    Pop $1
+  jouzu_entries_done:
 !macroend
 
 !macro NSIS_HOOK_POSTUNINSTALL
@@ -77,11 +84,16 @@
     ; update keeps the payload: it replaces the launcher, it does not remove the installation.
     RmDir /r "\\?\$INSTDIR\app"
     RmDir /r "\\?\$INSTDIR\runtime"
+    ; The terminal entries are copies the installer created, so the file manifest does not know them.
+    Delete "$INSTDIR\jz.exe"
+    Delete "$INSTDIR\jouzu.exe"
     Delete "$INSTDIR\*.old-*"
     ; Leftovers mean something still holds these files, usually a launcher or a session that
     ; started again, so the uninstall says so instead of reporting success.
     ${If} ${FileExists} "$INSTDIR\app\*.*"
     ${OrIf} ${FileExists} "$INSTDIR\runtime\*.*"
+    ${OrIf} ${FileExists} "$INSTDIR\jz.exe"
+    ${OrIf} ${FileExists} "$INSTDIR\jouzu.exe"
     ${OrIf} ${FileExists} "$INSTDIR\*.old-*"
       SetErrorLevel 1
       IfSilent +2
