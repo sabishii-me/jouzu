@@ -121,10 +121,14 @@ fn bug_report_submit(title: String, body: String) -> Result<String, String> {
 /// Open a terminal in a folder with the environment this installation manages, without starting Jouzu.
 /// The session itself is built by the script the installer carries, so the window, a terminal entry and
 /// this button describe one environment in one place.
-fn terminal_open(app: tauri::AppHandle, path: String) -> Result<(), String> {
-    if !Path::new(&path).is_dir() {
-        return Err("This folder is unavailable. Choose another folder.".into());
-    }
+fn terminal_open(app: tauri::AppHandle, path: Option<String>) -> Result<(), String> {
+    // A terminal opens in the folder the launcher already has; without one it opens in the user's home
+    // rather than asking, because a terminal does not need a folder to be useful.
+    let folder = path
+        .filter(|value| Path::new(value).is_dir())
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("USERPROFILE").map(std::path::PathBuf::from))
+        .ok_or("Cannot find a folder to open the terminal in.")?;
     let root = runtime::application_root(&app)?;
     let managed = runtime::managed_root()?;
     let slot = active_app::resolve_app(&root, &managed)?;
@@ -138,7 +142,7 @@ fn terminal_open(app: tauri::AppHandle, path: String) -> Result<(), String> {
         .arg(&host)
         .arg(&bash)
         .arg(runtime::effective_home()?)
-        .arg(&path)
+        .arg(&folder)
         .status()
         .map_err(|error| error.to_string())?;
     if !status.success() {
