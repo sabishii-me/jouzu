@@ -220,15 +220,15 @@ test('the System section names the copy in use and offers installing the ones Jo
  const installBash=bash.getByRole('button',{name:/Install and use Jouzu's Git Bash/});
  await expect(installBash).toBeVisible();
  await installBash.click();
- await expect(bash.getByText(/Jouzu's Git Bash/)).toBeVisible();
- await expect(bash.getByRole('button',{name:/Install and use Jouzu's Git Bash/})).toHaveCount(0);
+ await expect(bash.getByText(/Jouzu's Git Bash · /)).toBeVisible();
+ await expect(bash.getByRole('button',{name:/Install and use Jouzu's Git Bash/})).toBeDisabled();
  // The console host follows the same rule.
  const terminalRow=dialog.locator('section[aria-label="Windows Terminal"]');
  await expect(terminalRow.getByText(/Windows Terminal installed on this PC/)).toBeVisible();
  const installTerminal=terminalRow.getByRole('button',{name:/Install and use Jouzu's Windows Terminal/});
  await installTerminal.click();
- await expect(terminalRow.getByText(/Jouzu's Windows Terminal/)).toBeVisible();
- await expect(terminalRow.getByRole('button',{name:/Install and use Jouzu's Windows Terminal/})).toHaveCount(0);
+ await expect(terminalRow.getByText(/Jouzu's Windows Terminal · /)).toBeVisible();
+ await expect(terminalRow.getByRole('button',{name:/Install and use Jouzu's Windows Terminal/})).toBeDisabled();
 });
 test('a component row keeps its height while an action runs', async ({page})=>{
  await page.addInitScript(()=>{
