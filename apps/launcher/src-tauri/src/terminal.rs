@@ -27,14 +27,8 @@ pub fn report(root: &Path) -> Result<serde_json::Value, String> {
     if !output.status.success() {
         return Err(launcher_script::failure(&output, "Cannot read the Windows Terminal state"));
     }
-    let mut value: serde_json::Value = serde_json::from_slice(&output.stdout).map_err(|_| "Invalid Windows Terminal state".to_string())?;
-    // The copy Jouzu ships comes first; the terminal this PC has keeps machines it was not prepared
-    // with working.
-    value["effective"] = if !value["bundled"].is_null() {
-        value["bundled"]["path"].clone()
-    } else {
-        value["system"]["path"].clone()
-    };
+    // The script resolves the copies and reports which one is used; nothing here re-decides it.
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).map_err(|_| "Invalid Windows Terminal state".to_string())?;
     Ok(value)
 }
 

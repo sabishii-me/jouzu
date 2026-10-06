@@ -127,6 +127,43 @@ pub fn install_panic_hook(managed: PathBuf, version: &'static str) {
     }));
 }
 
+
+/// The crash records, newest first, each with the path a caller passes back to dismiss it.
+pub fn crash_records(managed: &Path) -> Vec<serde_json::Value> {
+    let directory = directory(managed);
+    let Ok(entries) = std::fs::read_dir(&directory) else {
+        return Vec::new();
+    };
+    let mut records: Vec<serde_json::Value> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            let name = path.file_name()?.to_str()?;
+            let stamp = name.strip_prefix("crash-")?.strip_suffix(".json")?.parse::<u64>().ok()?;
+            let mut record: serde_json::Value =
+                serde_json::from_str(std::fs::read_to_string(&path).ok()?.trim()).ok()?;
+            if let Some(object) = record.as_object_mut() {
+                object.insert("path".into(), serde_json::json!(path.to_string_lossy()));
+                object.insert("stamp".into(), serde_json::json!(stamp));
+            }
+            Some(record)
+        })
+        .collect();
+    records.sort_by_key(|record| std::cmp::Reverse(record["stamp"].as_u64().unwrap_or(0)));
+    records
+}
+
+/// Delete one record. Only a file inside the log directory can be removed, so a caller cannot name an
+/// arbitrary path.
+pub fn dismiss_crash(managed: &Path, path: &str) -> Result<(), String> {
+    let directory = directory(managed);
+    let candidate = Path::new(path);
+    if candidate.parent() != Some(directory.as_path()) {
+        return Err("Not a crash record".into());
+    }
+    std::fs::remove_file(candidate).map_err(|_| "The crash record is already gone".to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -189,5 +226,22 @@ mod tests {
             .count();
         assert_eq!(kept, MAX_CRASHES);
         assert!(!directory(managed).join("crash-1.json").exists());
+    }
+
+    #[test]
+    fn lists_records_newest_first_and_refuses_a_path_outside_the_logs() {
+        let temp = tempfile::tempdir().unwrap();
+        let managed = temp.path();
+        write_crash(managed, "older", "src/a.rs:1", "0.0.0").unwrap();
+        std::fs::write(directory(managed).join("crash-1900000000.json"), "{}").unwrap();
+        let records = crash_records(managed);
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0]["stamp"], 1_900_000_000u64);
+        let outside = temp.path().join("elsewhere.json");
+        std::fs::write(&outside, "{}").unwrap();
+        assert!(dismiss_crash(managed, outside.to_str().unwrap()).is_err());
+        assert!(outside.exists());
+        dismiss_crash(managed, records[0]["path"].as_str().unwrap()).unwrap();
+        assert_eq!(crash_records(managed).len(), 1);
     }
 }

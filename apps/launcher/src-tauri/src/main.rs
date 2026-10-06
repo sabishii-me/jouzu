@@ -79,6 +79,22 @@ fn read_legacy(path: &Path) -> Result<Vec<Workspace>, String> {
 }
 
 #[tauri::command]
+/// What the System section shows about the previous run and where support material lives.
+fn diagnostics() -> Result<serde_json::Value, String> {
+    let managed = runtime::managed_root()?;
+    Ok(serde_json::json!({
+        "logs": logs::directory(&managed).to_string_lossy(),
+        "crashes": logs::crash_records(&managed),
+    }))
+}
+
+#[tauri::command]
+fn crash_dismiss(path: String) -> Result<(), String> {
+    let managed = runtime::managed_root()?;
+    logs::dismiss_crash(&managed, &path)
+}
+
+#[tauri::command]
 fn launcher_state(app: tauri::AppHandle) -> Result<LauncherState, String> {
     let history = runtime::managed_root()?.join("recent.json");
     let recent = if cfg!(target_os = "windows") {
@@ -302,6 +318,8 @@ fn main() {
             add_workspaces,
             component_versions,
             recovery::repair_jouzu,
+            diagnostics,
+            crash_dismiss,
             jouzu_update::jouzu_update,
             control::control_request,
             control::cancel_control,
