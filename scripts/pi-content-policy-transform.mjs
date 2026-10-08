@@ -250,6 +250,10 @@ export function sessionEntryToContextMessages(entry) {`,
 		);
 	} else if (path === "dist/modes/interactive/interactive-mode.js") {
 		change(
+			"        return options.sort((a, b) => a.name.localeCompare(b.name));",
+			'        return options.sort((a, b) => Number(b.id === "shisa") - Number(a.id === "shisa") || a.name.localeCompare(b.name));',
+		);
+		change(
 			"            return info;\n        };\n        this.chatContainer.addChild(new Spacer(1));\n        this.chatContainer.addChild(new ThemedText(renderInfo, 1, 0));",
 			// biome-ignore lint/suspicious/noTemplateCurlyInString: This is source code for the pinned runtime.
 			'            const footer = this.options.sessionInfoFooter?.();\n            if (footer) info += `\\n\\n${theme.fg("dim", footer)}`;\n            return info;\n        };\n        this.chatContainer.addChild(new Spacer(1));\n        this.chatContainer.addChild(new ThemedText(renderInfo, 1, 0));',
