@@ -171,14 +171,7 @@ jobs:
           test ! -e packages/cli/node_modules/pi-webaio/node_modules/playwright
           test ! -e packages/cli/node_modules/ua-parser-js
           PI_OFFLINE=1 JOUZU_HOME="$RUNNER_TEMP/jouzu-default" \
-            node packages/cli/dist/cli.js doctor --json >doctor.json
-          node --input-type=module -e '
-            import assert from "node:assert/strict";
-            import { readFileSync } from "node:fs";
-            const report = JSON.parse(readFileSync("doctor.json", "utf8"));
-            assert.equal(report.fields.find((field) => field.id === "camoufox.runtime")?.value,
-              "not installed; installs on first browser tool use");
-          '
+            node scripts/check-default-installation.mjs
         timeout-minutes: 5
 
   release-artifacts:

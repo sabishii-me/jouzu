@@ -74,9 +74,7 @@ function respond(res, delta, finish = "tool_calls") {
 	res.end("data: [DONE]\n\n");
 }
 
-test("real children can read outside cwd, use skills/recall/web/tasks, consult parent context, and retain local tasks on resume", {
-	timeout: 60000,
-}, async () => {
+test("real child capabilities and bounded automation", async (t) => {
 	const root = mkdtempSync(join(tmpdir(), "jouzu-child-capabilities-"));
 	const workspace = join(root, "workspace");
 	mkdirSync(workspace);
@@ -169,127 +167,136 @@ test("real children can read outside cwd, use skills/recall/web/tasks, consult p
 		context: captureChildContext({}, false, "parent", [entry("requirement", "PARENT_PROJECT_DECISION")], "requirement"),
 	};
 	try {
-		steps.push(
-			["read", { path: join(root, "reference.txt") }],
-			["TaskCreate", { subject: "Child work", description: "Keep this task for resume" }],
-			["TaskUpdate", { taskId: "1", status: "in_progress" }],
-			["TaskList", {}],
-			["parent_context", { query: "PARENT_PROJECT_DECISION" }],
-			["vcc_recall", { query: "EXTERNAL_REFERENCE_EVIDENCE" }],
-			["web_fetch", { url: `http://127.0.0.1:${server.address().port}/page`, format: "text", timeoutMs: 5000 }],
-		);
-		const done = new Promise((resolve) => {
-			complete = resolve;
+		await t.test("capabilities, saved tasks, and schedule recovery", { timeout: 60000 }, async () => {
+			steps.push(
+				["read", { path: join(root, "reference.txt") }],
+				["TaskCreate", { subject: "Child work", description: "Keep this task for resume" }],
+				["TaskUpdate", { taskId: "1", status: "in_progress" }],
+				["TaskList", {}],
+				["parent_context", { query: "PARENT_PROJECT_DECISION" }],
+				["vcc_recall", { query: "EXTERNAL_REFERENCE_EVIDENCE" }],
+				["web_fetch", { url: `http://127.0.0.1:${server.address().port}/page`, format: "text", timeoutMs: 5000 }],
+			);
+			const done = new Promise((resolve) => {
+				complete = resolve;
+			});
+			const started = manager.launch(launch);
+			steps.splice(1, 0, [
+				"read",
+				{ path: join(dirname(started.parentContextFile), "skills", "jouzu-clear-writing", "SKILL.md") },
+			]);
+			const run = await done;
+			assert.equal(run.status, "completed", manager.read(started.id).text);
+			assert.equal(run.result, "DONE");
+			const allTools = requests[0].tools.map((tool) => tool.function.name);
+			for (const name of [
+				"vcc_recall",
+				"compact_context",
+				"TaskCreate",
+				"web_fetch",
+				"tff-search_web",
+				"parent_context",
+			])
+				assert.ok(allTools.includes(name), `${name}: ${JSON.stringify(allTools)}`);
+			assert.ok(allTools.includes("TaskExecute"));
+			assert.ok(allTools.includes("bg_task"));
+			assert.ok(!allTools.includes("schedule_prompt"));
+			assert.ok(!allTools.includes("subagent"));
+			assert.ok(allTools.includes("multiloop_start"));
+			assert.ok(allTools.includes("agent_wait"));
+			const prompt = JSON.stringify(requests[0].messages);
+			assert.match(prompt, /PROJECT_GUIDANCE_EVIDENCE/);
+			assert.match(prompt, /jouzu-clear-writing/);
+			assert.match(prompt, /Jouzu capability routing/);
+			const saved = readFileSync(run.sessionFile, "utf8").trim().split("\n").map(JSON.parse);
+			const results = saved
+				.filter((item) => item.type === "message" && item.message.role === "toolResult")
+				.map((item) => item.message);
+			for (const result of results) assert.equal(result.isError, false, JSON.stringify(result));
+			assert.match(JSON.stringify(results.find((result) => result.toolName === "read")), /EXTERNAL_REFERENCE_EVIDENCE/);
+			assert.match(
+				JSON.stringify(results.find((result) => result.toolName === "parent_context")),
+				/PARENT_PROJECT_DECISION/,
+			);
+			assert.match(
+				JSON.stringify(results.find((result) => result.toolName === "vcc_recall")),
+				/EXTERNAL_REFERENCE_EVIDENCE/,
+			);
+			// The bundled web tool deliberately blocks private addresses. Exercise its real validation without external network access.
+			assert.match(JSON.stringify(results.find((result) => result.toolName === "web_fetch")), /blocked_ssrf/);
+			assert.equal(readFileSync(join(workspace, ".pi", "tasks.json"), "utf8"), "PARENT_TASK_FILE_UNCHANGED");
+			assert.equal(requests.length, 9, "project task auto-mode must not start extra work");
+			assert.ok(
+				results.some(
+					(result) => result.toolName === "read" && JSON.stringify(result.content).includes("Clear Technical Writing"),
+				),
+			);
+			const schedulePath = join(dirname(run.sessionFile), ".pi", "schedule-prompts.json");
+			mkdirSync(dirname(schedulePath), { recursive: true });
+			writeFileSync(
+				schedulePath,
+				JSON.stringify({
+					version: 1,
+					jobs: [
+						{
+							id: "legacy",
+							name: "legacy",
+							type: "interval",
+							schedule: "1s",
+							prompt: "LEGACY_CHILD_SCHEDULE",
+							enabled: true,
+							createdAt: "2026-01-01T00:00:00Z",
+							runCount: 0,
+						},
+					],
+				}),
+			);
+			const continuation = new Promise((resolve) => {
+				complete = resolve;
+			});
+			steps.push(["TaskList", {}]);
+			manager.launch(
+				{ ...launch, context: undefined, task: "List your saved tasks and report DONE." },
+				undefined,
+				run.id,
+			);
+			const resumed = await continuation;
+			assert.equal(resumed.status, "completed", resumed.result);
+			assert.equal(resumed.childSessionId, run.childSessionId);
+			assert.equal(JSON.parse(readFileSync(schedulePath, "utf8")).jobs[0].enabled, false);
+			assert.match(resumed.result, /1 pending child schedule cancelled/);
+			assert.equal(resumed.cancelledSchedules, 1);
+			assert.equal(requests.length, 11, "resume must not run a saved child schedule");
+			assert.match(
+				JSON.stringify(
+					requests
+						.at(-1)
+						.messages.filter((message) => message.role === "tool")
+						.at(-1),
+				),
+				/Child work/,
+			);
+			assert.match(
+				JSON.stringify(
+					requests
+						.at(-1)
+						.messages.filter((message) => message.role === "tool")
+						.at(-1),
+				),
+				/in_progress/,
+			);
+			writeFileSync(schedulePath, "{invalid");
+			const recovery = new Promise((resolve) => {
+				complete = resolve;
+			});
+			steps.push(["reply", "RECOVERED"]);
+			manager.launch({ ...launch, context: undefined, task: "Report recovery." }, undefined, resumed.id);
+			const recovered = await recovery;
+			assert.equal(recovered.status, "completed", recovered.result);
+			assert.match(recovered.result, /Saved child schedules could not be read/);
+			assert.match(recovered.result, /RECOVERED/);
+			assert.match(recovered.scheduleWarning, /Preserved at .*\.invalid-/);
 		});
-		const started = manager.launch(launch);
-		steps.splice(1, 0, [
-			"read",
-			{ path: join(dirname(started.parentContextFile), "skills", "jouzu-clear-writing", "SKILL.md") },
-		]);
-		const run = await done;
-		assert.equal(run.status, "completed", manager.read(started.id).text);
-		assert.equal(run.result, "DONE");
-		const allTools = requests[0].tools.map((tool) => tool.function.name);
-		for (const name of ["vcc_recall", "compact_context", "TaskCreate", "web_fetch", "tff-search_web", "parent_context"])
-			assert.ok(allTools.includes(name), `${name}: ${JSON.stringify(allTools)}`);
-		assert.ok(allTools.includes("TaskExecute"));
-		assert.ok(allTools.includes("bg_task"));
-		assert.ok(!allTools.includes("schedule_prompt"));
-		assert.ok(!allTools.includes("subagent"));
-		assert.ok(allTools.includes("multiloop_start"));
-		assert.ok(allTools.includes("agent_wait"));
-		const prompt = JSON.stringify(requests[0].messages);
-		assert.match(prompt, /PROJECT_GUIDANCE_EVIDENCE/);
-		assert.match(prompt, /jouzu-clear-writing/);
-		assert.match(prompt, /Jouzu capability routing/);
-		const saved = readFileSync(run.sessionFile, "utf8").trim().split("\n").map(JSON.parse);
-		const results = saved
-			.filter((item) => item.type === "message" && item.message.role === "toolResult")
-			.map((item) => item.message);
-		for (const result of results) assert.equal(result.isError, false, JSON.stringify(result));
-		assert.match(JSON.stringify(results.find((result) => result.toolName === "read")), /EXTERNAL_REFERENCE_EVIDENCE/);
-		assert.match(
-			JSON.stringify(results.find((result) => result.toolName === "parent_context")),
-			/PARENT_PROJECT_DECISION/,
-		);
-		assert.match(
-			JSON.stringify(results.find((result) => result.toolName === "vcc_recall")),
-			/EXTERNAL_REFERENCE_EVIDENCE/,
-		);
-		// The bundled web tool deliberately blocks private addresses. Exercise its real validation without external network access.
-		assert.match(JSON.stringify(results.find((result) => result.toolName === "web_fetch")), /blocked_ssrf/);
-		assert.equal(readFileSync(join(workspace, ".pi", "tasks.json"), "utf8"), "PARENT_TASK_FILE_UNCHANGED");
-		assert.equal(requests.length, 9, "project task auto-mode must not start extra work");
-		assert.ok(
-			results.some(
-				(result) => result.toolName === "read" && JSON.stringify(result.content).includes("Clear Technical Writing"),
-			),
-		);
-		const schedulePath = join(dirname(run.sessionFile), ".pi", "schedule-prompts.json");
-		mkdirSync(dirname(schedulePath), { recursive: true });
-		writeFileSync(
-			schedulePath,
-			JSON.stringify({
-				version: 1,
-				jobs: [
-					{
-						id: "legacy",
-						name: "legacy",
-						type: "interval",
-						schedule: "1s",
-						prompt: "LEGACY_CHILD_SCHEDULE",
-						enabled: true,
-						createdAt: "2026-01-01T00:00:00Z",
-						runCount: 0,
-					},
-				],
-			}),
-		);
-		const continuation = new Promise((resolve) => {
-			complete = resolve;
-		});
-		steps.push(["TaskList", {}]);
-		manager.launch(
-			{ ...launch, context: undefined, task: "List your saved tasks and report DONE." },
-			undefined,
-			run.id,
-		);
-		const resumed = await continuation;
-		assert.equal(resumed.status, "completed", resumed.result);
-		assert.equal(resumed.childSessionId, run.childSessionId);
-		assert.equal(JSON.parse(readFileSync(schedulePath, "utf8")).jobs[0].enabled, false);
-		assert.match(resumed.result, /1 pending child schedule cancelled/);
-		assert.equal(resumed.cancelledSchedules, 1);
-		assert.equal(requests.length, 11, "resume must not run a saved child schedule");
-		assert.match(
-			JSON.stringify(
-				requests
-					.at(-1)
-					.messages.filter((message) => message.role === "tool")
-					.at(-1),
-			),
-			/Child work/,
-		);
-		assert.match(
-			JSON.stringify(
-				requests
-					.at(-1)
-					.messages.filter((message) => message.role === "tool")
-					.at(-1),
-			),
-			/in_progress/,
-		);
-		writeFileSync(schedulePath, "{invalid");
-		const recovery = new Promise((resolve) => {
-			complete = resolve;
-		});
-		steps.push(["reply", "RECOVERED"]);
-		manager.launch({ ...launch, context: undefined, task: "Report recovery." }, undefined, resumed.id);
-		const recovered = await recovery;
-		assert.equal(recovered.status, "completed", recovered.result);
-		assert.match(recovered.result, /Saved child schedules could not be read/);
-		assert.match(recovered.result, /RECOVERED/);
-		assert.match(recovered.scheduleWarning, /Preserved at .*\.invalid-/);
 		for (const [label, automation] of [
 			[
 				"task execution",
@@ -371,62 +378,70 @@ test("real children can read outside cwd, use skills/recall/web/tasks, consult p
 				],
 			],
 		]) {
-			steps.push(...automation);
-			const finished = new Promise((resolve) => {
+			await t.test(label, { timeout: 60000 }, async () => {
+				steps.push(...automation);
+				const finished = new Promise((resolve) => {
+					complete = resolve;
+				});
+				const automated = manager.launch({
+					...launch,
+					context: undefined,
+					task: `Exercise ${label} and finish the admitted follow-up.`,
+				});
+				const terminal = await finished;
+				assert.equal(terminal.status, "completed", manager.read(automated.id).text);
+				assert.equal(
+					terminal.result,
+					"AUTOMATION_DONE",
+					`${label} must drain before reporting completion: ${manager.read(automated.id).text}`,
+				);
+				assert.equal(steps.length, 0, label);
+				if (label === "multiloop gate recovery") {
+					const messages = readFileSync(terminal.sessionFile, "utf8").trim().split("\n").map(JSON.parse);
+					for (const result of messages.filter((entry) => entry.message?.role === "toolResult"))
+						assert.equal(result.message.isError, false, JSON.stringify(result.message));
+					const waitResult = messages.find((entry) => entry.message?.toolName === "agent_wait");
+					assert.match(JSON.stringify(waitResult?.message.content), /agent_wait waiting/);
+					assert.ok(messages.some((entry) => JSON.stringify(entry).includes("LOOP_WAITING")));
+				}
+				if (label === "rejected child scheduling") {
+					const messages = readFileSync(terminal.sessionFile, "utf8").trim().split("\n").map(JSON.parse);
+					for (const tool of ["schedule_prompt", "subagent"]) {
+						assert.equal(messages.find((entry) => entry.message?.toolName === tool)?.message.isError, true);
+					}
+				}
+				if (label.includes("background")) {
+					const messages = readFileSync(terminal.sessionFile, "utf8").trim().split("\n").map(JSON.parse);
+					const task = messages.find((entry) => entry.message?.toolName === "bg_task").message.details.task;
+					assert.match(
+						readFileSync(task.logFile, "utf8"),
+						/42/,
+						"background work must finish before the worker closes",
+					);
+				}
+			});
+		}
+		await t.test("automatic continuations respect the total turn limit", { timeout: 60000 }, async () => {
+			steps.push(
+				["TaskCreate", { subject: "Bounded work", description: "Exercise the total turn limit" }],
+				["TaskExecute", { task_ids: ["1"] }],
+				["reply", "LIMIT_PENDING"],
+			);
+			const requestCount = requests.length;
+			const limited = new Promise((resolve) => {
 				complete = resolve;
 			});
-			const automated = manager.launch({
+			manager.launch({
 				...launch,
 				context: undefined,
-				task: `Exercise ${label} and finish the admitted follow-up.`,
+				role: { ...role, maxTurns: 3 },
+				task: "Schedule work within the turn limit.",
 			});
-			const terminal = await finished;
-			assert.equal(terminal.status, "completed", manager.read(automated.id).text);
-			assert.equal(
-				terminal.result,
-				"AUTOMATION_DONE",
-				`${label} must drain before reporting completion: ${manager.read(automated.id).text}`,
-			);
-			assert.equal(steps.length, 0, label);
-			if (label === "multiloop gate recovery") {
-				const messages = readFileSync(terminal.sessionFile, "utf8").trim().split("\n").map(JSON.parse);
-				for (const result of messages.filter((entry) => entry.message?.role === "toolResult"))
-					assert.equal(result.message.isError, false, JSON.stringify(result.message));
-				const waitResult = messages.find((entry) => entry.message?.toolName === "agent_wait");
-				assert.match(JSON.stringify(waitResult?.message.content), /agent_wait waiting/);
-				assert.ok(messages.some((entry) => JSON.stringify(entry).includes("LOOP_WAITING")));
-			}
-			if (label === "rejected child scheduling") {
-				const messages = readFileSync(terminal.sessionFile, "utf8").trim().split("\n").map(JSON.parse);
-				for (const tool of ["schedule_prompt", "subagent"]) {
-					assert.equal(messages.find((entry) => entry.message?.toolName === tool)?.message.isError, true);
-				}
-			}
-			if (label.includes("background")) {
-				const messages = readFileSync(terminal.sessionFile, "utf8").trim().split("\n").map(JSON.parse);
-				const task = messages.find((entry) => entry.message?.toolName === "bg_task").message.details.task;
-				assert.match(readFileSync(task.logFile, "utf8"), /42/, "background work must finish before the worker closes");
-			}
-		}
-		steps.push(
-			["TaskCreate", { subject: "Bounded work", description: "Exercise the total turn limit" }],
-			["TaskExecute", { task_ids: ["1"] }],
-			["reply", "LIMIT_PENDING"],
-		);
-		const requestCount = requests.length;
-		const limited = new Promise((resolve) => {
-			complete = resolve;
+			const limitResult = await limited;
+			assert.equal(limitResult.status, "failed", limitResult.result);
+			assert.match(limitResult.result, /Agent limit reached/);
+			assert.equal(requests.length - requestCount, 3, "automatic continuations share the original turn limit");
 		});
-		manager.launch({
-			...launch,
-			context: undefined,
-			role: { ...role, maxTurns: 3 },
-			task: "Schedule work within the turn limit.",
-		});
-		const limitResult = await limited;
-		assert.equal(limitResult.status, "failed", limitResult.result);
-		assert.match(limitResult.result, /Agent limit reached/);
-		assert.equal(requests.length - requestCount, 3, "automatic continuations share the original turn limit");
 	} finally {
 		await manager.dispose();
 		server.closeAllConnections();
