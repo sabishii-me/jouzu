@@ -20,6 +20,7 @@ const FINGERPRINT_FILES = [
 	"packages/cli/package-lock.json",
 	"scripts/install-release-extensions.mjs",
 	"scripts/webaio-package-boundary.mjs",
+	"scripts/canvas-package-boundary.mjs",
 	// The pinned patch inputs are fingerprinted through scripts/patch-inputs.mjs.
 	"scripts/apply-background-flow.mjs",
 	"scripts/background-flow-transform.mjs",

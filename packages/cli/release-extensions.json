@@ -147,6 +147,16 @@
 			"licenseEvidence": "LICENSE",
 			"integrity": "sha512-dawhEbhvd5hxivKZSvv/mAQGO3mwZYESyctOvIIZ/H3DvQJzUM2UoFQsij0fg7hIClQ/GEQgg+2259UcFwhpMQ==",
 			"bundled": false
+		},
+		{
+			"name": "@napi-rs/canvas",
+			"version": "0.1.80",
+			"source": "https://registry.npmjs.org/@napi-rs/canvas/-/canvas-0.1.80.tgz",
+			"repository": "https://github.com/Brooooooklyn/canvas",
+			"license": "MIT",
+			"licenseEvidence": "LICENSE",
+			"integrity": "sha512-DxuT1ClnIPts1kQx8FBmkk4BQDTfI5kIzywAaMjQSXfNnra5UFU9PwurXrl+Je3bJ6BGsp/zmshVVFbCmyI+ww==",
+			"bundled": false
 		}
 	],
 	"runtimeDependencyRedirects": []

@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, symlinkSync, w
 import { resolve } from "node:path";
 import { applyInstalledBackgroundFlow } from "./apply-background-flow.mjs";
 import { applyInstalledMultiloopWaitSkill } from "./apply-multiloop-wait-skill.mjs";
+import { externalizeBundledCanvas } from "./canvas-package-boundary.mjs";
 import {
 	releaseBundleFingerprint,
 	releaseBundleIsCurrent,
@@ -111,6 +112,7 @@ async function installReleaseBundle() {
 		renameSync(bundledTypeboxSource, bundledTypeboxTarget);
 	}
 	rmSync(resolve(cli, "node_modules", "pi-skill-dollar", "README.md"), { force: true });
+	if (!sourceOnly) externalizeBundledCanvas(cli);
 	await applyInstalledBackgroundFlow();
 	await applyInstalledMultiloopWaitSkill();
 	console.log("installed the exact release-owned extension bundle without lifecycle scripts");

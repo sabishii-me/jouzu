@@ -402,6 +402,10 @@ try {
 		const jouzuRequire = createRequire(resolve(installedRoot, "package.json"));
 		const webaioRequire = createRequire(resolve(installedRoot, "node_modules", "pi-webaio", "package.json"));
 		assert.equal(webaioRequire.resolve("wreq-js"), jouzuRequire.resolve("wreq-js"));
+		const pdfRequire = createRequire(webaioRequire.resolve("pdf-parse"));
+		assert.equal(pdfRequire.resolve("@napi-rs/canvas"), jouzuRequire.resolve("@napi-rs/canvas"));
+		const png = pdfRequire("@napi-rs/canvas").createCanvas(8, 8).toBuffer("image/png");
+		assert.equal(png.subarray(0, 8).toString("hex"), "89504e470d0a1a0a");
 		const installedCli = resolve(temp, "node_modules", "jouzu", "dist", "cli.js");
 		const nativeModule = pathToFileURL(resolve(installedRoot, "dist", "textguard-native.js")).href;
 		run(
