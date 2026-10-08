@@ -12,6 +12,8 @@ interface Host {
 	changed(): void;
 	/** Flow control is on for this session. Absent on older hosts, which are treated as live. */
 	live?(): boolean;
+	/** True while an autonomous multiloop/goal continuation is executing. */
+	autonomous?(): boolean;
 	submit(input: { key: string; revision: string; requestId: string; build(): string; consumed(): void; cancelled(): void }): void;
 	tool<T>(name: string, args: unknown, invoke: () => Promise<T>): Promise<T>;
 }
@@ -26,11 +28,13 @@ export function installTaskFlow(pi: ExtensionAPI, list: () => Task[], storeIdent
 		const { executionStats: _stats, ...metadata } = task.metadata ?? {};
 		const control = metadata.flowControl as { waitForUser?: boolean; paused?: boolean } | undefined;
 		const invalid = control !== undefined && (!control || typeof control !== "object" || Array.isArray(control) || (control.waitForUser !== undefined && typeof control.waitForUser !== "boolean") || (control.paused !== undefined && typeof control.paused !== "boolean"));
-		const state = task.status === "completed" ? "completed" : invalid || control?.paused ? "paused" : control?.waitForUser || task.blockedBy.some(id => tasks.find(other => other.id === id)?.status !== "completed") ? "blocked" : "active";
 		const key = hash(["task-work-v1", storeIdentity(), task.id, task.createdAt]);
 		const blockedBy = task.blockedBy.filter(id => tasks.find(other => other.id === id)?.status !== "completed");
-		const reason = task.status === "completed" ? undefined : invalid ? "Task has invalid flow-control settings" : control?.paused ? "Paused in task settings" : control?.waitForUser ? "Waiting for your input" : blockedBy.length ? `Waiting for ${blockedBy.map(id => `task #${id}`).join(", ")}` : undefined;
-		return { key, taskId: task.id, state, subject: task.subject, status: task.status, reason, blockedBy, revision: hash([key, task.subject, task.description, task.status, task.owner, task.blockedBy, metadata, state]) };
+		const autonomous = host?.autonomous?.() === true;
+		const state = task.status === "completed" ? "completed" : invalid || control?.paused ? "paused" : control?.waitForUser || blockedBy.length > 0 ? "blocked" : "active";
+		const effectiveState = autonomous && (control?.waitForUser || control?.paused) && blockedBy.length === 0 ? "active" : state;
+		const reason = task.status === "completed" ? undefined : invalid ? "Task has invalid flow-control settings" : control?.paused ? (autonomous ? "Paused in task settings (overridden for autonomous loop)" : "Paused in task settings") : control?.waitForUser ? (autonomous ? "Waiting for your input (overridden for autonomous loop)" : "Waiting for your input") : blockedBy.length ? `Waiting for ${blockedBy.map(id => `task #${id}`).join(", ")}` : undefined;
+		return { key, taskId: task.id, state: effectiveState, subject: task.subject, status: task.status, reason, blockedBy, revision: hash([key, task.subject, task.description, task.status, task.owner, task.blockedBy, metadata, effectiveState, autonomous]) };
 	};
 	const currentHost = () => { if (failure) throw failure; return host; };
 	return {
@@ -81,7 +85,10 @@ export function installTaskFlow(pi: ExtensionAPI, list: () => Task[], storeIdent
 					if (tool.name === "TaskUpdate" && (params.waitForUser !== undefined || params.paused !== undefined)) {
 						const task = list().find(task => task.id === params.taskId);
 						const { waitForUser, paused, ...rest } = params;
-						effective = { ...rest, metadata: { ...(params.metadata as object ?? {}), flowControl: { ...(task?.metadata.flowControl as object ?? {}), ...(waitForUser === undefined ? {} : { waitForUser }), ...(paused === undefined ? {} : { paused }) } } };
+						const autonomous = host?.autonomous?.() === true;
+						const effectiveWaitForUser = autonomous && waitForUser === true ? false : waitForUser;
+						const effectivePaused = autonomous && paused === true ? false : paused;
+						effective = { ...rest, metadata: { ...(params.metadata as object ?? {}), flowControl: { ...(task?.metadata.flowControl as object ?? {}), ...(effectiveWaitForUser === undefined ? {} : { waitForUser: effectiveWaitForUser }), ...(effectivePaused === undefined ? {} : { paused: effectivePaused }) } } };
 					}
 					signal?.throwIfAborted();
 					const result = await execute.call(tool, id, effective, signal, update, ctx);

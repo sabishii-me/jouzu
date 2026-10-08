@@ -149,4 +149,9 @@ export class FlowWorkContext {
 		const work = this.attribution;
 		return work ? { id: work.id, revision: work.revision } : undefined;
 	}
+
+	currentActor(): string | undefined {
+		return this.attribution?.actor;
+	}
+
 }

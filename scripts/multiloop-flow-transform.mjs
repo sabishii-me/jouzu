@@ -146,6 +146,25 @@ export function notifyMultiloopLabels(source) {
 	return source;
 }
 
+export function transformMultiloopAutonomy(source) {
+	source = replace(
+		source,
+		'    "Continuation policy:",',
+		'    "Continuation policy:",\n    "Autonomous task policy: do not set TaskUpdate waitForUser or paused during this loop. Reconcile resolved task waits by clearing the flag and completing the task with a result summary.",',
+	);
+	source = replace(
+		source,
+		'    `Acceptance mode: ${state.acceptanceMode}`,',
+		'    `Acceptance mode: ${state.acceptanceMode}`,\n    "Autonomous task policy: do not create user-wait or paused task gates; resolve routine ambiguity and continue.",',
+	);
+	source = replace(
+		source,
+		'      ctx.ui.setStatus("multiloop", `multiloop: ${summaries.join(", ")}`);',
+		'      const flow = multiloopFlow(ctx.sessionManager.getSessionId());\n      const blocked = Array.from(statusStates.values()).filter((state) => state.status === "running" && flow?.waiting({ lane: state.lane, runTag: state.runTag })).length;\n      ctx.ui.setStatus("multiloop", `multiloop: ${summaries.join(", ")}${blocked ? ` · ${blocked} blocked (see /flow)` : ""}`);',
+	);
+	return source;
+}
+
 export function transformMultiloopFlow(source) {
 	source = replace(
 		source,
@@ -186,8 +205,13 @@ export function transformMultiloopFlow(source) {
 	}
 	source = replace(
 		source,
-		"    if (cascadingTasksWillDrive(ctx)) return;",
-		"    if (!multiloopFlow(ctx.sessionManager.getSessionId()) && cascadingTasksWillDrive(ctx)) return;",
+		'    "Continuation policy:",',
+		'    "Continuation policy:",\n    "Autonomous task policy: do not set TaskUpdate waitForUser or paused during this loop. Reconcile resolved task waits by clearing the flag and completing the task with a result summary.",',
+	);
+	source = replace(
+		source,
+		'    `Acceptance mode: ${state.acceptanceMode}`,',
+		'    `Acceptance mode: ${state.acceptanceMode}`,\n    "Autonomous task policy: do not create user-wait or paused task gates; resolve routine ambiguity and continue.",',
 	);
 	source = replace(
 		source,
@@ -198,6 +222,11 @@ export function transformMultiloopFlow(source) {
 		source,
 		"  function updateStatus(ctx: ExtensionContext | ExtensionCommandContext) {",
 		"  function updateStatus(ctx: ExtensionContext | ExtensionCommandContext) {\n    multiloopFlow(ctx.sessionManager.getSessionId())?.changed(runningStates().map((state) => ({ lane: state.lane, runTag: state.runTag })));",
+	);
+	source = replace(
+		source,
+		"    if (cascadingTasksWillDrive(ctx)) return;",
+		"    if (!multiloopFlow(ctx.sessionManager.getSessionId()) && cascadingTasksWillDrive(ctx)) return;",
 	);
 	return driveMultiloopAfterOtherTurns(
 		notifyMultiloopLabels(
@@ -404,6 +433,11 @@ function transformMultiloopStatus(source) {
         const count = Array.from(statusStates.values()).filter((state) => state.status === status).length;
         return count ? [\`\${count} \${status}\`] : [];
       });`,
+	);
+	source = replace(
+		source,
+		'      ctx.ui.setStatus("multiloop", `multiloop: ${summaries.join(", ")}`);',
+		'      const flow = multiloopFlow(ctx.sessionManager.getSessionId());\n      const blocked = Array.from(statusStates.values()).filter((state) => state.status === "running" && flow?.waiting({ lane: state.lane, runTag: state.runTag })).length;\n      ctx.ui.setStatus("multiloop", `multiloop: ${summaries.join(", ")}${blocked ? ` · ${blocked} blocked (see /flow)` : ""}`);',
 	);
 	for (const anchor of [
 		"    archiveLaneDirs(ctx.cwd, id);",

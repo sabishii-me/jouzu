@@ -9,6 +9,8 @@ export function createTaskControllerExtension(options: {
 	ingress(): PiSessionFlowIngress;
 	/** Flow control is on. Absent means on, so a host without the switch keeps its live producer. */
 	enabled?(): boolean;
+	/** True while task execution is attributed to an autonomous multiloop/goal continuation. */
+	autonomous?(): boolean;
 	onError(error: unknown): void;
 }): InlineExtension & {
 	consumedAttempt(attempt: FlowAttempt): void;
@@ -105,6 +107,7 @@ export function createTaskControllerExtension(options: {
 						changed,
 						// With flow control off, a task's own continuations and deliveries take over again.
 						live: () => options.enabled?.() !== false,
+						autonomous: () => options.autonomous?.() === true,
 						async ready() {
 							assertActive();
 							await next.synchronize();

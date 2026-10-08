@@ -39,11 +39,11 @@
 		},
 		{
 			"path": "upstream/multiloop-wait-skill/patch.lock.json",
-			"sha256": "1b9e5c253ff7387c7194c428b78788304bab7bdc8b0ce60036c979461e896713"
+			"sha256": "90f5ba7fced7813bd6e685b74eca40295cb630c0585074fedc86014099ca2ee9"
 		},
 		{
 			"path": "upstream/task-flow/patch.lock.json",
-			"sha256": "9f1dd41e09e83f570628a3c80b3fd935232227ea4497767e1abcd2591fdfcee9"
+			"sha256": "6ecd413993e10ae69c7e045b593959c651cddd3ea714f8ae279660645bcc2455"
 		},
 		{
 			"path": "upstream/code-previews/patch.lock.json",

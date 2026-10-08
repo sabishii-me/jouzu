@@ -68,6 +68,9 @@ test("installed task adapter is pinned and idempotent", async () => {
 	assert.ok(source.includes("taskFlow.send"));
 	assert.ok(source.includes("taskFlow.connect"));
 	assert.ok(source.includes("taskFlow.registerTool"));
+	const runtime = await readFile(new URL("src/jouzu-flow.ts", installed), "utf8");
+	assert.ok(runtime.includes("autonomous?.() === true"));
+	assert.ok(runtime.includes("effectiveWaitForUser"));
 });
 for (const variant of ["source", "runtime", "package"])
 	test(`task patch refuses unexpected ${variant} without rewriting it`, async (t) => {

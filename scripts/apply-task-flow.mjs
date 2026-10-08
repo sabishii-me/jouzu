@@ -39,7 +39,7 @@ export async function applyTaskFlow(packageRoot, checkOnly = false) {
 		throw error;
 	});
 	if (installed !== runtime) {
-		if (checkOnly || (installed !== undefined && sha(installed) !== lock.previousRuntime))
+		if (checkOnly || (installed !== undefined && ![lock.previousRuntime, lock.previousRuntimeLegacy].includes(sha(installed))))
 			throw new Error("Installed task flow runtime differs.");
 		writes.push([destination, runtime]);
 	}

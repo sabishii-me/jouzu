@@ -84,7 +84,7 @@ export function createFlowControlRuntime(options: FlowControlRuntimeOptions): Fl
 	// While flow control is off, producers route through their own delivery paths and the flow tools
 	// refuse. The ingress object stays attached, so turning it back on needs no re-attach or handshake.
 	const enabled = () => attached?.enabled() ?? false;
-	const tasks = createTaskControllerExtension({ ingress, enabled, onError: options.onError });
+	const tasks = createTaskControllerExtension({ ingress, enabled, autonomous: () => ingress().branch().workContext.currentActor() === "multiloop", onError: options.onError });
 	const multiloop = createMultiloopControllerExtension({ ingress, enabled, onError: options.onError });
 	const background = createBackgroundControllerExtension({
 		ingress,
