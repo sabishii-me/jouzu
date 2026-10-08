@@ -1,0 +1,33 @@
+@import "tailwindcss";
+/* The sources are the page and the interface, named rather than discovered, so a compile never walks a
+   directory that holds none of this project's markup. */
+@source "../index.html";
+@source "./**/*.{ts,tsx}";
+@theme inline {
+  --color-card: #18191f;
+  --color-card-foreground: #eeeeF2;
+  --color-popover: #18191f;
+  --color-popover-foreground: #eeeeF2;
+  --color-accent: #2b2536;
+  --color-accent-foreground: #eeeeF2;
+  --color-input: #303039;
+  --color-destructive: #f87171;
+  --color-background: #121318;
+  --color-foreground: #eeeeF2;
+  --color-primary: #39c8e8;
+  --color-primary-foreground: #101318;
+  --color-muted: #202127;
+  --color-muted-foreground: #a5a2b2;
+  --color-border: #303039;
+  --color-ring: #ae92c9;
+}
+@layer base {
+  body { color-scheme: dark; @apply m-0 bg-background text-foreground antialiased; font-family: system-ui, sans-serif; }
+  button { cursor: pointer; }
+  button:disabled { cursor: default; }
+  /* The window is a native shell: only inputs and explicitly marked content are selectable. */
+  #root { user-select: none; -webkit-user-select: none; }
+  input, textarea, [contenteditable="true"], .select-text { user-select: text; -webkit-user-select: text; }
+  img { -webkit-user-drag: none; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; } }

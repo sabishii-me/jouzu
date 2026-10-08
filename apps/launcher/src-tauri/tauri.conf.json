@@ -1,0 +1,57 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Jouzu Launcher",
+  "version": "../package.json",
+  "identifier": "ai.shisa.jouzu.launcher",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../dist",
+    "additionalWatchFolders": [
+      "../../../packaging/launcher"
+    ]
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Jouzu",
+        "width": 900,
+        "height": 680,
+        "minWidth": 560,
+        "minHeight": 480,
+        "create": false,
+        "decorations": false,
+        "maximizable": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data:"
+    }
+  },
+  "bundle": {
+    "active": false,
+    "publisher": "Shisa, Inc.",
+    "copyright": "Copyright © Shisa, Inc.",
+    "windows": {
+      "nsis": {
+        "languages": [
+          "English",
+          "Japanese",
+          "SimpChinese",
+          "TradChinese"
+        ],
+        "displayLanguageSelector": true
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "",
+      "endpoints": [],
+      "windows": {
+        "installMode": "quiet"
+      }
+    }
+  }
+}

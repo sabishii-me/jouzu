@@ -1,0 +1,122 @@
+name: Sign Jouzu update recipe
+
+# Called by the npm publication workflow so a published version cannot exist without its
+# signed Windows update artifact. Manual dispatch remains for re-signing an exact version.
+on:
+  workflow_dispatch:
+    inputs:
+      jouzu_version:
+        description: Exact official Jouzu npm version
+        type: string
+        required: true
+        default: '0.1.18'
+      publish:
+        description: Publish the signed recipe to the update feed
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      jouzu_version:
+        description: Exact official Jouzu npm version, or the release tag
+        type: string
+        required: true
+      publish:
+        description: Publish the signed recipe to the update feed
+        type: boolean
+        default: true
+permissions:
+  contents: read
+jobs:
+  recipe:
+    runs-on: windows-latest
+    environment: launcher-publish
+    timeout-minutes: 40
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24.19.0'
+      - name: Resolve the exact version
+        run: |
+          $version = ($env:JOUZU_VERSION_INPUT -replace '^v','').Trim()
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Invalid Jouzu version: $env:JOUZU_VERSION_INPUT" }
+          "JOUZU_VERSION=$version" | Out-File $env:GITHUB_ENV -Append
+        env:
+          JOUZU_VERSION_INPUT: ${{ inputs.jouzu_version }}
+      - name: Check configuration
+        env:
+          JOUZU_RECIPE_PRIVATE_KEY: ${{ secrets.JOUZU_RECIPE_PRIVATE_KEY }}
+          JOUZU_RECIPE_PUBLIC_KEY: ${{ vars.JOUZU_RECIPE_PUBLIC_KEY }}
+          JOUZU_RECIPE_BASE_URL: ${{ vars.JOUZU_RECIPE_BASE_URL }}
+          LAUNCHER_PUBLIC_KEY: ${{ vars.LAUNCHER_PUBLIC_KEY }}
+        run: node packaging/launcher/signing-preflight.mjs jouzu
+      - name: Prepare published runtime
+        run: |
+          npm install --prefix "$env:RUNNER_TEMP/build-tools" pnpm@10.21.0 --ignore-scripts --no-audit --no-fund
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          npm exec -- node packaging/launcher/prepare-published-runtime.mjs "$env:JOUZU_VERSION" "$env:RUNNER_TEMP/jouzu-runtime" "$env:RUNNER_TEMP/build-tools/node_modules/pnpm/bin/pnpm.cjs"
+      - name: Sign and verify recipe
+        env:
+          RECIPE_KEY: ${{ secrets.JOUZU_RECIPE_PRIVATE_KEY }}
+          RECIPE_PUBLIC_KEY: ${{ vars.JOUZU_RECIPE_PUBLIC_KEY }}
+        run: |
+          $notes = "$env:RUNNER_TEMP/jouzu-runtime/notes.json"
+          if (-not (Test-Path $notes)) { throw 'Release notes are required for every update item' }
+          $key = Join-Path $env:RUNNER_TEMP 'recipe-key.pem'
+          try {
+            [IO.File]::WriteAllText($key,$env:RECIPE_KEY)
+            node packaging/launcher/sign-recipe.mjs "$env:RUNNER_TEMP/jouzu-runtime/recipe" "$env:JOUZU_VERSION" $key "$env:RUNNER_TEMP/jouzu-runtime/notes.json"
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+            node --input-type=module -e "import{readFileSync}from'node:fs';import{authenticateRecipe}from'./packaging/launcher/authenticate-recipe.mjs';const r=process.env.RUNNER_TEMP+'/jouzu-runtime/recipe/';authenticateRecipe(readFileSync(r+'manifest.json'),readFileSync(r+'manifest.sig'),process.env.RECIPE_PUBLIC_KEY,{version:process.env.JOUZU_VERSION,platform:'win32',arch:'x64',maxBytes:512*1024*1024});"
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          } finally { Remove-Item $key -Force -ErrorAction SilentlyContinue }
+      - name: Prepare flat Release assets
+        run: |
+          $recipe = Join-Path $env:RUNNER_TEMP 'jouzu-runtime/recipe'
+          $assets = New-Item -ItemType Directory -Path "$env:RUNNER_TEMP/recipe-assets"
+          $manifest = Get-Content "$recipe/manifest.json" -Raw | ConvertFrom-Json
+          foreach ($file in $manifest.files) { Copy-Item (Join-Path $recipe $file.path) (Join-Path $assets.FullName $file.path.Replace('/','__')) }
+          Copy-Item "$recipe/manifest.json","$recipe/manifest.sig" $assets.FullName
+          Copy-Item "$env:RUNNER_TEMP/jouzu-runtime/source.json" $assets.FullName
+      - name: Archive the qualified runtime for the launcher build
+        run: |
+          tar -czf "$env:RUNNER_TEMP/jouzu-runtime.tgz" -C "$env:RUNNER_TEMP/jouzu-runtime" source.json recipe/package.json recipe/pnpm-lock.yaml recipe/artifacts app
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          (Get-FileHash "$env:RUNNER_TEMP/jouzu-runtime.tgz" -Algorithm SHA256).Hash | Out-File "$env:RUNNER_TEMP/jouzu-runtime.sha256" -Encoding ascii
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: windows-published-runtime
+          path: |
+            ${{ runner.temp }}/jouzu-runtime.tgz
+            ${{ runner.temp }}/jouzu-runtime.sha256
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: signed-jouzu-recipe
+          path: ${{ runner.temp }}/recipe-assets/*
+          if-no-files-found: error
+          retention-days: 7
+      - name: Publish the update feed
+        if: ${{ inputs.publish }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $assets = "$env:RUNNER_TEMP/recipe-assets"
+          # The feed serves one recipe at a time under a stable release, so clients always
+          # see the newest published version after the assets are replaced together.
+          & gh release view jouzu-update --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE) {
+            & gh release create jouzu-update --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --prerelease --title 'Jouzu update feed' --notes 'Signed Jouzu update recipes.'
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          }
+          $files = Get-ChildItem -LiteralPath $assets -File | ForEach-Object { $_.FullName }
+          & gh release upload jouzu-update @files --repo $env:GITHUB_REPOSITORY --clobber
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }

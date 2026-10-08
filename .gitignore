@@ -20,3 +20,6 @@ __pycache__/
 .pi/
 .codex/
 .claude/
+
+test-results/
+playwright-report/

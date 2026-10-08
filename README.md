@@ -31,7 +31,7 @@ jz doctor
 
 `jz` is an alias for `jouzu`. Try it without installing with `npx --yes jouzu`.
 
-An unsigned Windows x64 installer that bundles all requirements is available from the [latest release](https://github.com/shisa-ai/jouzu/releases/latest).
+A signed Windows x64 launcher that bundles its requirements is available from [GitHub Releases](https://github.com/shisa-ai/jouzu/releases).
 
 ## Quick start
 
@@ -75,7 +75,7 @@ Default roots for npm installations are:
 | macOS | `~/Library/Application Support/Jouzu/agent` | `~/Library/Application Support/Jouzu/state` | `~/Library/Caches/Jouzu` |
 | Windows | `%APPDATA%\Jouzu\agent` | `%LOCALAPPDATA%\Jouzu\state` | `%LOCALAPPDATA%\Jouzu\cache` |
 
-The Windows installer stores everything under `%LOCALAPPDATA%\JouzuDesktop\data`. Override all roots with `--jouzu-home <path>` or `JOUZU_HOME`.
+The Windows launcher stores everything under `%LOCALAPPDATA%\Shisa.ai\Jouzu`. Override all roots with `--jouzu-home <path>` or `JOUZU_HOME`.
 
 On first setup, Jouzu offers to copy `models.json` and provider credentials from an existing Pi installation. Both prompts default to no.
 

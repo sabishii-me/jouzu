@@ -78,3 +78,12 @@ jobs:
         timeout-minutes: 3
       - run: node scripts/publish-npm.mjs dist/ci-artifacts
         timeout-minutes: 5
+  windows-update:
+    # A published version must never exist without its signed Windows update artifact.
+    needs: publish
+    uses: ./.github/workflows/launcher-recipe.yml
+    permissions:
+      contents: write
+    with:
+      jouzu_version: ${{ inputs.ref }}
+      publish: true

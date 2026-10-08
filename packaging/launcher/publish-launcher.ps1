@@ -1,0 +1,44 @@
+param([Parameter(Mandatory=$true)][string]$Directory,[string]$Version)
+$ErrorActionPreference = 'Stop'
+if (-not $Version) { $Version = (Get-Content (Join-Path (Resolve-Path "$PSScriptRoot/../..").Path 'apps/launcher/package.json') -Raw | ConvertFrom-Json).version }
+if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid launcher version' }
+$repository = $env:GITHUB_REPOSITORY
+if ($repository -notmatch '^[\w.-]+/[\w.-]+$') { throw 'Invalid repository' }
+# The full package serves first install and repair; the launcher-only package is what the
+# in-app updater installs, so the feed must point at the launcher-only artifact.
+$fullSetup = Join-Path $Directory "Jouzu Launcher_${Version}_x64-setup.exe"
+$updateSetup = Join-Path $Directory "Jouzu Launcher_${Version}_x64-update.exe"
+foreach ($file in @($fullSetup,$updateSetup,"$updateSetup.sig","$Directory/build.json","$Directory/source.json")) {
+ if (-not (Test-Path -LiteralPath $file)) { throw "Missing release output: $file" }
+}
+$tag = "launcher-v$Version"
+# Version releases are immutable; only the discovery feed is replaceable.
+& gh release create $tag $fullSetup $updateSetup "$updateSetup.sig" "$Directory/build.json" "$Directory/source.json" --repo $repository --target $env:GITHUB_SHA --title "Jouzu Launcher $Version" --notes 'The x64-setup asset installs the launcher with the runtime; the x64-update asset updates an installed launcher without rewriting the Jouzu payload.'
+if ($LASTEXITCODE) { throw 'Version release creation failed; feed unchanged' }
+# GitHub rewrites spaces in asset names, so the download URL is built from the name the release
+# actually stored; a URL built from the local file name is a 404.
+# `gh --jq` rejects single-quoted string literals in its expression, so the asset names are
+# listed and matched here instead.
+$assetNames = & gh release view $tag --repo $repository --json assets --jq '.assets[].name'
+if ($LASTEXITCODE) { throw 'Cannot read the published release' }
+$assetName = @($assetNames) | Where-Object { $_ -like '*-update.exe' } | Select-Object -First 1
+if (-not $assetName) { throw 'Published update asset not found' }
+$url = "https://github.com/$repository/releases/download/$tag/$assetName"
+$probe = Join-Path $env:RUNNER_TEMP 'published-update.exe'
+Invoke-WebRequest $url -OutFile $probe
+if ((Get-FileHash $probe -Algorithm SHA256).Hash -ne (Get-FileHash $updateSetup -Algorithm SHA256).Hash) { throw 'Published update integrity mismatch; feed unchanged' }
+# The feed note is the released version's changelog section; a release without one is refused.
+$notes = (& node "$PSScriptRoot/launcher-notes.mjs" (Join-Path $PSScriptRoot '../../apps/launcher/CHANGELOG.md') $Version) -join "`n"
+if ($LASTEXITCODE) { throw 'Missing launcher changelog for this version; feed unchanged' }
+$feed = @{version=$Version;notes=$notes;pub_date=[DateTime]::UtcNow.ToString('o');platforms=@{'windows-x86_64'=@{url=$url;signature=(Get-Content "$updateSetup.sig" -Raw).Trim()}}}
+$feedFile = Join-Path $Directory 'latest.json'
+# The feed is read by a JSON parser on the other side, so it is written without a byte order mark:
+# `Set-Content -Encoding utf8` writes one under Windows PowerShell, and a mark makes the feed undecodable.
+[IO.File]::WriteAllText($feedFile, ($feed | ConvertTo-Json -Depth 5), (New-Object Text.UTF8Encoding($false)))
+& gh release view launcher-update --repo $repository *> $null
+if ($LASTEXITCODE) {
+ & gh release create launcher-update --repo $repository --target $env:GITHUB_SHA --title 'Jouzu launcher updates' --notes 'Signed launcher update feed.'
+ if ($LASTEXITCODE) { throw 'Cannot create update feed release' }
+}
+& gh release upload launcher-update $feedFile --repo $repository --clobber
+if ($LASTEXITCODE) { throw 'Cannot publish update feed' }

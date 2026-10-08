@@ -1,0 +1,189 @@
+name: Windows published runtime
+on:
+  workflow_dispatch:
+    inputs:
+      jouzu_version:
+        description: Official Jouzu npm version
+        type: string
+        default: '0.1.18'
+        required: true
+      publish:
+        description: Publish the signed release and update feed
+        type: boolean
+        default: false
+      runtime_run_id:
+        description: Successful recipe or runtime run providing the qualified Jouzu runtime
+        type: string
+        required: true
+permissions:
+  contents: read
+  actions: read
+jobs:
+  signing-configuration:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require release signing configuration before building
+        env:
+          AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          AZURE_SIGNING_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          AZURE_SIGNING_PROFILE: ${{ vars.AZURE_SIGNING_PROFILE }}
+          EXPECTED_SIGNER: ${{ vars.EXPECTED_SIGNER }}
+        run: |
+          missing=0
+          for name in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_SIGNING_ENDPOINT AZURE_SIGNING_ACCOUNT AZURE_SIGNING_PROFILE EXPECTED_SIGNER; do
+            if [ -z "${!name}" ]; then echo "::error::Missing release configuration: $name"; missing=1; fi
+          done
+          exit "$missing"
+  runtime:
+    needs: signing-configuration
+    runs-on: windows-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24.19.0'
+      - name: Install private build package manager
+        run: |
+          npm install --prefix "$env:RUNNER_TEMP/build-tools" pnpm@10.21.0 --ignore-scripts --no-audit --no-fund
+      - name: Restore qualified runtime
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUNTIME_RUN_ID: ${{ inputs.runtime_run_id }}
+          JOUZU_VERSION: ${{ inputs.jouzu_version }}
+        run: |
+          if ($env:RUNTIME_RUN_ID -notmatch '^\d+$') { throw 'Invalid runtime run ID' }
+          $run = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:RUNTIME_RUN_ID" | ConvertFrom-Json
+          $sources = @('.github/workflows/launcher-recipe.yml', '.github/workflows/launcher-runtime.yml')
+          if ($LASTEXITCODE -or $run.conclusion -ne 'success' -or $sources -notcontains $run.path) { throw 'Runtime source must be a successful recipe or runtime workflow' }
+          gh run download $env:RUNTIME_RUN_ID --repo $env:GITHUB_REPOSITORY --name windows-published-runtime --dir "$env:RUNNER_TEMP/runtime-input"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $archive = "$env:RUNNER_TEMP/runtime-input/jouzu-runtime.tgz"
+          $expected = (Get-Content "$env:RUNNER_TEMP/runtime-input/jouzu-runtime.sha256" -Raw).Trim()
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne $expected) { throw 'Runtime archive integrity mismatch' }
+          New-Item -ItemType Directory "$env:RUNNER_TEMP/jouzu-runtime" | Out-Null
+          tar -xzf $archive -C "$env:RUNNER_TEMP/jouzu-runtime"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $package = Get-Content "$env:RUNNER_TEMP/jouzu-runtime/app/node_modules/jouzu/package.json" -Raw | ConvertFrom-Json
+          if ($package.name -ne 'jouzu' -or $package.version -ne $env:JOUZU_VERSION) { throw 'Runtime version mismatch' }
+          node packaging/launcher/verify-runtime.mjs "$env:RUNNER_TEMP/jouzu-runtime/app"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Build and test signing inputs
+        env:
+          LAUNCHER_PUBLIC_KEY: ${{ vars.LAUNCHER_PUBLIC_KEY }}
+          JOUZU_RECIPE_PUBLIC_KEY: ${{ vars.JOUZU_RECIPE_PUBLIC_KEY }}
+          JOUZU_RECIPE_BASE_URL: ${{ vars.JOUZU_RECIPE_BASE_URL }}
+        run: |
+          New-Item -ItemType Directory "$env:RUNNER_TEMP/update-config" | Out-Null
+          node packaging/launcher/update-configuration.mjs "$env:RUNNER_TEMP/update-config"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          ./packaging/launcher/prepare-windows-bundle.ps1 -Prepared "$env:RUNNER_TEMP/jouzu-runtime" -Pnpm "$env:RUNNER_TEMP/build-tools/node_modules/pnpm" -Output "$env:RUNNER_TEMP/windows-bundle" -UpdateConfigDirectory "$env:RUNNER_TEMP/update-config"
+          npm ci --prefix apps/launcher
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          Push-Location apps/launcher
+          try {
+            npm test
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+            npm run build
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+            Push-Location src-tauri
+            try {
+              cargo test --locked --bins
+              if ($LASTEXITCODE) { exit $LASTEXITCODE }
+              cargo build --locked --release --bins
+              if ($LASTEXITCODE) { exit $LASTEXITCODE }
+            } finally { Pop-Location }
+            npm run tauri -- build --no-bundle --config "$env:RUNNER_TEMP/windows-bundle/tauri-build.json"
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          } finally { Pop-Location }
+      - name: Archive signing inputs
+        run: |
+          $stage = "$env:RUNNER_TEMP/signing-inputs"
+          New-Item -ItemType Directory "$stage/bin" -Force | Out-Null
+          Copy-Item apps/launcher/src-tauri/target/release/launcher.exe,apps/launcher/src-tauri/target/release/console.exe "$stage/bin"
+          Copy-Item apps/launcher/dist "$stage/dist" -Recurse
+          Copy-Item "$env:RUNNER_TEMP/jouzu-runtime/app" "$stage/app" -Recurse
+          Copy-Item "$env:RUNNER_TEMP/windows-bundle/runtime" "$stage/runtime" -Recurse
+          Copy-Item "$env:RUNNER_TEMP/update-config" "$stage/update-config" -Recurse
+          Copy-Item "$env:RUNNER_TEMP/jouzu-runtime/source.json" "$stage/source.json"
+          tar -czf "$env:RUNNER_TEMP/signing-inputs.tgz" -C $stage .
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: launcher-signing-inputs
+          path: ${{ runner.temp }}/signing-inputs.tgz
+          if-no-files-found: error
+          retention-days: 7
+  sign-publish:
+    needs: runtime
+    environment: launcher-publish
+    runs-on: windows-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      actions: read
+      id-token: write
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_SIGNING_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+      AZURE_SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+      AZURE_SIGNING_PROFILE: ${{ vars.AZURE_SIGNING_PROFILE }}
+      EXPECTED_SIGNER: ${{ vars.EXPECTED_SIGNER }}
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      LAUNCHER_PUBLIC_KEY: ${{ vars.LAUNCHER_PUBLIC_KEY }}
+      JOUZU_RECIPE_PUBLIC_KEY: ${{ vars.JOUZU_RECIPE_PUBLIC_KEY }}
+      JOUZU_RECIPE_BASE_URL: ${{ vars.JOUZU_RECIPE_BASE_URL }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24.19.0'
+      - name: Check protected signing configuration
+        run: node packaging/launcher/signing-preflight.mjs launcher
+      - name: Download build outputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download $env:GITHUB_RUN_ID --repo $env:GITHUB_REPOSITORY --name launcher-signing-inputs --dir "$env:RUNNER_TEMP/input"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory "$env:RUNNER_TEMP/signing-inputs" | Out-Null
+          tar -xzf "$env:RUNNER_TEMP/input/signing-inputs.tgz" -C "$env:RUNNER_TEMP/signing-inputs"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      # The documented OIDC entry point: it authenticates as the repository's signing
+      # application, never a developer account.
+      - name: Azure login
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Sign and package CI binaries
+        run: ./packaging/launcher/finalize-windows-bundle.ps1 -InputDirectory "$env:RUNNER_TEMP/signing-inputs"
+      - name: Publish verified update
+        if: ${{ inputs.publish }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./packaging/launcher/publish-launcher.ps1 -Directory "$env:RUNNER_TEMP/launcher-release"
+      - name: Upload signed artifacts
+        if: ${{ !inputs.publish }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: launcher-signed
+          path: ${{ runner.temp }}/launcher-release/*
+          if-no-files-found: error
+          retention-days: 7
