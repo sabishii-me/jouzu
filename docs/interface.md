@@ -17,7 +17,7 @@ Keeps Pi's editor behavior: actions, history, paste, autocomplete, cursor, and i
 - Each source has a section whose divider shows its counts and route.
 - Each row shows a state marker, kind, elapsed time, and detail.
 - A finished child agent whose result the model has not read gets an attention row and count. Both clear when the model reads the result.
-- Settings switches between compact (five lines) and expanded (ten lines).
+- Settings switches between compact (up to 12 lines) and expanded (up to 24 lines), both limited by one third of the terminal height and the space above the prompt.
 - `/bg` or `Alt+Shift+H` opens the background-job manager. `/bg watch <task>` opens it on one job.
 
 ## Session Line

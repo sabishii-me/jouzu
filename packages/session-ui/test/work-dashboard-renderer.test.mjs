@@ -49,7 +49,8 @@ test("dashboard obeys aggregate mode, terminal, and remaining-space budgets with
 		}
 	}
 	assert.equal(dashboardLineBudget({ mode: "expanded", terminalRows: 18, availableRows: 100 }), 6);
-	assert.equal(dashboardLineBudget({ mode: "compact", terminalRows: 100, availableRows: 100 }), 5);
+	assert.equal(dashboardLineBudget({ mode: "compact", terminalRows: 100, availableRows: 100 }), 12);
+	assert.equal(dashboardLineBudget({ mode: "expanded", terminalRows: 100, availableRows: 100 }), 24);
 	assert.equal(JSON.stringify(snapshot), before);
 	assert.deepEqual(
 		renderWorkDashboard(
@@ -59,6 +60,33 @@ test("dashboard obeys aggregate mode, terminal, and remaining-space budgets with
 		),
 		[],
 	);
+});
+test("a tall terminal shows a full fan-out of running agents up to the mode limit", () => {
+	const units = Array.from({ length: 8 }, (_, index) => ({
+		id: `a${index}`,
+		producer: "subagent",
+		kind: "agent",
+		owner: "s",
+		state: "running",
+		label: `coder-${index}`,
+		createdAt: 0,
+		attention: [],
+		route: "/workflow",
+	}));
+	const snapshot = {
+		scope: { sessionId: "s", branchId: "b" },
+		generation: 1,
+		sequence: 1,
+		sources: { subagent: { availability: "available", complete: true, units } },
+	};
+	const rows = renderWorkDashboard(
+		snapshot,
+		{ width: 80, mode: "compact", terminalRows: 60, availableRows: 40, now: 0 },
+		styles,
+	);
+	// One divider, one row per agent, and the separating blank line.
+	assert.equal(rows.length, 10);
+	assert.equal(rows.filter((row) => row.includes("coder-")).length, 8);
 });
 test("sections title their counts and rows follow marker, identity, status, elapsed, detail", () => {
 	const unit = (id, state, extra = {}) => ({

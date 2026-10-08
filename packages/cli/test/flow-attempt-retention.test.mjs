@@ -4,7 +4,6 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { BACKGROUND_CONTEXT as context, MemorySessionRepo, setValue, value } from "@earendil-works/pi-agent-core";
 import { initialFlowAdmission } from "../dist/flow-control/admission.js";
 import { emptyRetiredAttempts, retiredMemberHash, retiredWorkHash } from "../dist/flow-control/attempt-retention.js";
 import { retainedByReceipt } from "../dist/flow-control/controller.js";
@@ -14,6 +13,7 @@ import { createPiLedgerStore } from "../dist/flow-control/pi-ledger-store.js";
 import { FlowReceiptLedger } from "../dist/flow-control/receipt-ledger.js";
 import { orderFlowResultProducers } from "../dist/flow-control/result-order.js";
 import { MAX_RETIRED_FLOW_IDENTITIES } from "../dist/flow-control/retired-identities.js";
+import { BACKGROUND_CONTEXT as context, MemorySessionRepo, setValue, value } from "./fixtures/flow-storage.mjs";
 
 const scope = { sessionId: "parent", branchId: "branch-a" };
 const hash = (id) => createHash("sha256").update(`content:${id}`).digest("hex");

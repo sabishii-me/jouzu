@@ -19,12 +19,19 @@ export interface WorkDashboardLayout {
 	frame?: number;
 	animate?: boolean;
 }
+/**
+ * Mode line limits, before the terminal-height and remaining-space caps. They are sized so a
+ * fan-out of running children fits while the terminal has room, instead of collapsing to a
+ * couple of rows; both modes still yield to one third of the terminal and the dock space.
+ */
+export const DASHBOARD_LINE_LIMITS: Readonly<Record<"compact" | "expanded", number>> = {
+	compact: 12,
+	expanded: 24,
+};
 export function dashboardLineBudget(layout: WorkDashboardLayout): number {
-	if (layout.mode === "hidden") return 0;
-	return Math.max(
-		0,
-		Math.floor(Math.min(layout.mode === "compact" ? 5 : 10, layout.terminalRows / 3, layout.availableRows)),
-	);
+	const mode = layout.mode;
+	if (mode === "hidden") return 0;
+	return Math.max(0, Math.floor(Math.min(DASHBOARD_LINE_LIMITS[mode], layout.terminalRows / 3, layout.availableRows)));
 }
 const INDENT = "  ";
 /** Row markers match the Session Line so one glyph means one thing on both surfaces; only the marker is colored. */

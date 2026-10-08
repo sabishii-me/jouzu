@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { SettingsManager } from "@earendil-works/pi-coding-agent";
 
 import { resolveJouzuPaths } from "../dist/paths.js";
 import { ensureQuietStartupDefault, suppressPiReleaseNotes } from "../dist/startup-settings.js";
@@ -23,6 +24,37 @@ test("quiet startup is the Jouzu default without overriding an explicit choice",
 		writeFileSync(settingsPath, explicit);
 		assert.equal(ensureQuietStartupDefault(paths), false);
 		assert.equal(readFileSync(settingsPath, "utf8"), explicit);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("startup defaults preserve Pi's fullscreen default and an explicit regular mode", () => {
+	for (const mode of [undefined, "regular", "fullscreen"]) {
+		const { root, paths, settingsPath } = fixture();
+		try {
+			mkdirSync(paths.agentDir, { recursive: true });
+			writeFileSync(settingsPath, `${JSON.stringify(mode === undefined ? {} : { tuiMode: mode })}\n`);
+			assert.equal(ensureQuietStartupDefault(paths), true);
+			const written = JSON.parse(readFileSync(settingsPath, "utf8"));
+			assert.equal(written.quietStartup, true);
+			assert.equal(written.tuiMode, mode);
+			assert.equal(SettingsManager.inMemory(written).getTuiMode(), mode ?? "fullscreen");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	}
+});
+
+test("startup defaults preserve Pi's header-only quiet startup setting", () => {
+	const { root, paths, settingsPath } = fixture();
+	try {
+		mkdirSync(paths.agentDir, { recursive: true });
+		const original = '{ "quietStartup": "header", "tuiMode": "regular" }\n';
+		writeFileSync(settingsPath, original);
+		assert.equal(ensureQuietStartupDefault(paths), false);
+		assert.equal(readFileSync(settingsPath, "utf8"), original);
+		assert.equal(SettingsManager.inMemory(JSON.parse(original)).getQuietStartup(), "header");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}

@@ -325,6 +325,7 @@ export class NativeContentPolicy implements Policy {
 			content,
 			details: result.details ?? {},
 			isError: result.isError ?? false,
+			...(typeof result.terminate === "boolean" ? { terminate: result.terminate } : {}),
 			...(result.usage === undefined ? {} : { usage: result.usage }),
 			...(result.structuredContent === undefined ? {} : { structuredContent: result.structuredContent }),
 			...(result.nestedCalls === undefined ? {} : { nestedCalls: result.nestedCalls }),
@@ -342,7 +343,13 @@ export class NativeContentPolicy implements Policy {
 		if (this.advisoryApplies(source) && checked.snapshot) {
 			// Use the scanned snapshot, not references the tool can mutate while scanning.
 			// Flagged metadata and structured values have no programmatic advisory channel, so omit them.
-			const { details: _details, structuredContent: _structured, nestedCalls: _nested, ...admitted } = checked.snapshot;
+			const {
+				details: _details,
+				usage: _usage,
+				structuredContent: _structured,
+				nestedCalls: _nested,
+				...admitted
+			} = checked.snapshot;
 			this.admission.discard(review.id);
 			this.record(review);
 			this.alert(review.id, { kind: "advisory", source: review.displaySource, detail, approvable: false });

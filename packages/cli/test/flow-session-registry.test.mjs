@@ -5,9 +5,9 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { BACKGROUND_CONTEXT, MemorySessionRepo, setValue, value } from "@earendil-works/pi-agent-core";
 import { deferred, tick } from "../../../scripts/fixtures/pi-flow-session.mjs";
 import { PiFlowSessionRegistry } from "../dist/flow-control/pi-session-registry.js";
+import { BACKGROUND_CONTEXT, MemorySessionRepo, setValue, value } from "./fixtures/flow-storage.mjs";
 
 async function fixture(t) {
 	const root = await mkdtemp(join(tmpdir(), "jouzu-session-registry-"));

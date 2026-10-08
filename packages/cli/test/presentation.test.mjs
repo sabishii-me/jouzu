@@ -92,7 +92,10 @@ Guidelines:
 	assert.match(expected, /Do not invent acronyms or use unexplained jargon/);
 	assert.match(expected, /Use `jouzu-clear-writing` for documentation/);
 	assert.match(expected, /Work directly by default/);
-	assert.match(expected, /Inspect relevant files before editing/);
+	assert.match(
+		expected,
+		/Inspect relevant files before editing\. Scope file searches to relevant project paths and widen only when needed; do not run filesystem-wide scans such as `find \/` unless the user explicitly requests them\./,
+	);
 	assert.match(expected, /Distinguish evidence from assumptions/);
 	assert.match(expected, /make the smallest coherent change/);
 	assert.match(expected, /run the narrowest deterministic check/);
@@ -107,7 +110,7 @@ Guidelines:
 		JOUZU_DEFAULT_GUIDANCE,
 		`${JOUZU_USER_COMMUNICATION_GUIDANCE}\n${JOUZU_REPOSITORY_WORK_GUIDANCE}\n${JOUZU_ASYNC_WAIT_GUIDANCE}`,
 	);
-	assert.ok(JOUZU_DEFAULT_GUIDANCE.length <= 1800);
+	assert.ok(JOUZU_DEFAULT_GUIDANCE.length <= 2000);
 	assert.match(expected, /Prefer completion notifications and flow-control waits over sleeping or polling/);
 	assert.match(expected, /When agent_wait is available and the producer returns a wait dependency/);
 	assert.match(expected, /omit work to use the current invocation/);

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { assistantToolCalls } from "../../../scripts/fixtures/pi-flow-session.mjs";
-import { assembledSession, installedProducerExtensions } from "./fixtures/flow-assembly.mjs";
+import { assembledSession, installedProducerExtensions, replacedSession } from "./fixtures/flow-assembly.mjs";
 import { controlledBackground } from "./fixtures/flow-background-gate.mjs";
 import { waitDependencyFrom } from "./fixtures/flow-wait-dependency.mjs";
 
@@ -97,6 +97,53 @@ test("a live wait blocks lane continuations and delivers its decision once", asy
 	await idle(600);
 	assert.equal(f.bodies.length, settled, "a settled wait is not replayed");
 });
+
+for (const recovery of ["reattach", "revoked callback"])
+	test(`abandoned user inputs do not block automatic background wait resolution (${recovery})`, async (t) => {
+		const background = await controlledBackground(t);
+		const producerExtensions = await installedProducerExtensions();
+		const script = (body, index) => {
+			if (index === 0)
+				return assistantToolCalls({ name: "bg_task", arguments: { action: "spawn", command: background.command } });
+			if (index === 1)
+				return assistantToolCalls({
+					name: "agent_wait",
+					arguments: { reason: "Wait for the background job", deadline: "5m", on: [waitDependencyFrom(body)] },
+				});
+			return { text: `turn ${index}` };
+		};
+		let f = await assembledSession(t, { producerExtensions, script });
+		const admit = t.mock.method(f.ingress, "admit", async () => {
+			if (recovery === "revoked callback") throw new Error("admission callback failed");
+			return false;
+		});
+		for (let i = 0; i < 2; i++) {
+			if (recovery === "revoked callback")
+				await assert.rejects(f.session.prompt("continue"), /admission callback failed/);
+			else await f.session.prompt("continue");
+		}
+		admit.mock.restore();
+		if (recovery === "reattach")
+			f = await replacedSession(t, f, { sessionManager: f.sessionManager, producerExtensions, script });
+		const abandoned = await f.ingress.branch().attachment.submissions.snapshot(false);
+		assert.equal(abandoned.length, 2);
+		assert.ok(abandoned.every((record) => record.unavailable === "callback-ended" && !record.dispatch));
+		assert.equal(f.ingress.branch().host.gate().userPending, false);
+		assert.equal(f.bodies.length, 0, "abandoned prompts are not replayed");
+
+		await f.session.prompt("Run the background job and wait for its exit");
+		const blocked = f.bodies.length;
+		const [wait] = await f.ingress.branch().attachment.waits.snapshot();
+		assert.equal(wait.state, "waiting");
+		assert.ok(toolResults(f.sessionManager).some((text) => text.includes(`agent_wait waiting [${wait.token}]`)));
+		await background.release();
+		await waitForSettledWake(f, blocked);
+		assert.equal(f.bodies.length, blocked + 1, "job exit resumes the agent without another user turn");
+		assert.match(JSON.stringify(f.bodies.at(-1).messages.at(-1)), /resolved/);
+		await idle(200);
+		assert.equal(f.bodies.length, blocked + 1, "successful delivery does not repeat");
+		assert.deepEqual(f.errors, []);
+	});
 
 test("wait resolution, the lane continuation, and the result compose one logical wake", async (t) => {
 	const background = await controlledBackground(t);

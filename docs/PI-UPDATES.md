@@ -58,6 +58,14 @@ Review all generated manifest and lock changes before qualification. Run focused
 
 ## Update log
 
+### Pi 1.0.0 — qualified locally
+
+- **Tag and npm `gitHead`:** `v1.0.0` at `a13d35a742c6ef8462812a28fbe1d8c8b7431c32`.
+- **Disposition:** Qualified on 2026-10-02 at `28e208a`, retaining eight registered deviations. Node.js remains at least 22.19.
+- **Compatibility:** Jouzu keeps the classic agent host, saved settings and existing flow-journal format. A Jouzu-owned scalar journal adapter replaces the storage APIs removed by Pi. Workflow tools require direct calls so their individual results remain observable; built-in MCP and codemode are not enabled by this upgrade.
+- **Checks:** Online provenance/latest, full Linux release candidate, packed installation/update/rollback, API/CLI/RPC contracts and all-ten-package byte verification pass. Flow tests pass 1,645 cases; CLI tests pass 2,788, with the existing opt-in skips. Regular/fullscreen tests use recording terminals; live official Astra authentication and physical-terminal behavior remain unqualified.
+- **Known dependency issue:** Pi's nested `brace-expansion` 5.0.9 retains a denial-of-service advisory. This upgrade does not establish a clean security audit.
+
 ### Pi 0.87.1 — qualified locally
 
 - **Release:** 2026-09-22 (`0.87.0` published 2026-09-21)

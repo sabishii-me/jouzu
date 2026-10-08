@@ -1,12 +1,3 @@
-import {
-	BACKGROUND_CONTEXT,
-	deleteValue,
-	type Session,
-	type SessionReader,
-	setValue,
-	value,
-	type Write,
-} from "@earendil-works/pi-agent-core";
 import { emptyRetiredAttempts, retiredMemberHash } from "./attempt-retention.js";
 import {
 	type FlowAttempt,
@@ -16,6 +7,15 @@ import {
 	type FlowRequest,
 } from "./receipt-ledger.js";
 import { indexRetiredAttempts, projectRetiredAttempts } from "./retired-attempt-index.js";
+import {
+	BACKGROUND_CONTEXT,
+	deleteValue,
+	type Session,
+	type SessionReader,
+	setValue,
+	value,
+	type Write,
+} from "./scalar-storage.js";
 
 type Header = Omit<FlowLedgerState, "attempts"> & {
 	attemptIds: string[];
@@ -54,7 +54,7 @@ async function read(reader: SessionReader): Promise<FlowLedgerState | undefined>
 	return structuredClone({ ...state, attempts });
 }
 
-/** The caller owns the writable Pi Session and its process lock for this adapter's lifetime. */
+/** The caller owns the writable flow journal session and its process lock for this adapter's lifetime. */
 export function createPiLedgerStore(
 	session: Session,
 ): FlowLedgerStore & Required<Pick<FlowLedgerStore, "archivesRequests" | "retired" | "readContext">> {

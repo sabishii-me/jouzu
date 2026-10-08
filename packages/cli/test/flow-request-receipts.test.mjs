@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { BACKGROUND_CONTEXT as context, MemorySessionRepo } from "@earendil-works/pi-agent-core";
 import { stream } from "@earendil-works/pi-ai/api/openai-completions";
 import { assistant, createFlowSession, deferred } from "../../../scripts/fixtures/pi-flow-session.mjs";
 import { FlowModelInput } from "../dist/flow-control/model-input.js";
@@ -11,6 +10,7 @@ import { PiQueueReceipts } from "../dist/flow-control/pi-queue-receipts.js";
 import { PiRequestReceipts } from "../dist/flow-control/pi-request-receipts.js";
 import { FlowReceiptLedger } from "../dist/flow-control/receipt-ledger.js";
 import { buildFlowResultEnvelope } from "../dist/flow-control/result-envelope.js";
+import { BACKGROUND_CONTEXT as context, MemorySessionRepo } from "./fixtures/flow-storage.mjs";
 
 const answer = (tool = false) =>
 	new Response(

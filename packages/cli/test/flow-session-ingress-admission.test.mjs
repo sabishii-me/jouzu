@@ -374,7 +374,7 @@ test("reopened ingress retains work without reconstructing a dispatch callback",
 	});
 	assert.equal((await next.ingress.branch().attachment.submissions.snapshot())[0].id, record.id);
 	assert.deepEqual(await next.ingress.heldInputs(), [
-		{ id: record.id, reason: "Input was not dispatched before the session ended. Submit it again to run it." },
+		{ id: record.id, reason: "Input was not dispatched and cannot be delivered. Submit it again to run it." },
 	]);
 	await assert.rejects(next.ingress.release(record.id, record.revision), { code: "stale" });
 	assert.equal(next.sent.length, 0);
@@ -415,6 +415,9 @@ test("failed admission retains data but cannot reuse the revoked Pi callback", a
 	fail = false;
 	await assert.rejects(f.ingress.release(record.id, record.revision), { code: "stale" });
 	assert.equal(record.dispatch, undefined);
+	assert.equal(record.unavailable, "callback-ended");
+	assert.equal(f.ingress.branch().host.gate().userPending, false);
+	assert.match((await f.ingress.heldInputs())[0].reason, /Submit it again/);
 	assert.equal(f.sent.length, 0);
 });
 

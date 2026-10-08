@@ -64,20 +64,39 @@ async function request(selected, options = {}, simple = true) {
 	const sessionModel = withAstraMetadata(selected);
 	const handlers = astraHarness().handlers;
 	const p = provider([sessionModel]);
-	await p[simple ? "streamSimple" : "stream"](sessionModel, context, {
+	// Supply the prepared transport snapshot; registry lookups may describe later state.
+	const { oauth, authResolution, resolveAuth, requestMetadata = true, ...streamOptions } = options;
+	const transportModel = authResolution?.baseUrl ? { ...sessionModel, baseUrl: authResolution.baseUrl } : sessionModel;
+	await p[simple ? "streamSimple" : "stream"](transportModel, context, {
 		apiKey: "sk-fixture",
 		maxTokens: 2048,
 		sessionId: "fixture",
-		...options,
+		...streamOptions,
 		onPayload: async (payload, requestModel) => {
 			const chained = (await options.onPayload?.(payload, requestModel)) ?? payload;
-			const replaced = handlers.get("before_provider_request")(
-				{ payload: chained },
+			const replaced = await handlers.get("before_provider_request")(
+				{
+					payload: chained,
+					...(requestMetadata
+						? {
+								request: {
+									model: requestModel,
+									hasApiKey: true,
+									isChatGPTSignIn:
+										requestModel.provider === "openai" &&
+										requestModel.baseUrl === "https://api.openai.com/v1" &&
+										!(streamOptions.apiKey ?? "sk-fixture").startsWith("sk-"),
+								},
+							}
+						: {}),
+				},
 				{
 					model: sessionModel,
 					modelRegistry: {
-						isUsingOAuth: () => options.subscription ?? false,
+						isUsingOAuth: () => oauth ?? false,
 						getProvider: () => ({ auth: { oauth: { isSubscription: true } } }),
+						getApiKeyAndHeaders:
+							resolveAuth ?? (async () => authResolution ?? { ok: true, apiKey: streamOptions.apiKey ?? "sk-fixture" }),
 					},
 				},
 			);
@@ -136,11 +155,11 @@ test("cache disable and auxiliary complete requests preserve explicit settings",
 	assert.deepEqual(auxiliary.prompt_cache_options, { ttl: "30m" });
 });
 
-test("ChatGPT sign-in does not regain unsupported cache or token-limit fields after adaptation", async () => {
+test("a non-sk credential applies subscription restrictions without registry OAuth status", async () => {
 	for (const cacheRetention of ["none", "short", "long"]) {
 		const body = await request(model, {
 			apiKey: "fixture-subscription-token",
-			subscription: true,
+			oauth: false,
 			cacheRetention,
 			onPayload: (payload) => ({ ...payload, prompt_cache_options: { ttl: "30m" }, max_output_tokens: 2048 }),
 		});
@@ -149,6 +168,129 @@ test("ChatGPT sign-in does not regain unsupported cache or token-limit fields af
 		assert.equal(body.max_output_tokens, undefined);
 		assert.equal(body.reasoning.effort, "low");
 		assert.equal(body.prompt_cache_key, cacheRetention === "none" ? undefined : "fixture");
+	}
+});
+
+test("ChatGPT sign-in does not regain unsupported cache or token-limit fields after adaptation", async () => {
+	for (const cacheRetention of ["none", "short", "long"]) {
+		const body = await request(model, {
+			apiKey: "fixture-subscription-token",
+			oauth: true,
+			cacheRetention,
+			onPayload: (payload) => ({ ...payload, prompt_cache_options: { ttl: "30m" }, max_output_tokens: 2048 }),
+		});
+		assert.equal(body.prompt_cache_options, undefined);
+		assert.equal(body.prompt_cache_retention, undefined);
+		assert.equal(body.max_output_tokens, undefined);
+		assert.equal(body.reasoning.effort, "low");
+		assert.equal(body.prompt_cache_key, cacheRetention === "none" ? undefined : "fixture");
+	}
+});
+
+test("an sk-shaped API key keeps cache fields when the registry reports subscription OAuth", async () => {
+	for (const cacheRetention of ["none", "short", "long"]) {
+		const body = await request(model, { apiKey: "sk-fixture", oauth: true, cacheRetention });
+		assert.deepEqual(body.prompt_cache_options, cacheRetention === "none" ? { mode: "explicit" } : { ttl: "30m" });
+		assert.equal(body.prompt_cache_retention, undefined);
+		assert.equal(body.max_output_tokens, 2048);
+		assert.equal(body.prompt_cache_key, cacheRetention === "none" ? undefined : "fixture");
+	}
+});
+
+test("subscription restrictions require the exact upstream sign-in endpoint", async () => {
+	// The trailing slash stays official Astra for metadata, but upstream's exact
+	// endpoint predicate does not omit sign-in-only fields for this URL.
+	const trailingSlash = { ...model, baseUrl: "https://api.openai.com/v1/" };
+	assert.equal(withAstraMetadata(trailingSlash).thinkingLevelMap?.max, "max");
+	const body = await request(trailingSlash, {
+		apiKey: "fixture-subscription-token",
+		oauth: false,
+		cacheRetention: "long",
+		onPayload: (payload) => ({ ...payload, prompt_cache_options: { ttl: "30m" }, max_output_tokens: 2048 }),
+	});
+	assert.deepEqual(body.prompt_cache_options, { ttl: "30m" });
+	assert.equal(body.max_output_tokens, 2048);
+	assert.deepEqual(body.reasoning, { effort: "low" });
+});
+
+test("prepared credentials remain valid when later registry lookups would fail", async () => {
+	for (const resolution of [
+		{ authResolution: { ok: false, error: 'No API key found for "openai"' } },
+		{ authResolution: { ok: true } },
+		{
+			resolveAuth: async () => {
+				throw new Error("credential store unavailable");
+			},
+		},
+	]) {
+		for (const apiKey of ["fixture-subscription-token", "sk-fixture"]) {
+			const body = await request(model, { apiKey, oauth: true, cacheRetention: "long", ...resolution });
+			assert.deepEqual(body.prompt_cache_options, apiKey.startsWith("sk-") ? { ttl: "30m" } : undefined);
+			assert.equal(body.max_output_tokens, apiKey.startsWith("sk-") ? 2048 : undefined);
+		}
+	}
+});
+
+test("payloads without a prepared snapshot retain the converter's output", async () => {
+	for (const apiKey of ["fixture-subscription-token", "sk-fixture"]) {
+		const body = await request(model, {
+			apiKey,
+			requestMetadata: false,
+			resolveAuth: async () => {
+				throw new Error("must not re-read authentication");
+			},
+			cacheRetention: "short",
+		});
+		assert.equal(body.prompt_cache_options, undefined);
+		assert.equal(body.max_output_tokens, apiKey.startsWith("sk-") ? 2048 : undefined);
+	}
+});
+
+test("authentication endpoint overrides keep custom request payloads outside the official adapter", async () => {
+	const body = await request(model, {
+		apiKey: "fixture-subscription-token",
+		authResolution: { ok: true, apiKey: "fixture-subscription-token", baseUrl: "https://custom.example/v1" },
+		temperature: 0.8,
+		cacheRetention: "short",
+	});
+	assert.equal(body.temperature, 0.8);
+	assert.equal(body.max_output_tokens, 2048);
+	assert.equal(body.prompt_cache_options, undefined);
+});
+
+test("runtime API-key overrides resolve through the real registry independently of OAuth status", async (t) => {
+	const { mkdtemp, rm } = await import("node:fs/promises");
+	const { tmpdir } = await import("node:os");
+	const { join } = await import("node:path");
+	const { ModelRuntime, ModelRegistry } = await import("@earendil-works/pi-coding-agent");
+	const root = await mkdtemp(join(tmpdir(), "jouzu-astra-auth-"));
+	t.after(() => rm(root, { recursive: true, force: true }));
+	const runtime = await ModelRuntime.create({
+		credentials: {
+			read: async () => undefined,
+			list: async () => [],
+			modify: async () => undefined,
+			delete: async () => {},
+		},
+		modelsPath: null,
+		modelsStorePath: join(root, "models.json"),
+		allowModelNetwork: false,
+		refreshOnCreate: false,
+	});
+	const registry = new ModelRegistry(runtime);
+	for (const apiKey of ["fixture-subscription-token", "sk-fixture"]) {
+		await runtime.setRuntimeApiKey("openai", apiKey);
+		assert.equal(registry.isUsingOAuth(model), false);
+		const auth = await registry.getApiKeyAndHeaders(model);
+		assert.equal(auth.ok, true);
+		assert.equal(auth.apiKey, apiKey);
+		const body = await request(model, {
+			apiKey,
+			resolveAuth: (selected) => registry.getApiKeyAndHeaders(selected),
+			cacheRetention: "short",
+		});
+		assert.deepEqual(body.prompt_cache_options, apiKey.startsWith("sk-") ? { ttl: "30m" } : undefined);
+		assert.equal(body.max_output_tokens, apiKey.startsWith("sk-") ? 2048 : undefined);
 	}
 });
 
@@ -425,7 +567,7 @@ test("registered extension normalizes startup, switches, and restored session ef
 		runtime.registerProvider("openai", {
 			api: model.api,
 			baseUrl: model.baseUrl,
-			apiKey: "fixture",
+			apiKey: "sk-fixture",
 			models: [model, other],
 			streamSimple(selected, context, options) {
 				delivered.push(getCurrentSystemPrompt(context.messages));

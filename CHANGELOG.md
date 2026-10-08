@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.19 - 2026-10-02
+
+### Changed
+
+- Upgrade the embedded Pi runtime to 1.0.0 while preserving saved settings, sessions, and background work.
+- Shorten the README and move detailed setup and usage guides into the [documentation index](https://github.com/shisa-ai/jouzu/blob/v0.1.19/docs/README.md).
+
+### Fixed
+
+- Keep GPT-6 Astra requests compatible with API-key and ChatGPT sign-in authentication, including prompt-cache settings.
+- Prevent rejected tool-result metadata from bypassing TextGuard checks, including calls made through another tool.
+- Recover interrupted flow-journal repairs without losing completed records or blocking session reopening.
+
 ## 0.1.18 - 2026-09-30
 
 ### Changed

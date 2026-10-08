@@ -20,7 +20,15 @@ import { acquireProcessLock, type ProcessLock, ProcessLockError } from "../proce
 import type { ChildContext } from "./context.js";
 import type { WorkerCommand, WorkerEvent, WorkerLaunch } from "./protocol.js";
 import { captureReviewCandidate, type ReviewCandidate } from "./review.js";
-import { type AgentRole, digest, parseAgentConfig } from "./roles.js";
+import {
+	type AgentRole,
+	DEFAULT_WORKSPACE_WRITERS,
+	digest,
+	parseAgentConfig,
+	parseConcurrency,
+	parseWorkspaceWriters,
+	type WorkspaceWriterPolicy,
+} from "./roles.js";
 import { readSessionTrace, type TracePage, type TraceQuery } from "./trace.js";
 
 export type RunStatus = "queued" | "starting" | "running" | "completed" | "failed" | "cancelled" | "interrupted";
@@ -244,13 +252,16 @@ export class SubagentManager {
 	private pumping = false;
 	private storageError?: string;
 	private releaseError?: Error;
+	private maxConcurrent: number;
+	private workspaceWriters: WorkspaceWriterPolicy = DEFAULT_WORKSPACE_WRITERS;
 	constructor(
 		private readonly paths: JouzuPaths,
 		readonly parentSessionId: string,
-		private readonly maxConcurrent: number,
+		maxConcurrent: number,
 		private readonly factory: WorkerFactory = processWorker,
 		private readonly onComplete?: (run: AgentRun) => void,
 	) {
+		this.maxConcurrent = parseConcurrency(maxConcurrent);
 		this.root = join(paths.stateDir, "subagents", pathDigest(parentSessionId));
 		if (!existsSync(this.root)) return;
 		for (const id of readdirSync(this.root)) {
@@ -271,6 +282,18 @@ export class SubagentManager {
 	}
 	attach(): void {
 		this.acquireOwner();
+	}
+	/**
+	 * Concurrency and workspace-writer settings are saved from Workflow while
+	 * the session runs, so a raised limit starts queued work immediately.
+	 */
+	setConcurrency(maxConcurrent: number): void {
+		this.maxConcurrent = parseConcurrency(maxConcurrent);
+		this.pump();
+	}
+	setWorkspaceWriters(policy: WorkspaceWriterPolicy): void {
+		this.workspaceWriters = parseWorkspaceWriters(policy);
+		this.pump();
 	}
 	private acquireOwner(): void {
 		if (this.disposed) throw new Error("This agent session has closed.");
@@ -497,12 +520,19 @@ export class SubagentManager {
 					.map((key) => this.runs.get(key))
 					.filter((other): other is AgentRun => other !== undefined)
 					.filter((other) => other.cwd === run.cwd);
-				if (sameWorkspace.some((other) => roleCanWrite(other.role)) || (roleCanWrite(run.role) && sameWorkspace.length))
+				// "parallel" is the user's explicit choice to let writers share one
+				// workspace, so the per-workspace guard and the cross-session writer
+				// lock below are both skipped.
+				const serializeWriters = this.workspaceWriters === "serialize";
+				if (
+					serializeWriters &&
+					(sameWorkspace.some((other) => roleCanWrite(other.role)) || (roleCanWrite(run.role) && sameWorkspace.length))
+				)
 					continue;
 				let lock: ProcessLock | undefined;
 				try {
 					// Serialize workspace writers across parent sessions as well.
-					if (roleCanWrite(run.role))
+					if (serializeWriters && roleCanWrite(run.role))
 						lock = acquireProcessLock(join(this.paths.stateDir, "subagent-writers", `${pathDigest(run.cwd)}.sqlite`));
 				} catch (error) {
 					if (error instanceof ProcessLockError && error.reason === "busy") continue;

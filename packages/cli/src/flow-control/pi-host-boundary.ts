@@ -125,8 +125,6 @@ export class PiHostBoundary {
 			if (!this.closed && !this.stopping && this.idleListeners.size && !this.idleNotification) {
 				this.idleNotification = setImmediate(() => {
 					this.idleNotification = undefined;
-					const cause = this.operationDrained ? "operation" : "maintenance";
-					this.operationDrained = false;
 					if (
 						this.closed ||
 						this.stopping ||
@@ -136,6 +134,11 @@ export class PiHostBoundary {
 						!this.idle(true)
 					)
 						return;
+					// A barrier or renewed host work only defers this notification. Keep the drained
+					// operation cause until a notification can actually deliver it, so the retry that
+					// follows the deferred attempt still reports why the host drained.
+					const cause = this.operationDrained ? "operation" : "maintenance";
+					this.operationDrained = false;
 					for (const listener of this.idleListeners) listener(cause);
 				});
 			}

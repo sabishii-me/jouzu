@@ -144,7 +144,7 @@ export class PiFlowSessionService {
 			const recovery = await recoverPiHistory(this.session.sessionManager, attachment.ledger);
 			const state = await attachment.ledger.snapshot();
 
-			let recoveryBlocked = waitSourceRecovery.missing.length > 0 || recovery.unresolved > 0;
+			const recoveryBlocked = waitSourceRecovery.missing.length > 0 || recovery.unresolved > 0;
 			this.outcomeUnresolved = state.attempts.some((attempt) => attempt.phase === "uncertain");
 			await attachment.submissions.archiveCompleted();
 			await attachment.submissions.recoverCallbacks();
@@ -157,7 +157,6 @@ export class PiFlowSessionService {
 			this.opening.native = native;
 			const sourceRecovery = await native.recoverSources();
 			await reconcileNativeSources(this.session, attachment, native);
-			recoveryBlocked ||= sourceRecovery.unresolved > 0;
 			const requests = new PiNativeRequests(
 				this.session,
 				attachment.nativeRequests,
@@ -216,6 +215,7 @@ export class PiFlowSessionService {
 							attachment.waitProducers.updating ||
 							this.outcomeUnresolved ||
 							recoveryBlocked ||
+							sourceRecovery.unresolved > 0 ||
 							attachment.nativeRequests.recoveryBlocked ||
 							policy.recoveryBlocked,
 					};
@@ -526,6 +526,9 @@ export class PiFlowSessionService {
 						"Emergency flow release from /flow; provider outcome may be unknown.",
 					);
 				await this.refreshOutcomeUnresolved(branch);
+				// Reset is an explicit decision to release unknown dispatch outcomes, never to replay them.
+				await branch.attachment.submissions.discardInterrupted();
+				Object.assign(branch.sourceRecovery, await branch.native.recoverSources());
 				await branch.attachment.submissions.archiveCompleted();
 				await reconcileNativeSources(this.session, branch.attachment, branch.native, "reset");
 				const releasedRequests = await branch.attachment.nativeRequests.reset();

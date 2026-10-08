@@ -1,6 +1,6 @@
-import { BACKGROUND_CONTEXT, type SessionReader, setValue, value, type Write } from "@earendil-works/pi-agent-core";
 import { emptyRetiredAttempts, type FlowRetiredAttempts, type FlowRetirementQuery } from "./attempt-retention.js";
 import { FlowLedgerError } from "./receipt-ledger.js";
+import { BACKGROUND_CONTEXT, type SessionReader, setValue, value, type Write } from "./scalar-storage.js";
 
 const address = (kind: "members" | "work" | "settled" | "triggers", epoch: number, key: string) =>
 	value<number>(`jouzu.flow.retired-${kind}`, JSON.stringify([epoch, key]));

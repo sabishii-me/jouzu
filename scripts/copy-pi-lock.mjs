@@ -9,6 +9,7 @@ const destination = resolve(process.cwd(), process.argv[2] ?? "dist/pi.lock.json
 const packageName = "@earendil-works/pi-coding-agent";
 const serverPackageName = "@earendil-works/pi-server";
 const directRuntimePackageNames = [
+	"@earendil-works/pi-agent-core",
 	"@earendil-works/pi-ai",
 	packageName,
 	serverPackageName,

@@ -1,6 +1,6 @@
 # Jouzu
 
-Jouzu is Shisa AI's terminal coding agent, built on [Pi coding agent](https://pi.dev/).
+Jouzu is Shisa AI's terminal coding agent, built on [Pi coding agent](https://pi.dev/) 1.0.0.
 
 - **Goals, loops, and scheduled work.** Track tasks, work toward a goal, run measured improvement loops, and schedule prompts.
 - **Background jobs.** Run shell jobs while you keep working; completions arrive as batched summaries.

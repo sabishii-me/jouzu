@@ -522,6 +522,40 @@ test("role and run displays use catalog names without changing selectors or read
 	}
 });
 
+test("saving concurrency and writer settings applies to the running session", async () => {
+	const f = fixture();
+	try {
+		await f.handlers.get("session_start")({}, f.ctx);
+		mkdirSync(join(f.root, "worktree-b"), { recursive: true });
+		const saved = f.integration.service.roles();
+		f.integration.service.save({ ...saved, config: { ...saved.config, maxConcurrent: 1 } });
+		const discovered = await f.invoke({ op: "roles" });
+		assert.equal(discovered.maxConcurrent, 1);
+		assert.equal(discovered.workspaceWriters, "parallel", "the default policy shares workspaces");
+		await f.invoke({ op: "launch", role: "coder", task: "First" });
+		await f.invoke({ op: "launch", role: "coder", task: "Second", workspace: "worktree-b" });
+		assert.equal(f.workers.length, 1, "the saved limit applies without a relaunch");
+		const raised = f.integration.service.roles();
+		f.integration.service.save({
+			...raised,
+			config: { ...raised.config, maxConcurrent: 3, workspaceWriters: "serialize" },
+		});
+		assert.equal((await f.invoke({ op: "roles" })).workspaceWriters, "serialize");
+		await f.invoke({ op: "launch", role: "coder", task: "Third" });
+		assert.equal(
+			f.workers.length,
+			2,
+			"raising the limit starts queued work while the saved policy holds a writer in the parent workspace",
+		);
+		const shared = f.integration.service.roles();
+		f.integration.service.save({ ...shared, config: { ...shared.config, workspaceWriters: "parallel" } });
+		await f.invoke({ op: "roles" });
+		assert.equal(f.workers.length, 3, "allowing shared workspaces starts the queued writer");
+	} finally {
+		await f.shutdown();
+	}
+});
+
 test("optional workspace placeholders do not block discovery or launch defaults", async () => {
 	const f = fixture();
 	try {
@@ -574,9 +608,11 @@ test("session toggle stops children and queued work, reports live availability a
 	const f = fixture();
 	try {
 		await f.handlers.get("session_start")({}, f.ctx);
+		const initial = f.integration.service.roles();
+		f.integration.service.save({ ...initial, config: { ...initial.config, workspaceWriters: "serialize" } });
 		const a = await f.invoke({ op: "launch", role: "coder", task: "First" });
 		await f.invoke({ op: "launch", role: "coder", task: "Queued" });
-		assert.equal(f.workers.length, 1);
+		assert.equal(f.workers.length, 1, "the serialize policy holds the second writer in one workspace");
 		await f.integration.service.setSubagentsEnabled(false);
 		assert.equal(f.workers.length, 1, "disabling never starts queued work");
 		assert.ok(f.integration.service.runs().every((run) => run.status === "cancelled"));

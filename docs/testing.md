@@ -207,7 +207,7 @@ Run this after the source session has stopped writing. The test copies the trans
 npm run pi:check
 ```
 
-This verifies the pinned Pi patch bytes and the Pi lock against the installed package trees, then runs `scripts/pi-flow-control.test.mjs`, `scripts/pi-flow-ingress.test.mjs`, `scripts/pi-provider-receipts.test.mjs`, and `scripts/pi-content-policy.test.mjs`. It fails when applied bytes drift from the recorded patch, when unrecognized core bytes would be overwritten, or when the ingress, queue, and request-checkpoint contracts regress. Run it after changing the Pi pin or any `scripts/apply-pi-*` transform.
+This verifies the pinned Pi patch bytes and the Pi lock against the installed package trees, then runs `scripts/pi-flow-control.test.mjs`, `scripts/pi-flow-ingress.test.mjs`, `scripts/pi-flow-ingress-dispositions.test.mjs`, `scripts/pi-provider-receipts.test.mjs`, `scripts/pi-upstream.test.mjs`, and `scripts/pi-content-policy.test.mjs`. It fails when applied bytes drift from the recorded patch, when unrecognized core bytes would be overwritten, or when the ingress, queue, and request-checkpoint contracts regress. Run it after changing the Pi pin or any `scripts/apply-pi-*` transform.
 
 ### Live first-candidate smoke
 

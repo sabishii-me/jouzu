@@ -4,15 +4,15 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { createPiLedgerStore } from "../dist/flow-control/pi-ledger-store.js";
+import { FlowReceiptLedger } from "../dist/flow-control/receipt-ledger.js";
 import {
 	BACKGROUND_CONTEXT as context,
 	JsonlSessionRepo,
 	MemorySessionRepo,
+	NodeExecutionEnv,
 	value,
-} from "@earendil-works/pi-agent-core";
-import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
-import { createPiLedgerStore } from "../dist/flow-control/pi-ledger-store.js";
-import { FlowReceiptLedger } from "../dist/flow-control/receipt-ledger.js";
+} from "./fixtures/flow-storage.mjs";
 
 const scope = { sessionId: "parent", branchId: "branch-a" };
 const member = (id = "result-a", kind = "result", required = false) => ({
@@ -268,7 +268,7 @@ test("retention exhaustion refuses new work without evicting receipts", async (t
 	assert.equal(state.activeAttemptId, undefined);
 });
 
-test("Pi JSONL reopen preserves membership and marks a handed-off request uncertain", async (t) => {
+test("flow JSONL reopen preserves membership and marks a handed-off request uncertain", async (t) => {
 	const root = await mkdtemp(join(tmpdir(), "jouzu-flow-ledger-"));
 	t.after(() => rm(root, { recursive: true, force: true }));
 	const options = { fileSystem: new NodeExecutionEnv({ cwd: root }), sessionsRoot: root };
@@ -445,7 +445,7 @@ for (const checkpoint of ["before-handoff", "after-handoff", "torn-handoff"]) {
 	});
 }
 
-test("Pi JSONL updates do not rewrite every retained attempt on each transition", async (t) => {
+test("flow JSONL updates do not rewrite every retained attempt on each transition", async (t) => {
 	const { stat } = await import("node:fs/promises");
 	const root = await mkdtemp(join(tmpdir(), "jouzu-flow-growth-"));
 	t.after(() => rm(root, { recursive: true, force: true }));
@@ -465,5 +465,5 @@ test("Pi JSONL updates do not rewrite every retained attempt on each transition"
 	const finalBytes = (await stat(session.metadata.path)).size;
 	assert.equal((await ledger.snapshot()).attempts.length, 40);
 	assert.ok(finalBytes < firstBytes * 3, `20 attempts: ${firstBytes} bytes; 40 attempts: ${finalBytes} bytes`);
-	t.diagnostic(`Pi JSONL retained receipts: 20 attempts ${firstBytes} bytes; 40 attempts ${finalBytes} bytes.`);
+	t.diagnostic(`Flow JSONL retained receipts: 20 attempts ${firstBytes} bytes; 40 attempts ${finalBytes} bytes.`);
 });

@@ -2,7 +2,7 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 import type { ExtensionContext, InlineExtension } from "@earendil-works/pi-coding-agent";
 
 // Tracking and removal fixture: https://github.com/shisa-ai/jouzu/issues/27
-// Keep custom endpoints and Codex/OAuth separate from the official API contract.
+// Keep custom endpoints and the Codex transport separate from the official API contract.
 export function isOfficialAstra(model: Pick<Model<Api>, "id" | "api" | "provider" | "baseUrl">): boolean {
 	if (model.id !== "gpt-6-astra" || model.api !== "openai-responses" || model.provider !== "openai") return false;
 	return model.baseUrl === "https://api.openai.com/v1" || model.baseUrl === "https://api.openai.com/v1/";
@@ -30,8 +30,10 @@ export function withAstraMetadata<T extends Model<Api>>(model: T): T {
 	};
 }
 
+type PayloadModel = Pick<Model<Api>, "id" | "api" | "provider" | "baseUrl" | "compat">;
+
 /** The explicit prompt-cache mode marker lives on the OpenAI Responses compat variant only. */
-function supportsExplicitPromptCacheMode(model: Model<Api>): boolean {
+function supportsExplicitPromptCacheMode(model: Pick<Model<Api>, "compat">): boolean {
 	return (
 		(model.compat as { supportsExplicitPromptCacheMode?: boolean } | undefined)?.supportsExplicitPromptCacheMode ===
 		true
@@ -40,9 +42,9 @@ function supportsExplicitPromptCacheMode(model: Model<Api>): boolean {
 
 /** Normalize the final official Astra payload after Pi's converter and extension transforms. */
 export function normalizeAstraPayload(
-	model: Model<Api>,
+	model: PayloadModel,
 	payload: unknown,
-	options: { subscription?: boolean } = {},
+	options: { subscription?: boolean; preserveCacheOmission?: boolean } = {},
 ): unknown {
 	if (!isOfficialAstra(model) || !payload || typeof payload !== "object" || Array.isArray(payload)) return payload;
 	const result = { ...(payload as Record<string, unknown>) };
@@ -61,14 +63,12 @@ export function normalizeAstraPayload(
 	if (cache && typeof cache === "object" && !Array.isArray(cache)) {
 		result.prompt_cache_options = { ...cache };
 	} else if (
-		supportsExplicitPromptCacheMode(model) ||
-		result.prompt_cache_key !== undefined ||
-		result.prompt_cache_retention !== undefined
+		!options.preserveCacheOmission &&
+		(supportsExplicitPromptCacheMode(model) ||
+			result.prompt_cache_key !== undefined ||
+			result.prompt_cache_retention !== undefined)
 	) {
-		// The adapted model emits explicit disable for cacheRetention "none"; every
-		// other Astra request uses 30m. Without the explicit-mode marker, only a live
-		// cache key or retention proves caching was requested, so an unadapted
-		// payload must not turn an explicit disable into a 30m cache.
+		// Upstream short mode omits cache options; prepared API-key requests use Astra's 30m default.
 		result.prompt_cache_options = { ttl: "30m" };
 	}
 	delete result.prompt_cache_retention;
@@ -163,12 +163,13 @@ export function createAstraCompatibilityExtension(): InlineExtension {
 				const thinking = savedThinkingLevel(ctx) ?? ctx.thinkingLevel;
 				if (thinking) pi.setThinkingLevel(thinking);
 			});
-			pi.on("before_provider_request", (event, ctx) => {
-				if (!ctx.model || !isOfficialAstra(ctx.model)) return;
-				return normalizeAstraPayload(ctx.model, event.payload, {
-					subscription:
-						ctx.modelRegistry.isUsingOAuth(ctx.model) &&
-						ctx.modelRegistry.getProvider("openai")?.auth.oauth?.isSubscription === true,
+			pi.on("before_provider_request", (event) => {
+				// Mutable session and credential state can change after transport preparation.
+				// Without the prepared snapshot, leave the converter's payload unchanged.
+				if (!event.request) return;
+				return normalizeAstraPayload(event.request.model, event.payload, {
+					subscription: event.request.isChatGPTSignIn,
+					preserveCacheOmission: !event.request.hasApiKey,
 				});
 			});
 		},

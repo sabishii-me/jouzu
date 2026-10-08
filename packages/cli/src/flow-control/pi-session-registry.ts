@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { BACKGROUND_CONTEXT, type Session, setValue, value } from "@earendil-works/pi-agent-core";
 import { openLocalFlowSession } from "./local-storage.js";
 import { FlowOwnership } from "./ownership.js";
 import { FlowLedgerError, type FlowScope } from "./receipt-ledger.js";
+import { BACKGROUND_CONTEXT, type Session, setValue, value } from "./scalar-storage.js";
 
 export interface FlowBranchPosition {
 	entryId: string;

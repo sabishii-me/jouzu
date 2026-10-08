@@ -164,7 +164,7 @@ export function formatFlowReport(
 		}
 	}
 	if (unavailable.length) {
-		heading("Not delivered before closing");
+		heading("Undelivered input");
 		for (const input of visible(unavailable)) {
 			showInput(input.id);
 			const kind = context.inputs[input.id]?.kind;

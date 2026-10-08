@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { BACKGROUND_CONTEXT as context, MemorySessionRepo } from "@earendil-works/pi-agent-core";
 import { createFlowSession, deferred, model, tick } from "../../../scripts/fixtures/pi-flow-session.mjs";
 import { PiHostBoundary } from "../dist/flow-control/pi-host-boundary.js";
 import { createPiLedgerStore } from "../dist/flow-control/pi-ledger-store.js";
 import { FlowReceiptLedger } from "../dist/flow-control/receipt-ledger.js";
+import { BACKGROUND_CONTEXT as context, MemorySessionRepo } from "./fixtures/flow-storage.mjs";
 
 async function fixture(t, phase = "running") {
 	const host = await createFlowSession(t);
@@ -394,6 +394,35 @@ test("idle listeners recheck streaming state before notification", async (t) => 
 	await boundary.atQueueMaintenance(async () => {});
 	await new Promise((resolve) => setImmediate(resolve));
 	assert.equal(calls, 1);
+});
+
+test("a deferred operation notification keeps its cause across a held maintenance barrier", async (t) => {
+	const { boundary, session, requests } = await fixture(t);
+	const causes = [];
+	boundary.onIdle((cause) => causes.push(cause));
+
+	// The completed prompt drains as an operation and defers its notification to the next turn.
+	await session.prompt("turn");
+	assert.equal(requests.length, 1);
+	const entered = deferred(),
+		release = deferred();
+	const maintenance = boundary.atQueueMaintenance(async () => {
+		entered.resolve();
+		await release.promise;
+	});
+	await entered.promise;
+	await tick();
+	assert.deepEqual(causes, []);
+
+	release.resolve();
+	assert.equal((await maintenance).kind, "idle");
+	await tick();
+	assert.deepEqual(causes, ["operation"]);
+
+	// The delivered cause is consumed, so a later maintenance-only drain reports maintenance.
+	await boundary.atQueueMaintenance(async () => {});
+	await tick();
+	assert.deepEqual(causes, ["operation", "maintenance"]);
 });
 
 test("ordinary prompt preflight cannot enter idle maintenance", async (t) => {

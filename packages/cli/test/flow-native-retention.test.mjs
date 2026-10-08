@@ -4,7 +4,6 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { BACKGROUND_CONTEXT, setValue, value } from "@earendil-works/pi-agent-core";
 import { openLocalFlowSession } from "../dist/flow-control/local-storage.js";
 import {
 	retirableEmptyNativeRequests,
@@ -14,6 +13,7 @@ import {
 import { MAX_RETIRED_NATIVE_REQUESTS } from "../dist/flow-control/native-request-store.js";
 import { PiFlowAttachment } from "../dist/flow-control/pi-attachment.js";
 import { retiredIdentityHash } from "../dist/flow-control/retired-identities.js";
+import { BACKGROUND_CONTEXT, setValue, value } from "../dist/flow-control/scalar-storage.js";
 
 const scope = { sessionId: "session", branchId: "branch" };
 const hash = "a".repeat(64);

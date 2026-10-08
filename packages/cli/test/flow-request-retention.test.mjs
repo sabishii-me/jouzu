@@ -4,7 +4,6 @@ import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { BACKGROUND_CONTEXT as context, MemorySessionRepo, setValue, value } from "@earendil-works/pi-agent-core";
 import { checkpointFlowJournal } from "../dist/flow-control/journal-checkpoint.js";
 import { openLocalFlowSession } from "../dist/flow-control/local-storage.js";
 import { checkFlowNoReply, flowNoReplyToken } from "../dist/flow-control/no-reply.js";
@@ -17,6 +16,7 @@ import {
 	hasFlowHandoff,
 	hasFlowUserInput,
 } from "../dist/flow-control/request-retention.js";
+import { BACKGROUND_CONTEXT as context, MemorySessionRepo, setValue, value } from "./fixtures/flow-storage.mjs";
 
 const scope = { sessionId: "retention", branchId: "main" };
 const members = Array.from({ length: 15 }, (_, i) => ({

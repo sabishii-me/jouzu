@@ -1,16 +1,16 @@
-import { BACKGROUND_CONTEXT, type Session } from "@earendil-works/pi-agent-core";
 import { openLocalFlowSession, reconcileFlowStateVersion } from "./local-storage.js";
 import { FlowNativeRequestStore } from "./native-request-store.js";
 import { FlowOwnership } from "./ownership.js";
 import { createPiLedgerStore } from "./pi-ledger-store.js";
 import { FlowReceiptLedger, type FlowScope } from "./receipt-ledger.js";
 import { FlowResultManifestStore } from "./result-manifest.js";
+import { BACKGROUND_CONTEXT, type Session } from "./scalar-storage.js";
 import { FlowSubmissionStore } from "./submission-store.js";
 import { type FlowSubmissionView, projectFlowSubmissions } from "./submission-view.js";
 import { FlowWaitProducerRegistry } from "./wait-producers.js";
 import { FlowWaitStore } from "./wait-store.js";
 
-/** Own the Pi receipt session from open through its final close. */
+/** Own the flow journal session from open through its final close. */
 export class PiFlowAttachment {
 	private constructor(
 		private readonly ownership: FlowOwnership,

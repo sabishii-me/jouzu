@@ -208,6 +208,122 @@ test("cancelled final admission cannot release raw structured values or terminat
 	assert.equal(JSON.stringify(admitted).includes("PRIVATE"), false);
 });
 
+for (const scenario of [
+	"strict usage",
+	"guarded usage",
+	"strict opaque",
+	"guarded opaque",
+	"clear usage",
+	"cancelled",
+	"scanner failure",
+	"nonconfigurable",
+	"strict inherited usage",
+	"guarded inherited usage",
+	"inherited cancelled",
+	"inherited scanner failure",
+	"inherited clear usage",
+	"inherited uninspected",
+	"inherited off",
+	"uninspected",
+	"off",
+]) {
+	test(`nested admission cannot restore rejected metadata: ${scenario}`, async (t) => {
+		let nested;
+		const requests = [];
+		const mode = scenario.startsWith("guarded") ? "guarded" : scenario.endsWith("off") ? "off" : "strict";
+		const policy = gate(mode, async (text) => {
+			if (scenario.endsWith("scanner failure")) throw new Error("fixture scanner failure");
+			return text.includes("PRIVATE") ? flagged : clear;
+		});
+		const usage = assistant().usage;
+		const toolName = scenario.endsWith("uninspected") ? "trusted_fixture" : "mcp__fixture__fetch";
+		const raw = {
+			content: [{ type: "text", text: "public result" }],
+			details: {},
+			usage:
+				scenario.includes("opaque") || scenario.endsWith("clear usage")
+					? usage
+					: { ...usage, rawBody: "PRIVATE usage metadata" },
+			...(scenario.endsWith("clear usage") ? { terminate: true } : { opaqueBody: "PRIVATE unknown metadata" }),
+		};
+		if (scenario.includes("inherited")) {
+			Object.setPrototypeOf(raw, { usage: raw.usage });
+			delete raw.usage;
+		}
+		if (scenario === "nonconfigurable")
+			Object.defineProperty(raw, "PRIVATE property name", {
+				value: "PRIVATE fixed metadata",
+				enumerable: true,
+				configurable: false,
+			});
+		const { session } = await createFlowSession(t, {
+			policy,
+			tools: ["nested_fixture", toolName],
+			extensions: [
+				(pi) => {
+					pi.registerTool({
+						name: toolName,
+						label: "fetch",
+						description: "Fixture",
+						parameters: { type: "object", properties: {} },
+						execute: async () => {
+							if (scenario.endsWith("cancelled"))
+								Object.defineProperty(session.agent, "signal", { value: AbortSignal.abort(), configurable: true });
+							return raw;
+						},
+					});
+					// The parent is an ordinary, uninspected tool, so it cannot hide a leak with a second scan.
+					pi.registerTool({
+						name: "nested_fixture",
+						label: "parent",
+						description: "Fixture",
+						parameters: { type: "object", properties: {} },
+						execute: async (_id, _args, signal, _update, ctx) => {
+							nested = await ctx.executeTool(toolName, {}, { signal });
+							return { content: [{ type: "text", text: JSON.stringify(nested.result) }], details: {} };
+						},
+					});
+				},
+			],
+		});
+		let first = true;
+		session.agent.streamFunction = async (_model, context) => {
+			requests.push(structuredClone(context.messages));
+			const final = assistant();
+			if (first) {
+				first = false;
+				final.stopReason = "toolUse";
+				final.content = [{ type: "toolCall", id: "outer", name: "nested_fixture", arguments: {} }];
+			}
+			return {
+				async *[Symbol.asyncIterator]() {
+					yield { type: "done", partial: final };
+				},
+				result: async () => final,
+			};
+		};
+		await session.prompt("fixture");
+		assert.ok(nested, JSON.stringify(session.messages));
+		if (scenario.endsWith("off") || scenario.endsWith("uninspected")) {
+			assert.equal(nested.result.opaqueBody, "PRIVATE unknown metadata");
+			assert.equal(nested.result.usage.rawBody, "PRIVATE usage metadata");
+			if (scenario.includes("inherited")) assert.ok(Object.getPrototypeOf(raw).usage);
+		} else {
+			assert.equal(JSON.stringify(nested).includes("PRIVATE"), false);
+			assert.equal(JSON.stringify(requests).includes("PRIVATE"), false);
+			assert.equal(nested.result.opaqueBody, undefined);
+			if (scenario.includes("opaque") || scenario.endsWith("clear usage")) assert.deepEqual(nested.result.usage, usage);
+			else assert.equal(nested.result.usage, undefined);
+			if (scenario.endsWith("clear usage")) assert.equal(nested.result.terminate, true);
+			if (
+				(scenario.startsWith("strict") && scenario.endsWith("usage")) ||
+				/cancelled|scanner failure|nonconfigurable/.test(scenario)
+			)
+				assert.equal(nested.isError, true);
+		}
+	});
+}
+
 test("checked nested progress callbacks are refused before any tool side effect", async (t) => {
 	let executions = 0;
 	let progress = 0;

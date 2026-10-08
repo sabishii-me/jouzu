@@ -40,7 +40,28 @@ export function transform(path, source) {
                 : await send(options);`,
 		);
 	} else if (path === "dist/core/model-runtime.js") {
-		text = 'import { isBuiltinApiProvider } from "@earendil-works/pi-ai/compat";\n' + text;
+		text =
+			`import { isBuiltinApiProvider } from "@earendil-works/pi-ai/compat";
+function attachPreparedPayloadMetadata(prepared) {
+    const onPayload = prepared.options.onPayload;
+    if (!onPayload) return;
+    const { id, api, provider, baseUrl } = prepared.model;
+    const model = Object.freeze({
+        id, api, provider, baseUrl,
+        compat: Object.freeze({ supportsExplicitPromptCacheMode: prepared.model.compat?.supportsExplicitPromptCacheMode === true }),
+    });
+    const apiKey = prepared.options.apiKey;
+    const request = Object.freeze({
+        model,
+        hasApiKey: apiKey !== undefined,
+        isChatGPTSignIn: api === "openai-responses" && provider === "openai" &&
+            baseUrl === "https://api.openai.com/v1" && apiKey !== undefined && !apiKey.startsWith("sk-"),
+    });
+    // A non-enumerable marker survives payload callback wrappers without serializing auth data.
+    prepared.model = { ...prepared.model };
+    Object.defineProperty(prepared.model, Symbol.for("jouzu.pi.preparedProviderRequest"), { value: request });
+}
+` + text;
 		change(
 			"    getRegisteredProviderConfig(providerId) {",
 			"    isBuiltinApiProvider(api) {\n        return isBuiltinApiProvider(api);\n    }\n    getRegisteredProviderConfig(providerId) {",
@@ -52,6 +73,7 @@ export function transform(path, source) {
 				`            const validateProvider = options?.flowValidateProvider;
             const prepared = await this.prepareRequest(model, options);
             validateProvider?.(prepared.model, prepared.provider);
+            attachPreparedPayloadMetadata(prepared);
             return prepared.provider.${method}(prepared.model, transcript, prepared.options);`,
 			);
 		}
@@ -347,6 +369,14 @@ export function sessionEntryToContextMessages(entry) {`,
 		);
 	} else if (path === "dist/core/sdk.js") {
 		change(
+			"    const transformProviderPayload = async (payload) => {",
+			'    const transformProviderPayload = async (payload, requestModel) => {\n        const request = requestModel?.[Symbol.for("jouzu.pi.preparedProviderRequest")];',
+		);
+		change(
+			"return runner.emitBeforeProviderRequest(payload);",
+			"return runner.emitBeforeProviderRequest(payload, request);",
+		);
+		change(
 			"    const extensionsResult = resourceLoader.getExtensions();",
 			`    try {
         await options.flowIngress?.attach?.(session);
@@ -460,13 +490,41 @@ export function sessionEntryToContextMessages(entry) {`,
 			"export declare function convertToLlm(messages: AgentMessage[]): Message[];",
 			"export declare function convertToLlm(messages: AgentMessage[], onConverted?: (index: number, message: Message | undefined) => void): Message[];",
 		);
+	} else if (path === "dist/core/extensions/types.d.ts") {
+		change(
+			`export interface BeforeProviderRequestEvent {
+    type: "before_provider_request";
+    payload: unknown;
+}`,
+			`export interface BeforeProviderRequestEvent {
+    type: "before_provider_request";
+    payload: unknown;
+    /** Prepared routing and sign-in classification, without credentials or headers. */
+    readonly request?: {
+        readonly model: Readonly<Pick<Model<Api>, "id" | "api" | "provider" | "baseUrl">> & {
+            readonly compat: Readonly<{ supportsExplicitPromptCacheMode: boolean }>;
+        };
+        readonly hasApiKey: boolean;
+        readonly isChatGPTSignIn: boolean;
+    };
+}`,
+		);
 	} else if (path === "dist/core/extensions/runner.js") {
+		change("    async emitBeforeProviderRequest(payload) {", "    async emitBeforeProviderRequest(payload, request) {");
+		change(
+			'                        type: "before_provider_request",\n                        payload: currentPayload,',
+			'                        type: "before_provider_request",\n                        payload: currentPayload,\n                        ...(request ? { request } : {}),',
+		);
 		change("    async emitContext(messages) {", "    async emitContext(messages, afterClone) {");
 		change(
 			"        let currentMessages = structuredClone(messages);",
 			"        let currentMessages = structuredClone(messages);\n        if (afterClone) await afterClone(messages, currentMessages);",
 		);
 	} else if (path === "dist/core/extensions/runner.d.ts") {
+		change(
+			"    emitBeforeProviderRequest(payload: unknown): Promise<unknown>;",
+			'    emitBeforeProviderRequest(payload: unknown, request?: BeforeProviderRequestEvent["request"]): Promise<unknown>;',
+		);
 		change(
 			"    emitContext(messages: AgentMessage[]): Promise<AgentMessage[]>;",
 			"    emitContext(messages: AgentMessage[], afterClone?: (source: readonly AgentMessage[], cloned: readonly AgentMessage[]) => void | Promise<void>): Promise<AgentMessage[]>;",
@@ -713,21 +771,40 @@ export function sessionEntryToContextMessages(entry) {`,
             structuredContent: hookResult ? hookResult.structuredContent : result.structuredContent,
             isError: hookResult?.isError ?? isError,
             usage: hookResult?.usage ?? result.usage,
+            terminate: hookResult?.terminate ?? result.terminate,
         };
         if (!this.resourceLoader.contentPolicy) return finalResult;
-        if (this.agent.signal?.aborted && this.resourceLoader.contentPolicy.shouldInspectTool?.(toolCall.name, args))
-            return { content: [{ type: "text", text: "Tool result withheld after cancellation." }], details: {}, isError: true, terminate: false };
+        const inspected = this.resourceLoader.contentPolicy.shouldInspectTool?.(toolCall.name, args) === true;
+        const replaceInspectedResult = (admitted) => {
+            const replacement = { ...admitted, details: admitted.details ?? {} };
+            if (inspected) {
+                // afterToolCall is a partial override. Clear the original merge source too, or
+                // omitted usage and unknown properties can return in nested outcomes.
+                replacement.terminate ??= false;
+                try {
+                    // Remove inherited fallbacks before upstream's partial merge reads the result.
+                    Object.setPrototypeOf(result, null);
+                    for (const key of Reflect.ownKeys(result)) delete result[key];
+                    Object.assign(result, replacement);
+                } catch {
+                    throw new Error("TextGuard could not replace this result; content withheld.");
+                }
+            }
+            return replacement;
+        };
+        if (this.agent.signal?.aborted && inspected)
+            return replaceInspectedResult({ content: [{ type: "text", text: "Tool result withheld after cancellation." }], details: {}, isError: true, terminate: false });
         try {
             const admitted = await this.resourceLoader.contentPolicy.filterToolResult({
                 toolName: toolCall.name, toolCallId: toolCall.id, input: args,
                 result: finalResult, signal: this.agent.signal,
             });
             if (!admitted || !Array.isArray(admitted.content)) throw new Error("Invalid content-policy result");
-            return { ...admitted, details: admitted.details ?? {} };
+            return replaceInspectedResult(admitted);
         } catch {
             // Uninspected sources retain their native result when no policy check ran.
-            if (!this.resourceLoader.contentPolicy.shouldInspectTool?.(toolCall.name, args)) return finalResult;
-            return { content: [{ type: "text", text: "TextGuard could not check this result; content withheld." }], details: {}, isError: true, terminate: false };
+            if (!inspected) return finalResult;
+            return replaceInspectedResult({ content: [{ type: "text", text: "TextGuard could not check this result; content withheld." }], details: {}, isError: true, terminate: false });
         }`,
 		);
 		change(
@@ -1439,6 +1516,7 @@ export const paths = [
 	"dist/core/extensions/loader.js",
 	"dist/core/extensions/runner.js",
 	"dist/core/extensions/runner.d.ts",
+	"dist/core/extensions/types.d.ts",
 	"dist/core/skills.js",
 	"dist/core/skills.d.ts",
 	"dist/core/session-manager.js",

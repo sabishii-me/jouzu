@@ -7,6 +7,7 @@ import {
 	flowDisplayText,
 } from "../dist/flow-control/flow-status-context.js";
 import { createFlowStatusExtension } from "../dist/flow-control/flow-status-extension.js";
+import { UNAVAILABLE_INPUT_REASON } from "../dist/flow-control/submission-view.js";
 import { terminalTextWidth } from "../dist/terminal-layout.js";
 import { assembledSession, capturedNotices, installedProducerExtensions } from "./fixtures/flow-assembly.mjs";
 
@@ -48,7 +49,7 @@ test("reopened failure reports its source and puts recovery ahead of resume", ()
 		scope,
 		[
 			input("continuation", { nativeRequests: [request] }),
-			input("old", { reason: "Input was not dispatched before the session ended. Submit it again to run it." }),
+			input("old", { reason: UNAVAILABLE_INPUT_REASON }),
 			input("notice", { reason: "Input is waiting for recovery reconciliation." }),
 		],
 		[],
@@ -63,7 +64,7 @@ test("reopened failure reports its source and puts recovery ahead of resume", ()
 	assert.match(text, /Jouzu: Continue after compaction/);
 	assert.match(text, /context preparation/);
 	assert.match(text, /fixture-model/);
-	assert.match(text, /Not delivered before closing/);
+	assert.match(text, /Undelivered input/);
 	assert.match(text, /You: \/flow/);
 	assert.match(text, /pi-multiloop: Resume notice/);
 	assert.doesNotMatch(text, /Resume now with: \/flow resume/);
@@ -264,9 +265,7 @@ test("a failing diagnostic section does not hide other readable state or claim r
 		branch: () => branch,
 		inspect: async () => ({
 			scope,
-			submissions: [
-				input("old", { reason: "Input was not dispatched before the session ended. Submit it again to run it." }),
-			],
+			submissions: [input("old", { reason: UNAVAILABLE_INPUT_REASON })],
 			uncertain: [],
 		}),
 		automatedPause: () => undefined,
@@ -289,7 +288,7 @@ test("a failing diagnostic section does not hide other readable state or claim r
 test("narrow status keeps mixed-width previews within the terminal", () => {
 	const status = projectFlowStatus(
 		scope,
-		[input("old", { reason: "Input was not dispatched before the session ended. Submit it again to run it." })],
+		[input("old", { reason: UNAVAILABLE_INPUT_REASON })],
 		[],
 		[],
 		[],
@@ -410,7 +409,7 @@ test("long histories have bounded output and readable detail pages", () => {
 		scope,
 		Object.keys(inputs).map((id) =>
 			input(id, {
-				reason: "Input was not dispatched before the session ended. Submit it again to run it.",
+				reason: UNAVAILABLE_INPUT_REASON,
 			}),
 		),
 		[],

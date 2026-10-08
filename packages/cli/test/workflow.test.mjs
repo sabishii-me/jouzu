@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { CURSOR_MARKER, KeybindingsManager, TUI_KEYBINDINGS, visibleWidth } from "@earendil-works/pi-tui";
 import { JouzuPaletteRouter } from "../dist/palette.js";
-import { defaultAgentConfig, digest } from "../dist/subagents/roles.js";
+import { defaultAgentConfig, digest, parseAgentConfig } from "../dist/subagents/roles.js";
 import { WorkflowComponent } from "../dist/workflow.js";
 
 function fixture() {
@@ -11,6 +11,7 @@ function fixture() {
 	let enabled = true;
 	let closes = 0;
 	let update = () => {};
+	const launches = [];
 	const context = {
 		tui: { requestRender() {}, terminal: { rows: 32, columns: 90 } },
 		keybindings: new KeybindingsManager(TUI_KEYBINDINGS),
@@ -25,10 +26,11 @@ function fixture() {
 		setSubagentsEnabled: async (value) => {
 			enabled = value;
 		},
+		cwd: () => "/workspace/parent",
 		roles: () => ({ config: structuredClone(config), revision: digest(config) }),
 		save: (snapshot) => {
+			config = parseAgentConfig(snapshot.config);
 			writes++;
-			config = snapshot.config;
 		},
 		models: () => [{ provider: "test", id: "日本語-model", name: "Test" }],
 		runs: () => [],
@@ -51,6 +53,9 @@ function fixture() {
 		get writes() {
 			return writes;
 		},
+		get launches() {
+			return launches;
+		},
 		get closes() {
 			return closes;
 		},
@@ -65,6 +70,17 @@ const down = (view, n = 1) => {
 };
 const enter = (view) => view.handleInput("\r");
 const cancel = (view) => view.handleInput("\x1b");
+/**
+ * Move the selection to a row by label so adding settings rows does not
+ * silently repoint every browse-level test at a different control.
+ */
+const select = (f, label) => {
+	for (let i = 0; i <= 32; i++) {
+		if (f.text(120).includes(`→ ${label}`)) return;
+		f.view.handleInput("\x1b[B");
+	}
+	throw new Error(`the ${label} row was not reachable`);
+};
 
 test("Runs keeps the selected child when new runs are inserted", () => {
 	const f = fixture();
@@ -89,6 +105,30 @@ test("Runs keeps the selected child when new runs are inserted", () => {
 	f.view.dispose();
 });
 
+test("a fresh open lands on Runs while children are running and lists active runs first", () => {
+	const f = fixture();
+	const run = (id, status, createdAt) => ({
+		id,
+		status,
+		role: { id },
+		model: { provider: "test", id: "model" },
+		cwd: "/workspace",
+		task: id,
+		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 },
+		createdAt,
+	});
+	f.service.runs = () => [
+		run("finished", "completed", "2026-01-02T00:00:00.000Z"),
+		run("working", "running", "2026-01-01T00:00:00.000Z"),
+	];
+	const view = new WorkflowComponent(f.context, f.service);
+	view.focused = true;
+	const text = view.render(100).join("\n");
+	assert.match(text, /1 running · 2 in session/);
+	assert.ok(text.indexOf("working") < text.indexOf("finished"), "active runs lead the list");
+	assert.doesNotMatch(text, /orchestrator/, "definitions are not the fresh view while children run");
+	view.dispose();
+});
 test("subagents toggle supports Enter, arrows and Space without leaking into edits", async () => {
 	const f = fixture();
 	assert.match(f.text(), /Subagents.*On/);
@@ -106,7 +146,7 @@ test("subagents toggle supports Enter, arrows and Space without leaking into edi
 	assert.equal(f.service.subagentsEnabled(), false);
 	for (const width of [24, 48, 80, 120])
 		for (const line of f.view.render(width)) assert.ok(visibleWidth(line) <= width);
-	down(f.view);
+	down(f.view, 3);
 	enter(f.view);
 	f.view.handleInput(" ");
 	assert.equal(f.service.subagentsEnabled(), false);
@@ -154,7 +194,7 @@ test("Workflow shows definitions, navigates the view choice, and renders empty R
 });
 test("definition edits cancel without saving and text arrows belong to the input", () => {
 	const f = fixture();
-	down(f.view, 2);
+	select(f, "orchestrator");
 	enter(f.view);
 	assert.match(f.text(), /Edit agent/);
 	f.view.handleInput("x");
@@ -167,7 +207,7 @@ test("definition edits cancel without saving and text arrows belong to the input
 });
 test("model choice searches Japanese text and Escape preserves the definition draft", () => {
 	const f = fixture();
-	down(f.view, 2);
+	select(f, "orchestrator");
 	enter(f.view);
 	down(f.view, 2);
 	enter(f.view);
@@ -186,7 +226,7 @@ test("catalog model names lead selection while saved selectors remain exact", ()
 	const f = fixture();
 	const provider = "catalog:office:local:8f5c5bb9e126e978";
 	f.service.models = () => [{ provider, id: "deepseek-flash", name: "DeepSeek Flash 日本語" }];
-	down(f.view, 2);
+	select(f, "orchestrator");
 	enter(f.view);
 	down(f.view, 2);
 	enter(f.view);
@@ -205,7 +245,7 @@ test("catalog model names lead selection while saved selectors remain exact", ()
 
 test("the model picker offers the same-as-session selector and saves its literal value", () => {
 	const f = fixture();
-	down(f.view, 2);
+	select(f, "orchestrator");
 	enter(f.view);
 	down(f.view, 2);
 	enter(f.view);
@@ -222,7 +262,7 @@ test("all rendered rows fit narrow and wide terminals including model search and
 	const f = fixture();
 	for (const stage of [0, 1, 2]) {
 		if (stage === 1) {
-			down(f.view, 2);
+			select(f, "orchestrator");
 			enter(f.view);
 		}
 		if (stage === 2) {
@@ -244,7 +284,7 @@ test("external routing and Tab cannot discard an active definition edit", () => 
 			models: () => ({ render: () => ["model view"], invalidate() {}, route() {} }),
 		},
 	});
-	down(f.view, 2);
+	select(f, "orchestrator");
 	enter(f.view);
 	router.handleInput("\t");
 	assert.match(router.render(48).join("\n"), /Edit agent/);
@@ -268,7 +308,7 @@ test("hints use rebound primary and cancel keys", () => {
 
 test("unsaved definitions cannot launch or apply, and Save keeps its receipt", () => {
 	const f = fixture();
-	down(f.view, 2);
+	select(f, "orchestrator");
 	enter(f.view);
 	f.view.handleInput("x");
 	down(f.view, 11);
@@ -283,7 +323,7 @@ test("unsaved definitions cannot launch or apply, and Save keeps its receipt", (
 test("multiline instructions stay in the enclosing draft and fit a short terminal", () => {
 	const f = fixture();
 	f.context.tui.terminal.rows = 16;
-	down(f.view, 3);
+	select(f, "reviewer");
 	enter(f.view);
 	down(f.view, 9);
 	enter(f.view);
@@ -300,7 +340,7 @@ test("multiline instructions stay in the enclosing draft and fit a short termina
 
 test("model search receives the hardware cursor marker while focused", () => {
 	const f = fixture();
-	down(f.view, 2);
+	select(f, "orchestrator");
 	enter(f.view);
 	down(f.view, 2);
 	enter(f.view);
@@ -394,4 +434,76 @@ test("Runs opens output, requires Stop confirmation, and exposes Resume after ca
 	await new Promise((resolve) => setImmediate(resolve));
 	assert.equal(stops, 1);
 	assert.match(f.text(80), /Resume with a task/);
+});
+
+test("concurrency and child-writer settings save from the Agents view", () => {
+	const f = fixture();
+	select(f, "Concurrency");
+	assert.match(f.text(80), /Concurrency.*4/);
+	assert.match(f.text(80), /1–32/);
+	enter(f.view);
+	assert.match(f.text(80), /Concurrency/);
+	f.view.handleInput("\x7f");
+	f.view.handleInput("6");
+	enter(f.view);
+	assert.equal(f.writes, 1);
+	assert.equal(f.config.maxConcurrent, 6);
+	assert.match(f.text(80), /Concurrency set to 6/);
+	select(f, "Concurrency");
+	enter(f.view);
+	f.view.handleInput("\x7f");
+	f.view.handleInput("33");
+	enter(f.view);
+	assert.equal(f.writes, 1, "an out-of-range value is rejected before it reaches storage");
+	assert.equal(f.config.maxConcurrent, 6);
+	assert.match(f.text(80), /Concurrent agents must be 1–32/);
+	cancel(f.view);
+	select(f, "Child writers");
+	assert.match(f.text(80), /In parallel/);
+	enter(f.view);
+	assert.equal(f.config.workspaceWriters, "serialize");
+	assert.match(f.text(80), /One at a time/);
+	f.view.handleInput("\x1b[C");
+	assert.equal(f.config.workspaceWriters, "parallel");
+	f.view.dispose();
+});
+
+test("the assignment form defaults to the parent workspace and passes a chosen one", async () => {
+	const f = fixture();
+	f.service.launch = async (id, task, options) => {
+		const run = {
+			id: "fixture-run",
+			role: f.config.roles.find((role) => role.id === id),
+			model: { provider: "fixture", id: "test" },
+			status: "queued",
+			task,
+			cwd: options?.workspace ?? "/workspace/parent",
+			usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: null },
+		};
+		f.launches.push({ id, task, options });
+		f.service.runs = () => [run];
+		return run;
+	};
+	select(f, "coder");
+	enter(f.view);
+	down(f.view, 11);
+	enter(f.view);
+	assert.match(f.text(120), /Workspace.*\/workspace\/parent/);
+	assert.match(f.text(120), /default/);
+	enter(f.view);
+	f.view.handleInput("Do the work");
+	cancel(f.view);
+	down(f.view);
+	enter(f.view);
+	assert.match(f.text(80), /Edit workspace/);
+	f.view.handleInput("\x15");
+	f.view.handleInput("../other-worktree");
+	cancel(f.view);
+	assert.match(f.text(120), /other-worktree/);
+	down(f.view, 2);
+	enter(f.view);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.deepEqual(f.launches, [{ id: "coder", task: "Do the work", options: { workspace: "../other-worktree" } }]);
+	assert.match(f.text(120), /Run/);
+	f.view.dispose();
 });
