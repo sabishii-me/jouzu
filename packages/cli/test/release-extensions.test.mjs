@@ -51,7 +51,7 @@ const expectedPiTasks = {
 	version: "0.6.1",
 	commit: "a07c749439b1909a95a974bf6ee8a560f6d2b0d9",
 };
-const expectedCompatibility = ["@sinclair/typebox", "esbuild", "typebox", "wreq-js"];
+const expectedCompatibility = ["@napi-rs/canvas", "@sinclair/typebox", "esbuild", "typebox", "wreq-js"];
 
 function packageNames(records) {
 	return records.map((record) => record.name).sort();

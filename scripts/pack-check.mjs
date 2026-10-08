@@ -5,6 +5,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { assertExternalCanvas } from "./canvas-package-boundary.mjs";
 import { isPrunedDependencyMetadata } from "./configure-release-packlists.mjs";
 import { assertVoiceBundlePresent } from "./voice-package-boundary.mjs";
 
@@ -259,6 +260,7 @@ for (const directory of executedDirectly ? packageDirectories : []) {
 		const releaseManifest = JSON.parse(readFileSync(join(directory, "release-extensions.json"), "utf8"));
 		const releaseLock = JSON.parse(readFileSync(join(directory, "package-lock.json"), "utf8"));
 		const releasePackages = [...releaseManifest.packages, ...releaseManifest.compatibilityDependencies];
+		assertExternalCanvas(packed.files, packageJson);
 		assertExternalWebTransport(
 			packed.files,
 			packageJson,

@@ -19,7 +19,7 @@
 		"test:flow": "node scripts/check-dist-fresh.mjs && node scripts/run-tests.mjs packages/cli/test/flow-*.test.mjs",
 		"test:tasks:integration": "node scripts/test-task-continuation-integration.mjs",
 		"test:python": "uv run --project python/jouzu python -m unittest discover -s python/jouzu/tests -v",
-		"test:pack-check": "node scripts/run-tests.mjs scripts/pack-check.test.mjs scripts/dev-smoke.test.mjs scripts/textguard-artifact.test.mjs scripts/release-bundle-receipt.test.mjs",
+		"test:pack-check": "node scripts/run-tests.mjs scripts/pack-check.test.mjs scripts/canvas-package-boundary.test.mjs scripts/dev-smoke.test.mjs scripts/textguard-artifact.test.mjs scripts/release-bundle-receipt.test.mjs",
 		"test:dev-build": "python3 scripts/test_dev_build.py",
 		"test:release-metadata": "node scripts/run-tests.mjs scripts/check-release-metadata.test.mjs scripts/release-artifact.test.mjs scripts/smoke-phase.test.mjs scripts/live-flow-smoke.test.mjs",
 		"test:packed": "node scripts/test-packed-cli.mjs",

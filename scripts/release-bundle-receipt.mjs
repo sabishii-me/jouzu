@@ -37,6 +37,7 @@ const FINGERPRINT_INPUTS = [
 	"packages/cli/package-lock.json",
 	"scripts/install-release-extensions.mjs",
 	"scripts/webaio-package-boundary.mjs",
+	"scripts/canvas-package-boundary.mjs",
 ];
 
 function sha256(value) {
