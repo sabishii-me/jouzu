@@ -20,7 +20,8 @@ export function updateConfiguration({repository, launcherPublicKey, recipePublic
 if(process.argv[1] && resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
  const [output]=process.argv.slice(2);
  if(!output) throw new Error('Usage: node update-configuration.mjs <existing-output-directory>');
- const config=updateConfiguration({repository:process.env.GITHUB_REPOSITORY,launcherPublicKey:process.env.LAUNCHER_PUBLIC_KEY,recipePublicKey:process.env.JOUZU_RECIPE_PUBLIC_KEY,recipeBaseUrl:process.env.JOUZU_RECIPE_BASE_URL});
+ // The update repository can be given explicitly, so a build can bake a repository other than the one it runs in.
+ const config=updateConfiguration({repository:process.env.JOUZU_UPDATE_REPOSITORY??process.env.GITHUB_REPOSITORY,launcherPublicKey:process.env.LAUNCHER_PUBLIC_KEY,recipePublicKey:process.env.JOUZU_RECIPE_PUBLIC_KEY,recipeBaseUrl:process.env.JOUZU_RECIPE_BASE_URL});
  writeFileSync(resolve(output,'tauri-updater.json'),JSON.stringify(config.launcher,null,2)+'\n');
  writeFileSync(resolve(output,'jouzu-update.json'),JSON.stringify(config.jouzu,null,2)+'\n');
 }

@@ -10,7 +10,7 @@ export function signingPreflight(env, component) {
  else required.push('TAURI_SIGNING_PRIVATE_KEY','AZURE_CLIENT_ID','AZURE_TENANT_ID','AZURE_SUBSCRIPTION_ID','AZURE_SIGNING_ENDPOINT','AZURE_SIGNING_ACCOUNT','AZURE_SIGNING_PROFILE','EXPECTED_SIGNER');
  const missing=required.filter(name=>!env[name]?.trim());
  if(missing.length)throw new Error(`Missing configuration: ${missing.join(', ')}`);
- updateConfiguration({repository:env.GITHUB_REPOSITORY,launcherPublicKey:env.LAUNCHER_PUBLIC_KEY,recipePublicKey:env.JOUZU_RECIPE_PUBLIC_KEY,recipeBaseUrl:env.JOUZU_RECIPE_BASE_URL});
+ updateConfiguration({repository:env.JOUZU_UPDATE_REPOSITORY??env.GITHUB_REPOSITORY,launcherPublicKey:env.LAUNCHER_PUBLIC_KEY,recipePublicKey:env.JOUZU_RECIPE_PUBLIC_KEY,recipeBaseUrl:env.JOUZU_RECIPE_BASE_URL});
  if(component==='jouzu') {
   try {
    const expected=createPublicKey(env.JOUZU_RECIPE_PUBLIC_KEY).export({type:'spki',format:'der'});

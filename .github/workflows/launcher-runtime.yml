@@ -80,7 +80,7 @@ jobs:
       # publishes Jouzu, so this step bakes their values while the signature and the release stay ours.
       - name: Build and test signing inputs
         env:
-          GITHUB_REPOSITORY: ${{ vars.UPSTREAM_REPOSITORY }}
+          JOUZU_UPDATE_REPOSITORY: ${{ vars.UPSTREAM_REPOSITORY }}
           LAUNCHER_PUBLIC_KEY: ${{ vars.UPSTREAM_LAUNCHER_PUBLIC_KEY }}
           JOUZU_RECIPE_PUBLIC_KEY: ${{ vars.UPSTREAM_RECIPE_PUBLIC_KEY }}
           JOUZU_RECIPE_BASE_URL: ${{ vars.UPSTREAM_RECIPE_BASE_URL }}
@@ -88,6 +88,8 @@ jobs:
           New-Item -ItemType Directory "$env:RUNNER_TEMP/update-config" | Out-Null
           node packaging/launcher/update-configuration.mjs "$env:RUNNER_TEMP/update-config"
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          Get-Content "$env:RUNNER_TEMP/update-config/tauri-updater.json"
+          Get-Content "$env:RUNNER_TEMP/update-config/jouzu-update.json"
           ./packaging/launcher/prepare-windows-bundle.ps1 -Prepared "$env:RUNNER_TEMP/jouzu-runtime" -Pnpm "$env:RUNNER_TEMP/build-tools/node_modules/pnpm" -Output "$env:RUNNER_TEMP/windows-bundle" -UpdateConfigDirectory "$env:RUNNER_TEMP/update-config"
           npm ci --prefix apps/launcher
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
@@ -158,7 +160,7 @@ jobs:
           node-version: '24.19.0'
       - name: Check protected signing configuration
         env:
-          GITHUB_REPOSITORY: ${{ vars.UPSTREAM_REPOSITORY }}
+          JOUZU_UPDATE_REPOSITORY: ${{ vars.UPSTREAM_REPOSITORY }}
           LAUNCHER_PUBLIC_KEY: ${{ vars.UPSTREAM_LAUNCHER_PUBLIC_KEY }}
           JOUZU_RECIPE_PUBLIC_KEY: ${{ vars.UPSTREAM_RECIPE_PUBLIC_KEY }}
           JOUZU_RECIPE_BASE_URL: ${{ vars.UPSTREAM_RECIPE_BASE_URL }}
