@@ -3,6 +3,12 @@
 One section per released Launcher version. The update feed shows the section for the released
 version verbatim, so a release without a section is refused.
 
+## 0.3.7
+
+- Launcher and Jouzu updates now come from the repository that publishes Jouzu, `shisa-ai/jouzu`, and
+  are verified with its signing keys.
+- The launcher and the Jouzu application keep updating separately, each from its own signed feed.
+
 ## 0.3.6
 
 - A component that is here but does not run is repaired from its own row in System, instead of being
