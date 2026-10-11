@@ -12,6 +12,14 @@
 			"upstream/pi-content-policy/bug-report.js",
 			"!package-lock.json",
 			"!!**/node_modules",
+			"!!packages/cli/src/flow-control/flow-runtime.ts",
+			"!!packages/cli/src/flow-control/pi-native-requests.ts",
+			"!!packages/cli/src/flow-control/pi-session-ingress.ts",
+			"!!packages/cli/src/flow-control/pi-session-registry.ts",
+			"!!packages/cli/src/flow-control/pi-session-service.ts",
+			"!!packages/cli/src/flow-control/work-context.ts",
+			"!!packages/cli/src/tool-arguments.ts",
+			"!!scripts/multiloop-flow-transform.mjs",
 			"!!**/dist"
 		]
 	},
