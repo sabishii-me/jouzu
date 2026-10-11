@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.2.0 - Unreleased
+
+### Added
+
+- Add the Windows launcher with onboarding, a workspace screen, component management, diagnostics, logs, terminal access, Git Bash support, and recovery controls.
+- Add a bundled Windows runtime containing Jouzu, Node, pnpm, PortableGit, and Windows Terminal.
+- Add signed launcher updates and signed Jouzu update recipes with separate verification keys and feeds.
+- Add journal and scalar flow storage with crash recovery and compatibility coverage.
+
+### Changed
+
+- Keep running agents visible in the dashboard and Workflow.
+- Run child writers in parallel by default and expose child concurrency and workspace sharing as settings.
+- Scope agent file searches to relevant project paths.
+- Prioritize Shisa in the CLI login provider menu.
+
+### Fixed
+
+- Resume resolved waits after abandoned input.
+- Keep autonomous loops moving after task waits.
+- Use bundled TypeBox after npm installation failures.
+- Resolve native canvas dependencies in npm installations.
+
+### Release status
+
+- The npm package and update feeds remain unpublished for v0.2.0 while this candidate is tested.
+
 ## 0.1.19 - 2026-10-02
 
 ### Changed
