@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { pinnedNpm, verifyArtifact, verifyQualification, verifyWindowsQualification } from "./release-artifact.mjs";
 
@@ -19,7 +19,9 @@ const manifest = verifyArtifact(directory, { sourceCommit: commit, version: tag.
 const run = JSON.parse(readFileSync(join(directory, "ci-run.json"), "utf8"));
 const jobs = JSON.parse(readFileSync(join(directory, "ci-jobs.json"), "utf8"));
 verifyQualification(run, jobs, manifest);
-verifyWindowsQualification(JSON.parse(readFileSync(join(directory, "windows-qualification.json"), "utf8")), manifest);
+if (existsSync(join(directory, "windows-qualification.json"))) {
+	verifyWindowsQualification(JSON.parse(readFileSync(join(directory, "windows-qualification.json"), "utf8")), manifest);
+}
 const npm = (args, capture = false) => {
 	const result = spawnSync("npm", args, {
 		encoding: "utf8",

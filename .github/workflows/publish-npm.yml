@@ -17,8 +17,9 @@ on:
         type: string
 
       windows-evidence:
-        description: Native Windows qualification JSON for the exact candidate
-        required: true
+        description: Native Windows qualification JSON when available; installer qualification may follow npm publication
+        required: false
+        default: ''
         type: string
 
 permissions: {}
@@ -67,7 +68,9 @@ jobs:
           CI_RUN_ATTEMPT: ${{ inputs.ci-run-attempt }}
           WINDOWS_QUALIFICATION_JSON: ${{ inputs.windows-evidence }}
         run: |
-          node -e 'const fs=require("node:fs"); const e=JSON.parse(process.env.WINDOWS_QUALIFICATION_JSON); fs.writeFileSync("dist/ci-artifacts/windows-qualification.json", JSON.stringify(e))'
+          if [[ -n "$WINDOWS_QUALIFICATION_JSON" ]]; then
+            node -e 'const fs=require("node:fs"); const e=JSON.parse(process.env.WINDOWS_QUALIFICATION_JSON); fs.writeFileSync("dist/ci-artifacts/windows-qualification.json", JSON.stringify(e))'
+          fi
           [[ "$CI_RUN_ID" =~ ^[1-9][0-9]*$ ]]
           [[ "$CI_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CI_RUN_ID/attempts/$CI_RUN_ATTEMPT" > dist/ci-artifacts/ci-run.json
