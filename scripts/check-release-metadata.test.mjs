@@ -207,22 +207,24 @@ test("CI qualification matrices stay on hosted Linux and macOS with Windows as m
 	assert.match(workflow, /legacy-linux-static-fetch:[\s\S]*if: inputs\.platform != 'windows'/u);
 });
 
-test("publish requires native Windows qualification evidence for the exact candidate", () => {
+test("publish accepts the Linux/macOS candidate before post-publication Windows installer qualification", () => {
 	const workflow = readFileSync(join(root, ".github", "workflows", "publish-npm.yml"), "utf8");
 	assert.match(
 		workflow,
-		/windows-evidence:\n\s+description: Native Windows qualification JSON for the exact candidate\n\s+required: true\n\s+type: string/u,
+		/windows-evidence:\n\s+description: Native Windows qualification JSON when available; installer qualification may follow npm publication\n\s+required: false\n\s+default: ''\n\s+type: string/u,
 	);
 	assert.match(workflow, /WINDOWS_QUALIFICATION_JSON: \$\{\{ inputs\.windows-evidence \}\}/u);
+	assert.match(workflow, /if \[\[ -n "\$WINDOWS_QUALIFICATION_JSON" \]\]; then/u);
 	assert.match(workflow, /dist\/ci-artifacts\/windows-qualification\.json/u);
 	const publisher = readFileSync(join(root, "scripts", "publish-npm.mjs"), "utf8");
 	assert.match(publisher, /import \{[^}]*verifyWindowsQualification[^}]*\} from "\.\/release-artifact\.mjs";/u);
+	assert.match(publisher, /if \(existsSync\(join\(directory, "windows-qualification\.json"\)\)\)/u);
 	assert.match(
 		publisher,
-		/verifyWindowsQualification\(\s*JSON\.parse\(readFileSync\(join\(directory, "windows-qualification\.json"\), "utf8"\)\),\s*manifest\s*\)/u,
+		/verifyWindowsQualification\(JSON\.parse\(readFileSync\(join\(directory, "windows-qualification\.json"\), "utf8"\)\), manifest\)/u,
 	);
 	assert.ok(
-		publisher.indexOf("verifyWindowsQualification(") < publisher.indexOf('"publish"'),
-		"windows qualification must be verified before npm publish",
+		publisher.indexOf('npm", [') < publisher.indexOf("verifyWindowsQualification("),
+		"optional Windows qualification must be checked before npm publish when supplied",
 	);
 });
