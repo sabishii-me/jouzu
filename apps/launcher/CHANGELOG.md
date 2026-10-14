@@ -3,6 +3,10 @@
 One section per released Launcher version. The update feed shows the section for the released
 version verbatim, so a release without a section is refused.
 
+## 0.3.7
+
+- The installer carries Jouzu 0.2.0. The Launcher is unchanged from 0.3.6.
+
 ## 0.3.6
 
 - A component that is here but does not run is repaired from its own row in System, instead of being
