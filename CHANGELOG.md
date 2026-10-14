@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 - Unreleased
+## 0.2.0 - 2026-10-14
 
 ### Added
 
@@ -11,34 +11,22 @@
 
 ### Changed
 
+- Upgrade the embedded Pi runtime to 1.0.0 while preserving saved settings, sessions, and background work.
 - Keep running agents visible in the dashboard and Workflow.
 - Run child writers in parallel by default and expose child concurrency and workspace sharing as settings.
 - Scope agent file searches to relevant project paths.
 - Prioritize Shisa in the CLI login provider menu.
-
-### Fixed
-
-- Resume resolved waits after abandoned input.
-- Keep autonomous loops moving after task waits.
-- Use bundled TypeBox after npm installation failures.
-- Resolve native canvas dependencies in npm installations.
-
-### Release status
-
-- The npm package and update feeds remain unpublished for v0.2.0 while this candidate is tested.
-
-## 0.1.19 - 2026-10-02
-
-### Changed
-
-- Upgrade the embedded Pi runtime to 1.0.0 while preserving saved settings, sessions, and background work.
-- Shorten the README and move detailed setup and usage guides into the [documentation index](https://github.com/shisa-ai/jouzu/blob/v0.1.19/docs/README.md).
+- Shorten the README and move detailed setup and usage guides into the [documentation index](https://github.com/shisa-ai/jouzu/blob/v0.2.0/docs/README.md).
 
 ### Fixed
 
 - Keep GPT-6 Astra requests compatible with API-key and ChatGPT sign-in authentication, including prompt-cache settings.
 - Prevent rejected tool-result metadata from bypassing TextGuard checks, including calls made through another tool.
 - Recover interrupted flow-journal repairs without losing completed records or blocking session reopening.
+- Resume resolved waits after abandoned input.
+- Keep autonomous loops moving after task waits.
+- Use bundled TypeBox after npm installation failures.
+- Resolve native canvas dependencies in npm installations.
 
 ## 0.1.18 - 2026-09-30
 
