@@ -395,8 +395,10 @@ test("installed multiloop gate-change upgrade replaces only the pinned preceding
 			"",
 		)
 		.replace(
-			String.raw`      const flow = multiloopFlow(ctx.sessionManager.getSessionId());\n      const blocked = Array.from(statusStates.values()).filter((state) => state.status === "running" && flow?.waiting({ lane: state.lane, runTag: state.runTag })).length;\n      ctx.ui.setStatus("multiloop", \`multiloop: \${summaries.join(", ")}\${blocked ? \` · \${blocked} blocked (see /flow)\` : ""}\`);`,
-			String.raw`      ctx.ui.setStatus("multiloop", \`multiloop: \${summaries.join(", ")}\`);`,
+			// biome-ignore lint/suspicious/noTemplateCurlyInString: the fixture quotes template literals from the patched source
+			'      const flow = multiloopFlow(ctx.sessionManager.getSessionId());\n      const blocked = Array.from(statusStates.values()).filter((state) => state.status === "running" && flow?.waiting({ lane: state.lane, runTag: state.runTag })).length;\n      ctx.ui.setStatus("multiloop", `multiloop: ${summaries.join(", ")}${blocked ? ` · ${blocked} blocked (see /flow)` : ""}`);',
+			// biome-ignore lint/suspicious/noTemplateCurlyInString: the fixture quotes template literals from the patched source
+			'      ctx.ui.setStatus("multiloop", `multiloop: ${summaries.join(", ")}`);',
 		);
 	const lock = JSON.parse(await readFile(join(root, "upstream/multiloop-wait-skill/patch.lock.json"), "utf8"));
 	assert.equal(createHash("sha256").update(previous).digest("hex"), lock.extension.previousAfter);
