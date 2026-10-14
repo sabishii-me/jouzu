@@ -40,8 +40,7 @@ export function transform(path, source) {
                 : await send(options);`,
 		);
 	} else if (path === "dist/core/model-runtime.js") {
-		text =
-			`import { isBuiltinApiProvider } from "@earendil-works/pi-ai/compat";
+		text = `import { isBuiltinApiProvider } from "@earendil-works/pi-ai/compat";
 function attachPreparedPayloadMetadata(prepared) {
     const onPayload = prepared.options.onPayload;
     if (!onPayload) return;
@@ -61,7 +60,7 @@ function attachPreparedPayloadMetadata(prepared) {
     prepared.model = { ...prepared.model };
     Object.defineProperty(prepared.model, Symbol.for("jouzu.pi.preparedProviderRequest"), { value: request });
 }
-` + text;
+${text}`;
 		change(
 			"    getRegisteredProviderConfig(providerId) {",
 			"    isBuiltinApiProvider(api) {\n        return isBuiltinApiProvider(api);\n    }\n    getRegisteredProviderConfig(providerId) {",
