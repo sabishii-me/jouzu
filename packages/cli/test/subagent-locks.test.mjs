@@ -72,6 +72,9 @@ for (const kind of ["owner", "workspace"]) {
 		} finally {
 			await manager.dispose();
 			held.child.kill("SIGKILL");
+			// Wait for the holder to exit before removing the fixture: Windows refuses
+			// to unlink the SQLite file while the child still holds it open.
+			await held.exited;
 			rmSync(root, { recursive: true, force: true });
 		}
 	});
@@ -153,6 +156,9 @@ test("the default policy starts a writer while another process holds the workspa
 	} finally {
 		await manager.dispose();
 		held.child.kill("SIGKILL");
+		// Wait for the holder to exit before removing the fixture: Windows refuses
+		// to unlink the SQLite file while the child still holds it open.
+		await held.exited;
 		rmSync(root, { recursive: true, force: true });
 	}
 });
