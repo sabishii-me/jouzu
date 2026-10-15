@@ -87,6 +87,11 @@ jobs:
     uses: ./.github/workflows/launcher-recipe.yml
     permissions:
       contents: write
+    # A called workflow does not inherit secrets. The key lives in the launcher-publish
+    # environment that the called job declares, and a secret can be passed by name even
+    # when it only exists in that environment, so name it here.
+    secrets:
+      JOUZU_RECIPE_PRIVATE_KEY: ${{ secrets.JOUZU_RECIPE_PRIVATE_KEY }}
     with:
       jouzu_version: ${{ inputs.ref }}
       publish: true

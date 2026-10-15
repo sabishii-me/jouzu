@@ -207,6 +207,21 @@ test("CI qualification matrices stay on hosted Linux and macOS with Windows as m
 	assert.match(workflow, /legacy-linux-static-fetch:[\s\S]*if: inputs\.platform != 'windows'/u);
 });
 
+test("the npm publish workflow passes the recipe signing key to the called workflow", () => {
+	const workflow = readFileSync(join(root, ".github", "workflows", "publish-npm.yml"), "utf8");
+	const recipe = readFileSync(join(root, ".github", "workflows", "launcher-recipe.yml"), "utf8");
+	// A called workflow does not inherit secrets. The key lives in the launcher-publish
+	// environment that the called job declares, and a secret can be passed by name even
+	// when it only exists in that environment, so the caller must name it explicitly.
+	assert.match(workflow, /windows-update:[\s\S]*uses: \.\/\.github\/workflows\/launcher-recipe\.yml/u);
+	assert.match(
+		workflow,
+		/windows-update:[\s\S]*secrets:\n\s+JOUZU_RECIPE_PRIVATE_KEY: \$\{\{ secrets\.JOUZU_RECIPE_PRIVATE_KEY \}\}/u,
+	);
+	assert.match(recipe, /environment: launcher-publish/u);
+	assert.match(recipe, /workflow_call:[\s\S]*secrets:\n\s+JOUZU_RECIPE_PRIVATE_KEY:\n\s+required: true/u);
+});
+
 test("publish accepts the Linux/macOS candidate before post-publication Windows installer qualification", () => {
 	const workflow = readFileSync(join(root, ".github", "workflows", "publish-npm.yml"), "utf8");
 	assert.match(

@@ -24,6 +24,12 @@ on:
         description: Publish the signed recipe to the update feed
         type: boolean
         default: true
+    # The caller must pass this explicitly: a called workflow does not inherit secrets.
+    # The workflow_dispatch path does not use this declaration and takes the key from
+    # the launcher-publish environment that the job below declares.
+    secrets:
+      JOUZU_RECIPE_PRIVATE_KEY:
+        required: true
 permissions:
   contents: read
 jobs:
