@@ -31,3 +31,20 @@
   img { -webkit-user-drag: none; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; } }
+
+/* The launcher's dotted sign, animated: cyan dots on the left, purple on the right, the same palette as the JZ icon.
+   A bump travels along the row, the way a message moves through the mark, so a wait reads as motion rather than a static ring. */
+@keyframes jouzu-dot-travel {
+  0%, 60%, 100% { transform: translateY(0) scale(0.7); opacity: 0.4; }
+  30% { transform: translateY(-0.45rem) scale(1); opacity: 1; }
+}
+.jouzu-loader { display: inline-flex; align-items: center; gap: 0.5rem; height: 1.6rem; }
+.jouzu-loader span { display: block; width: 0.6rem; height: 0.6rem; border-radius: 9999px; animation: jouzu-dot-travel 1.2s ease-in-out infinite; }
+.jouzu-loader span:nth-child(1) { background: #22d3ee; animation-delay: 0s; }
+.jouzu-loader span:nth-child(2) { background: #39c8e8; animation-delay: 0.15s; }
+.jouzu-loader span:nth-child(3) { background: #ae92c9; animation-delay: 0.3s; }
+.jouzu-loader span:nth-child(4) { background: #c588c2; animation-delay: 0.45s; }
+@media (prefers-reduced-motion: reduce) {
+  .jouzu-loader span { animation: none; opacity: 1; transform: none; }
+  .jouzu-loader span:nth-child(2), .jouzu-loader span:nth-child(4) { opacity: 0.5; }
+}
