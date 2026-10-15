@@ -3,6 +3,17 @@
 One section per released Launcher version. The update feed shows the section for the released
 version verbatim, so a release without a section is refused.
 
+## 0.3.9
+
+- The Launcher's first reply is awaited in the window itself, under the dotted mark the window is named
+  after, and a wait that does not end shows its message under the mark, on one line with a button that
+  copies it.
+- The header shows its terminal, report, update and settings controls once the Launcher has answered or
+  the answer is known to have failed, and only the window controls in between.
+- When an update is waiting the header replaces the check for updates with an upgrade control, and it
+  opens System on the row that has the update. The rows name their own state: a waiting row carries an
+  Update available tag and its update button says what it does.
+
 ## 0.3.6
 
 - A component that is here but does not run is repaired from its own row in System, instead of being
