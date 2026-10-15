@@ -95,3 +95,24 @@ jobs:
     with:
       jouzu_version: ${{ inputs.ref }}
       publish: true
+  windows-launcher:
+    # Build and sign the Windows launcher as soon as the recipe exists, so every release
+    # produces a signed installer for local acceptance without a manual dispatch. The
+    # runtime comes from the recipe job in this run, which `needs:` already required.
+    # Publication stays a separate step on purpose: PUBLISH.md requires the approved local
+    # Windows gate before the signed installer is published, and that gate runs on the
+    # qualification host after npm accepts the version.
+    needs: windows-update
+    uses: ./.github/workflows/launcher-runtime.yml
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    # A called workflow does not inherit secrets; name the launcher signing key here.
+    # Publishing a launcher additionally needs `contents: write` on this job.
+    secrets:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+    with:
+      jouzu_version: ${{ inputs.ref }}
+      publish: false
+      runtime_run_id: ${{ github.run_id }}

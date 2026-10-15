@@ -222,6 +222,28 @@ test("the npm publish workflow passes the recipe signing key to the called workf
 	assert.match(recipe, /workflow_call:[\s\S]*secrets:\n\s+JOUZU_RECIPE_PRIVATE_KEY:\n\s+required: true/u);
 });
 
+test("the npm publish workflow builds and signs the launcher automatically", () => {
+	const workflow = readFileSync(join(root, ".github", "workflows", "publish-npm.yml"), "utf8");
+	const launcher = readFileSync(join(root, ".github", "workflows", "launcher-runtime.yml"), "utf8");
+	// The launcher build is chained to the recipe so every release produces a signed
+	// installer for local acceptance without a manual dispatch, and it reuses the runtime
+	// the recipe job in the same run uploaded.
+	assert.match(workflow, /windows-launcher:[\s\S]*needs: windows-update/u);
+	assert.match(workflow, /windows-launcher:[\s\S]*uses: \.\/\.github\/workflows\/launcher-runtime\.yml/u);
+	assert.match(
+		workflow,
+		/windows-launcher:[\s\S]*secrets:\n\s+TAURI_SIGNING_PRIVATE_KEY: \$\{\{ secrets\.TAURI_SIGNING_PRIVATE_KEY \}\}/u,
+	);
+	assert.match(workflow, /windows-launcher:[\s\S]*runtime_run_id: \$\{\{ github\.run_id \}\}/u);
+	// Chaining must not publish: the approved local Windows gate precedes installer publication.
+	assert.match(workflow, /windows-launcher:[\s\S]*publish: false/u);
+	assert.match(launcher, /workflow_call:[\s\S]*secrets:\n\s+TAURI_SIGNING_PRIVATE_KEY:\n\s+required: true/u);
+	assert.match(launcher, /name: Reuse the runtime this run produced/u);
+	assert.match(launcher, /name: Verify the restored runtime/u);
+	// A publication dispatch sources its runtime from the run whose recipe job produced it.
+	assert.match(launcher, /sources = @\([^)]*'\.github\/workflows\/publish-npm\.yml'\)/u);
+});
+
 test("publish accepts the Linux/macOS candidate before post-publication Windows installer qualification", () => {
 	const workflow = readFileSync(join(root, ".github", "workflows", "publish-npm.yml"), "utf8");
 	assert.match(
