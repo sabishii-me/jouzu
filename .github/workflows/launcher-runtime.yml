@@ -59,6 +59,10 @@ jobs:
           exit "$missing"
   runtime:
     needs: signing-configuration
+    # The signing job runs in its own job, so GITHUB_ENV from here does not reach it; the
+    # normalized version travels as a job output instead.
+    outputs:
+      jouzu_version: ${{ steps.version.outputs.jouzu_version }}
     runs-on: windows-latest
     timeout-minutes: 40
     defaults:
@@ -75,10 +79,12 @@ jobs:
         run: |
           npm install --prefix "$env:RUNNER_TEMP/build-tools" pnpm@10.21.0 --ignore-scripts --no-audit --no-fund
       - name: Resolve the exact version
+        id: version
         run: |
           $version = ($env:JOUZU_VERSION_INPUT -replace '^v','').Trim()
           if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Invalid Jouzu version: $env:JOUZU_VERSION_INPUT" }
           "JOUZU_VERSION=$version" | Out-File $env:GITHUB_ENV -Append
+          "jouzu_version=$version" | Out-File $env:GITHUB_OUTPUT -Append
         env:
           JOUZU_VERSION_INPUT: ${{ inputs.jouzu_version }}
       # A completed run is validated by its conclusion and workflow path before its
@@ -212,12 +218,12 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       - name: Sign and package CI binaries
-        run: ./packaging/launcher/finalize-windows-bundle.ps1 -InputDirectory "$env:RUNNER_TEMP/signing-inputs"
+        run: ./packaging/launcher/finalize-windows-bundle.ps1 -InputDirectory "$env:RUNNER_TEMP/signing-inputs" -JouzuVersion "${{ needs.runtime.outputs.jouzu_version }}"
       - name: Publish verified update
         if: ${{ inputs.publish }}
         env:
           GH_TOKEN: ${{ github.token }}
-        run: ./packaging/launcher/publish-launcher.ps1 -Directory "$env:RUNNER_TEMP/launcher-release"
+        run: ./packaging/launcher/publish-launcher.ps1 -Directory "$env:RUNNER_TEMP/launcher-release" -JouzuVersion "${{ needs.runtime.outputs.jouzu_version }}"
       - name: Upload signed artifacts
         if: ${{ !inputs.publish }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

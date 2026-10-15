@@ -235,13 +235,34 @@ test("the npm publish workflow builds and signs the launcher automatically", () 
 		/windows-launcher:[\s\S]*secrets:\n\s+TAURI_SIGNING_PRIVATE_KEY: \$\{\{ secrets\.TAURI_SIGNING_PRIVATE_KEY \}\}/u,
 	);
 	assert.match(workflow, /windows-launcher:[\s\S]*runtime_run_id: \$\{\{ github\.run_id \}\}/u);
-	// Chaining must not publish: the approved local Windows gate precedes installer publication.
-	assert.match(workflow, /windows-launcher:[\s\S]*publish: false/u);
+	// The installer publishes automatically onto the release page.
+	assert.match(workflow, /windows-launcher:[\s\S]*publish: true/u);
 	assert.match(launcher, /workflow_call:[\s\S]*secrets:\n\s+TAURI_SIGNING_PRIVATE_KEY:\n\s+required: true/u);
 	assert.match(launcher, /name: Reuse the runtime this run produced/u);
 	assert.match(launcher, /name: Verify the restored runtime/u);
 	// A publication dispatch sources its runtime from the run whose recipe job produced it.
 	assert.match(launcher, /sources = @\([^)]*'\.github\/workflows\/publish-npm\.yml'\)/u);
+});
+
+test("windows artifacts are named for the Jouzu release and land on it", () => {
+	const finalize = readFileSync(join(root, "packaging", "launcher", "finalize-windows-bundle.ps1"), "utf8");
+	const publish = readFileSync(join(root, "packaging", "launcher", "publish-launcher.ps1"), "utf8");
+	// A user downloading from the release page looks for the Jouzu version, not the launcher's own
+	// version number, so both artifacts are named from the release they install.
+	assert.match(finalize, /\$assetPrefix = "jouzu-win-x64-v\$JouzuVersion"/u);
+	assert.match(finalize, /\$fullSetup = Join-Path \$output "\$assetPrefix-setup\.exe"/u);
+	assert.match(finalize, /\$updateSetup = Join-Path \$output "\$assetPrefix-update\.exe"/u);
+	assert.match(finalize, /jouzuVersion=\$JouzuVersion;launcherVersion=\$Version/u);
+	// They belong on the version release beside the npm package, and stay replaceable so a broken
+	// installer is repaired by re-running the workflow.
+	assert.match(publish, /\$tag = "v\$JouzuVersion"/u);
+	assert.match(publish, /gh release upload \$tag[\s\S]*--clobber/u);
+	// No separate launcher-versioned release: its tag carried a version unrelated to the release it
+	// shipped in, and a once-per-launcher-version release cannot hold a per-release artifact.
+	assert.doesNotMatch(publish, /launcher-v\$/u);
+	assert.doesNotMatch(publish, /release create \$tag/u);
+	// The feed still speaks the launcher's own version, which is what an installed launcher compares.
+	assert.match(publish, /version=\$LauncherVersion/u);
 });
 
 test("publish accepts the Linux/macOS candidate before post-publication Windows installer qualification", () => {

@@ -9,13 +9,20 @@ publishes it.
 
 | Artifact | Contents | Purpose |
 | --- | --- | --- |
-| `Jouzu Launcher_<version>_x64-setup.exe` | launcher, console, application payload, Node/pnpm/PortableGit runtime | download, first install, repair |
-| `Jouzu Launcher_<version>_x64-update.exe` | launcher and launcher-owned support files only | in-app launcher update; the update feed serves only this artifact |
+| `jouzu-win-x64-v<jouzu version>-setup.exe` | launcher, console, application payload, Node/pnpm/PortableGit runtime | download, first install, repair |
+| `jouzu-win-x64-v<jouzu version>-update.exe` | launcher and launcher-owned support files only | in-app launcher update; the update feed serves only this artifact |
 
-Both come from one source tree in one release, and `build.json` records the version, the commit, the
-workflow run and both hashes. An update package that reaches a tenth of the full package is refused:
-that means the application payload was bundled into it, and an update exists precisely so that
-installing it does not rewrite the payload.
+Both are named for the Jouzu release they install and are attached to that release beside the npm
+package, so the installer sits on the page a reader opens for the release. Both come from one source
+tree in one release, and `build.json` records both versions, the commit, the workflow run and both
+hashes. An update package that reaches a tenth of the full package is refused: that means the
+application payload was bundled into it, and an update exists precisely so that installing it does
+not rewrite the payload.
+
+The two versions are not the same number. The launcher carries its own version because an installed
+launcher compares it against the update feed to decide whether an update exists, and a launcher
+already on a higher number would never accept a lower one. The feed therefore speaks the launcher
+version while the files are named for the Jouzu release.
 
 ## Build inputs
 
@@ -144,12 +151,13 @@ Configuration is checked before a build compiles anything (`signing-preflight.mj
 The updater signature over the published installer is verified against `LAUNCHER_PUBLIC_KEY` before
 publication, so an installer that no installed launcher could verify is never offered.
 
-A release publishes its version assets once and then replaces the `launcher-update` feed, which is the
-only replaceable file: it names the stored artifact, carries the changelog section as `notes` and the
-updater signature. A scheduled check re-verifies that the published npm version still has a matching
-signed recipe and opens an issue when it does not, and the npm publication workflow calls the recipe
-workflow with `publish: true`, so a published version cannot exist without its signed Windows update
-artifact.
+A release attaches its Windows artifacts to the version release beside the npm package, and those
+assets stay replaceable: re-running the installer workflow replaces them, because they are not the
+registry-verified package. The `launcher-update` feed names the stored update artifact, carries the
+launcher's changelog section as `notes` and the updater signature. A scheduled check re-verifies that
+the published npm version still has a matching signed recipe and opens an issue when it does not, and
+the npm publication workflow calls the recipe and installer workflows with `publish: true`, so a
+published version cannot exist without its signed Windows update artifact.
 
 ## Validation
 
