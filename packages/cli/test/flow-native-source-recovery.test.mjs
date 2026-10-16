@@ -56,7 +56,9 @@ test("native custom-message recovery uses Pi's persisted renderer data and times
 	assert.deepEqual(await next.dispatch.recoverSources(), { recovered: 1, unresolved: 0 });
 	assert.deepEqual(next.session.agent.state.messages, before);
 	assert.equal((await next.dispatch.sources(next.session.agent.state.messages)).length, 1);
-	assert.deepEqual(next.session.agent.state.messages[0].details, { exact: 1 });
+	assert.deepEqual(next.session.agent.state.messages.find((message) => message.role === "custom")?.details, {
+		exact: 1,
+	});
 });
 
 test("custom recovery preserves live timestamps and rejects changed renderer content", async (t) => {
@@ -72,7 +74,10 @@ test("custom recovery preserves live timestamps and rejects changed renderer con
 	const before = structuredClone(messages);
 	assert.deepEqual(await f.dispatch.recoverSources(), { recovered: 1, unresolved: 0 });
 	assert.equal(f.session.agent.state.messages, messages);
-	assert.equal(messages[0], custom);
+	assert.equal(
+		f.session.agent.state.messages.find((message) => message.role === "custom"),
+		custom,
+	);
 	assert.deepEqual(messages, before);
 	await f.session.prompt("next");
 	assert.equal(f.sent.length, 2);

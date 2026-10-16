@@ -1,83 +1,83 @@
 {
 	"schemaVersion": 1,
 	"package": "@earendil-works/pi-ai",
-	"version": "1.0.0",
+	"version": "1.3.0",
 	"files": {
 		"dist/api/transform-messages.js": {
-			"before": "9d747a3d64c533f7bfaf2a66e8446dc006086559d364a09d4c51d1c8c9c332e5",
-			"after": "2d9a33bf8f4c4f20d5427ece799f6f6478914a220b6fa690d3503c1f407e21f1"
+			"before": "5654d81fdacdf3f3e9ca9eb89c4dfa71b742b852163ecd49ba38307f876db63e",
+			"after": "c6453211d846e09c0cc1dbc63b1e58bbbab19d9a0ef1bbf464e1198475af9626"
 		},
 		"dist/api/transform-messages.d.ts": {
-			"before": "15ccbc06a131c08f5ffeb7d676f6841aa23faf19239f72cee8c077edd227cebd",
-			"after": "2ec467e677671686920989db787fb750a9cb452ea1d8f40fa74aeba9928a8b3f"
+			"before": "c0ae533a0955a98346cc32ecfd410bd4837397b903d50e3e8765917d9ba40191",
+			"after": "6f6ef33093f2138f013e3c8a32c4db3b519f51d86211b06d9eb76f18103e6b9a"
 		},
 		"dist/api/openai-completions.js": {
-			"before": "8167bfe47b0c9cc99a653d84f24ad055128e66888429f9f954e063918c074ea0",
-			"after": "c3470423c61cc88bdb2c4163b4bc4a2b6a8a9fe02f0c978f544c7059f0d5f36d"
+			"before": "4b3875e5ec18c5e2d06ce12409feb2554563fd2c392a5c1773af968b265e2bea",
+			"after": "5380ec4b325d636639c17c9ae00e52e58d7f25ef0a6dfdbc62ae03fefd7c5555"
 		},
 		"dist/api/openai-completions.d.ts": {
 			"before": "552baa4343275a20df53734e5aa12f46cb8648ca28421adf1318b199eae69a05",
 			"after": "b6eccdaa2d0b9796728d4f8c3b922713862dac056d331f3b0b530ea57d9cfd95"
 		},
 		"dist/types.d.ts": {
-			"before": "7e6a457a6f60029187b722456fa883d4eb6e5219f871c65bba323c1f8bb4eca2",
-			"after": "13bf8907477c10f4eeb77524cb27e4b524ed3d36db90e8e20758104463f23526"
+			"before": "4e76c0f67e2cb7243321059dbe212b676835c98ccc78344b3e2b052521e6803e",
+			"after": "7623af0896310f4c316ac3edd66ef07bc3d44924fed8a98aec8a97adda069568"
 		},
 		"dist/api/simple-options.js": {
-			"before": "36cec6b6c3c58a47ae2f902cc39e1601fdaf7ed5b0e99e3577089c036ad14805",
-			"after": "34083f839faee7e8d568ba42906e327acc312edfbba36f8006f6a283b5068e19"
+			"before": "9b3cc0ae6daa86fdc050bc0cb0f3f986401e64ccddbde6757183c9f8ad411be2",
+			"after": "e3d1e8d02b67d5ab27a862189523404f2a8ebbf08ae1b2a880f6de3f756eabe7"
 		},
 		"dist/api/openai-responses.js": {
-			"before": "8a294f760ea70459c6d41c83878a8d0cda5dd4780c46b490c85e0d3495471e3e",
-			"after": "de0f7d146688bb3c844366974bcf38d02433bce6f3f9fdde30ad3177e15c7bc7"
+			"before": "abb110a531362658ce21c478a782bcac936ef41e922a80b067f444ccf3c39f7e",
+			"after": "fa74b11fed88169f44eb32ed001fc14434581221ae88d04a08fe3a56a6045678"
 		},
 		"dist/api/openai-responses-shared.js": {
-			"before": "8744ad2ce9ce2512993360600760f5bcdbeb520d0a641c655b2a0b7cbe9db10a",
-			"after": "8e3c15a8136b76bb9e879b89ed1403e3bad585f610b092c8945f779a9a1dea18"
+			"before": "aff96f7cf1bbb4ffb1a9c2366620dfbedaa5e8b667a0c5f89d726428e3006d77",
+			"after": "55be33e3c39ee7523505123b24ca069f6ff7d074cec2db3225fcbd539a3cf6a7"
 		},
 		"dist/api/openai-responses-shared.d.ts": {
-			"before": "5457317a10e3e27e3e4e59672c9153eece30e82dcdd9f4e12904950d8e039fa2",
-			"after": "b55fa829a409c8715b1d44654e586257911150f948dd39fdf30534c6266c6685"
+			"before": "e8fbabf7229721b9a9b18f3957248c41cb0086d927be0e124f66bf7acf213046",
+			"after": "2209f7e32b9da7abea39baae7043d936f87d6ff8057aa6345b2f7c83b2f3aa02"
 		},
 		"dist/api/anthropic-messages.js": {
-			"before": "a0644ab05cf7ee3e4d566f21113d5b6c2361588237c999a45fa0d7935b68af10",
-			"after": "50de3b1855d1ff6a870117fb35a7ef602b0d1b32b9b19bd3c584d2055ee83ba5"
+			"before": "2a61739aa1e42d42c0351f10fef371b3efd544bc746a97cf6d6f68e4dfc0ef96",
+			"after": "6cb5558647422297597ec16b4e477b7e0896cbe963bd832f2aa113618241f3ef"
 		},
 		"dist/api/google-generative-ai.js": {
 			"before": "3a19fb56e96e60751a27a19f891264a3ab471cf4973307308ffdc8f8d2669397",
 			"after": "0a0df9974db0f5c3c7bbe35be4011386800a86a5d55f33082411520fc7929d5c"
 		},
 		"dist/api/google-shared.js": {
-			"before": "0254007d8b7f0ebeb2b00f6a940041012c45220369f604f999c8e7019d36972a",
-			"after": "da68a4a2944b5a94209978e85fac715e85b1ce9e287026474901b2f5c119aa0e"
+			"before": "c668c33dc25b2cd95cb5520c85bf22f2ff1652d0717aabc83aa26260205801ef",
+			"after": "18c711d25bf83bd3dc4541f3aa0bdb43ffded804bb6caa8a427c7ab4c772fddc"
 		},
 		"dist/api/google-shared.d.ts": {
 			"before": "cddabf0d12181149e4c9473eb2c6d2f0ad4e7870c76c2061b85346cb8031b2fc",
 			"after": "a000a950e3079006febd260f7c716441c89e56f4fe8c15db24f58f13a2f33695"
 		},
 		"dist/api/openai-codex-responses.js": {
-			"before": "53b4abdad5f2af1e5e5c12605d96bf6651d4a4b847351d87898ebb67d04236f7",
-			"after": "6d77864668548fcdb270d234b3f443d29d9d976f6f0e388b0ebf2293bc6ef88a"
+			"before": "4d90da82aaac68f9f0e1fd7daec39f1aa285c111bf04c7ddefa52e920b41b2cc",
+			"after": "a3d8bf53cb1d48a3fb8160b7da8c763ce20ec9882e3cc941de880b9454f00296"
 		},
 		"dist/api/google-vertex.js": {
 			"before": "6f6c69ece547a7851a211aa7680e90edd93748992fbc78805918b73254f81b65",
 			"after": "23558cc26857c4a41e1e3a32f52f716ede8daefd1ab3c1fca7026891a95989e2"
 		},
 		"dist/api/azure-openai-responses.js": {
-			"before": "7bed0249992d0b8f88c33cb2a70c24d51ca7c301d722933db0043095bcb03684",
-			"after": "bb0e115b81f801475c7f81c1b7d63eae3af0ccc36d7faa946bebd6fb382d90f6"
+			"before": "c0ccd5ce9e248524b6c8d0646a792aad5739b1b12daa8021b96f809222185265",
+			"after": "3d7789d5850ee7a30507f953b49be171bcc7b6b9cd62cdae2e6c5228fccb34f9"
 		},
 		"dist/api/mistral-conversations.js": {
-			"before": "e043c1c06427a0384d6e7d416c8d019d6342fb6f729fa80430c7cff43fc82d25",
-			"after": "8bc6ddd1db661d111fc9930037b91c5c1f0c54c31bb88be6144641f982838875"
+			"before": "14e0acba42f00bcb317ce5d4e1cff40f9e267b047d08b608d3a2e2eb92f9a4f4",
+			"after": "e93788bc67aeef9a5d09c42ae646ea674a3ec8d44154b0385f063ff770fa014c"
 		},
 		"dist/api/pi-messages.js": {
 			"before": "33cd3a7adc48775c88474d3c68b51f33791dc6e5b315ab9f3a8fc67eee4d8696",
 			"after": "3862e261036bfda28d1281ad4046fd4593f78a2b7402dd9956dfcb6eb95bca2d"
 		},
 		"dist/api/bedrock-converse-stream.js": {
-			"before": "5156f5fe64b1a878c59458e5148748f02f9d736e68aa5aae0c2fcd720f528847",
-			"after": "1a5a48a0bd043860869530d944b29214e1ce0e3b8079c0dfca7e0331725a3e38"
+			"before": "6ff824a3cda4d34fb18c31a190b5a966b8660d7be3da0bd9e1b419ec6bc4c455",
+			"after": "73e81658944d39574e6885f54c98efe2932cb1ef215e47a9a351690b8f1d3989"
 		},
 		"dist/compat.js": {
 			"before": "df55dca273cb2a7053187b7b29d0fe5b91966a5099ab02d2efe38bb31c3f9738",

@@ -13,6 +13,7 @@ Jouzu distributes the following release-owned Pi extensions and their default ru
 | `@sting8k/pi-vcc` | 0.10.2 | The upstream `README.md` declares MIT under its License heading; the package has no separate license file |
 | `pi-skill-dollar` | `308db930146e1b3f500eadebd0323ab88789336f` (v0.2.1) | MIT; `LICENSE` |
 | `@napi-rs/canvas` | 1.0.11 | MIT; `LICENSE`; installed by npm with the target platform's native binding |
+| `partial-json` | 0.1.7 | MIT; `LICENSE` |
 | `esbuild` | 0.28.2 | MIT; `LICENSE.md` |
 | `typebox` | 1.3.27 | MIT; `license` |
 | `wreq-js` | 3.2.0 | MIT; `LICENSE` |

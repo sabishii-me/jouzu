@@ -378,12 +378,15 @@ test("AgentSession request checkpoint runs after extension transforms, content p
 	);
 	assert.equal(requests.length, 1);
 	assert.equal(inputs.length, 1);
-	assert.equal(inputs[0].sourceMessages[0].content[0].text, "source");
-	assert.equal(inputs[0].transformedMessages[0].content[0].text, "policy");
-	assert.equal(inputs[0].transformedMessages[0].content[1].type, "image");
-	assert.equal(inputs[0].modelMessages[0].role, "user");
-	assert.equal(inputs[0].modelMessages[0].details, undefined);
-	assert.equal(inputs[0].modelMessages[0].content[1].text, "Image reading is disabled.");
+	const sourceUser = inputs[0].sourceMessages.find((message) => message.role === "custom");
+	const transformedUser = inputs[0].transformedMessages.find((message) => message.role === "custom");
+	const modelUser = inputs[0].modelMessages.find((message) => message.role === "user");
+	assert.equal(sourceUser.content[0].text, "source");
+	assert.equal(transformedUser.content[0].text, "policy");
+	assert.equal(transformedUser.content[1].type, "image");
+	assert.equal(modelUser.role, "user");
+	assert.equal(modelUser.details, undefined);
+	assert.equal(modelUser.content[1].text, "Image reading is disabled.");
 	assert.deepEqual(requests[0], inputs[0].modelMessages);
 });
 

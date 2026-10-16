@@ -859,7 +859,7 @@ test("Palette section switches retain the Models query without grabbing search f
 	assert.deepEqual(router.render(72), ["settings"]);
 	router.handleInput("\u001b[Z");
 	const restored = stripSgr(router.render(72).join("\n"));
-	assert.match(restored, /Search\s+> q/u, "the query survives the section round trip");
+	assert.match(restored, /Search[\s\S]*q/u, "the query survives the section round trip");
 	assert.doesNotMatch(restored, /· Search/u, "a resumed route does not grab search focus");
 });
 

@@ -1,47 +1,47 @@
 {
 	"schemaVersion": 1,
 	"package": "@earendil-works/pi-coding-agent",
-	"version": "1.0.0",
+	"version": "1.3.0",
 	"files": {
 		"dist/core/settings-manager.js": {
-			"before": "b3a424ac1af9bd0c380796f9e5d812e2c61755ed3b31dd39982a57bbe0d5a391",
-			"after": "c64d12a27f8b92d11edd60ed5ebd1b0f0a13617aadb06ada201435297842544a"
+			"before": "f3eeaadbc97b8c36acf98b1dd5894265f7f719bab95218e66dbc8c25658d5b12",
+			"after": "6e60af97dd4f67b4bcc820b6c271a26df0bbcb7b7a4258f8cc771c1570b7c546"
 		},
 		"dist/core/cache-warmer.js": {
 			"before": "9c4b000930d6d3c567073102f6b6a52660110bb0f79cf78dd72c4dd1ebc87fc0",
 			"after": "d1ccccbb4661e335254a8d38adba82345a829417b0b83ea55645f3d94d9e2b1c"
 		},
 		"dist/main.js": {
-			"before": "060521b0b81f91948d8ded9139e423e5d0c9e6808a45c81750cc30519de4d2db",
-			"after": "95d05b3e57ce1bb48905caace332c31ae9599090d9b8b87c38b01c80ea7ef77d"
+			"before": "08b91f9eb3adf9a5027c18732d1e4de70999bd15c445b65cb0ddd0cd68f2746b",
+			"after": "19d07173f9bb7d03b940039ede190f97b45a4b754d12913c015cc3ea891e60a0"
 		},
 		"dist/main.d.ts": {
 			"before": "cf197873ee07f73d5682fe2236e24989714d1f5c1acf8820264e570a5c17dadc",
 			"after": "b3c57b99ccfa8d798bb2b9474e6514108e6fe737613a80c4f853a0adde494765"
 		},
 		"dist/core/resource-loader.js": {
-			"before": "710e367e37c40df9f8f0239ebee6955e0a971a028d20467024bf4ea9ff55a42a",
-			"after": "d20445a11c102d2af9c3083fc08fabc70ef054a4f48fd1ba0d80674f4d386fc4"
+			"before": "ad50235884ea6d5ee14cdae1efcfe6afef58b22b18ce574e81886d57ca9f4642",
+			"after": "2c52070e196034405f17c3cd62157407c5c97db29a33e4e4c0aee58d556d1461"
 		},
 		"dist/core/resource-loader.d.ts": {
-			"before": "bf99a7d28ec8b4c239092b57a47f6507e72c1c904f38c72633a6fa87e0b3022b",
-			"after": "7739c82ad0fc7e25ca81896e312b9768f033fcf66aaa2b556506a19d98e10cb7"
+			"before": "948ac95e0eb67f29f78046404afdc94f4a12ade38a3a2f838a2628069bf70a8a",
+			"after": "35553cd94cddee099c582ecae5f290313d68efe47fd2aaa32b07fee72b248349"
 		},
 		"dist/core/sdk.js": {
-			"before": "fe643170de3d259c7e06179d9e18270a009dfb54df915f6e3de515425b8d009b",
-			"after": "f562d9f4fba7dcbd87ce998bfe2789e6a808b0a3a2c65e6443ef4366bee4e9a6"
+			"before": "8155c0b7d819d2248a1bbf0fa4b8e40d15552ff7fa6a772154cbbccb6ae59235",
+			"after": "66f4cbcd0ea496cab3ff006f83e412773ee504d9e80c16ff7161db6771fdb6e4"
 		},
 		"dist/core/sdk.d.ts": {
-			"before": "3996770d9332e2b290e7b8908dc7b24b0a99a49c9f498fc0b0771f4a5268b0c0",
-			"after": "570c7ea3a639e762e2cb4a78ae53aae832910d1cf8ea0f86e70c5056a6d8540a"
+			"before": "2cb83c8604497198eda83ba4691d9c001c971c6b358af05f42355afc7666c669",
+			"after": "5f16411d2e23147bea01c39d1854fd34d147093e4050f8ab6e6e11c66764f328"
 		},
 		"dist/core/agent-session.js": {
-			"before": "476722dd363a0347049d450b5a0c67386cf156ecae2b039676962aa00a857161",
-			"after": "0f0ab19080bfc79d1564cc6e9c6785c01738bbad80625effa9abe951a03a0602"
+			"before": "d0b4545a5da7fe97aa699269e64e27b37ee2fb5b7985efb1c0a66fc3d1883b52",
+			"after": "fa9e7c8aff8bedbf5c67adcae29c3e6295c5e2492c28dc7bbfd12200baa3542d"
 		},
 		"dist/core/agent-session.d.ts": {
-			"before": "2e50b35a37f9c7149c6297ae554b2d965bd74dbfcb8ccd7be44f13226ce497e7",
-			"after": "6afa12470102443bbe678967bc9b61963b2e854aeee3f3a5e91fbde99ee91bef"
+			"before": "2767a341270b405f9a8403baf0b1ba1f91b86bfb9267de2ae55d6438fed08a2f",
+			"after": "53065e32ab27ff324bb714796dfac17aa7ef004305850e941671dc8146a4e02c"
 		},
 		"dist/core/agent-session-services.js": {
 			"before": "20b7aa4b0657b53fb522ea051df26f72901802e03cc06c89e0a8926388bca601",
@@ -60,16 +60,16 @@
 			"after": "9cf341dfcf6bda51ed07aff0f948b1fc6650e56eee361f13308ce784c9a6b1e6"
 		},
 		"dist/core/extensions/loader.js": {
-			"before": "440c37c201d3c9ea78b5188482ea6aaf19e654266ccb8d6760d00ef360dcae3c",
-			"after": "eecdb6ff436f9871f43f89bc01c5b856744e18bb903bd733ac4bb23d52fad01d"
+			"before": "44a356da552c9cf2ea619c61944cfb28f81b45f09b325f152c91a914bfce1bc0",
+			"after": "7d4fc3733b4d0b7af5b98191a6bb002aba09314e29b22038db07bcfd7d32d0f2"
 		},
 		"dist/core/skills.js": {
-			"before": "3b7cc3997c630553eb88931de978e0db623ce51fbf7356e0ab922183885e208c",
-			"after": "772205cb86d94348f7347eb9cbb238193580919d771929863fcd0a98badafee1"
+			"before": "0e20ec500ed9783d5b01b5399e6600134fc3fdd10e6dc46c9113bc01565c9aa5",
+			"after": "9179973966ef44cf9a9fd47461f6b4f144c8cd8652fdf10e40d36c09a39df8b5"
 		},
 		"dist/core/skills.d.ts": {
-			"before": "8230b7f16b693ce3fbdf814d537105b3539ce7c07ba6cfef9605bf35695cdf58",
-			"after": "ee73c560e8bbc55bb5590b6edf1a13d417b29c52c6b0716ba286a7798ade752d"
+			"before": "3bcb75e07c8d6fe6bf6ed7e515151cc62030f8b45b241fbd5877f665c6758565",
+			"after": "c386ceda89fc5e911e0606a330b2b7dd856e5d085f1e16f435d8d434d6302c6e"
 		},
 		"dist/core/session-manager.js": {
 			"before": "046b6a1109ac3f0ed893bb85bf0648709362fa926a5da75761216cf2fcf9d926",
@@ -80,12 +80,12 @@
 			"after": "fdea2b19a08c4ecf689a27c77dfd53e59f6edf4347e6e110fea023ba32276d76"
 		},
 		"dist/core/extensions/runner.js": {
-			"before": "7583772d6d29a23c06496b6e0b4764ace220fb4289d5523916323642efa50306",
-			"after": "52db9f7afa271e620b5fa603af5dadb385abd8a083fefe5ee77c9a296398343c"
+			"before": "0e659fb4338069d91c4d0a3b032b51bf8d179a99e6417bc3e39e59b672aaec76",
+			"after": "ba82c537c645fbc983896959eb17746c2f08b46ca027a4b9b0aef233eef1bfdb"
 		},
 		"dist/core/extensions/runner.d.ts": {
-			"before": "7e2003af1df247c938704f913e08835a71a3ae11783215a0b9c9832400684044",
-			"after": "220cfc2eff7ea57c9d17abcc0924fdc61e1704ff57131e3bbbf8a626028ef97c"
+			"before": "24072380e2d884f2a8ecd148f374ee901e35e79f2bb6370f867bcce3523a9e1e",
+			"after": "940b24e9765e6f254a8eda57ce95b180aec6cfbf2ac4822bde97b4a8ac529c5b"
 		},
 		"dist/core/messages.js": {
 			"before": "8688b3f6eb28865f779cac998bd4754d1a4f08703200dfe0dd5a799aa0d42ef6",
@@ -108,32 +108,32 @@
 			"after": "60f2fb4da663af46c5aa734145aa85e3fbbed80ca701e6bf702a30fdefa1c56f"
 		},
 		"dist/core/model-runtime.js": {
-			"before": "da26f76339a031456f6d239a249159231776f760ab4ac538c6b54c417dea6f67",
-			"after": "44a4ab9399cd82b6ef7fbfc4bad74967bb3c6e465315ffafbf122338894df6d4"
+			"before": "578b742bea061fed029b8e139c6c0bcfe31e60665e9c0c6a08769761ef169dfd",
+			"after": "b88d6cef544ef087fede7de17a227d65b42a2d2342a73041cf6f9a2f33251f8f"
 		},
 		"dist/core/model-runtime.d.ts": {
 			"before": "5a7aac47a83c20316f593c74798f60ec4e521a0fddff03a0608dbc5514012bf5",
 			"after": "0e8f08c0d39c52596d518262624a86f4410772ffe6c3b85d86cfd9ecec73be15"
 		},
 		"dist/modes/interactive/interactive-mode.js": {
-			"before": "f9629b20031fa11ed10835b6f80f97d39e67397e9fa339cfc938e9cb0dcb4f2d",
-			"after": "b476c4ea49956b59ec738ff931045bb35a854dd7a34240dc4bde8421a0ef9544"
+			"before": "4679cdd21fb1d3868c3326eba60f3e3679e3847f06f5123f2a9f7d7efb6664e5",
+			"after": "fea82d3d25498cb08a9f366113e236a8f4522d67934027c9769c8fdd066e3231"
 		},
 		"dist/modes/interactive/interactive-mode.d.ts": {
-			"before": "dfc64721390ff2c3145c7342d8bd3c21e4153cd463578a690bb8542a9772b445",
-			"after": "0ec1ef8ee1b59c701a91f3edccebc675833add65f206523ceeee92c7f2b73942"
+			"before": "637123b308c53911e79ed7db0ea7162d4f765b779c1d41f147984fb7ba66b6aa",
+			"after": "3359a90f45fbc4b150f38db2fe585ef6041daca18d8363aa47ecb742a8d210fc"
 		},
 		"dist/core/slash-commands.js": {
-			"before": "3c4b7576c59d81e39e7dff4a847fdb51021fbea544a7880746018866a599f1e6",
-			"after": "cbc6f2510b6807d5baa81be79f80d24f159e7c8315491c505e024098952a61d6"
+			"before": "cdbaa9cb7594702d5b5608cf0d26764e6218163087801d220d31c3fb9e2ac7c5",
+			"after": "04b4f282b6dba3d4c71969fc61ea70478b43ae7bf5a005084d829ff21ab9158c"
 		},
 		"dist/modes/interactive/bug-report.js": {
 			"before": "a367a8873f46cffba53868b314d34cc013269c0d6f2efda62893e8de57c6693e",
 			"after": "8d6c43f56046a442a1a4b62b4f646854c5373f56af39c507a2785d7baffb881b"
 		},
 		"dist/core/extensions/types.d.ts": {
-			"before": "6c78c89ad1ffb421e81ff0ad11ceff1a635b21fd818a32aa3e87009392298d9f",
-			"after": "93337d5d9672fab3c880e83f5e52b339c307c5f27f9bdf5344fb820661ce7e6e"
+			"before": "c5038d9410cfb13f5be391f46f13de338bc46ab4c9a7d064f7b962c0dc4a807c",
+			"after": "b9c5d2e7d264d554ec7dc7b07d86faa6c390d18590f27c43bb4cbc335b819226"
 		}
 	},
 	"types": "14e9fb4505bf13670b82e12a72fb589d8a2c1142ecab5e1615ab2a5dba774863",

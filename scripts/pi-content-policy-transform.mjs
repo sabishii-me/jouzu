@@ -19,7 +19,7 @@ export function transform(path, source) {
 	};
 	if (path === "dist/core/settings-manager.js") {
 		change(
-			'return mode !== undefined && CACHE_WARMING_MODES.includes(mode) ? mode : "streaming";',
+			"return mode !== undefined && CACHE_WARMING_MODES.includes(mode) ? mode : SETTINGS_DEFAULTS.cacheWarming;",
 			'return mode !== undefined && CACHE_WARMING_MODES.includes(mode) ? mode : "off";',
 		);
 	} else if (path === "dist/core/cache-warmer.js") {
@@ -602,22 +602,26 @@ export function sessionEntryToContextMessages(entry) {`,
         return Promise.resolve();`,
 		);
 		change(
-			"    async _runAgentPrompt(messages) {",
+			'        if (trigger.messageType === "custom") {\n            messages.push(trigger.message);\n        }\n        else {',
+			'        if (trigger.messageType === "custom") {\n            messages.push(trigger.message);\n        }\n        else if (trigger.messageType !== "queued") {',
+		);
+		change(
+			"    async _startRun(trigger, onStarted) {",
 			`    async continueQueued() {
         this._flowBinding?.assertActive();
         if (!this.isIdle || this.agent.state.isStreaming || this.isCompacting || this.isRetrying) {
             throw new Error("Queued flow execution requires an idle session.");
         }
         if (!this.agent.hasQueuedMessages()) return false;
-        await this._runAgentPrompt(undefined, true);
+        await this._startRun({ messageType: "queued" });
         return true;
     }
-    async _runAgentPrompt(messages, fromQueue = false) {
+    async _startRun(trigger, onStarted) {
         this._flowBinding?.assertActive();`,
 		);
 		change(
 			"            await this.agent.prompt(messages);",
-			"            if (fromQueue) {\n                if (!(await this.agent.continueQueued())) return;\n            } else await this.agent.prompt(messages);",
+			'            if (trigger.messageType === "queued") {\n                if (!(await this.agent.continueQueued())) return;\n            } else await this.agent.prompt(messages);',
 		);
 		change(
 			`            while (!this._agentRunAbortRequested) {
@@ -872,8 +876,8 @@ export function sessionEntryToContextMessages(entry) {`,
 		);
 		text = `import type { FlowIngress } from "./jouzu-flow-ingress.js";\n${text}`;
 		change(
-			"    private _runAgentPrompt;",
-			"    /** Drain queued input through native retries, compaction, and settlement without appending a prompt. */\n    continueQueued(): Promise<boolean>;\n    private _runAgentPrompt;",
+			"    private _startRun;",
+			"    /** Drain queued input through native retries, compaction, and settlement without appending a prompt. */\n    continueQueued(): Promise<boolean>;\n    private _startRun;",
 		);
 		change("    private _handlePostAgentRun;", "    private _handlePostAgentRun;\n    private _continueAgentRun;");
 		change(

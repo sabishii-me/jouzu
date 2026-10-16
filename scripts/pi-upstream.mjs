@@ -173,7 +173,7 @@ function verifyTagContainsPackageSource(tag, tagCommit, sourceCommit) {
 function packageLockRecords() {
 	const packageLock = readJson(packageLockPath);
 	const packageRecord = (name) =>
-		packageLock.packages?.[`packages/cli/node_modules/${name}`] ?? packageLock.packages?.[`node_modules/${name}`];
+		packageLock.packages?.[`node_modules/${name}`] ?? packageLock.packages?.[`packages/cli/node_modules/${name}`];
 	const node = packageRecord(packageName);
 	const tui = packageRecord(tuiPackageName);
 	const server = packageRecord(serverPackageName);
