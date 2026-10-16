@@ -10,9 +10,9 @@ Jouzu distributes the following release-owned Pi extensions and their default ru
 | `pi-code-previews` | 0.1.36 | MIT; `LICENSE` |
 | `@lhl/pi-tasks` | `a07c749439b1909a95a974bf6ee8a560f6d2b0d9` | MIT; `LICENSE` |
 | `pi-multiloop` | `becca4ab47bf9953c66d96ecbac16bf2debe6881` (v0.4.1) | MIT; `LICENSE` |
-| `@sting8k/pi-vcc` | 0.7.2 | The upstream `README.md` declares MIT under its License heading; the package has no separate license file |
-| `pi-skill-dollar` | `4bff5734d87c4f4725d81a4ea1d1c1283c22423c` (v0.2.0) | MIT; `LICENSE` |
-| `@napi-rs/canvas` | 0.1.80 | MIT; `LICENSE`; installed by npm with the target platform's native binding |
+| `@sting8k/pi-vcc` | 0.10.2 | The upstream `README.md` declares MIT under its License heading; the package has no separate license file |
+| `pi-skill-dollar` | `308db930146e1b3f500eadebd0323ab88789336f` (v0.2.1) | MIT; `LICENSE` |
+| `@napi-rs/canvas` | 1.0.11 | MIT; `LICENSE`; installed by npm with the target platform's native binding |
 | `esbuild` | 0.28.2 | MIT; `LICENSE.md` |
 | `typebox` | 1.3.27 | MIT; `license` |
 | `wreq-js` | 3.2.0 | MIT; `LICENSE` |

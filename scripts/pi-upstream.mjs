@@ -172,18 +172,18 @@ function verifyTagContainsPackageSource(tag, tagCommit, sourceCommit) {
 
 function packageLockRecords() {
 	const packageLock = readJson(packageLockPath);
-	const node = packageLock.packages?.[`node_modules/${packageName}`];
-	const tui = packageLock.packages?.[`node_modules/${tuiPackageName}`];
-	const server = packageLock.packages?.[`node_modules/${serverPackageName}`];
-	const esbuild = packageLock.packages?.[`node_modules/${esbuildPackageName}`];
-	const typebox = packageLock.packages?.[`node_modules/${typeboxPackageName}`];
+	const packageRecord = (name) =>
+		packageLock.packages?.[`packages/cli/node_modules/${name}`] ?? packageLock.packages?.[`node_modules/${name}`];
+	const node = packageRecord(packageName);
+	const tui = packageRecord(tuiPackageName);
+	const server = packageRecord(serverPackageName);
+	const esbuild = packageRecord(esbuildPackageName);
+	const typebox = packageRecord(typeboxPackageName);
 	const cli = packageLock.packages?.["packages/cli"];
 	const sessionUi = packageLock.packages?.["packages/session-ui"];
-	const alignedRuntime = Object.fromEntries(
-		alignedRuntimePackageNames.map((name) => [name, packageLock.packages?.[`node_modules/${name}`]]),
-	);
+	const alignedRuntime = Object.fromEntries(alignedRuntimePackageNames.map((name) => [name, packageRecord(name)]));
 	const serverDependencies = Object.fromEntries(
-		serverDependencyPackageNames.map((name) => [name, packageLock.packages?.[`node_modules/${name}`]]),
+		serverDependencyPackageNames.map((name) => [name, packageRecord(name)]),
 	);
 	if (!node) fail(`${packageName} is missing from package-lock.json`);
 	if (!tui) fail(`${tuiPackageName} is missing from package-lock.json`);
@@ -283,7 +283,12 @@ function validateLock({ online }) {
 		fail(`package-lock Pi server version does not match ${serverRecord.version}`);
 	}
 	for (const name of serverDependencyPackageNames) {
-		if (!dependencyRangeSupportsVersion(packageLock.server.dependencies?.[name], packageLock.serverDependencies[name].version)) {
+		if (
+			!dependencyRangeSupportsVersion(
+				packageLock.server.dependencies?.[name],
+				packageLock.serverDependencies[name].version,
+			)
+		) {
 			fail(`Pi server does not target the pinned ${name}`);
 		}
 	}
@@ -311,8 +316,10 @@ function validateLock({ online }) {
 	if (online) {
 		const metadata = registryMetadata(`${packageName}@${packageRecord.version}`);
 		if (metadata.version !== packageRecord.version) fail("npm version does not match lock");
-		if (metadata.gitHead && metadata.gitHead !== lock.commit) fail(`npm gitHead ${metadata.gitHead} does not match ${lock.commit}`);
-		if (!metadata.gitHead && lock.commit !== lock.tagCommit) fail("npm package source is missing gitHead and lock commit is not the release tag");
+		if (metadata.gitHead && metadata.gitHead !== lock.commit)
+			fail(`npm gitHead ${metadata.gitHead} does not match ${lock.commit}`);
+		if (!metadata.gitHead && lock.commit !== lock.tagCommit)
+			fail("npm package source is missing gitHead and lock commit is not the release tag");
 		if (metadata.integrity !== packageRecord.integrity) fail("npm integrity does not match lock");
 		if (!dependencyRangeSupportsVersion(metadata.dependencies[tuiPackageName], tuiVersion)) {
 			fail(`npm Pi package does not target Pi TUI ${tuiVersion}`);
@@ -331,7 +338,8 @@ function validateLock({ online }) {
 		const tagCommit = upstreamTagCommit(lock.tag);
 		if (tagCommit !== lock.tagCommit) fail(`upstream ${lock.tag} is ${tagCommit}, expected ${lock.tagCommit}`);
 		verifyTagContainsPackageSource(lock.tag, tagCommit, lock.commit);
-		if (serverMetadata.gitHead) verifyTagContainsPackageSource(`v${serverRecord.version}`, serverTagCommit, serverMetadata.gitHead);
+		if (serverMetadata.gitHead)
+			verifyTagContainsPackageSource(`v${serverRecord.version}`, serverTagCommit, serverMetadata.gitHead);
 	}
 
 	console.log(

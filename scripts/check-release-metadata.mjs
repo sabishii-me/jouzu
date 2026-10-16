@@ -47,7 +47,10 @@ if (!changelog.includes(`## ${cliPackage.version} - `)) throw new Error("CHANGEL
 // launcher names the release its installer came from.
 const launcherPackage = readJson(process.env.JOUZU_LAUNCHER_PACKAGE ?? "apps/launcher/package.json");
 const launcherLock = readJson("apps/launcher/package-lock.json");
-const launcherCargo = readFileSync(resolve(root, process.env.JOUZU_LAUNCHER_CARGO ?? "apps/launcher/src-tauri/Cargo.toml"), "utf8");
+const launcherCargo = readFileSync(
+	resolve(root, process.env.JOUZU_LAUNCHER_CARGO ?? "apps/launcher/src-tauri/Cargo.toml"),
+	"utf8",
+);
 const launcherCargoLock = readFileSync(resolve(root, "apps/launcher/src-tauri/Cargo.lock"), "utf8");
 const launcherVersions = [
 	launcherPackage.version,
@@ -66,8 +69,6 @@ const alignedPiRuntimeNames = [
 	"@earendil-works/pi-agent-core",
 	"@earendil-works/pi-ai",
 	piName,
-	"@earendil-works/pi-codemode",
-	"@earendil-works/pi-mcp",
 	"@earendil-works/pi-telemetry",
 	tuiName,
 ];

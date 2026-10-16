@@ -16,9 +16,9 @@ test("externalizes nested canvas without removing unrelated native packages or t
 	try {
 		manifest(root, "", { dependencies: { "@napi-rs/canvas": canvasVersion } });
 		manifest(root, "node_modules/@napi-rs/canvas", { name: "@napi-rs/canvas", version: canvasVersion });
-		manifest(root, "node_modules/pdf-parse", { name: "pdf-parse", dependencies: { "@napi-rs/canvas": canvasVersion } });
+		manifest(root, "node_modules/pdf-parse", { name: "pdf-parse", dependencies: { "@napi-rs/canvas": "0.1.80" } });
 		const nested = "node_modules/pdf-parse/node_modules/@napi-rs/canvas";
-		manifest(root, nested, { name: "@napi-rs/canvas", version: canvasVersion });
+		manifest(root, nested, { name: "@napi-rs/canvas", version: "0.1.80" });
 		manifest(root, `${nested}-linux-x64-gnu`, { name: "@napi-rs/canvas-linux-x64-gnu", version: canvasVersion });
 		manifest(root, "node_modules/pdf-parse/node_modules/unrelated", { name: "unrelated" });
 		manifest(root, "node_modules/pdf-parse/node_modules/pdfjs-dist", {
