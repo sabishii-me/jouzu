@@ -19,10 +19,12 @@ hashes. An update package that reaches a tenth of the full package is refused: t
 application payload was bundled into it, and an update exists precisely so that installing it does
 not rewrite the payload.
 
-The two versions are not the same number. The launcher carries its own version because an installed
-launcher compares it against the update feed to decide whether an update exists, and a launcher
-already on a higher number would never accept a lower one. The feed therefore speaks the launcher
-version while the files are named for the Jouzu release.
+The launcher carries the version of the Jouzu release it ships in. `apps/launcher/package.json`,
+its lockfile, `Cargo.toml` and `Cargo.lock` hold that version, the release metadata check refuses a
+release where they differ from the npm version, and the bundle step refuses to build a launcher of
+another version. The installer's file properties, the Add/Remove entry, logs, crash records and bug
+reports therefore name the release the installer came from. Jouzu updates independently of the
+launcher, so an installation can report launcher 0.2.0 beside Jouzu 0.2.1.
 
 ## Build inputs
 
@@ -97,7 +99,8 @@ The launcher and the Jouzu application update separately, from their own signed 
 own key pairs:
 
 - The launcher updates itself through the Tauri updater, from the `launcher-update` feed in the release
-  repository, verified with `LAUNCHER_PUBLIC_KEY`. Its version is the Launcher version.
+  repository, verified with `LAUNCHER_PUBLIC_KEY`. Its version is the Jouzu release version, so
+  every release offers a launcher update.
 - The Jouzu application updates from the signed recipe described below, verified with
   `JOUZU_RECIPE_PUBLIC_KEY`. Its version is the npm version.
 
@@ -154,7 +157,7 @@ publication, so an installer that no installed launcher could verify is never of
 A release attaches its Windows artifacts to the version release beside the npm package, and those
 assets stay replaceable: re-running the installer workflow replaces them, because they are not the
 registry-verified package. The `launcher-update` feed names the stored update artifact, carries the
-launcher's changelog section as `notes` and the updater signature. A scheduled check re-verifies that
+release's section of `CHANGELOG.md` as `notes` and the updater signature. A scheduled check re-verifies that
 the published npm version still has a matching signed recipe and opens an issue when it does not, and
 the npm publication workflow calls the recipe and installer workflows with `publish: true`, so a
 published version cannot exist without its signed Windows update artifact.

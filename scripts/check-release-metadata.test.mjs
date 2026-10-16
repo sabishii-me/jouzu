@@ -17,12 +17,16 @@ const validRealLock = {
 const realCliPackage = JSON.parse(readFileSync(join(root, "packages", "cli", "package.json"), "utf8"));
 const realSessionUiPackage = JSON.parse(readFileSync(join(root, "packages", "session-ui", "package.json"), "utf8"));
 const realPackageLock = JSON.parse(readFileSync(join(root, "package-lock.json"), "utf8"));
+const realLauncherPackage = JSON.parse(readFileSync(join(root, "apps", "launcher", "package.json"), "utf8"));
+const realLauncherCargo = readFileSync(join(root, "apps", "launcher", "src-tauri", "Cargo.toml"), "utf8");
 
 function runWithMetadata({
 	piLock = validRealLock,
 	cliPackage = realCliPackage,
 	sessionUiPackage = realSessionUiPackage,
 	packageLock = realPackageLock,
+	launcherPackage = realLauncherPackage,
+	launcherCargo = realLauncherCargo,
 	rootReadme,
 	cliReadme,
 } = {}) {
@@ -33,9 +37,10 @@ function runWithMetadata({
 			cliPackage: join(dir, "cli-package.json"),
 			sessionUiPackage: join(dir, "session-ui-package.json"),
 			packageLock: join(dir, "package-lock.json"),
+			launcherPackage: join(dir, "launcher-package.json"),
 		};
 		for (const [name, path] of Object.entries(paths)) {
-			const value = { piLock, cliPackage, sessionUiPackage, packageLock }[name];
+			const value = { piLock, cliPackage, sessionUiPackage, packageLock, launcherPackage }[name];
 			writeFileSync(path, JSON.stringify(value, null, 2));
 		}
 		const env = {
@@ -44,7 +49,10 @@ function runWithMetadata({
 			JOUZU_CLI_PACKAGE: paths.cliPackage,
 			JOUZU_SESSION_UI_PACKAGE: paths.sessionUiPackage,
 			JOUZU_PACKAGE_LOCK: paths.packageLock,
+			JOUZU_LAUNCHER_PACKAGE: paths.launcherPackage,
+			JOUZU_LAUNCHER_CARGO: join(dir, "Cargo.toml"),
 		};
+		writeFileSync(env.JOUZU_LAUNCHER_CARGO, launcherCargo);
 		const rootReadmePath = join(dir, "root-readme.md");
 		writeFileSync(rootReadmePath, rootReadme ?? readFileSync(join(root, "README.md"), "utf8"));
 		env.JOUZU_ROOT_README = rootReadmePath;
@@ -65,6 +73,19 @@ test("a pending-qualification Pi lock fails release metadata validation", () => 
 	const result = runWithMetadata({ piLock: pending });
 	assert.notEqual(result.status, 0, "pending lock must fail release metadata");
 	assert.match(result.stderr, /must be qualified for publication/);
+});
+
+test("a launcher version that differs from the Jouzu version fails release metadata validation", () => {
+	assert.equal(runWithMetadata().status, 0);
+	const fixtures = [
+		["package.json", { launcherPackage: { ...realLauncherPackage, version: "0.3.7" } }],
+		["Cargo.toml", { launcherCargo: realLauncherCargo.replace(/^version = ".*"$/m, 'version = "0.3.7"') }],
+	];
+	for (const [label, fixture] of fixtures) {
+		const result = runWithMetadata(fixture);
+		assert.notEqual(result.status, 0, `${label} must fail release metadata`);
+		assert.match(result.stderr, /launcher version differs from the npm Jouzu version/);
+	}
 });
 
 test("malformed qualified Pi locks fail release metadata validation", () => {
@@ -247,8 +268,8 @@ test("the npm publish workflow builds and signs the launcher automatically", () 
 test("windows artifacts are named for the Jouzu release and land on it", () => {
 	const finalize = readFileSync(join(root, "packaging", "launcher", "finalize-windows-bundle.ps1"), "utf8");
 	const publish = readFileSync(join(root, "packaging", "launcher", "publish-launcher.ps1"), "utf8");
-	// A user downloading from the release page looks for the Jouzu version, not the launcher's own
-	// version number, so both artifacts are named from the release they install.
+	// A user downloading from the release page looks for the Jouzu version, so both artifacts are
+	// named from the release they install.
 	assert.match(finalize, /\$assetPrefix = "jouzu-win-x64-v\$JouzuVersion"/u);
 	assert.match(finalize, /\$fullSetup = Join-Path \$output "\$assetPrefix-setup\.exe"/u);
 	assert.match(finalize, /\$updateSetup = Join-Path \$output "\$assetPrefix-update\.exe"/u);
@@ -257,12 +278,14 @@ test("windows artifacts are named for the Jouzu release and land on it", () => {
 	// installer is repaired by re-running the workflow.
 	assert.match(publish, /\$tag = "v\$JouzuVersion"/u);
 	assert.match(publish, /gh release upload \$tag[\s\S]*--clobber/u);
-	// No separate launcher-versioned release: its tag carried a version unrelated to the release it
-	// shipped in, and a once-per-launcher-version release cannot hold a per-release artifact.
+	// The artifacts land on the Jouzu release; no separate launcher release is created.
 	assert.doesNotMatch(publish, /launcher-v\$/u);
 	assert.doesNotMatch(publish, /release create \$tag/u);
-	// The feed still speaks the launcher's own version, which is what an installed launcher compares.
-	assert.match(publish, /version=\$LauncherVersion/u);
+	// The launcher carries the Jouzu version: the bundle refuses another version, and the feed
+	// offers the release's version with its Jouzu changelog section.
+	assert.match(finalize, /if \(\$Version -ne \$JouzuVersion\) \{ throw/u);
+	assert.match(publish, /version=\$JouzuVersion/u);
+	assert.match(publish, /launcher-notes\.mjs" \(Join-Path \$PSScriptRoot '\.\.\/\.\.\/CHANGELOG\.md'\)/u);
 });
 
 test("publish accepts the Linux/macOS candidate before post-publication Windows installer qualification", () => {

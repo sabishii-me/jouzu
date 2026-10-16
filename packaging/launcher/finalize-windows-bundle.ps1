@@ -1,15 +1,12 @@
-param([Parameter(Mandatory=$true)][string]$InputDirectory,[string]$Version,[Parameter(Mandatory=$true)][string]$JouzuVersion)
+param([Parameter(Mandatory=$true)][string]$InputDirectory,[Parameter(Mandatory=$true)][string]$JouzuVersion)
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path "$PSScriptRoot/../..").Path
-# The launcher version is committed in the application package; nothing injects it. It is the
-# version an installed launcher compares against the update feed, so it stays independent of the
-# Jouzu release it ships with: a launcher already on a higher number would never accept a lower
-# one, and every published installer has to be an upgrade for someone.
-if (-not $Version) { $Version = (Get-Content (Join-Path $repo 'apps/launcher/package.json') -Raw | ConvertFrom-Json).version }
-if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid launcher version' }
-# The published artifacts are named for the Jouzu release they install, because that is what a
-# reader of the release page is looking for.
 if ($JouzuVersion -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid Jouzu version' }
+# The launcher carries the version of the Jouzu release it ships in, committed in the application
+# package. The installer, the Add/Remove entry, the logs and bug reports then all name the release
+# the installer came from, and a launcher built from a commit of another release is refused.
+$Version = (Get-Content (Join-Path $repo 'apps/launcher/package.json') -Raw | ConvertFrom-Json).version
+if ($Version -ne $JouzuVersion) { throw "The launcher version $Version is not the Jouzu version $JouzuVersion; build from the commit of that release" }
 $assetPrefix = "jouzu-win-x64-v$JouzuVersion"
 $inputRoot = (Resolve-Path $InputDirectory).Path
 

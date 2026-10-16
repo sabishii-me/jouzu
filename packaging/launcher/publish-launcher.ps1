@@ -1,14 +1,10 @@
-param([Parameter(Mandatory=$true)][string]$Directory,[Parameter(Mandatory=$true)][string]$JouzuVersion,[string]$LauncherVersion)
+param([Parameter(Mandatory=$true)][string]$Directory,[Parameter(Mandatory=$true)][string]$JouzuVersion)
 $ErrorActionPreference = 'Stop'
-if (-not $LauncherVersion) { $LauncherVersion = (Get-Content (Join-Path (Resolve-Path "$PSScriptRoot/../..").Path 'apps/launcher/package.json') -Raw | ConvertFrom-Json).version }
-if ($LauncherVersion -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid launcher version' }
 if ($JouzuVersion -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid Jouzu version' }
 $repository = $env:GITHUB_REPOSITORY
 if ($repository -notmatch '^[\w.-]+/[\w.-]+$') { throw 'Invalid repository' }
 # The Windows artifacts belong on the Jouzu version release, beside the npm package, so the
-# installer sits on the page a user opens for that release. There is deliberately no separate
-# launcher release: its tag carried a version number unrelated to the release it shipped in, and a
-# release created once per launcher version cannot hold an artifact rebuilt for every Jouzu release.
+# installer sits on the page a user opens for that release.
 $tag = "v$JouzuVersion"
 $assetPrefix = "jouzu-win-x64-v$JouzuVersion"
 $fullSetup = Join-Path $Directory "$assetPrefix-setup.exe"
@@ -38,12 +34,13 @@ $url = "https://github.com/$repository/releases/download/$tag/$assetName"
 $probe = Join-Path $env:RUNNER_TEMP 'published-update.exe'
 Invoke-WebRequest $url -OutFile $probe
 if ((Get-FileHash $probe -Algorithm SHA256).Hash -ne (Get-FileHash $updateSetup -Algorithm SHA256).Hash) { throw 'Published update integrity mismatch; feed unchanged' }
-# The feed version is the launcher's own version, because that is what an installed launcher
-# compares against to decide whether an update exists. It moves only when the launcher changes, so
-# a Jouzu release that leaves the launcher alone does not offer an update that changes nothing.
-$notes = (& node "$PSScriptRoot/launcher-notes.mjs" (Join-Path $PSScriptRoot '../../apps/launcher/CHANGELOG.md') $LauncherVersion) -join "`n"
-if ($LASTEXITCODE) { throw 'Missing launcher changelog for this version; feed unchanged' }
-$feed = @{version=$LauncherVersion;notes=$notes;pub_date=[DateTime]::UtcNow.ToString('o');platforms=@{'windows-x86_64'=@{url=$url;signature=(Get-Content "$updateSetup.sig" -Raw).Trim()}}}
+# The feed carries the Jouzu version, which is the launcher's own version, and the release's
+# section of the Jouzu changelog.
+$built = (Get-Content (Join-Path $Directory 'build.json') -Raw | ConvertFrom-Json).launcherVersion
+if ($built -ne $JouzuVersion) { throw "The built launcher is $built, not $JouzuVersion; feed unchanged" }
+$notes = (& node "$PSScriptRoot/launcher-notes.mjs" (Join-Path $PSScriptRoot '../../CHANGELOG.md') $JouzuVersion) -join "`n"
+if ($LASTEXITCODE) { throw 'Missing changelog section for this version; feed unchanged' }
+$feed = @{version=$JouzuVersion;notes=$notes;pub_date=[DateTime]::UtcNow.ToString('o');platforms=@{'windows-x86_64'=@{url=$url;signature=(Get-Content "$updateSetup.sig" -Raw).Trim()}}}
 $feedFile = Join-Path $Directory 'latest.json'
 # The feed is read by a JSON parser on the other side, so it is written without a byte order mark:
 # `Set-Content -Encoding utf8` writes one under Windows PowerShell, and a mark makes the feed undecodable.

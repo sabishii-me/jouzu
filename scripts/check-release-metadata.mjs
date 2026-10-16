@@ -43,6 +43,22 @@ if (lock.packages?.["packages/cli"]?.version !== cliPackage.version) {
 	throw new Error("workspace package-lock version differs from the npm Jouzu version");
 }
 if (!changelog.includes(`## ${cliPackage.version} - `)) throw new Error("CHANGELOG is missing the npm Jouzu version");
+// The Windows launcher carries the version of the Jouzu release it ships in, so an installed
+// launcher names the release its installer came from.
+const launcherPackage = readJson(process.env.JOUZU_LAUNCHER_PACKAGE ?? "apps/launcher/package.json");
+const launcherLock = readJson("apps/launcher/package-lock.json");
+const launcherCargo = readFileSync(resolve(root, process.env.JOUZU_LAUNCHER_CARGO ?? "apps/launcher/src-tauri/Cargo.toml"), "utf8");
+const launcherCargoLock = readFileSync(resolve(root, "apps/launcher/src-tauri/Cargo.lock"), "utf8");
+const launcherVersions = [
+	launcherPackage.version,
+	launcherLock.version,
+	launcherLock.packages?.[""]?.version,
+	/^\[package\]\n(?:[^[\n].*\n)*?version = "([^"]+)"/m.exec(launcherCargo)?.[1],
+	/^\[\[package\]\]\nname = "jouzu-launcher"\nversion = "([^"]+)"/m.exec(launcherCargoLock)?.[1],
+];
+if (launcherVersions.some((version) => version !== cliPackage.version)) {
+	throw new Error("launcher version differs from the npm Jouzu version");
+}
 const piName = "@earendil-works/pi-coding-agent";
 const serverName = "@earendil-works/pi-server";
 const tuiName = "@earendil-works/pi-tui";
