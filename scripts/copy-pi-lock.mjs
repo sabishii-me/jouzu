@@ -12,7 +12,6 @@ const directRuntimePackageNames = [
 	"@earendil-works/pi-agent-core",
 	"@earendil-works/pi-ai",
 	packageName,
-	serverPackageName,
 	"@earendil-works/pi-telemetry",
 	"@earendil-works/pi-tui",
 ];
@@ -26,7 +25,7 @@ if (!serverVersion) throw new Error(`${source} is missing ${serverPackageName}`)
 if (directRuntimePackageNames.some((name) => cliPackage.dependencies?.[name] !== version)) {
 	throw new Error(`jouzu runtime dependencies do not match the exact Pi lock tuple ${version}`);
 }
-if (serverVersion !== version || cliPackage.bundleDependencies?.includes(serverPackageName)) {
+if (cliPackage.dependencies?.[serverPackageName] !== serverVersion || cliPackage.bundleDependencies?.includes(serverPackageName)) {
 	throw new Error(`jouzu runtime does not install Pi server lock ${serverVersion} as an external exact dependency`);
 }
 

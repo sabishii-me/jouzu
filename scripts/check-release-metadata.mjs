@@ -63,16 +63,15 @@ const piName = "@earendil-works/pi-coding-agent";
 const serverName = "@earendil-works/pi-server";
 const tuiName = "@earendil-works/pi-tui";
 const alignedPiRuntimeNames = [
-	"@earendil-works/chord",
 	"@earendil-works/pi-agent-core",
 	"@earendil-works/pi-ai",
 	piName,
-	"@earendil-works/pi-protocol",
-	serverName,
+	"@earendil-works/pi-codemode",
+	"@earendil-works/pi-mcp",
 	"@earendil-works/pi-telemetry",
 	tuiName,
 ];
-const directPiRuntimeNames = ["@earendil-works/pi-ai", piName, serverName, "@earendil-works/pi-telemetry", tuiName];
+const directPiRuntimeNames = ["@earendil-works/pi-ai", piName, "@earendil-works/pi-telemetry", tuiName];
 const VERSION_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 const dependencyRangeTargetsVersion = (range, version) =>
 	range === version || range === `^${version}` || range === `~${version}`;
@@ -113,6 +112,7 @@ if (
 	rootPackage.devDependencies?.[piName] !== piVersion ||
 	rootPackage.devDependencies?.[tuiName] !== tuiVersion ||
 	directPiRuntimeNames.some((name) => cliPackage.dependencies?.[name] !== piVersion) ||
+	cliPackage.dependencies?.[serverName] !== serverVersion ||
 	cliPackage.bundleDependencies?.includes(serverName) ||
 	!["@earendil-works/pi-ai", "@earendil-works/pi-telemetry"].every((name) =>
 		cliPackage.bundleDependencies?.includes(name),
@@ -120,7 +120,6 @@ if (
 ) {
 	throw new Error("Jouzu does not use the exact Pi lock package tuple");
 }
-if (serverVersion !== piVersion) throw new Error("Pi coding-agent and server versions differ");
 if (typeof tuiVersion !== "string" || !VERSION_RE.test(tuiVersion)) {
 	throw new Error("Jouzu does not use an exact Pi TUI version");
 }
@@ -138,6 +137,7 @@ if (
 	rootLock?.devDependencies?.[piName] !== piVersion ||
 	rootLock?.devDependencies?.[tuiName] !== tuiVersion ||
 	directPiRuntimeNames.some((name) => cliLock?.dependencies?.[name] !== piVersion) ||
+	cliLock?.dependencies?.[serverName] !== serverVersion ||
 	alignedPiRuntimeNames.some((name) => lock.packages?.[`node_modules/${name}`]?.version !== piVersion) ||
 	sessionUiLock?.peerDependencies?.[piName] !== piVersion ||
 	sessionUiLock?.peerDependencies?.[tuiName] !== tuiVersion ||
