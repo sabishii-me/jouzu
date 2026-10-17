@@ -533,11 +533,20 @@ export class PiFlowSessionService {
 				await reconcileNativeSources(this.session, branch.attachment, branch.native, "reset");
 				const releasedRequests = await branch.attachment.nativeRequests.reset();
 				await branch.attachment.nativeRequests.retireSuperseded();
+				const ledgerAfter = await branch.attachment.ledger.snapshot();
+				const waitRecoveryHeld = branch.waitSourceRecovery.missing.length > 0;
+				const recoveryHeld =
+					branch.host.gate().recoveryBlocked ||
+					branch.attachment.nativeRequests.recoveryBlocked ||
+					branch.recovery.unresolved > 0 ||
+					branch.sourceRecovery.unresolved > 0 ||
+					waitRecoveryHeld ||
+					ledgerAfter.attempts.some((attempt) => attempt.phase === "uncertain");
 				return {
 					kind: attemptId ? ("cancelled" as const) : ("inactive" as const),
 					attemptId,
 					releasedRequests,
-					recoveryHeld: branch.host.gate().recoveryBlocked,
+					recoveryHeld,
 				};
 			});
 			if (result.kind === "busy") throw new FlowLedgerError("busy", "Flow reset requires an idle session.");
