@@ -248,7 +248,7 @@ test("flow control on restores routing, and reset performs full recovery without
 	for (const line of [
 		"off turns flow control off",
 		"on turns flow control back on",
-		"reset performs the full idle recovery reset",
+		"reset is the destructive idle reset",
 		"clear releases a stuck reservation",
 	])
 		assert.match(notices.at(-1).text, new RegExp(`/flow ${line}`));

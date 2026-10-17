@@ -102,7 +102,7 @@ test("/flow reports a withheld request through the recovery gate without retaini
 	assert.deepEqual(await f.ingress.branch().attachment.submissions.snapshot(), before);
 });
 
-// `/flow clear` is the reservation release; `/flow reset` is off-then-on and must leave the hold alone.
+// `/flow clear` preserves flow evidence while repairing a reservation; `/flow reset` is the destructive fallback.
 test("/flow clear recovers a required-input hold and preserves its receipt across reopen", async (t) => {
 	const f = await withheldSession(t);
 	f.restore();

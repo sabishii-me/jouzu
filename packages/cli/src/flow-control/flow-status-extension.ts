@@ -49,8 +49,8 @@ const USAGE = [
 	"/flow pause <work> holds one campaign's automated turns; /flow resume <work> releases it.",
 	"/flow stop <work> retires a campaign and ends its waits. None of these stop a running job.",
 	"/flow resolve <attempt> retry|discard decides an interrupted turn whose outcome is unknown.",
-	"/flow reset performs the full idle recovery reset: releases reservations, reconciles native sources, and clears retained request holds.",
-	"/flow clear releases a stuck reservation without stopping jobs or deleting receipts.",
+	"/flow reset is the destructive idle reset: it discards flow receipts and waits, releases native holds, and leaves jobs running.",
+	"/flow clear releases a stuck reservation while preserving receipts, waits, and running jobs.",
 ].join("\n");
 
 /**
@@ -166,7 +166,7 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 								);
 							else
 								notify(
-									`Flow reset completed${result.releasedRequests ? ` and released ${result.releasedRequests} request hold${result.releasedRequests === 1 ? "" : "s"}` : ""}. Held state was reset; continue with a new message.`,
+									"Flow reset completed. Destructive flow state was discarded; jobs continue running. Continue with a new message.",
 								);
 							return;
 						}
@@ -331,9 +331,9 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 								notify(USAGE, "error");
 								return;
 							}
-							let result: Awaited<ReturnType<PiSessionFlowIngress["resetFlow"]>>;
+							let result: Awaited<ReturnType<PiSessionFlowIngress["clearFlow"]>>;
 							try {
-								result = await ingress.resetFlow();
+								result = await ingress.clearFlow();
 							} catch (error) {
 								if (error instanceof FlowLedgerError && error.code === "busy") {
 									notify(

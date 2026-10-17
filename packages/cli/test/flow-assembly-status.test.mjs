@@ -50,7 +50,7 @@ test("the status command reads and repairs holds without reaching the model", as
 	assert.deepEqual(f.errors, []);
 });
 
-test("/flow reset invokes full flow recovery instead of toggling flow control", async (t) => {
+test("/flow reset invokes destructive flow recovery instead of toggling flow control", async (t) => {
 	const f = await assembledSession(t, { producerExtensions: await installedProducerExtensions() });
 	const notices = capturedNotices(f.session);
 	let resets = 0;
@@ -63,7 +63,7 @@ test("/flow reset invokes full flow recovery instead of toggling flow control", 
 		await f.session.prompt("/flow reset");
 		await settle();
 		assert.equal(resets, 1);
-		assert.match(notices.at(-1).text, /Flow reset completed.*Held state was reset/);
+		assert.match(notices.at(-1).text, /Flow reset completed\. Destructive flow state was discarded/);
 		assert.deepEqual(f.errors, []);
 	} finally {
 		f.ingress.resetFlow = original;
