@@ -54,6 +54,7 @@ The first launch asks whether to enable the Japanese profile and offers to conne
 | `/textguard` | Review flagged content |
 | `/status` | Show session, model, and context usage |
 | `/bug` | Draft a bug report |
+| `/scrollback` | Export the conversation to terminal scrollback for search and selection |
 | `Ctrl+/` or `/hotkeys` | Help and shortcuts |
 
 ## Profiles
