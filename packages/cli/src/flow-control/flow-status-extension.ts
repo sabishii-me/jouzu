@@ -49,8 +49,8 @@ const USAGE = [
 	"/flow pause <work> holds one campaign's automated turns; /flow resume <work> releases it.",
 	"/flow stop <work> retires a campaign and ends its waits. None of these stop a running job.",
 	"/flow resolve <attempt> retry|discard decides an interrupted turn whose outcome is unknown.",
-	"/flow reset turns flow control off and on again: a full reset of what is queued and held.",
-	"/flow clear releases a stuck reservation without stopping jobs or deleting receipts.",
+	"/flow reset is the destructive idle reset: it discards flow receipts and waits, releases native holds, and leaves jobs running.",
+	"/flow clear releases a stuck reservation while preserving receipts, waits, and running jobs.",
 ].join("\n");
 
 /**
@@ -141,8 +141,37 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 							notify(options.runtimeReport?.() ?? "Runtime diagnostics are unavailable in this session.");
 							return;
 						}
+						if (verb === "reset") {
+							if (target || choice || rest.length) {
+								notify(USAGE, "error");
+								return;
+							}
+							let result: Awaited<ReturnType<PiSessionFlowIngress["resetFlow"]>>;
+							try {
+								result = await options.ingress().resetFlow();
+							} catch (error) {
+								if (error instanceof FlowLedgerError && error.code === "busy") {
+									notify(
+										"Flow reset needs an idle session. Interrupt the running turn, then run /flow reset again.",
+										"error",
+									);
+									return;
+								}
+								throw error;
+							}
+							if (result.recoveryHeld)
+								notify(
+									"Flow reset released the active reservation, but recovery evidence remains. Run /flow for the remaining decision.",
+									"error",
+								);
+							else
+								notify(
+									"Flow reset completed. Destructive flow state was discarded; jobs continue running. Continue with a new message.",
+								);
+							return;
+						}
 						// Off and on are the only controls that work in both states, so they come first.
-						if (verb === "off" || verb === "on" || verb === "reset") {
+						if (verb === "off" || verb === "on") {
 							if (target || choice || rest.length) {
 								notify(USAGE, "error");
 								return;
@@ -168,12 +197,7 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 								...(off.flushed ? [`${off.flushed} retained send${off.flushed === 1 ? "" : "s"} ran natively`] : []),
 								...(off.waits ? [`${off.waits} wait${off.waits === 1 ? "" : "s"} ended`] : []),
 							];
-							const headline =
-								verb === "off"
-									? "Flow control is off."
-									: verb === "on"
-										? "Flow control is on again."
-										: "Flow control reset.";
+							const headline = verb === "off" ? "Flow control is off." : "Flow control is on again.";
 							const tail =
 								verb === "off"
 									? "Jobs, tasks, and lanes now run and report through their own delivery paths."
@@ -307,9 +331,9 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 								notify(USAGE, "error");
 								return;
 							}
-							let result: Awaited<ReturnType<PiSessionFlowIngress["resetFlow"]>>;
+							let result: Awaited<ReturnType<PiSessionFlowIngress["clearFlow"]>>;
 							try {
-								result = await ingress.resetFlow();
+								result = await ingress.clearFlow();
 							} catch (error) {
 								if (error instanceof FlowLedgerError && error.code === "busy") {
 									notify(

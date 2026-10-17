@@ -52,7 +52,7 @@ const expectedExtensions = [
 ];
 const expectedPiTasks = {
 	version: "0.6.1",
-	commit: "a07c749439b1909a95a974bf6ee8a560f6d2b0d9",
+	commit: "3626078819db11d90e394d77752577956063b71d",
 };
 const expectedCompatibility = ["@napi-rs/canvas", "esbuild", "typebox", "wreq-js"];
 

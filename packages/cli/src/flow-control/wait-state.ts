@@ -80,7 +80,10 @@ export function reconcileFlowWait(
 	observations: FlowWaitObservation[],
 	now: number,
 ): FlowWaitState {
-	if (!instant(now) || now < wait.createdAt) throw new FlowLedgerError("schema", "Invalid wait reconciliation time.");
+	if (!instant(now)) throw new FlowLedgerError("schema", "Invalid wait reconciliation time.");
+	// A producer scan can begin before a wait is declared and finish afterward. Never apply a
+	// captured timestamp before the wait existed; the declaration time is the earliest valid point.
+	const reconciliationNow = Math.max(now, wait.createdAt);
 	if (wait.state !== "waiting") return structuredClone(wait);
 	const current = observe(wait, observations);
 	const next = structuredClone(wait);
@@ -92,11 +95,11 @@ export function reconcileFlowWait(
 	// that merely stopped reporting, which in turn outranks a generic terminal failure.
 	const ended = wait.mode === "all" ? current.some(terminal) : current.every((item) => item.state !== "pending");
 	const health = current.find((item) => item.state === "unhealthy") ?? current.find(unknownHealth);
-	if (now >= wait.expiresAt) next.state = "expired";
+	if (reconciliationNow >= wait.expiresAt) next.state = "expired";
 	else if (wait.mode === "all" ? next.unmet.length === 0 : current.some((item) => item.state === "satisfied"))
 		next.state = "resolved";
 	else if (ended) next.state = health ? (health.state as FlowWaitState["state"]) : "failed";
-	if (next.state !== "waiting") next.endedAt = now;
+	if (next.state !== "waiting") next.endedAt = reconciliationNow;
 	return next;
 }
 

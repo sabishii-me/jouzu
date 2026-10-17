@@ -50,6 +50,25 @@ test("the status command reads and repairs holds without reaching the model", as
 	assert.deepEqual(f.errors, []);
 });
 
+test("/flow reset invokes destructive flow recovery instead of toggling flow control", async (t) => {
+	const f = await assembledSession(t, { producerExtensions: await installedProducerExtensions() });
+	const notices = capturedNotices(f.session);
+	let resets = 0;
+	const original = f.ingress.resetFlow.bind(f.ingress);
+	f.ingress.resetFlow = async () => {
+		resets++;
+		return { kind: "inactive", attemptId: undefined, releasedRequests: 0, recoveryHeld: false };
+	};
+	try {
+		await f.session.prompt("/flow reset");
+		await settle();
+		assert.equal(resets, 1);
+		assert.match(notices.at(-1).text, /Flow reset completed\. Destructive flow state was discarded/);
+		assert.deepEqual(f.errors, []);
+	} finally {
+		f.ingress.resetFlow = original;
+	}
+});
 test("the status command refuses unknown targets and states what it accepts", async (t) => {
 	const f = await assembledSession(t, { producerExtensions: await installedProducerExtensions() });
 	const before = f.bodies.length;

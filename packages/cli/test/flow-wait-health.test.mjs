@@ -6,6 +6,8 @@ import {
 	retainFlowHealthEvidence,
 	validateFlowHealthPolicy,
 } from "../dist/flow-control/wait-health.js";
+import { FlowWaitHealthMonitor } from "../dist/flow-control/wait-health-monitor.js";
+import { createFlowWait } from "../dist/flow-control/wait-state.js";
 
 const policy = (overrides = {}) => ({
 	name: "sweep-progress-v1",
@@ -22,6 +24,75 @@ const evidence = (overrides = {}) => ({
 	observedAt: 1_000,
 	state: "healthy",
 	...overrides,
+});
+
+test("a health scan that overlaps wait declaration reconciles at or after wait creation", async () => {
+	const scope = { sessionId: "session", branchId: "branch" };
+	const handle = { producer: "bg", handle: "bg-1", execution: "exec-1", until: "exit", health: "health-v1" };
+	const waitRequest = {
+		token: "wait",
+		scope,
+		workId: "work",
+		reason: "Wait for the process",
+		mode: "all",
+		on: [handle],
+		expiresAt: 200,
+	};
+	let wait = createFlowWait(waitRequest, [{ ...handle, scope, workId: "work", state: "pending" }], 100, 1_000);
+	const execution = {
+		producer: "bg",
+		workId: "work",
+		handle: "bg-1",
+		execution: "exec-1",
+		revision: 1,
+		predicates: [{ until: "exit", state: "pending" }],
+		observedAt: 0,
+		healthSince: 0,
+		healthEvidence: { policy: "health-v1", revision: 1, observedAt: 0, state: "unhealthy", detail: "stopped" },
+	};
+	let release;
+	let start;
+	const gate = new Promise((resolve) => (release = resolve));
+	const started = new Promise((resolve) => (start = resolve));
+	const observedAt = [];
+	const store = {
+		async snapshot() {
+			start();
+			await gate;
+			return wait.state === "waiting" ? [wait] : [];
+		},
+		async authoritySnapshot() {
+			await gate;
+			return { executions: [execution] };
+		},
+		async observeWaitHealth(_token, _handle, _execution, state, now) {
+			observedAt.push(now);
+			assert.ok(now >= wait.createdAt, "health reconciliation must not predate wait creation");
+			wait = { ...wait, state, endedAt: now };
+			return true;
+		},
+	};
+	let clockReads = 0;
+	const monitor = new FlowWaitHealthMonitor({
+		store,
+		policy: () => policy({ name: "health-v1", evidence: "health evidence", freshnessMs: 1, graceMs: 0, cadenceMs: 1 }),
+		probe: async () => {},
+		clock: {
+			now: () => (clockReads++ === 0 ? 99 : 100),
+			after: () => {
+				throw new Error("unexpected health timer");
+			},
+		},
+		onError: (error) => {
+			throw error;
+		},
+	});
+	const running = monitor.refresh();
+	await started;
+	release();
+	await running;
+	await monitor.stop();
+	assert.deepEqual(observedAt, [100]);
 });
 
 test("a policy the host cannot act on is rejected at registration", () => {
