@@ -2,9 +2,9 @@
 	"schemaVersion": 1,
 	"package": "@lhl/pi-tasks",
 	"version": "0.6.1",
-	"sourceCommit": "a07c749439b1909a95a974bf6ee8a560f6d2b0d9",
-	"before": "bccb79886abf536897480b97af4ff6d759dfbc5709238a13648942d121517e8b",
-	"after": "9a042c8d5c6f92079de7a92116a454986301cdf10fa0cb7e7fe913fe2fbbfb13",
+	"sourceCommit": "3626078819db11d90e394d77752577956063b71d",
+	"before": "990a513d0e594eca6047c9941e43464962f0c8e2745e48dcd0a6517c99454bb9",
+	"after": "b991dbe0bb9f38828d83ae9a70dfb89f05a8070da323125264402257e0be3f62",
 	"runtime": "509da81363cf5d8a8c3f48d657263c1b0df8fdccee2208c1f9d254838b77405f",
 	"previousRuntime": "90a57a3807fff7b214805296d52a40b8abbb7b41c1cb8a0f3a29318085b288dd",
 	"previousRuntimeLegacy": "94cd0cc9584711fa7ff6f7cf6760b847b8da0714243665976a7b2aa690adadb7"
