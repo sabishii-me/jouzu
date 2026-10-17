@@ -27,9 +27,13 @@ function assertRecoveryGuidance(prompt) {
 		"Keep the original deliverables active while resolving prerequisites",
 		"apply that instruction in the same turn",
 		"Preserve running jobs and pending work across follow-up messages",
-		"compare the requested deliverables with completed work and verification",
+		"compare the requested deliverables with the overall completion checklist, completed work, and verification evidence",
 		"A failed check or unsuccessful first attempt is not by itself a reason to stop",
 		"use the supported wait mechanism and resume on its result",
+		"overall completion checklist",
+		"use them selectively for bounded, coherent work packages",
+		"In cascade mode, an in_progress task is prompted before pending tasks",
+		"A task list is an execution aid, not proof of completion",
 	]) {
 		assert.ok(prompt.includes(clause), `Missing recovery instruction: ${clause}`);
 	}
@@ -58,6 +62,9 @@ test("Astra guidance follows the selected model on every turn without accumulati
 	assert.match(first.systemPrompt, /Authorization persists across turns/);
 	assertRecoveryGuidance(first.systemPrompt);
 	assert.match(first.systemPrompt, /repeat or broaden testing only/);
+	assert.match(first.systemPrompt, /overall completion checklist/);
+	assert.match(first.systemPrompt, /use them selectively for bounded, coherent work packages/);
+	assert.match(first.systemPrompt, /A task list is an execution aid, not proof of completion/);
 	assert.doesNotMatch(first.systemPrompt, /Use `subagent`/);
 	const other = await before(event, { model: { id: "gpt-5.6-sol" } });
 	assert.doesNotMatch(other.systemPrompt, /carry authorized work through implementation/);
