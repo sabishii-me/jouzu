@@ -19,7 +19,7 @@
 	"deviations": [
 		{
 			"path": "upstream/pi-content-policy/patch.lock.json",
-			"sha256": "d5c1607b33d99f86aa34a49de9c17a3023ca319ad8dc6af9cb08e8d0ce64583a"
+			"sha256": "f5e67157f69ae6ed02ce6e19b90a16b769827836a42dbb7f55b0c62b02ed1487"
 		},
 		{
 			"path": "upstream/pi-flow-control/patch.lock.json",
@@ -28,6 +28,10 @@
 		{
 			"path": "upstream/pi-provider-receipts/patch.lock.json",
 			"sha256": "b9db797dbc9f8e028946dd5b817bfd2fb786fe34606a1cbe2079fe9037c7c3e4"
+		},
+		{
+			"path": "upstream/pi-terminal-clipboard/patch.lock.json",
+			"sha256": "1024fcb90c68e6594bf27c2630b257ca5160b3d3da63ebbe52ff9362df4eed3b"
 		},
 		{
 			"path": "upstream/pi-path-utils/patch.lock.json",

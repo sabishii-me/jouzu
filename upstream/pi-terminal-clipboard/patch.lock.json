@@ -1,0 +1,17 @@
+{
+	"schemaVersion": 1,
+	"package": "@earendil-works/pi-coding-agent",
+	"version": "1.3.0",
+	"files": {
+		"dist/utils/clipboard.js": {
+			"before": "0b296fef43d637ac463a5be20702118400a73eec6fbf9fb6986c1febbb089909",
+			"after": "e41b1212f49be33a7aa1a1d4aa97eb653ad08fe85da8e0743c3d728597eb76b7"
+		}
+	},
+	"additions": {
+		"dist/utils/clipboard-tmux.js": {
+			"source": "clipboard-tmux.js",
+			"sha256": "ed688a76a83d90afce5d8e0cc63b26c5b806111798be697ef2ab6d3aedb503d4"
+		}
+	}
+}

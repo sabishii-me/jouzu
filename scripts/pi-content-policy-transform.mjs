@@ -248,6 +248,16 @@ export function sessionEntryToContextMessages(entry) {`,
 			"export interface MainOptions {\n    sessionInfoFooter?: () => string;\n    flowIngressFactory?: (context: { cwd: string; sessionManager: SessionManager }) => FlowIngress | Promise<FlowIngress>;\n    contentPolicyFactory?: (context: { cwd: string; sessionId: string }) => ContentPolicy | Promise<ContentPolicy>;",
 		);
 	} else if (path === "dist/modes/interactive/interactive-mode.js") {
+		// Terminal clipboard requests cannot confirm delivery, including OSC 52 outside tmux.
+		change(
+			'this.showStatus("Copied selected message to clipboard");',
+			'this.showStatus("Clipboard copy requested for selected message");',
+		);
+		change('this.ui.flash("Copied!");', 'this.ui.flash("Copy requested");');
+		change(
+			'this.showStatus("Copied last agent message to clipboard");',
+			'this.showStatus("Clipboard copy requested for last agent message");',
+		);
 		change(
 			"        return options.sort((a, b) => a.name.localeCompare(b.name));",
 			'        return options.sort((a, b) => Number(b.id === "shisa") - Number(a.id === "shisa") || a.name.localeCompare(b.name));',

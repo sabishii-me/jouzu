@@ -117,7 +117,7 @@
 		},
 		"dist/modes/interactive/interactive-mode.js": {
 			"before": "4679cdd21fb1d3868c3326eba60f3e3679e3847f06f5123f2a9f7d7efb6664e5",
-			"after": "fea82d3d25498cb08a9f366113e236a8f4522d67934027c9769c8fdd066e3231"
+			"after": "2f87c21d2ee02e75258e1cc9832608587fae6dd6a80a5b34f7a0c15b4fcf8082"
 		},
 		"dist/modes/interactive/interactive-mode.d.ts": {
 			"before": "637123b308c53911e79ed7db0ea7162d4f765b779c1d41f147984fb7ba66b6aa",
