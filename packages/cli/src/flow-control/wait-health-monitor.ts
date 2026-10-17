@@ -115,8 +115,8 @@ export class FlowWaitHealthMonitor {
 	private async scan(): Promise<void> {
 		while (this.requested && !this.stopped) {
 			this.requested = false;
-			const now = this.options.clock.now();
-			if (!Number.isSafeInteger(now) || now < 0) throw new Error("Invalid health clock time.");
+			const scanNow = this.options.clock.now();
+			if (!Number.isSafeInteger(scanNow) || scanNow < 0) throw new Error("Invalid health clock time.");
 			const [waits, authority] = await Promise.all([
 				this.options.store.snapshot(),
 				this.options.store.authoritySnapshot(),
@@ -126,6 +126,9 @@ export class FlowWaitHealthMonitor {
 			for (const id of this.probed) if (!liveTokens.has(JSON.parse(id)[0])) this.probed.delete(id);
 			let next = Infinity;
 			for (const { wait, handle, execution } of this.monitored(waits, authority.executions)) {
+				// The scan can await snapshots or a producer probe while a new wait is declared. Use
+				// the wait's creation time as the floor for this stale scan timestamp.
+				const now = Math.max(scanNow, wait.createdAt);
 				const policy = this.options.policy(handle, execution.workId);
 				// A producer that detached takes its policy with it. The wait keeps its hard deadline,
 				// which is the guarantee that never depends on a responsive producer.
