@@ -4,6 +4,7 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import type { AgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
 import type { NativeRequestSource } from "./native-request-store.js";
+import { persistedAgentMessage } from "./persisted-agent-message.js";
 import { verifyPiHistoryEntries } from "./pi-history-receipts.js";
 import { FlowLedgerError } from "./receipt-ledger.js";
 import type { FlowNativeInput, FlowSubmissionStore } from "./submission-store.js";
@@ -190,8 +191,7 @@ export async function recoverNativeSources(
 			const expected = observed(input, receipt.prompt?.messageIndex ?? 0);
 			const target = targets[0];
 			const ignoreTimestamp = expected.nativeTimestamp || target.entry.type === "custom_message";
-			const normalize = (message: AgentMessage) => (ignoreTimestamp ? { ...message, timestamp: 0 } : message);
-			if (!isDeepStrictEqual(normalize(expected.message), normalize(target.message)))
+			if (!isDeepStrictEqual(persistedAgentMessage(expected.message, ignoreTimestamp), persistedAgentMessage(target.message, ignoreTimestamp)))
 				throw new FlowLedgerError("identity", "Native observed input differs from its transcript message.");
 			const liveMessage = live[projected.indexOf(target)];
 			const source: Source = {

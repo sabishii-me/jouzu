@@ -5,6 +5,7 @@ import type { ImageContent } from "@earendil-works/pi-ai";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import type { NativeRequestSource } from "./native-request-store.js";
 import { verifyPiHistoryEntry } from "./pi-history-receipts.js";
+import { persistedAgentMessage, persistedValue } from "./persisted-agent-message.js";
 import { recoverNativeSources, retainMemorySource } from "./pi-native-source-recovery.js";
 import { FlowLedgerError } from "./receipt-ledger.js";
 import type { FlowSubmissionStore } from "./submission-store.js";
@@ -19,7 +20,7 @@ interface Claimed {
 }
 
 const matchesInput = (input: Claimed, message: AgentMessage) =>
-	isDeepStrictEqual(input.message, input.nativeTimestamp ? { ...message, timestamp: 0 } : message);
+	isDeepStrictEqual(persistedAgentMessage(input.message, input.nativeTimestamp), persistedAgentMessage(message, input.nativeTimestamp));
 
 /** Match native input order after Pi's awaited transcript listener, including unowned queue entries. */
 export class PiNativeHistory {
@@ -129,12 +130,12 @@ export class PiNativeHistory {
 			const entry = session.sessionManager.getEntry(entryId);
 			if (
 				captured.role !== "custom" ||
-				!isDeepStrictEqual(captured, message) ||
+				!isDeepStrictEqual(persistedAgentMessage(captured), persistedAgentMessage(message)) ||
 				entry?.type !== "custom_message" ||
 				entry.customType !== captured.customType ||
-				!isDeepStrictEqual(entry.content, captured.content) ||
+				!isDeepStrictEqual(persistedValue(entry.content), persistedValue(captured.content)) ||
 				entry.display !== captured.display ||
-				!isDeepStrictEqual(entry.details, captured.details)
+				!isDeepStrictEqual(persistedValue(entry.details), persistedValue(captured.details))
 			)
 				throw new FlowLedgerError("identity", "Non-waking history differs from its retained source.");
 		};
