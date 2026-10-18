@@ -1,0 +1,32 @@
+{
+	"schemaVersion": 1,
+	"package": "@sting8k/pi-vcc",
+	"version": "0.10.2",
+	"files": {
+		"src/hooks/before-compact.ts": {
+			"before": "048341c255d659c067c61ec21ad2dbb8129aaaa5bd474867079fe0f1b22b9ece",
+			"after": "8adeea07a660635988597795d7d59944c301f618662e73468f614fb4736ed039"
+		},
+		"src/types.ts": {
+			"before": "c83ce45299faba53f5fb2a7a8534ea82de45088b03280bcad35b2729f46b11b8",
+			"after": "262d745cb24bb90332d418d6724fa45632a34f01ad7db25efdf366089bcbeb23"
+		},
+		"src/core/normalize.ts": {
+			"before": "218df684280a2eac45355f45b80397c1aebcbb7e4277af1c6098cbc254662199",
+			"after": "03e627cd2400347a08a0d1ff6d2d3f8e3ae6f665549a77a1c31fd2d3a307064e"
+		},
+		"src/core/filter-noise.ts": {
+			"before": "5cc8e48cd8750fb58d5213cb61b4c4ba0b2ce4e2703ddc37ec587b9cdf0dadef",
+			"after": "cefdbfe364fce88ea0e9fdbc80217f77d8bc84bc4b00cb1c6c9611a2094ef31b"
+		},
+		"src/extract/goals.ts": {
+			"before": "92f2e86211616c8bf38cc3bf156eaeff5db2f61df6cfb8a66ca6d8e1733e6356",
+			"after": "0360b23b341ca22bd53af703d5182bca0ce26d00caa60e5408f8f96bd7cccaaf"
+		},
+		"src/core/summarize.ts": {
+			"before": "cbc7a38411e1d115058e3a4fcd1ceaf09a33762e8c6444a55ee6f7936bc66a92",
+			"after": "c0c088ccbe9572bfc1566c079b9598bc2ce8e6f364fd7f157885f896658d5696"
+		}
+	},
+	"runtime": "7428a41af187f77c43a711dac0ce629b82f1b2f57a66f5f18e650d90861a30ee"
+}

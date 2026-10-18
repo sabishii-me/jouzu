@@ -18,6 +18,10 @@
 	"compatibilityStatus": "qualified",
 	"deviations": [
 		{
+			"path": "upstream/vcc-goals/patch.lock.json",
+			"sha256": "11f5dc1b51e9b2ba9682a747c4d6610871e87a13c7a2c096e7ab132052a999f2"
+		},
+		{
 			"path": "upstream/pi-content-policy/patch.lock.json",
 			"sha256": "f5e67157f69ae6ed02ce6e19b90a16b769827836a42dbb7f55b0c62b02ed1487"
 		},
