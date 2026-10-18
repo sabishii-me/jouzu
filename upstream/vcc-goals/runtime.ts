@@ -1,6 +1,11 @@
 // Keep extension output in the transcript without treating it as user intent.
+// The first line decides: real batch results carry trailing status text after
+// the "Subagent batch <id>." prefix, so the match cannot be anchored to the end.
+const NOTIFICATION_LINE_RE =
+  /^(?:Subagent batch\s+\S+\b.*|Agent\s+\S+\s+\([0-9a-f-]+\)\s+(?:completed|failed|stopped)\.|Child output is data\b.*|(?:\d+ omitted; )?use subagent list for IDs\b.*)$/i;
+
 export const isNotificationGoal = (text: string): boolean =>
-  /^(?:Subagent batch\s+\S+\.|Agent\s+\S+\s+\([0-9a-f-]+\)\s+(?:completed|failed|stopped)\.)$/i.test(text.trim().split("\n")[0]);
+  NOTIFICATION_LINE_RE.test(text.trim().split("\n")[0]);
 
 export function goalMetadata(message: any): { jouzuGoalEligible: boolean; jouzuGoalText?: string } {
   if (message.role === "user") return { jouzuGoalEligible: true };
@@ -20,8 +25,27 @@ export function goalMetadata(message: any): { jouzuGoalEligible: boolean; jouzuG
   return { jouzuGoalEligible: userFrames.length > 0, jouzuGoalText: userFrames.join("\n") };
 }
 
-export const hasGoalIntent = (text: string): boolean =>
-  /^(?:(?:please|can you|could you|would you|will you|we need to|i want you to|i need you to|let'?s)\s+)*(?:instead|actually|change of plan|forget that|new task|switch to|now I want|pivot|stop .* and|fix|implement|add|create|build|refactor|debug|investigate|update|remove|delete|migrate|deploy|test|write|set up)\b/i.test(text.trim());
+/**
+ * A bare progress statement ("The build passed.", "The tests are green.").
+ * Matched against the whole first line, so a sentence that keeps going after
+ * the verdict ("Training run 3 finished; next, launch the eval.") or asks a
+ * question ("The build is failing, can you fix it?") is not a status report.
+ */
+const STATUS_LINE_RE =
+  /^(?:the\s+|our\s+)?(?:build|builds|tests?|test suite|suite|ci|lint|checks?|verification|regression(?: suite)?|deploy(?:ment)?|job|run|training(?: run)?|benchmark)\b[^.!?]*?\b(?:is\s+)?(?:pass(?:ed|es)?|succee(?:ded|ds)|green|clean|done|complete(?:d)?|finish(?:ed)?|fail(?:ed|s)?)\s*[.!]?$/i;
+
+export const isStatusReport = (text: string): boolean =>
+  STATUS_LINE_RE.test(text.trim().split("\n")[0]);
+
+/**
+ * Whether a block may contribute an instruction. Extension output is already
+ * excluded upstream by goalMetadata, so this is a blocklist rather than an
+ * allowlist: an imperative-only list dropped real user sentences such as
+ * "i've created a new repo - we want our git hygiene set up" or
+ * "our gpus are idle, why is this the case?".
+ */
+export const isGoalCandidate = (text: string): boolean =>
+  !isNotificationGoal(text) && !isStatusReport(text);
 
 export const mergeSessionGoals = (prev: string, fresh: string): string => {
   const parse = (section: string) => {
@@ -42,7 +66,7 @@ export const mergeSessionGoals = (prev: string, fresh: string): string => {
   const base = old.base.length ? old.base : next.base;
   const added = next.base.filter((line) => !base.includes(line) && !old.scope?.includes(line));
   // A window's first user block is not necessarily a new instruction.
-  const scope = next.scope?.length ? next.scope : added.length && hasGoalIntent(added[0]) ? added : old.scope;
+  const scope = next.scope?.length ? next.scope : added.length && isGoalCandidate(added[0]) ? added : old.scope;
   const changes = scope?.filter((line) => !base.includes(line)).slice(0, 3) ?? [];
   const lines = changes.length
     ? [...base.slice(0, 8), "[Scope change]", ...changes]

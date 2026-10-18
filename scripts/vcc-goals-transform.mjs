@@ -25,7 +25,7 @@ export const transforms = {
 	"src/core/filter-noise.ts": (source) =>
 		replaceOnce(source, 'out.push({ kind: "user", text: cleaned });', "out.push({ ...b, text: cleaned });"),
 	"src/extract/goals.ts": (source) => {
-		source = `import { hasGoalIntent, isNotificationGoal } from "../core/jouzu-goals";\n${source}`;
+		source = `import { isGoalCandidate, isNotificationGoal } from "../core/jouzu-goals";\n${source}`;
 		source = replaceOnce(
 			source,
 			'if (b.kind !== "user") continue;',
@@ -44,12 +44,12 @@ export const transforms = {
 		source = replaceOnce(
 			source,
 			"if (SCOPE_CHANGE_RE.test(leading))",
-			"if (hasGoalIntent(leading) && SCOPE_CHANGE_RE.test(leading))",
+			"if (isGoalCandidate(goalText) && SCOPE_CHANGE_RE.test(leading))",
 		);
 		source = replaceOnce(
 			source,
 			"else if (TASK_RE.test(leading)",
-			"else if (hasGoalIntent(leading) && TASK_RE.test(leading)",
+			"else if (isGoalCandidate(goalText) && TASK_RE.test(leading)",
 		);
 		return replaceOnce(source, "return goals.slice(0, 8);", "return goals.slice(0, 12);");
 	},
