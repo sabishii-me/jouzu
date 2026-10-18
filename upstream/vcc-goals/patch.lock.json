@@ -21,12 +21,12 @@
 		},
 		"src/extract/goals.ts": {
 			"before": "92f2e86211616c8bf38cc3bf156eaeff5db2f61df6cfb8a66ca6d8e1733e6356",
-			"after": "08aba6d302e4bd1d7f901358a3be1a6c847f7f4346d1acbdc160b9445e02cbfa"
+			"after": "af62f8395e8130c17e21f7c9b1df884a9554677d47d168cdddb12cd121c2b735"
 		},
 		"src/core/summarize.ts": {
 			"before": "cbc7a38411e1d115058e3a4fcd1ceaf09a33762e8c6444a55ee6f7936bc66a92",
 			"after": "c0c088ccbe9572bfc1566c079b9598bc2ce8e6f364fd7f157885f896658d5696"
 		}
 	},
-	"runtime": "25ef28947079913bdb760efb02fb00629ee6c687122521af7e3f49cfd72d428d"
+	"runtime": "b77f2f1b9528a0f383e22052e35ff4938cf643e5472e6a6cf8348784f232ef80"
 }

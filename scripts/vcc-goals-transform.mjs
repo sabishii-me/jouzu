@@ -38,18 +38,15 @@ export const transforms = {
 		);
 		source = replaceOnce(
 			source,
-			"const leading = b.text.slice(0, LEADING_CHARS);",
-			"const leading = goalText.slice(0, LEADING_CHARS);",
-		);
-		source = replaceOnce(
-			source,
-			"if (SCOPE_CHANGE_RE.test(leading))",
-			"if (isGoalCandidate(goalText) && SCOPE_CHANGE_RE.test(leading))",
-		);
-		source = replaceOnce(
-			source,
-			"else if (TASK_RE.test(leading)",
-			"else if (isGoalCandidate(goalText) && TASK_RE.test(leading)",
+			`    const leading = b.text.slice(0, LEADING_CHARS);
+    if (SCOPE_CHANGE_RE.test(leading)) {
+      latestScopeChange = lines.slice(0, 3).map((l) => clip(l, MAX_GOAL_CHARS));
+    } else if (TASK_RE.test(leading) && lines[0].length > 15) {
+      latestScopeChange = lines.slice(0, 2).map((l) => clip(l, MAX_GOAL_CHARS));
+    }`,
+			`    if (isGoalCandidate(goalText)) {
+      latestScopeChange = lines.slice(0, 3).map((l) => clip(l, MAX_GOAL_CHARS));
+    }`,
 		);
 		return replaceOnce(source, "return goals.slice(0, 8);", "return goals.slice(0, 12);");
 	},

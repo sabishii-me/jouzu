@@ -38,11 +38,10 @@ export const isStatusReport = (text: string): boolean =>
   STATUS_LINE_RE.test(text.trim().split("\n")[0]);
 
 /**
- * Whether a block may contribute an instruction. Extension output is already
- * excluded upstream by goalMetadata, so this is a blocklist rather than an
- * allowlist: an imperative-only list dropped real user sentences such as
- * "i've created a new repo - we want our git hygiene set up" or
- * "our gpus are idle, why is this the case?".
+ * Whether a block may contribute an instruction. This is the only gate on the
+ * instruction side: extension output is already excluded upstream by
+ * goalMetadata, so a blocklist is enough, and any allowlist of phrasings would
+ * drop valid instructions (declarative English, CJK, translations).
  */
 export const isGoalCandidate = (text: string): boolean =>
   !isNotificationGoal(text) && !isStatusReport(text);

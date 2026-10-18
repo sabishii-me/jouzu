@@ -307,3 +307,18 @@ test("bare status sentences are not scope changes and do not hide a later instru
 	assert.match(goalSection(summary), /our gpus are idle/);
 	assert.match(goalSection(summary), /Fix the login timeout/);
 });
+
+test("same-window instructions survive regardless of language or phrasing", async (t) => {
+	const { compile } = await load(t);
+	for (const instruction of [
+		"please rerun the cache benchmark.",
+		"请把缓存基准测试跑一遍，然后汇报结果。",
+		"キャッシュのベンチマークを実行してください。",
+		"캐시 벤치마크를 실행해 주세요.",
+		"our gpus are idle, why is this the case?",
+	]) {
+		const summary = compile({ messages: [user("Fix the login timeout."), user(instruction)] });
+		assert.match(goalSection(summary), /\[Scope change\]/, instruction);
+		assert.ok(goalSection(summary).includes(instruction), instruction);
+	}
+});
