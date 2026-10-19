@@ -25,7 +25,7 @@ function Move-Aside([string]$Path) {
 try {
     $directory = [IO.Path]::GetFullPath($InstallRoot).TrimEnd('\')
     if (-not (Test-Path -LiteralPath $directory)) { exit 0 }
-    foreach ($name in @('launcher.exe', 'console.exe')) {
+    foreach ($name in @('jouzu-desktop.exe', 'launcher.exe', 'console.exe')) {
         Move-Aside (Join-Path $directory $name)
     }
 } catch {

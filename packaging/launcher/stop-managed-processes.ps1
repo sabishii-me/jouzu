@@ -5,8 +5,11 @@ try {
     if ($directory -eq [IO.Path]::GetPathRoot($directory).TrimEnd('\')) { throw 'Drive root is not a valid installation directory.' }
     if (-not (Test-Path -LiteralPath $directory)) { exit 0 }
     $root = $directory + '\'
-    $launcher = Join-Path $directory 'launcher.exe'
-    # Accept the previous filename when upgrading an existing installation.
+    $launcher = Join-Path $directory 'jouzu-desktop.exe'
+    # Accept either the current name or the previous launcher name when upgrading.
+    if (-not (Test-Path -LiteralPath $launcher)) {
+        $launcher = Join-Path $directory 'launcher.exe'
+    }
     if (-not (Test-Path -LiteralPath $launcher)) {
         $launcher = Join-Path $directory 'jouzu-launcher.exe'
     }
@@ -18,11 +21,11 @@ try {
     }
     # Program metadata establishes that the selected directory belongs to Jouzu.
     $product = (Get-Item -LiteralPath $launcher).VersionInfo.ProductName
-    if ($product -ne 'Jouzu Launcher') { throw 'Existing executable is not a Jouzu launcher.' }
+    if ($product -notin @('jouzu-desktop', 'Jouzu Launcher')) { throw 'Existing executable is not a Jouzu launcher.' }
     if ($RefuseActiveSessions) {
         $sessions = @(Get-CimInstance Win32_Process | Where-Object {
             $_.ExecutablePath -and $_.ExecutablePath.StartsWith($root, [StringComparison]::OrdinalIgnoreCase) -and
-            $_.Name -match '^(console|jz|jouzu|node)\.exe$'
+            $_.Name -match '^(console|jz|jouzu|jouzu-desktop|node)\.exe$'
         })
         if ($sessions.Count -gt 0) { throw 'Close active Jouzu sessions before updating.' }
     }
