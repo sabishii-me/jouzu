@@ -66,7 +66,8 @@ function searchScore(model: PickerModel, query: string): number | undefined {
 	if (modelId.startsWith(needle)) return 20 + modelId.length - needle.length;
 	if (name.startsWith(needle)) return 30 + name.length - needle.length;
 
-	const fields = [exact, `${provider} ${modelId}`, name, catalogLabel];
+	const providerName = normalized(model.display?.providerName ?? sanitizeTerminalText(model.providerName ?? ""));
+	const fields = [exact, `${provider} ${modelId}`, name, catalogLabel, providerName];
 	let best: number | undefined;
 	for (const field of fields) {
 		const substring = field.indexOf(needle);

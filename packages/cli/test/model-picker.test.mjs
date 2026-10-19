@@ -742,16 +742,20 @@ test("Models view separates browse keys from search cursor input", () => {
 	assert.match(component.render(72).join("\n"), /→ Search/u);
 
 	component.handleInput("escape");
-	assert.equal(calls.close, 0, "Esc clears the search before closing the Palette");
-	assert.equal(queries.at(-1), "", "Esc clears the query");
+	assert.equal(calls.close, 0, "Esc leaves search before closing the Palette");
+	assert.equal(queries.at(-1), "q ", "leaving search preserves the query");
 	assert.doesNotMatch(component.render(72).join("\n"), /→ Search/u, "Esc leaves search focus");
+	component.handleInput("escape");
+	assert.equal(queries.at(-1), "", "Esc in browse clears the query");
 	component.handleInput("\u0006");
 	assert.deepEqual(calls.favorites, ["tiny"], "Ctrl+F toggles favorite from browse");
 	component.handleInput(" ");
 	assert.equal(queries.at(-1), " ", "Space types into search like every printable character");
 	assert.deepEqual(calls.favorites, ["tiny"], "Space no longer toggles favorite");
 	component.handleInput("escape");
-	assert.equal(calls.close, 0, "Esc clears the search before closing the Palette");
+	assert.equal(calls.close, 0, "Esc leaves search before closing the Palette");
+	component.handleInput("escape");
+	assert.equal(calls.close, 0, "Esc clears the query before closing the Palette");
 	component.handleInput("escape");
 	assert.equal(calls.close, 1);
 
@@ -789,12 +793,14 @@ test("Models view returns to the pre-search position when the search is cleared"
 	assert.equal(selectedId(), "m03", "editing the query selects the best match");
 	component.handleInput("escape");
 	assert.equal(calls.close, 0);
-	assert.equal(selectedId(), "m05", "Esc returns to the pre-search position");
+	assert.equal(selectedId(), "m03", "Esc preserves the searched selection for row actions");
+	component.handleInput("escape");
+	assert.equal(selectedId(), "m05", "clearing search returns to the pre-search position");
 	assert.match(stripSgr(component.render(96).join("\n")), /Esc\/Ctrl\+C close/u);
 
 	component.handleInput("3");
 	component.handleInput("down");
-	assert.match(stripSgr(component.render(96).join("\n")), /Esc\/Ctrl\+C clear search/u);
+	assert.match(stripSgr(component.render(96).join("\n")), /Esc\/Ctrl\+C browse/u);
 	component.handleInput("\u007f");
 	assert.equal(selectedId(), "m05", "deleting the query also returns to the pre-search position");
 });
@@ -852,6 +858,26 @@ test("Models view resolves a rebound favorite binding", () => {
 	assert.deepEqual(calls.favorites, [], "Space no longer toggles after rebinding");
 	component.handleInput("\u001b[98;6u");
 	assert.deepEqual(calls.favorites, ["tiny"], "the rebound key toggles the selected row");
+});
+
+test("printable favorite actions retain a searched row different from the browse selection", () => {
+	const queries = [];
+	const { component, calls } = createComponent({
+		jouzuKeybindings: createJouzuKeybindingsManagerFromConfig({ "jouzu.model.toggleFavorite": "f" }),
+		getRows: (query) => {
+			queries.push(query);
+			return rows().filter((row) => !query || row.model.modelId.includes(query));
+		},
+	});
+	component.handleInput("/");
+	component.handleInput("fit");
+	assert.equal(queries.at(-1), "fit");
+	assert.match(stripSgr(component.render(96).join("\n")).replace(/[│\s]+/gu, " "), /Esc\/Ctrl\+C then F favorite/u);
+	component.handleInput("escape");
+	component.handleInput("f");
+	assert.deepEqual(calls.favorites, ["fit"]);
+	assert.equal(queries.at(-1), "fit", "favorite preserves the active filter");
+	assert.equal(calls.close, 0);
 });
 
 test("Models view hints the browse route when a favorite binding is printable", () => {

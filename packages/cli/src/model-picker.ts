@@ -504,13 +504,13 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 				this.compactConfirmation = undefined;
 				this.message = undefined;
 				this.tui.requestRender();
-			} else if (this.searchInput.getValue()) {
-				this.clearSearch();
 			} else if (this.searchFocused) {
 				this.searchFocused = false;
 				this.message = undefined;
 				this.syncSearchFocus();
 				this.tui.requestRender();
+			} else if (this.searchInput.getValue()) {
+				this.clearSearch();
 			} else {
 				this.close();
 			}
@@ -719,19 +719,18 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 		const refreshKey = formatEffectiveJouzuKeybinding(this.jouzuKeybindings, "jouzu.model.refresh");
 		const refreshHints: PaletteKeyHint[] = refreshKey === "Unbound" ? [] : [{ key: refreshKey, label: "refresh" }];
 		const hasQuery = Boolean(this.searchInput.getValue());
-		// A favorite binding that is not live inside the search field is advertised
-		// as its browse-mode route rather than dropped, so the accelerator stays
-		// discoverable while the user is typing. Cancel clears a non-empty query,
-		// so that route exists only before anything is typed.
+		// Leaving search keeps the query and selected row available to printable actions.
 		const favoriteHints: PaletteKeyHint[] =
 			this.searchFocused && favoriteNow === "Unbound"
-				? favoriteAll !== "Unbound" && !hasQuery
+				? favoriteAll !== "Unbound"
 					? [{ key: `${cancel} then ${favoriteAll}`, label: "favorite" }]
 					: []
-				: [{ key: favoriteNow, label: "favorite" }];
+				: favoriteNow !== "Unbound"
+					? [{ key: favoriteNow, label: "favorite" }]
+					: [];
 		const cancelHint: PaletteKeyHint = {
 			key: cancel,
-			label: hasQuery ? "clear search" : this.searchFocused ? "browse" : "close",
+			label: this.searchFocused ? "browse" : hasQuery ? "clear search" : "close",
 		};
 		const hints: PaletteKeyHint[] = this.compactConfirmation
 			? [

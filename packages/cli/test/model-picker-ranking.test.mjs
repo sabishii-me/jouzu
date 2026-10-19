@@ -60,6 +60,23 @@ function state() {
 	return value;
 }
 
+test("search indexes sanitized provider display names independently of provider IDs", () => {
+	const inventory = [
+		{
+			provider: "vendor-17",
+			providerName: "\u001b[31mAcme Labs\u001b[0m",
+			modelId: "r1",
+			name: "Reasoner",
+			available: true,
+		},
+	];
+	for (const query of ["Acme Labs", "acme", "vendor-17", "reasoner"]) {
+		const matches = buildPickerRows({ models: inventory, state: emptyModelPickerState(), projectKey, query });
+		assert.equal(matches.length, 1, query);
+		assert.equal(matches[0].model.display.providerName, "Acme Labs");
+	}
+});
+
 test("empty query lists current, previous, favorites, recents, then the rest alphabetically", () => {
 	const inventory = [
 		...models,
