@@ -1,0 +1,69 @@
+name: Test benchmark
+
+# Measures the CLI suite at several test concurrencies on hosted runners. Manual only; compare the
+# uploaded timing records with `npm run test:timings -- summary`.
+on:
+  workflow_dispatch:
+    inputs:
+      concurrency:
+        description: JSON list of test concurrencies; "default" uses Node's default
+        default: '["2","4","8","default"]'
+      repeats:
+        description: JSON list of repeat labels; one job per repeat and concurrency
+        default: "[1,2,3]"
+      node:
+        description: Node version
+        default: "22"
+
+permissions:
+  contents: read
+
+jobs:
+  cli-suite:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        concurrency: ${{ fromJSON(inputs.concurrency) }}
+        repeat: ${{ fromJSON(inputs.repeats) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ inputs.node }}
+          cache: npm
+      - run: node scripts/install-source-dependencies.mjs
+        timeout-minutes: 20
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: "1.26.1"
+          cache-dependency-path: upstream/textguard/source/go.sum
+      - run: npm run build
+        env:
+          JOUZU_BUILD_SOURCE_ONLY: "1"
+        timeout-minutes: 15
+      - name: Run the CLI suite
+        shell: bash
+        run: |
+          if [ "$CONCURRENCY" != default ]; then export JOUZU_TEST_CONCURRENCY="$CONCURRENCY"; fi
+          npm test --workspace packages/cli
+        timeout-minutes: 30
+        env:
+          CONCURRENCY: ${{ matrix.concurrency }}
+          JOUZU_TEST_TIMINGS_DIR: ${{ runner.temp }}/test-timings
+          JOUZU_TEST_TIMINGS_LABEL: cli-c${{ matrix.concurrency }}
+          JOUZU_TEST_TIMINGS_JOB: cli-suite (${{ matrix.os }}, ${{ matrix.concurrency }}, ${{ matrix.repeat }})
+          JOUZU_TEST_TIMEOUT_MS: "240000"
+          JOUZU_TEST_SUITE_TIMEOUT_MS: "1500000"
+      - name: Save test timings
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-timings-${{ matrix.os }}-c${{ matrix.concurrency }}-r${{ matrix.repeat }}
+          path: ${{ runner.temp }}/test-timings
+          if-no-files-found: warn
+          retention-days: 30

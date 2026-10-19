@@ -37,6 +37,13 @@ export function testInvocation(args, env = process.env, cwd = process.cwd()) {
 		options.push(`${name}=${value}`);
 	}
 	if (!patterns.length) throw new Error("Provide at least one test file or glob. See docs/testing.md.");
+	// CI selects a measured concurrency without changing each package script; an argument wins.
+	if (env.JOUZU_TEST_CONCURRENCY !== undefined && !options.some((option) => option.startsWith("--test-concurrency="))) {
+		const value = env.JOUZU_TEST_CONCURRENCY;
+		if (!/^[1-9][0-9]?$/.test(value) || Number(value) > 64)
+			throw new Error("JOUZU_TEST_CONCURRENCY must be an integer from 1 to 64.");
+		options.push(`--test-concurrency=${value}`);
+	}
 	const files = new Set();
 	for (const pattern of patterns) {
 		const literal = resolve(cwd, pattern);

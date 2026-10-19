@@ -59,6 +59,7 @@ direct timeout flags are rejected rather than overriding the safeguards.
 | --- | --- | --- |
 | `JOUZU_TEST_TIMEOUT_MS` | `120000` | 1-3600000 milliseconds |
 | `JOUZU_TEST_SUITE_TIMEOUT_MS` | `600000` | 1-3600000 milliseconds |
+| `JOUZU_TEST_CONCURRENCY` | Node default (CPUs minus one) | 1-64 test files at once; `--test-concurrency` overrides it |
 
 Set a larger finite budget only for a measured workload that needs it, and
 record the reason with the validation result. A timeout is a failure, not a
