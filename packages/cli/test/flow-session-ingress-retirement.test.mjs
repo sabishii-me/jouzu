@@ -8,7 +8,9 @@ import { finishedUserWork } from "../dist/flow-control/user-work-retention.js";
 import { capturedNotices } from "./fixtures/flow-assembly.mjs";
 import { fixture } from "./fixtures/flow-session-ingress.mjs";
 
-test("idle producer retirement reuses execution capacity beyond 1024 records", { timeout: 60000 }, async (t) => {
+test("idle producer retirement reuses execution capacity beyond 1024 records @endurance", {
+	timeout: 60000,
+}, async (t) => {
 	const f = await fixture(t);
 	const { waits, waitProducers } = f.ingress.branch().attachment;
 	let listeners = 0,

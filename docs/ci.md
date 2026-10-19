@@ -7,6 +7,7 @@ Pushes and pull requests run Linux and macOS checks. Releases also require nativ
 | Job | Runs on | Checks |
 | --- | --- | --- |
 | `node` | Ubuntu and macOS, Node 22 and 24 | Source-checkout build, static checks, runner tests, Session UI and CLI suites; Node 24 also runs the networked extension check |
+| `endurance` | Ubuntu, Node 22 | Flow-control cases that cross exact production storage limits (`@endurance`) |
 | `legacy-linux-static-fetch` | Rocky Linux 8 (glibc 2.28), Node 22.19.0 and 24 | Build and release-owned dependency loading without Camoufox |
 | `release-artifacts` | Ubuntu, Node 24 | Locked install, build, static checks, release-metadata and package-content tests, then the candidate package and updater fixtures |
 | `packed-install` | Ubuntu and macOS | Local, `npm exec`, and global installation from the candidate, one step per scope |

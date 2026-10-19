@@ -11,7 +11,12 @@ export const repository = "shisa-ai/jouzu";
 export const pinnedNpm = "11.16.0";
 
 export function requiredJobs() {
-	const names = ["release-artifacts", "legacy-linux-static-fetch (22.19.0)", "legacy-linux-static-fetch (24)"];
+	const names = [
+		"release-artifacts",
+		"endurance",
+		"legacy-linux-static-fetch (22.19.0)",
+		"legacy-linux-static-fetch (24)",
+	];
 	for (const os of ["ubuntu-latest", "macos-latest"]) {
 		for (const node of [22, 24]) names.push(`node (${os}, ${node})`);
 		names.push(`optional-camoufox (${os})`, `published-upgrade (${os})`);

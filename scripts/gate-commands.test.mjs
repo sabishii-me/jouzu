@@ -32,8 +32,11 @@ export function expand(command, directory = ".") {
 	return leaves;
 }
 
+// Guards that only verify preconditions may run before each suite that needs them.
+const guards = new Set(["packages/cli: node ../../scripts/check-dist-fresh.mjs"]);
+
 function duplicates(leaves) {
-	return leaves.filter((leaf, index) => leaves.indexOf(leaf) !== index);
+	return leaves.filter((leaf, index) => !guards.has(leaf) && leaves.indexOf(leaf) !== index);
 }
 
 function workflowJobs(file) {
@@ -70,6 +73,27 @@ test("command expansion follows root, workspace, and all-workspace scripts", () 
 	const leaves = expand("npm run check:types && npm test --workspaces --if-present");
 	assert.ok(leaves.includes("packages/cli: tsc -p tsconfig.json"));
 	assert.ok(leaves.includes("packages/session-ui: tsc -p tsconfig.json"));
-	assert.ok(leaves.includes("packages/cli: node ../../scripts/run-tests.mjs test/*.test.mjs"));
+	assert.ok(
+		leaves.includes("packages/cli: node ../../scripts/run-tests.mjs --test-skip-pattern=@endurance test/*.test.mjs"),
+	);
 	assert.deepEqual(duplicates(["a", "b", "a"]), ["a"]);
+});
+
+test("the endurance suite lists exactly the files with endurance tests, and the default suite skips them", () => {
+	const scripts = manifest("packages/cli").scripts;
+	const directory = join(root, "packages/cli/test");
+	const tagged = readdirSync(directory)
+		.filter(
+			(file) => file.endsWith(".test.mjs") && readFileSync(join(directory, file), "utf8").includes(' @endurance"'),
+		)
+		.map((file) => `test/${file}`)
+		.sort();
+	assert.ok(tagged.length > 0);
+	assert.deepEqual(scripts["test:endurance"].match(/test\/[^ ]+\.test\.mjs/g).sort(), tagged);
+	assert.match(scripts["test:endurance"], /--test-name-pattern=@endurance /);
+	assert.match(scripts.test, /--test-skip-pattern=@endurance test\/\*\.test\.mjs$/);
+	// The full local gate runs endurance tests in parallel with the rest of the suite.
+	assert.ok(
+		expand(manifest(".").scripts.test).includes("packages/cli: node ../../scripts/run-tests.mjs test/*.test.mjs"),
+	);
 });

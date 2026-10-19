@@ -52,6 +52,7 @@ test("full hosted qualification succeeds without Windows", () => verifyQualifica
 
 test("required hosted jobs cover Linux and macOS only", () => {
 	assert.ok(requiredJobs().includes("release-artifacts"));
+	assert.ok(requiredJobs().includes("endurance"));
 	assert.ok(requiredJobs().every((name) => !name.includes("windows")));
 	for (const os of ["ubuntu-latest", "macos-latest"]) {
 		for (const name of [

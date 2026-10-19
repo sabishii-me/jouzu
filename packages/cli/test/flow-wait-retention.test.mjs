@@ -262,7 +262,7 @@ test("stale or duplicate retirement selections commit nothing", async (t) => {
 	assert.equal(f.store.gate().isWorkRetired(work.id), false);
 });
 
-test("wait and execution slots can be reused past both live-record limits", async (t) => {
+test("wait and execution slots can be reused past both live-record limits @endurance", async (t) => {
 	const f = await fixture(t);
 	const work = await f.store.registerWork("work", "bg", 1);
 	let retiredExecution;

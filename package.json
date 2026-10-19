@@ -15,7 +15,7 @@
 		"check": "npm run check:types && npm run check:static",
 		"check:types": "npm run check --workspace packages/session-ui && npm run check --workspace packages/cli",
 		"check:static": "biome check . && npm run pi:check && node scripts/apply-background-flow.mjs --check && node scripts/apply-multiloop-wait-skill.mjs --check && node scripts/apply-vcc-goals.mjs --check && node scripts/run-tests.mjs scripts/vcc-goals.test.mjs && node scripts/apply-task-flow.mjs --check && node scripts/apply-code-previews.mjs --check",
-		"test": "npm run test:runner && npm run test --workspace packages/session-ui && npm run test --workspace packages/cli && npm run test:python && npm run test:pack-check && npm run test:release-metadata",
+		"test": "npm run test:runner && npm run test --workspace packages/session-ui && npm run test:full --workspace packages/cli && npm run test:python && npm run test:pack-check && npm run test:release-metadata",
 		"test:node": "node scripts/run-tests.mjs",
 		"test:timings": "node scripts/test-timings.mjs",
 		"test:runner": "node scripts/run-tests.mjs scripts/run-tests.test.mjs scripts/test-timings.test.mjs scripts/gate-commands.test.mjs",

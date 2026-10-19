@@ -27,6 +27,7 @@ npm run build
 | `npm run test:runner` | Test-runner deadlines, diagnostics, timing records, and command contracts |
 | `npm run test --workspace packages/session-ui` | Session UI |
 | `npm run test --workspace packages/cli` | CLI and session flow control |
+| `npm run test:endurance --workspace packages/cli` | Flow-control cases that cross exact production storage limits |
 | `npm run test:python` | Python package reservation |
 | `npm run test:pack-check` | Package contents and `dev-build.sh` |
 | `npm run test:release-metadata` | Release metadata, smoke phases, and live-smoke event analysis |
@@ -34,6 +35,10 @@ npm run build
 `npm run check` runs `check:types` (TypeScript without output) and `check:static` (Biome, the Pi patch and content-policy checks, and the build-transform checks). `npm run build` already type-checks, so after a build run `npm run check:static`. `npm run release:check` runs the full release gate.
 
 Each gate runs each command once. `scripts/gate-commands.test.mjs` expands `npm run check`, `npm test`, `release:check:candidate`, and every CI job into their commands and fails on a repeat.
+
+### Endurance tests
+
+Tests whose names end in `@endurance` repeat full runtime operations until they cross a production storage limit, such as 1,120 tool turns past the native request quota. The default CLI suite (`npm run test --workspace packages/cli`) skips them; `npm run test:endurance --workspace packages/cli` runs only them. `npm test` runs `test:full`, the whole CLI suite including endurance tests, so they share the suite's parallel workers. Tag a new test `@endurance` only when it must cross an exact production limit, and list its file in the `test:endurance` script. `scripts/gate-commands.test.mjs` fails when the list and the tagged files differ.
 
 ### Bounded Node runs
 
