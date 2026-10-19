@@ -1,5 +1,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[cfg(windows)]
+mod chat_process;
+mod chat_transport;
+mod chat;
 mod active_app;
 mod launcher_script;
 mod terminal;
@@ -378,6 +382,7 @@ fn main() {
         logs::install_panic_hook(managed, env!("CARGO_PKG_VERSION"));
     }
     tauri::Builder::default()
+        .manage(chat::ChatService::default())
         // The launcher is one window for one installation: a second start hands its wish to the window
         // that is open and leaves, so two launchers never work on the same update or the same session.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -419,6 +424,10 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            chat::chat_start,
+            chat::chat_send,
+            chat::chat_poll,
+            chat::chat_stop,
             launcher_state,
             launch_jouzu,
             forget_workspace,
@@ -447,8 +456,14 @@ fn main() {
             environment::environment_save,
 
         ])
-        .run(tauri::generate_context!())
-        .expect("Unable to start Jouzu launcher");
+        .build(tauri::generate_context!())
+        .expect("Unable to start Jouzu launcher")
+        .run(|app, event| {
+            if matches!(event, tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit) {
+                use tauri::Manager;
+                app.state::<chat::ChatService>().shutdown();
+            }
+        });
 }
 
 #[cfg(test)]
