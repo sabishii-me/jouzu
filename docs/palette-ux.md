@@ -72,9 +72,9 @@ When an item supports disclosure as well as a primary action, reserve `Enter` fo
 - Select the first actionable item when the view opens unless retained state identifies another valid item.
 - Preserve selection when data refreshes and the same item still exists.
 - Keep a visible non-color marker on the selected row. Background color may reinforce selection but cannot be the only indicator.
-- A searchable view starts in browse mode. Typing or `/` focuses search; `Esc` returns to browse mode before another `Esc` closes the Palette.
-- While search holds focus, `←`, `→`, `Home`, `End`, and printable input go to the search field. `↑` and `↓` continue to move results.
-- While search holds focus, the title names the search state and committal row actions keep working through their semantic accelerators. `Esc` returns to browse with the query intact, so a browse-only key is one keystroke away and is hinted as such.
+- A searchable view starts in browse mode. Typing or `/` focuses search. The first `Esc` with a non-empty query clears it and returns the selection to where it was before the search, whether focus is in the search field or the results. With an empty query, `Esc` leaves the search field, then closes the Palette.
+- While search holds focus, `←`, `→`, `Home`, `End`, and printable input go to the search field. `↑` and `↓` move results and leave the search field with the query kept.
+- While search holds focus, the title names the search state and committal row actions keep working through their semantic accelerators. Moving with `↑` or `↓` returns to browse with the query intact, so a browse-only key is one keystroke away and is hinted as such. `Esc` never preserves a query; it clears it.
 - Report the result count against the total when a search or filter is narrowing the collection.
 - A search with no results says so and keeps the search text editable. It does not close, clear the query, or fall back to an unfiltered list.
 - Render an item that cannot be acted on as unavailable, with the reason, rather than hiding it or failing on `Enter`.

@@ -332,6 +332,13 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 		this.selectedIndex = retainedIndex >= 0 ? retainedIndex : Math.min(anchor.index, Math.max(0, this.rows.length - 1));
 	}
 
+	private leaveSearchField(): void {
+		this.searchFocused = false;
+		this.message = undefined;
+		this.syncSearchFocus();
+		this.tui.requestRender();
+	}
+
 	private clearSearch(): void {
 		this.searchInput.setValue("");
 		this.searchFocused = false;
@@ -504,13 +511,14 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 				this.compactConfirmation = undefined;
 				this.message = undefined;
 				this.tui.requestRender();
-			} else if (this.searchFocused) {
-				this.searchFocused = false;
-				this.message = undefined;
-				this.syncSearchFocus();
-				this.tui.requestRender();
 			} else if (this.searchInput.getValue()) {
+				// Product decision: the first Esc in a non-empty search clears it, from the
+				// search field or the results, and returns the cursor to its pre-search
+				// position. Printable row actions reach a searched row through ↑/↓ instead.
+				// Do not change this order without maintainer approval; see docs/models.md.
 				this.clearSearch();
+			} else if (this.searchFocused) {
+				this.leaveSearchField();
 			} else {
 				this.close();
 			}
@@ -521,20 +529,20 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 			if (this.keybindings.matches(data, "tui.select.confirm")) this.confirmCompaction();
 			return;
 		}
-		if (this.keybindings.matches(data, "tui.select.up")) {
-			this.moveSelection(-1);
-			return;
-		}
-		if (this.keybindings.matches(data, "tui.select.down")) {
-			this.moveSelection(1);
-			return;
-		}
-		if (this.keybindings.matches(data, "tui.select.pageUp")) {
-			this.moveSelection(-8);
-			return;
-		}
-		if (this.keybindings.matches(data, "tui.select.pageDown")) {
-			this.moveSelection(8);
+		const step = this.keybindings.matches(data, "tui.select.up")
+			? -1
+			: this.keybindings.matches(data, "tui.select.down")
+				? 1
+				: this.keybindings.matches(data, "tui.select.pageUp")
+					? -8
+					: this.keybindings.matches(data, "tui.select.pageDown")
+						? 8
+						: 0;
+		if (step) {
+			// Moving through results leaves the search field with the query kept, so
+			// printable row actions apply to the filtered selection.
+			if (this.searchFocused) this.leaveSearchField();
+			this.moveSelection(step);
 			return;
 		}
 		if (!this.searchFocused && matchesKey(data, "home")) {
@@ -719,18 +727,19 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 		const refreshKey = formatEffectiveJouzuKeybinding(this.jouzuKeybindings, "jouzu.model.refresh");
 		const refreshHints: PaletteKeyHint[] = refreshKey === "Unbound" ? [] : [{ key: refreshKey, label: "refresh" }];
 		const hasQuery = Boolean(this.searchInput.getValue());
-		// Leaving search keeps the query and selected row available to printable actions.
+		// A favorite binding that is not live in the search field is reached by moving into
+		// the results, which keeps the query and the selected row.
 		const favoriteHints: PaletteKeyHint[] =
 			this.searchFocused && favoriteNow === "Unbound"
 				? favoriteAll !== "Unbound"
-					? [{ key: `${cancel} then ${favoriteAll}`, label: "favorite" }]
+					? [{ key: `${move} then ${favoriteAll}`, label: "favorite" }]
 					: []
 				: favoriteNow !== "Unbound"
 					? [{ key: favoriteNow, label: "favorite" }]
 					: [];
 		const cancelHint: PaletteKeyHint = {
 			key: cancel,
-			label: this.searchFocused ? "browse" : hasQuery ? "clear search" : "close",
+			label: hasQuery ? "clear search" : this.searchFocused ? "browse" : "close",
 		};
 		const hints: PaletteKeyHint[] = this.compactConfirmation
 			? [
