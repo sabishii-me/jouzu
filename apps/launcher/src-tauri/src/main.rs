@@ -20,6 +20,7 @@ mod jouzu_update;
 mod control;
 mod environment;
 mod runtime;
+mod sessions;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -387,6 +388,7 @@ fn main() {
         // that is open and leaves, so two launchers never work on the same update or the same session.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(window) = tauri::Manager::get_webview_window(app, "main") {
+                let _ = window.show();
                 let _ = window.unminimize();
                 let _ = window.set_focus();
             }
@@ -421,6 +423,46 @@ fn main() {
                 .data_directory(data)
                 .build()?;
             renderer::watch(&window, runtime::managed_root().ok());
+            let close_window = window.clone();
+            window.on_window_event(move |event| {
+                // Closing hides the window: the runtime and its warm session stay alive in the tray.
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = close_window.hide();
+                }
+            });
+            let show = tauri::menu::MenuItem::with_id(app, "show", "Show Jouzu", true, None::<&str>)?;
+            let new_session = tauri::menu::MenuItem::with_id(app, "new", "New Session", true, None::<&str>)?;
+            let quit = tauri::menu::MenuItem::with_id(app, "quit", "Quit Jouzu", true, None::<&str>)?;
+            let menu = tauri::menu::Menu::with_items(app, &[&show, &new_session, &quit])?;
+            let icon = app
+                .default_window_icon()
+                .cloned()
+                .ok_or("Missing application icon")?;
+            tauri::tray::TrayIconBuilder::new()
+                .icon(icon)
+                .menu(&menu)
+                .show_menu_on_left_click(false)
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "show" => show_main(app),
+                    "new" => {
+                        show_main(app);
+                        let _ = tauri::Emitter::emit(app, "new-session", ());
+                    }
+                    "quit" => app.exit(0),
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let tauri::tray::TrayIconEvent::Click {
+                        button: tauri::tray::MouseButton::Left,
+                        button_state: tauri::tray::MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        show_main(tray.app_handle());
+                    }
+                })
+                .build(app)?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -428,6 +470,7 @@ fn main() {
             chat::chat_send,
             chat::chat_poll,
             chat::chat_stop,
+            sessions::chat_sessions,
             launcher_state,
             launch_jouzu,
             forget_workspace,
@@ -464,6 +507,15 @@ fn main() {
                 app.state::<chat::ChatService>().shutdown();
             }
         });
+}
+
+fn show_main(app: &tauri::AppHandle) {
+    use tauri::Manager;
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
 }
 
 #[cfg(test)]

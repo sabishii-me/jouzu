@@ -21,7 +21,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Input } from "./components/ui/input";
 import { getVersion } from "@tauri-apps/api/app";
 import { open, confirm } from "@tauri-apps/plugin-dialog";
-import { Bug, FolderOpen, Search, X, ArrowUpRight, Settings, Languages, KeyRound, SlidersHorizontal, RefreshCw, LoaderCircle, Minus, Plus, SquareTerminal, Copy, Check, ArrowUpCircle } from "lucide-react";
+import { Bug, FolderOpen, Search, X, ArrowUpRight, Settings, Languages, KeyRound, SlidersHorizontal, RefreshCw, LoaderCircle, Minus, Maximize2, Minimize2, Plus, SquareTerminal, Copy, Check, ArrowUpCircle } from "lucide-react";
 import { Dialog, DialogTrigger, DialogContent, DialogTitle, DialogDescription, DialogClose } from "./components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "./components/ui/tabs";
 import { ScrollArea } from "./components/ui/scroll-area";
@@ -39,6 +39,8 @@ export function App() {
   const [locale, setLocale] = useState<Locale>(() => resolveLocale(localStorage.getItem("jouzu.ui.language") ?? navigator.language));
   const t = messages[locale];
   const [activePath, setActivePath] = useState<string | null>(null);
+  const [newSession, setNewSession] = useState(true);
+  const [maximized, setMaximized] = useState(false);
   const [sessionRevision, setSessionRevision] = useState(0);
   const [chatBusy, setChatBusy] = useState(false);
   const [restartPending, setRestartPending] = useState(false);
@@ -75,6 +77,20 @@ export function App() {
   const needsSetup = modelReady === false;
   const showSetup = needsSetup;
   const [device, setDevice] = useState<{url:string;code:string} | null>(null);
+  useEffect(() => {
+    if (!isTauri()) return;
+    let disposed = false;
+    const window = getCurrentWindow();
+    const sync = () => { void window.isMaximized().then(value => { if (!disposed) setMaximized(value); }).catch(() => {}); };
+    sync();
+    const unlisten = window.onResized(sync);
+    return () => { disposed = true; void unlisten.then(remove => remove()).catch(() => {}); };
+  }, []);
+  useEffect(() => {
+    if (!isTauri()) return;
+    const unlisten = listen("new-session", () => setNewSession(true));
+    return () => { void unlisten.then(remove => remove()).catch(() => {}); };
+  }, []);
   useEffect(() => {
     if (!isTauri()) return;
     const pending = listen<{url:string;code:string}>("control-device", event => setDevice(event.payload));
@@ -355,7 +371,7 @@ export function App() {
           <DialogClose asChild><Button variant="ghost" className="absolute right-2 top-2 px-3" aria-label={t.dismiss}><X /></Button></DialogClose>
         </DialogContent>
       </Dialog></>}
-      {isTauri() && <><Button variant="ghost" aria-label={t.minimize} onClick={() => getCurrentWindow().minimize().catch(error => setError(String(error)))}><Minus /></Button><Button variant="ghost" aria-label={t.closeWindow} onClick={() => getCurrentWindow().close().catch(error => setError(String(error)))}><X /></Button></>}
+      {isTauri() && <><Button variant="ghost" aria-label={t.minimize} onClick={() => getCurrentWindow().minimize().catch(error => setError(String(error)))}><Minus /></Button><Button variant="ghost" aria-label={maximized ? "Restore" : "Maximize"} onClick={() => getCurrentWindow().toggleMaximize().catch(error => setError(String(error)))}>{maximized ? <Minimize2 /> : <Maximize2 />}</Button><Button variant="ghost" aria-label="Hide to tray" title="Hide to tray" onClick={() => getCurrentWindow().close().catch(error => setError(String(error)))}><X /></Button></>}
       </div>
     </header>
       <Dialog open={repair !== null} onOpenChange={open => { if (!open) setRepair(null); }}>
@@ -374,6 +390,10 @@ export function App() {
       <ChatWorkspace
         path={activePath}
         revision={sessionRevision}
+        newSession={newSession}
+        onNewSession={() => setNewSession(true)}
+        onStartSession={() => setNewSession(false)}
+        onRetry={() => setSessionRevision(value => value + 1)}
         onBusyChange={setChatBusy}
         catalogRefreshing={catalogRefreshing}
         canRefreshModels={setup?.account.signedIn === true}

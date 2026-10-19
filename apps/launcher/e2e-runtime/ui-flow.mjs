@@ -51,7 +51,7 @@ const check = (name, ok, detail) => { results.push({ name, ok: !!ok, detail }); 
 try {
   await waitFor(async () => (await text()).includes('Connected'), 180_000, 'chat connected');
   check('prewarmed chat without a workspace click', true);
-  await clickButton('New chat');
+  await clickButton('New session');
   await waitFor(async () => (await evaluate(`document.querySelectorAll('article').length`)) === 0, 30_000, 'clean session');
 
   await evaluate(`document.querySelector('button[aria-label="Model"]')?.click()`);
@@ -89,7 +89,7 @@ try {
   await waitFor(async () => (await alerts()).includes('aborted'), 90_000, 'aborted state');
   check('abort reported by the runtime', (await alerts()).includes('aborted'));
 
-  check('new chat clicked', (await clickButton('New chat')) === 'clicked');
+  check('new chat clicked', (await clickButton('New session')) === 'clicked');
   await waitFor(async () => (await evaluate(`document.querySelectorAll('article').length`)) === 0, 30_000, 'new chat empty');
   await setDraft('after new chat');
   await clickSubmit();

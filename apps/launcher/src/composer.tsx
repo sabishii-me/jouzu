@@ -109,6 +109,7 @@ function AddMenu({ open, onOpenChange, onAddImage, onCompact, onModel, onExport,
 }
 
 export interface ComposerProps {
+  hero?: boolean;
   connected: boolean;
   pending: boolean;
   running: boolean;
@@ -133,17 +134,17 @@ export interface ComposerProps {
   thinkingLevels: readonly string[];
   onThinkingLevel: (level: string) => void;
 }
-export function Composer({ connected, pending, running, draft, onDraft, onSend, onStop, onCompact, onExport, error, compatibility = [], attachments = [], onAddImages, onRemoveImage, readingImages = false, attachmentError, models, model, onSelectModel, onRefreshModels, thinkingLevel, thinkingLevels, onThinkingLevel }: ComposerProps) {
+export function Composer({ hero = false, connected, pending, running, draft, onDraft, onSend, onStop, onCompact, onExport, error, compatibility = [], attachments = [], onAddImages, onRemoveImage, readingImages = false, attachmentError, models, model, onSelectModel, onRefreshModels, thinkingLevel, thinkingLevels, onThinkingLevel }: ComposerProps) {
   const imageInput = useRef<HTMLInputElement>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
   const submit = () => { if (connected && !pending && !readingImages && draft.trim()) onSend(); };
   const compactDisabled = !connected || pending || running;
   const exportDisabled = !connected || pending;
-  return <div className="border-t border-border px-3 pb-3 pt-2 sm:px-6">
+  return <div className={hero ? "px-0 pb-0 pt-0" : "border-t border-border px-3 pb-3 pt-2 sm:px-6"}>
     {error && <p role="alert" className="mx-auto mb-2 max-w-3xl select-text text-sm text-destructive">{error}</p>}
     {!!compatibility.length && <p role="status" className="mx-auto mb-2 max-w-3xl text-xs text-muted-foreground">Some runtime events have no display: {compatibility.join(", ")}</p>}
-    <form aria-label="Message composer" className="mx-auto flex max-w-3xl flex-col gap-2 rounded-2xl border border-border bg-card p-2.5 shadow-[0_8px_30px_rgba(0,0,0,0.12)] focus-within:ring-1 focus-within:ring-ring" onSubmit={event => { event.preventDefault(); submit(); }}>
+    <form aria-label="Message composer" className={`mx-auto flex max-w-3xl flex-col gap-2 border border-border bg-card shadow-[0_8px_30px_rgba(0,0,0,0.12)] focus-within:ring-1 focus-within:ring-ring ${hero ? "rounded-3xl p-3" : "rounded-2xl p-2.5"}`} onSubmit={event => { event.preventDefault(); submit(); }}>
       {attachmentError && <p role="alert" className="px-1 text-sm text-destructive">{attachmentError}</p>}
       {!!attachments.length && <ul aria-label="Attached images" className="flex flex-wrap gap-2 px-1">{attachments.map(item => <li key={item.id} className="relative max-w-36 rounded-lg border border-border p-1.5"><img src={`data:${item.image.mimeType};base64,${item.image.data}`} alt={`Preview of ${item.name}`} className="h-16 w-24 object-contain" /><div className="flex items-center gap-1"><p className="min-w-0 flex-1 truncate text-xs" title={item.name}>{item.name}</p><Button type="button" variant="ghost" className="size-6 p-0" aria-label={`Remove ${item.name}`} onClick={() => onRemoveImage?.(item.id)}><X className="size-3" /></Button></div></li>)}</ul>}
       <textarea aria-label="Message Jouzu" placeholder="Message Jouzu…" value={draft} onChange={event => onDraft(event.target.value)} rows={3} className="max-h-60 min-h-16 w-full resize-y bg-transparent px-1 text-sm outline-none" onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); submit(); } }} />

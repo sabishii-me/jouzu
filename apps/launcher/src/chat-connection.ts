@@ -106,7 +106,7 @@ export class ChatConnection {
       void invoke("chat_send", { handle: this.handle, request: { ...fields, type: command, id } }).catch(error => { this.requests.delete(id); reject(new Error(String(error))); });
     });
   }
-  async refreshHistory(rememberModel = false) {
+  async refreshHistory() {
     const state = await this.request("get_state");
     if (!object(state) || typeof state.sessionId !== "string" || typeof state.isStreaming !== "boolean") throw new Error("Runtime returned incompatible session state.");
     const history = await this.request("get_messages");
@@ -126,10 +126,6 @@ export class ChatConnection {
       modelId,
       thinkingLevel: typeof state.thinkingLevel === "string" ? state.thinkingLevel : undefined,
     });
-    if (rememberModel && modelProvider && modelId) {
-      this.preferredModel = { provider: modelProvider, id: modelId };
-      writeModelPreference(this.preferredModel);
-    }
   }
   private async applyPreferredModel() {
     const preferred = this.preferredModel;
@@ -148,8 +144,9 @@ export class ChatConnection {
     try {
       const result = await this.request(command, fields);
       if (object(result) && result.cancelled === true) throw new Error("The runtime cancelled the conversation change.");
-      // A resumed session owns its model; a new session should keep the model the user chose here.
-      await this.refreshHistory(command === "switch_session");
+      // A resumed session owns its model for this view, but it must not overwrite the
+      // user's saved preference for future new sessions.
+      await this.refreshHistory();
       if (command === "new_session") await this.applyPreferredModel();
     } catch (error) { this.update({ error: String(error) }); throw error; }
     finally { this.update({ pending: false }); }

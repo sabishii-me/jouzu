@@ -22,7 +22,7 @@
         "minHeight": 480,
         "create": false,
         "decorations": false,
-        "maximizable": false
+        "maximizable": true
       }
     ],
     "security": {

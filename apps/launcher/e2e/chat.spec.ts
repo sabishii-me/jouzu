@@ -26,6 +26,7 @@ test("the last workspace opens and prewarms chat without a workspace click", asy
         if (command === "launcher_state") return { ready: true, bash: true, bundled_git: true, platform: "windows", recent: [{ id: "work", path: "C:/Projects/Example", environment: { kind: "windows" } }] };
         if (command === "control_request") return { schemaVersion: 1, modelReady: true, profile: "core", account: { signedIn: false }, credentials: [], customProviders: [], providers: [], models: [] };
         if (command === "component_versions") return { jouzu: "0.3.8", development: true };
+        if (command === "chat_sessions") return [];
         if (command === "environment_read") return [];
         if (command === "chat_start") return "chat-test";
         if (command === "chat_poll") return { records: records.splice(0), closed: false };
@@ -67,6 +68,7 @@ test("the last workspace opens and prewarms chat without a workspace click", asy
   await page.goto("http://jouzu-ui.test/");
   // No workspace click: the launcher opens the last workspace and starts the runtime itself.
   await expect(page.getByLabel("Message Jouzu")).toBeVisible();
+  await expect(page.getByText("What would you like to build?")).toBeVisible();
   await expect.poll(() => page.evaluate(() => (window as any).chatCalls.includes("chat_start"))).toBe(true);
   expect(await page.evaluate(() => (window as any).chatCalls.includes("launch_jouzu"))).toBe(false);
   await expect(page.getByRole("complementary", { name: "Workspaces" })).toBeVisible();
@@ -93,7 +95,7 @@ test("the last workspace opens and prewarms chat without a workspace click", asy
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.getByRole("img", { name: "Preview of pixel.png" })).toHaveCount(0);
   expect(await page.evaluate(() => (window as any).lastPrompt.images)).toEqual([expect.objectContaining({ type: "image", mimeType: "image/png" })]);
-  await page.getByRole("button", { name: "New chat", exact: true }).click();
+  await page.getByRole("button", { name: "New session", exact: true }).click();
   await expect(page.getByRole("article")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Open in terminal", exact: true })).toBeVisible();
 });

@@ -7,8 +7,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-const MAX_FRAME: usize = 4 * 1024 * 1024;
-const MAX_BUFFER: usize = 8 * 1024 * 1024;
+const MAX_FRAME: usize = 32 * 1024 * 1024;
+const MAX_BUFFER: usize = 64 * 1024 * 1024;
+const MAX_IMAGE_BYTES: usize = 10 * 1024 * 1024;
+const MAX_TOTAL_IMAGE_BYTES: usize = 20 * 1024 * 1024;
 const EXIT_DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
 
 // Root exit and pipe EOF are independent: descendants can inherit stdout, and
@@ -226,8 +228,12 @@ fn validate(request: &Value) -> Result<(), String> {
                 total = total
                     .checked_add(data.len() / 4 * 3 - padding)
                     .ok_or("Image limit exceeded")?;
-                if total > 1024 * 1024 {
-                    return Err("Images exceed the 1 MiB attachment limit".into());
+                let image_bytes = data.len() / 4 * 3 - padding;
+                if image_bytes > MAX_IMAGE_BYTES {
+                    return Err("Each image must be 10 MiB or less".into());
+                }
+                if total > MAX_TOTAL_IMAGE_BYTES {
+                    return Err("Images must total 20 MiB or less".into());
                 }
             }
         }
@@ -507,7 +513,7 @@ pub fn chat_send(
     request: Value,
 ) -> Result<(), String> {
     validate(&request)?;
-    let frame = encode_command(&request, 2 * 1024 * 1024).map_err(|e| e.to_string())?;
+    let frame = encode_command(&request, 32 * 1024 * 1024).map_err(|e| e.to_string())?;
     let sessions = state
         .sessions
         .lock()
@@ -843,8 +849,11 @@ mod tests {
             assert!(validate(&prompt(serde_json::json!([invalid]))).is_err());
         }
         let mut oversized = image.clone();
-        oversized["data"] = "AAAA".repeat(350000).into();
+        oversized["data"] = "AAAA".repeat(4_000_000).into();
         assert!(validate(&prompt(serde_json::json!([oversized]))).is_err());
+        let mut ordinary = image.clone();
+        ordinary["data"] = "AAAA".repeat(700_000).into();
+        assert!(validate(&prompt(serde_json::json!([ordinary]))).is_ok());
         let mut invalid = image;
         invalid["mimeType"] = "image/svg+xml".into();
         assert!(validate(&prompt(serde_json::json!([invalid]))).is_err());

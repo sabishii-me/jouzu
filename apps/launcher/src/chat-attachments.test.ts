@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { MAX_IMAGE_BYTES, readImageAttachment, removeSubmittedImages, validateImageBytes, validateImageSelection, type ImageAttachment } from "./chat-attachments";
+import { MAX_IMAGE_BYTES, MAX_TOTAL_IMAGE_BYTES, readImageAttachment, removeSubmittedImages, validateImageBytes, validateImageSelection, type ImageAttachment } from "./chat-attachments";
 
 const signatures = [
   ["image/png", [137, 80, 78, 71, 13, 10, 26, 10]],
@@ -9,6 +9,10 @@ const signatures = [
   ["image/webp", [82, 73, 70, 70, 0, 0, 0, 0, 87, 69, 66, 80]],
 ] as const;
 describe("image attachments", () => {
+  it("uses mainstream per-image and total limits", () => {
+    expect(MAX_IMAGE_BYTES).toBeGreaterThan(1024 * 1024);
+    expect(MAX_TOTAL_IMAGE_BYTES).toBeGreaterThanOrEqual(MAX_IMAGE_BYTES);
+  });
   it("accepts only the supported signatures and matching MIME", () => {
     for (const [mime, signature] of signatures) {
       expect(validateImageBytes(new Uint8Array(signature), mime)).toBe(mime);
@@ -21,7 +25,7 @@ describe("image attachments", () => {
   it("enforces combined raw byte and count limits including existing images", () => {
     const file = { type: "image/png", size: MAX_IMAGE_BYTES };
     expect(() => validateImageSelection([], [file])).not.toThrow();
-    expect(() => validateImageSelection([{ size: 1 }], [file])).toThrow(/1 MiB/);
+    expect(() => validateImageSelection([{ size: MAX_TOTAL_IMAGE_BYTES }], [file])).toThrow(/20 MB/);
     expect(() => validateImageSelection([], Array(4).fill({ ...file, size: 1 }))).not.toThrow();
     expect(() => validateImageSelection([{ size: 1 }], Array(4).fill({ ...file, size: 1 }))).toThrow(/4 images/);
     for (const size of [0, -1, NaN, Infinity, 1.5]) expect(() => validateImageSelection([], [{ ...file, size }])).toThrow();

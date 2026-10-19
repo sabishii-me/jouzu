@@ -1,7 +1,8 @@
 import type { ChatImage } from "./chat-connection";
 
 export const IMAGE_ACCEPT = "image/png,image/jpeg,image/webp,image/gif";
-export const MAX_IMAGE_BYTES = 1024 * 1024;
+export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+export const MAX_TOTAL_IMAGE_BYTES = 20 * 1024 * 1024;
 export const MAX_IMAGES = 4;
 export interface ImageAttachment { id: string; name: string; size: number; image: ChatImage }
 type ImageFile = { type: string; size: number };
@@ -12,8 +13,8 @@ export function validateImageSelection(existing: readonly { size: number }[], fi
     if (!IMAGE_ACCEPT.split(",").includes(file.type)) throw new Error("Choose PNG, JPEG, WebP, or GIF images only.");
     if (!Number.isSafeInteger(file.size) || file.size <= 0) throw new Error("Images must not be empty.");
   }
-  if ([...existing, ...files].reduce((total, file) => total + file.size, 0) > MAX_IMAGE_BYTES) {
-    throw new Error("Images must total 1 MiB or less.");
+  if ([...existing, ...files].reduce((total, file) => total + file.size, 0) > MAX_TOTAL_IMAGE_BYTES) {
+    throw new Error("Images must total 20 MB or less.");
   }
 }
 
@@ -26,7 +27,7 @@ export function validateImageBytes(bytes: Uint8Array, mimeType: string): ChatIma
     : mimeType === "image/gif" ? starts([71, 73, 70, 56, 55, 97]) || starts([71, 73, 70, 56, 57, 97])
     : mimeType === "image/webp" ? starts([82, 73, 70, 70]) && bytes.length >= 12 && starts([87, 69, 66, 80], 8)
     : false;
-  if (!valid || bytes.length > MAX_IMAGE_BYTES) throw new Error("Image contents do not match a supported image type or exceed 1 MiB.");
+  if (!valid || bytes.length > MAX_IMAGE_BYTES) throw new Error("Image contents do not match a supported image type or exceed 10 MB.");
   return mimeType as ChatImage["mimeType"];
 }
 
