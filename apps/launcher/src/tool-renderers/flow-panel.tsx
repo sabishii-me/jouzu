@@ -2,7 +2,7 @@ import { useState } from "react";
 import { ChevronDown, ChevronRight, GitBranch } from "lucide-react";
 import { ActivityRow, StateDot } from "./activity-row";
 import { FlowReportSummary } from "./flow-report";
-import { flowWidgetEntries, hasFlow, widgetLabel, type FlowState } from "./flow-state";
+import { flowStatusEntries, flowWidgetEntries, hasFlow, widgetLabel, type FlowState } from "./flow-state";
 import type { FlowReportRecord } from "../chat-projection";
 
 const taskState = { pending: "idle", in_progress: "running", completed: "done", deleted: "warning" } as const;
@@ -13,7 +13,7 @@ export function FlowPanel({ flow, widgets, statuses, reports = [] }: {
   reports?: readonly FlowReportRecord[];
 }) {
   const [open, setOpen] = useState(true);
-  if (!hasFlow(flow, widgets, statuses) && !reports.length) return null;
+  if (!hasFlow(flow) && !reports.length) return null;
   const active = flow.tasks.filter(task => task.status === "in_progress").length;
   const pending = flow.tasks.filter(task => task.status === "pending").length;
   const waiting = flow.waits.filter(wait => wait.state === "running").length;
@@ -23,7 +23,7 @@ export function FlowPanel({ flow, widgets, statuses, reports = [] }: {
       <GitBranch className="size-3.5 shrink-0 text-muted-foreground" />
       <span className="font-medium">Flow</span>
       <span className="min-w-0 flex-1 truncate text-muted-foreground">{summary}</span>
-      <span className="flex max-w-1/2 gap-1 overflow-hidden">{Object.entries(statuses).map(([key, text]) => <span key={key} className="truncate rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">{text}</span>)}</span>
+      <span className="flex max-w-1/2 gap-1 overflow-hidden">{flowStatusEntries(statuses).map(([key, text]) => <span key={key} className="truncate rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">{text}</span>)}</span>
       {open ? <ChevronDown className="size-3 shrink-0 text-muted-foreground" /> : <ChevronRight className="size-3 shrink-0 text-muted-foreground" />}
     </button>
     {open && <div className="max-h-64 overflow-y-auto px-3 pb-2">

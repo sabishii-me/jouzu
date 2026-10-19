@@ -71,6 +71,7 @@ test("the last workspace opens and prewarms chat without a workspace click", asy
   // No workspace click: the launcher opens the last workspace and starts the runtime itself.
   await expect(page.getByLabel("Message Jouzu")).toBeVisible();
   await expect(page.getByText("What would you like to build?")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Open in terminal", exact: true })).toHaveCount(0);
   await expect(page.getByRole("region", { name: "Flow" })).toContainText("multiloop");
   await expect(page.getByRole("region", { name: "Flow" })).toContainText("Resume flow");
   await expect(page.getByLabel("Session usage")).toContainText("2 turns · 3 steps");
@@ -93,6 +94,7 @@ test("the last workspace opens and prewarms chat without a workspace click", asy
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.getByRole("article", { name: "assistant message" })).toContainText("Hello from Jouzu");
   await expect(page.getByRole("article", { name: "user message" })).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Open in terminal", exact: true })).toBeVisible();
   await expect(page.getByLabel("Message Jouzu")).toHaveValue("");
   await expect(page.getByRole("button", { name: "Model", exact: true })).toContainText("Fixture model");
   await page.getByLabel("Choose images").setInputFiles({ name: "pixel.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64") });
@@ -103,5 +105,5 @@ test("the last workspace opens and prewarms chat without a workspace click", asy
   expect(await page.evaluate(() => (window as any).lastPrompt.images)).toEqual([expect.objectContaining({ type: "image", mimeType: "image/png" })]);
   await page.getByRole("button", { name: "New session", exact: true }).click();
   await expect(page.getByRole("article")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Open in terminal", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Open in terminal", exact: true })).toHaveCount(0);
 });

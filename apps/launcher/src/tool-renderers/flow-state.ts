@@ -94,11 +94,17 @@ export function deriveFlow(tools: Record<string, ToolView>): FlowState {
     background,
   };
 }
-export function hasFlow(state: FlowState, widgets: Record<string, string[]> = {}, statuses: Record<string, string> = {}) {
-  return state.tasks.length > 0 || state.waits.length > 0 || state.background.length > 0 || Object.keys(widgets).length > 0 || Object.keys(statuses).length > 0;
+export function isFlowKey(key: string) {
+  return /(flow|multi-?loop|task|wait|agent|background|loop)/i.test(key);
+}
+export function hasFlow(state: FlowState) {
+  return state.tasks.length > 0 || state.waits.length > 0 || state.background.length > 0;
+}
+export function flowStatusEntries(statuses: Record<string, string>): Array<[string, string]> {
+  return Object.entries(statuses).filter(([key, text]) => isFlowKey(key) && text.trim().length > 0);
 }
 export function flowWidgetEntries(widgets: Record<string, string[]>): Array<[string, string[]]> {
-  return Object.entries(widgets).filter(([key, lines]) => key !== "tasks" && lines.length > 0);
+  return Object.entries(widgets).filter(([key, lines]) => isFlowKey(key) && key !== "tasks" && lines.length > 0);
 }
 export function widgetLabel(key: string) {
   return key.replaceAll("-", " ").replaceAll("_", " ").replace(/\b\w/g, character => character.toUpperCase());

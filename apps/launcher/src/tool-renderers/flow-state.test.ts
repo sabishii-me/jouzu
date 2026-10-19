@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deriveFlow, parseTaskLines, widgetLabel } from "./flow-state";
+import { deriveFlow, flowWidgetEntries, hasFlow, parseTaskLines, widgetLabel } from "./flow-state";
 import { flowReport } from "./flow-report";
 import type { ToolView } from "../chat-projection";
 
@@ -54,5 +54,10 @@ describe("flow tool projection", () => {
   it("labels runtime widget keys for the panel", () => {
     expect(widgetLabel("schedule-prompts")).toBe("Schedule Prompts");
     expect(widgetLabel("multiloop_resume")).toBe("Multiloop Resume");
+  });
+  it("opens Flow only for real flow semantics, not arbitrary status widgets", () => {
+    expect(hasFlow({ tasks: [], waits: [], background: [] })).toBe(false);
+    expect(hasFlow({ tasks: [], waits: [{ reason: "waiting", handles: [], state: "running" }], background: [] })).toBe(true);
+    expect(flowWidgetEntries({ multiloop: ["1 running"], theme: ["dark"] })).toEqual([["multiloop", ["1 running"]]]);
   });
 });
