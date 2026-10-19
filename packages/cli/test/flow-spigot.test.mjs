@@ -248,13 +248,13 @@ test("flow control on restores routing, and reset performs full recovery without
 	for (const line of [
 		"off turns flow control off",
 		"on turns flow control back on",
-		"reset is the destructive idle reset",
+		"reset explains the destructive idle reset",
 		"clear releases a stuck reservation",
 	])
 		assert.match(notices.at(-1).text, new RegExp(`/flow ${line}`));
 
 	// Reset performs the full idle recovery path without taking flow control off.
-	await f.session.prompt("/flow reset");
+	await f.session.prompt("/flow reset confirm");
 	assert.equal(f.ingress.enabled(), true);
 	assert.match(notices.at(-1).text, /Flow reset completed/);
 	assert.deepEqual(f.errors, []);

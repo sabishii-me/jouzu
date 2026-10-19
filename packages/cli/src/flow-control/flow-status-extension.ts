@@ -49,7 +49,7 @@ const USAGE = [
 	"/flow pause <work> holds one campaign's automated turns; /flow resume <work> releases it.",
 	"/flow stop <work> retires a campaign and ends its waits. None of these stop a running job.",
 	"/flow resolve <attempt> retry|discard decides an interrupted turn whose outcome is unknown.",
-	"/flow reset is the destructive idle reset: it discards flow receipts and waits, releases native holds, and leaves jobs running.",
+	"/flow reset explains the destructive idle reset; /flow reset confirm discards flow receipts and waits, releases native holds, and leaves jobs running.",
 	"/flow clear releases a stuck reservation while preserving receipts, waits, and running jobs.",
 ].join("\n");
 
@@ -142,8 +142,14 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 							return;
 						}
 						if (verb === "reset") {
-							if (target || choice || rest.length) {
+							if ((target && target !== "confirm") || choice || rest.length) {
 								notify(USAGE, "error");
+								return;
+							}
+							if (!target) {
+								notify(
+									"This discards flow receipts, queued submissions, and waits, releases native holds, and leaves jobs running. Use /flow clear to repair a reservation without discarding that state. To discard it, run /flow reset confirm while the session is idle.",
+								);
 								return;
 							}
 							let result: Awaited<ReturnType<PiSessionFlowIngress["resetFlow"]>>;
@@ -152,7 +158,7 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 							} catch (error) {
 								if (error instanceof FlowLedgerError && error.code === "busy") {
 									notify(
-										"Flow reset needs an idle session. Interrupt the running turn, then run /flow reset again.",
+										"Flow reset needs an idle session. Interrupt the running turn, then run /flow reset confirm again.",
 										"error",
 									);
 									return;

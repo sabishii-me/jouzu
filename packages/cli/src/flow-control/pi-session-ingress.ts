@@ -914,7 +914,7 @@ export class PiSessionFlowIngress implements Ingress {
 				localAboutCommand ||
 				(localFlowCommand &&
 					(branch.host.gate().recoveryBlocked ||
-						/^\/flow(?:\s+(?:details(?:\s+[1-9]\d{0,5})?|runtime|reset|clear))?$/.test(
+						/^\/flow(?:\s+(?:details(?:\s+[1-9]\d{0,5})?|runtime|reset(?:\s+confirm)?|clear))?$/.test(
 							(captured.args[0] as string).trim(),
 						)))
 			) {

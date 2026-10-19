@@ -9,7 +9,7 @@ test("flow reset permits another prompt after consumed input", async (t) => {
 	const notices = capturedNotices(f.session);
 	await f.session.prompt("First request");
 	assert.equal(f.bodies.length, 1);
-	await f.session.prompt("/flow reset");
+	await f.session.prompt("/flow reset confirm");
 	assert.match(notices.at(-1).text, /Flow reset completed/);
 	await f.session.prompt("After reset");
 	assert.equal(f.bodies.length, 2);

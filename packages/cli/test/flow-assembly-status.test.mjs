@@ -50,7 +50,7 @@ test("the status command reads and repairs holds without reaching the model", as
 	assert.deepEqual(f.errors, []);
 });
 
-test("/flow reset invokes destructive flow recovery instead of toggling flow control", async (t) => {
+test("/flow reset requires explicit confirmation before destructive recovery", async (t) => {
 	const f = await assembledSession(t, { producerExtensions: await installedProducerExtensions() });
 	const notices = capturedNotices(f.session);
 	let resets = 0;
@@ -61,6 +61,13 @@ test("/flow reset invokes destructive flow recovery instead of toggling flow con
 	};
 	try {
 		await f.session.prompt("/flow reset");
+		assert.equal(resets, 0);
+		assert.match(notices.at(-1).text, /discards flow receipts.*\/flow reset confirm/);
+		for (const args of ["yes", "confirm extra"]) {
+			await f.session.prompt(`/flow reset ${args}`);
+			assert.equal(resets, 0);
+		}
+		await f.session.prompt("/flow reset confirm");
 		await settle();
 		assert.equal(resets, 1);
 		assert.match(notices.at(-1).text, /Flow reset completed\. Destructive flow state was discarded/);
