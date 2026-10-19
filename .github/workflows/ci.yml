@@ -325,7 +325,8 @@ jobs:
       fail-fast: false
       matrix:
         os: ${{ fromJSON(inputs.platform == 'windows' && '["windows-latest"]' || '["ubuntu-latest","macos-latest"]') }}
-        scope: [local, npm-exec, global]
+        # Linux and macOS run every scope in one job; Windows keeps one job per scope.
+        scope: ${{ fromJSON(inputs.platform == 'windows' && '["local","npm-exec","global"]' || '["all"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -358,10 +359,26 @@ jobs:
         with:
           name: jouzu-candidate
           path: dist/ci-artifacts
-      - run: npm run test:packed
+      - name: Install from the package (local)
+        if: matrix.scope == 'all' || matrix.scope == 'local'
+        run: npm run test:packed
         timeout-minutes: 35
         env:
-          JOUZU_PACKED_SCOPE: ${{ matrix.scope }}
+          JOUZU_PACKED_SCOPE: local
+          JOUZU_PACKED_TARBALL: dist/ci-artifacts/candidate.tgz
+      - name: Install from the package (npm exec)
+        if: ${{ !cancelled() && (matrix.scope == 'all' || matrix.scope == 'npm-exec') }}
+        run: npm run test:packed
+        timeout-minutes: 35
+        env:
+          JOUZU_PACKED_SCOPE: npm-exec
+          JOUZU_PACKED_TARBALL: dist/ci-artifacts/candidate.tgz
+      - name: Install from the package (global)
+        if: ${{ !cancelled() && (matrix.scope == 'all' || matrix.scope == 'global') }}
+        run: npm run test:packed
+        timeout-minutes: 35
+        env:
+          JOUZU_PACKED_SCOPE: global
           JOUZU_PACKED_TARBALL: dist/ci-artifacts/candidate.tgz
       - name: Remove Windows Defender exclusions
         if: always() && (matrix.os == 'windows-latest')
@@ -393,7 +410,8 @@ jobs:
       fail-fast: false
       matrix:
         os: ${{ fromJSON(inputs.platform == 'windows' && '["windows-latest"]' || '["ubuntu-latest","macos-latest"]') }}
-        scope: [success, rollback]
+        # Linux and macOS run both scopes in one job; Windows keeps one job per scope.
+        scope: ${{ fromJSON(inputs.platform == 'windows' && '["success","rollback"]' || '["all"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -426,10 +444,22 @@ jobs:
         with:
           name: jouzu-updater
           path: dist/ci-artifacts
-      - run: npm run test:auto-update
+      - name: Update to a newer package
+        if: matrix.scope == 'all' || matrix.scope == 'success'
+        run: npm run test:auto-update
         timeout-minutes: 70
         env:
-          JOUZU_UPDATE_SCOPE: ${{ matrix.scope }}
+          JOUZU_UPDATE_SCOPE: success
+          JOUZU_UPDATE_APPLY_TIMEOUT_MS: ${{ matrix.os == 'windows-latest' && '3600000' || '600000' }}
+          JOUZU_UPDATE_CURRENT_TARBALL: dist/ci-artifacts/candidate.tgz
+          JOUZU_UPDATE_NEXT_TARBALL: dist/ci-artifacts/next.tgz
+          JOUZU_UPDATE_BROKEN_TARBALL: dist/ci-artifacts/broken.tgz
+      - name: Roll back a broken update
+        if: ${{ !cancelled() && (matrix.scope == 'all' || matrix.scope == 'rollback') }}
+        run: npm run test:auto-update
+        timeout-minutes: 70
+        env:
+          JOUZU_UPDATE_SCOPE: rollback
           JOUZU_UPDATE_APPLY_TIMEOUT_MS: ${{ matrix.os == 'windows-latest' && '3600000' || '600000' }}
           JOUZU_UPDATE_CURRENT_TARBALL: dist/ci-artifacts/candidate.tgz
           JOUZU_UPDATE_NEXT_TARBALL: dist/ci-artifacts/next.tgz
@@ -502,17 +532,31 @@ jobs:
 
   python:
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     strategy:
+      fail-fast: false
       matrix:
         os: ${{ fromJSON(inputs.platform == 'windows' && '["windows-latest"]' || '["ubuntu-latest","macos-latest"]') }}
-        python: ["3.10", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4.2.0
-      - run: uv run --project python/jouzu --python ${{ matrix.python }} python -m unittest discover -s python/jouzu/tests -v
-      - if: matrix.os == 'ubuntu-latest' && matrix.python == '3.12'
+      - name: Test Python 3.10
+        run: uv run --project python/jouzu --python 3.10 python -m unittest discover -s python/jouzu/tests -v
+      - name: Test Python 3.11
+        if: ${{ !cancelled() }}
+        run: uv run --project python/jouzu --python 3.11 python -m unittest discover -s python/jouzu/tests -v
+      - name: Test Python 3.12
+        if: ${{ !cancelled() }}
+        run: uv run --project python/jouzu --python 3.12 python -m unittest discover -s python/jouzu/tests -v
+      - name: Test Python 3.13
+        if: ${{ !cancelled() }}
+        run: uv run --project python/jouzu --python 3.13 python -m unittest discover -s python/jouzu/tests -v
+      - name: Test Python 3.14
+        if: ${{ !cancelled() }}
+        run: uv run --project python/jouzu --python 3.14 python -m unittest discover -s python/jouzu/tests -v
+      - if: matrix.os == 'ubuntu-latest'
         run: uv build --project python/jouzu --out-dir dist/python
-      - if: matrix.os == 'ubuntu-latest' && matrix.python == '3.12'
+      - if: matrix.os == 'ubuntu-latest'
         run: uvx --from twine twine check dist/python/*

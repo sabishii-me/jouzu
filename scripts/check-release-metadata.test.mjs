@@ -199,11 +199,11 @@ test("CI packs once and shares exact artifacts with parallel native gates", () =
 	assert.match(workflow, /release-artifacts:/u);
 	assert.match(workflow, /packed-install:[\s\S]*needs: release-artifacts/u);
 	assert.match(workflow, /automatic-update:[\s\S]*needs: release-artifacts/u);
-	assert.match(workflow, /scope: \[local, npm-exec, global\]/u);
-	assert.match(workflow, /JOUZU_PACKED_SCOPE: \$\{\{ matrix\.scope \}\}/u);
+	for (const scope of ["local", "npm-exec", "global"])
+		assert.match(workflow, new RegExp(`JOUZU_PACKED_SCOPE: ${scope}\\n`, "u"));
 	assert.match(workflow, /JOUZU_PACKED_TARBALL: dist\/ci-artifacts\/candidate\.tgz/u);
-	assert.match(workflow, /scope: \[success, rollback\]/u);
-	assert.match(workflow, /JOUZU_UPDATE_SCOPE: \$\{\{ matrix\.scope \}\}/u);
+	for (const scope of ["success", "rollback"])
+		assert.match(workflow, new RegExp(`JOUZU_UPDATE_SCOPE: ${scope}\\n`, "u"));
 	assert.match(workflow, /JOUZU_UPDATE_CURRENT_TARBALL: dist\/ci-artifacts\/candidate\.tgz/u);
 	assert.match(workflow, /JOUZU_UPDATE_NEXT_TARBALL: dist\/ci-artifacts\/next\.tgz/u);
 	assert.match(workflow, /JOUZU_UPDATE_BROKEN_TARBALL: dist\/ci-artifacts\/broken\.tgz/u);

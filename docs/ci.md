@@ -2,13 +2,32 @@
 
 Pushes and pull requests run Linux and macOS checks. Releases also require native local Windows qualification of the exact CI-built package, with matching source and artifact identities, test results, and unchanged Defender protection settings. The publisher rejects missing or failed Windows evidence.
 
+## Hosted jobs
+
+| Job | Runs on | Checks |
+| --- | --- | --- |
+| `node` | Ubuntu and macOS, Node 22 and 24 | Source-checkout build, static checks, runner tests, Session UI and CLI suites; Node 24 also runs the networked extension check |
+| `legacy-linux-static-fetch` | Rocky Linux 8 (glibc 2.28), Node 22.19.0 and 24 | Build and release-owned dependency loading without Camoufox |
+| `release-artifacts` | Ubuntu, Node 24 | Locked install, build, static checks, release-metadata and package-content tests, then the candidate package and updater fixtures |
+| `packed-install` | Ubuntu and macOS | Local, `npm exec`, and global installation from the candidate, one step per scope |
+| `automatic-update` | Ubuntu and macOS | Update success, then rollback from a broken package, one step each |
+| `published-upgrade` | Ubuntu and macOS | Upgrade from the published prior version, restart, and rollback |
+| `optional-camoufox` | Ubuntu and macOS | First-use browser runtime installation |
+| `python` | Ubuntu and macOS | Python 3.10, 3.11, 3.12, 3.13, and 3.14, one step each; Ubuntu also builds and checks the package |
+
+Package consumers start when `release-artifacts` uploads the candidate. Each later step in a consolidated job runs even when an earlier step fails, so one run reports every failing scope.
+
+The Python package declares `requires-python >=3.10`. Hosted CI tests every supported CPython minor, 3.10 through 3.14. Add a new minor to the `python` job when it is released.
+
+Pushes and manual runs queue per commit; a later push does not cancel another commit's run. A newer push to a pull request cancels that pull request's earlier run.
+
 To run hosted Windows diagnostics manually:
 
 ```sh
 gh workflow run ci.yml --ref main -f platform=windows -f npm-cache=warm -f fixture-drive=runner
 ```
 
-This runs Windows Node 22/24, Python 3.10/3.12/3.13, packed local/global/npm-exec installation, update success/rollback, published-version upgrades, and first-use Camoufox. One Ubuntu job builds and checks the shared release artifacts before the Windows consumers start.
+This runs Windows Node 22/24, Python 3.10 through 3.14, packed local/global/npm-exec installation, update success/rollback, published-version upgrades, and first-use Camoufox. One Ubuntu job builds and checks the shared release artifacts before the Windows consumers start.
 
 `npm-cache=warm` restores npm archives and lets the updater reuse the job's cache. The first run can miss the cache. `npm-cache=cold` skips restoration and gives the updater a fresh cache. Both modes install fresh dependency trees. Compare repeated runs at the same commit to measure cache effects.
 

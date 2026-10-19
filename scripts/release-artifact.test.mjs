@@ -59,14 +59,9 @@ test("required hosted jobs cover Linux and macOS only", () => {
 			`node (${os}, 24)`,
 			`optional-camoufox (${os})`,
 			`published-upgrade (${os})`,
-			`packed-install (${os}, local)`,
-			`packed-install (${os}, npm-exec)`,
-			`packed-install (${os}, global)`,
-			`automatic-update (${os}, success)`,
-			`automatic-update (${os}, rollback)`,
-			`python (${os}, 3.10)`,
-			`python (${os}, 3.12)`,
-			`python (${os}, 3.13)`,
+			`packed-install (${os}, all)`,
+			`automatic-update (${os}, all)`,
+			`python (${os})`,
 		]) {
 			assert.ok(requiredJobs().includes(name), name);
 		}

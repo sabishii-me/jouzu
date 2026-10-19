@@ -15,9 +15,7 @@ export function requiredJobs() {
 	for (const os of ["ubuntu-latest", "macos-latest"]) {
 		for (const node of [22, 24]) names.push(`node (${os}, ${node})`);
 		names.push(`optional-camoufox (${os})`, `published-upgrade (${os})`);
-		for (const scope of ["local", "npm-exec", "global"]) names.push(`packed-install (${os}, ${scope})`);
-		for (const scope of ["success", "rollback"]) names.push(`automatic-update (${os}, ${scope})`);
-		for (const python of ["3.10", "3.12", "3.13"]) names.push(`python (${os}, ${python})`);
+		names.push(`packed-install (${os}, all)`, `automatic-update (${os}, all)`, `python (${os})`);
 	}
 	return names;
 }
