@@ -31,7 +31,7 @@ pub fn facts(root: &Path, managed: &Path, slot: &Path) -> serde_json::Value {
         .unwrap_or_else(|| "standard console".into());
     let payload = payload_version(slot).unwrap_or_else(|| "unknown".into());
     let identity = format!(
-        "Jouzu Launcher {} ({shape}), payload {payload}, install {}, last update: {update}, last session: {session}, Git Bash {git}, console host {host}",
+        "jouzu-desktop {} ({shape}), payload {payload}, install {}, last update: {update}, last session: {session}, Git Bash {git}, console host {host}",
         env!("CARGO_PKG_VERSION"),
         root.display()
     );
