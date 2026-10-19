@@ -105,7 +105,7 @@ Reload the tmux configuration, then verify the key in the application. Nested mu
 - Byobu's tmux configuration also intercepts `Ctrl+A` for prefix selection.
 - `Shift+F12` disables Byobu's function-key layer; backend bindings still apply.
 
-A multiplexer does not by itself force the Palette into replacement presentation. Jouzu suppresses terminal inline-image detection under tmux and Screen, then selects floating or replacement presentation from the remaining terminal dimensions.
+A multiplexer does not by itself force the Palette into replacement presentation. Jouzu selects floating or replacement presentation from the terminal dimensions.
 
 ## Encoding and line discipline
 
