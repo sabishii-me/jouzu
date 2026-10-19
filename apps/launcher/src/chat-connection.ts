@@ -29,6 +29,8 @@ export interface ChatSnapshot {
   modelId?: string;
   models?: ChatModel[];
   modelsLoaded?: boolean;
+  widgets?: Record<string, string[]>;
+  statuses?: Record<string, string>;
   thinkingLevel?: string;
   thinkingLevels?: string[];
 }
@@ -76,13 +78,26 @@ export class ChatConnection {
           this.requests.delete(record.id as string);
           if (record.success) pending.resolve(record.data); else pending.reject(new Error(typeof record.error === "string" ? record.error : "Runtime request failed."));
         } else if (record.type === "extension_ui_request") {
-          if (typeof record.id === "string" && ["select", "confirm", "input", "editor"].includes(String(record.method))) {
-            if (!this.dialogs.has(record.id)) {
-              if (this.dialogs.size >= 64) throw new Error("Runtime exceeded the pending interaction limit.");
-              this.dialogs.set(record.id, typeof record.timeout === "number" && Number.isFinite(record.timeout) ? Date.now() + Math.max(0, record.timeout) : null);
+          if (record.method === "setWidget" && typeof record.widgetKey === "string") {
+            const widgets = { ...(this.snapshot.widgets ?? {}) };
+            const lines = Array.isArray(record.widgetLines) ? record.widgetLines.filter((line): line is string => typeof line === "string") : undefined;
+            if (lines?.length) widgets[record.widgetKey] = lines;
+            else delete widgets[record.widgetKey];
+            this.update({ widgets });
+          } else if (record.method === "setStatus" && typeof record.statusKey === "string") {
+            const statuses = { ...(this.snapshot.statuses ?? {}) };
+            if (typeof record.statusText === "string" && record.statusText) statuses[record.statusKey] = record.statusText;
+            else delete statuses[record.statusKey];
+            this.update({ statuses });
+          } else {
+            if (typeof record.id === "string" && ["select", "confirm", "input", "editor"].includes(String(record.method))) {
+              if (!this.dialogs.has(record.id)) {
+                if (this.dialogs.size >= 64) throw new Error("Runtime exceeded the pending interaction limit.");
+                this.dialogs.set(record.id, typeof record.timeout === "number" && Number.isFinite(record.timeout) ? Date.now() + Math.max(0, record.timeout) : null);
+              }
             }
+            this.dialog(record);
           }
-          this.dialog(record);
         }
         else if (record.type === "extension_error") this.update({ error: typeof record.error === "string" ? record.error : "A runtime extension failed." });
         else this.update({ projection: projectEvent(this.snapshot.projection, record) });

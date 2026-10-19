@@ -28,7 +28,7 @@ test("the last workspace opens and prewarms chat without a workspace click", asy
         if (command === "component_versions") return { jouzu: "0.3.8", development: true };
         if (command === "chat_sessions") return [];
         if (command === "environment_read") return [];
-        if (command === "chat_start") return "chat-test";
+        if (command === "chat_start") { records.push({ type: "extension_ui_request", id: "widget", method: "setWidget", widgetKey: "multiloop", widgetLines: ["multiloop: 1 running"] }, { type: "extension_ui_request", id: "status", method: "setStatus", statusKey: "multiloop", statusText: "multiloop: 1 running" }); return "chat-test"; }
         if (command === "chat_poll") return { records: records.splice(0), closed: false };
         if (command === "chat_send") {
           const r = args.request;
@@ -69,6 +69,7 @@ test("the last workspace opens and prewarms chat without a workspace click", asy
   // No workspace click: the launcher opens the last workspace and starts the runtime itself.
   await expect(page.getByLabel("Message Jouzu")).toBeVisible();
   await expect(page.getByText("What would you like to build?")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Flow" })).toContainText("multiloop");
   await expect.poll(() => page.evaluate(() => (window as any).chatCalls.includes("chat_start"))).toBe(true);
   expect(await page.evaluate(() => (window as any).chatCalls.includes("launch_jouzu"))).toBe(false);
   await expect(page.getByRole("complementary", { name: "Workspaces" })).toBeVisible();
