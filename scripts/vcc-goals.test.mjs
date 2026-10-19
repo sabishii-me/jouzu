@@ -308,6 +308,25 @@ test("bare status sentences are not scope changes and do not hide a later instru
 	assert.match(goalSection(summary), /Fix the login timeout/);
 });
 
+test("listed follow-up requirements survive within and across compaction windows", async (t) => {
+	const { compile } = await load(t);
+	const first = user("Fix the login timeout.");
+	for (const followup of [
+		"1. Fix the logout timeout.\n2. Preserve the session cookie.",
+		"- Fix the logout timeout.\n- Preserve the session cookie.",
+	]) {
+		const sameWindow = compile({ messages: [first, user(followup)], sourceIndices: [1, 2] });
+		const crossWindow = compile({
+			previousSummary: compile({ messages: [first], sourceIndices: [1] }),
+			messages: [user(followup)],
+			sourceIndices: [2],
+		});
+		assert.equal(goalSection(sameWindow).trim(), goalSection(crossWindow).trim());
+		for (const requirement of ["Fix the login timeout.", "Fix the logout timeout.", "Preserve the session cookie."])
+			assert.ok(goalSection(sameWindow).includes(requirement), requirement);
+	}
+});
+
 test("same-window instructions survive regardless of language or phrasing", async (t) => {
 	const { compile } = await load(t);
 	for (const instruction of [
