@@ -256,13 +256,13 @@ test("declarative user instructions become scope changes instead of being droppe
 		previousSummary: summary,
 		messages: [
 			user(
-				"i've created a new shisa-asr-2 git repo - check out our jouzu-dev or other repos, we want to have our git hygiene, worklog and workflow stuff setup for this repo.",
+				"i've created a new demo-service git repo - check out our other repos, we want to have our git hygiene and workflow stuff setup for this repo.",
 			),
 		],
 		sourceIndices: [2],
 	});
 	assert.match(goalSection(summary), /\[Scope change\]/);
-	assert.match(goalSection(summary), /shisa-asr-2 git repo/);
+	assert.match(goalSection(summary), /demo-service git repo/);
 	assert.match(goalSection(summary), /hf/);
 	summary = compile({
 		previousSummary: summary,
