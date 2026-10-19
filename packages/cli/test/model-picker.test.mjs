@@ -742,14 +742,16 @@ test("Models view separates browse keys from search cursor input", () => {
 	assert.match(component.render(72).join("\n"), /→ Search/u);
 
 	component.handleInput("escape");
-	assert.equal(calls.close, 0, "Esc leaves search before closing the Palette");
+	assert.equal(calls.close, 0, "Esc clears the search before closing the Palette");
+	assert.equal(queries.at(-1), "", "Esc clears the query");
+	assert.doesNotMatch(component.render(72).join("\n"), /→ Search/u, "Esc leaves search focus");
 	component.handleInput("\u0006");
 	assert.deepEqual(calls.favorites, ["tiny"], "Ctrl+F toggles favorite from browse");
 	component.handleInput(" ");
-	assert.equal(queries.at(-1), "q  ", "Space types into search like every printable character");
+	assert.equal(queries.at(-1), " ", "Space types into search like every printable character");
 	assert.deepEqual(calls.favorites, ["tiny"], "Space no longer toggles favorite");
 	component.handleInput("escape");
-	assert.equal(calls.close, 0, "Esc leaves search before closing the Palette");
+	assert.equal(calls.close, 0, "Esc clears the search before closing the Palette");
 	component.handleInput("escape");
 	assert.equal(calls.close, 1);
 
@@ -758,6 +760,43 @@ test("Models view separates browse keys from search cursor input", () => {
 	assert.match(directSearch.component.render(72).join("\n"), /→ Search/u);
 	directSearch.component.handleInput("escape");
 	assert.equal(directSearch.calls.close, 0);
+});
+
+test("Models view returns to the pre-search position when the search is cleared", () => {
+	const inventory = Array.from({ length: 40 }, (_, index) => ({
+		section: "other",
+		model: {
+			provider: "p",
+			modelId: `m${String(index).padStart(2, "0")}`,
+			name: `Model ${index}`,
+			contextWindow: 200_000,
+			maxTokens: 10_000,
+			available: true,
+		},
+		contextFit: "fits",
+		favorite: false,
+		projectDefault: false,
+		rank: index,
+	}));
+	const { component, calls } = createComponent({
+		getRows: (query) => (query ? inventory.filter((row) => row.model.modelId.includes(query.trim())) : inventory),
+	});
+	const selectedId = () => /\bp\/(m\d+)/u.exec(stripSgr(component.render(96).join("\n")))?.[1];
+	for (let step = 0; step < 5; step += 1) component.handleInput("down");
+	assert.equal(selectedId(), "m05");
+
+	component.handleInput("3");
+	assert.equal(selectedId(), "m03", "editing the query selects the best match");
+	component.handleInput("escape");
+	assert.equal(calls.close, 0);
+	assert.equal(selectedId(), "m05", "Esc returns to the pre-search position");
+	assert.match(stripSgr(component.render(96).join("\n")), /Esc\/Ctrl\+C close/u);
+
+	component.handleInput("3");
+	component.handleInput("down");
+	assert.match(stripSgr(component.render(96).join("\n")), /Esc\/Ctrl\+C clear search/u);
+	component.handleInput("\u007f");
+	assert.equal(selectedId(), "m05", "deleting the query also returns to the pre-search position");
 });
 
 test("Models view toggles favorites with the semantic action in browse and search", () => {
@@ -779,6 +818,7 @@ test("Models view toggles favorites with the semantic action in browse and searc
 	assert.match(component.render(72).join("\n"), /Removed large\/fit from favorites\./u);
 
 	component.handleInput("q");
+	component.handleInput("down");
 	const searching = component.render(72).join("\n");
 	assert.match(searching, /· Search/u, "the title names the search state");
 	assert.match(searching, /Ctrl\+F/u, "the search hint names the favorite accelerator");
@@ -792,6 +832,7 @@ test("Models view toggles favorites with the semantic action in browse and searc
 	assert.doesNotMatch(searching, /Space favorite/u, "the search hint omits the printable binding");
 	component.handleInput(" ");
 	assert.deepEqual(calls.favorites, ["fit", "fit"], "Space stays text input while search holds focus");
+	component.handleInput("down");
 	component.handleInput("\u0006");
 	assert.deepEqual(calls.favorites, ["fit", "fit", "fit"], "Ctrl+F toggles while search holds focus");
 	assert.match(component.render(72).join("\n"), /Added large\/fit to favorites\./u);
@@ -1975,7 +2016,6 @@ test("toggling a favorite refreshes the cached total", () => {
 
 	// Type first so the active query is distinguishable from the count queries.
 	component.handleInput("z");
-	component.handleInput("escape");
 	queries.length = 0;
 
 	component.handleInput("\u0006");

@@ -209,6 +209,10 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 	private searchFocused = false;
 	private totalCount = 0;
 	private selectedIndex = 0;
+	/** Query the current rows were ranked for; editing it moves the cursor. */
+	private appliedQuery = "";
+	/** Cursor position before the current search began; clearing the search returns to it. */
+	private preSearchSelection?: { key?: string; index: number };
 	private busy = false;
 	private compactConfirmation?: { modelKey: string };
 	private message?: { level: "error" | "info"; text: string };
@@ -301,14 +305,40 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 		}
 	}
 
+	/**
+	 * A reload keeps the cursor on the same model. Editing the query moves it to
+	 * the best match, and clearing the query returns it to where it was before
+	 * the search began, so a long list does not leave the user mid-inventory.
+	 */
 	private recomputeRows(): void {
-		const selectedKey = this.rows[this.selectedIndex]
-			? modelReferenceKey(this.rows[this.selectedIndex].model)
-			: undefined;
-		this.rows = this.getRows(this.searchInput.getValue());
-		const retainedIndex = selectedKey ? this.rows.findIndex((row) => modelReferenceKey(row.model) === selectedKey) : -1;
-		this.selectedIndex =
-			retainedIndex >= 0 ? retainedIndex : Math.min(this.selectedIndex, Math.max(0, this.rows.length - 1));
+		const query = this.searchInput.getValue();
+		const current = this.rows[this.selectedIndex];
+		let anchor: { key?: string; index: number } = {
+			key: current ? modelReferenceKey(current.model) : undefined,
+			index: this.selectedIndex,
+		};
+		if (query !== this.appliedQuery) {
+			if (!query) {
+				anchor = this.preSearchSelection ?? { index: 0 };
+				this.preSearchSelection = undefined;
+			} else {
+				if (!this.appliedQuery) this.preSearchSelection = anchor;
+				anchor = { index: 0 };
+			}
+			this.appliedQuery = query;
+		}
+		this.rows = this.getRows(query);
+		const retainedIndex = anchor.key ? this.rows.findIndex((row) => modelReferenceKey(row.model) === anchor.key) : -1;
+		this.selectedIndex = retainedIndex >= 0 ? retainedIndex : Math.min(anchor.index, Math.max(0, this.rows.length - 1));
+	}
+
+	private clearSearch(): void {
+		this.searchInput.setValue("");
+		this.searchFocused = false;
+		this.message = undefined;
+		this.syncSearchFocus();
+		this.recomputeRows();
+		this.tui.requestRender();
 	}
 
 	private async refresh(onRefresh: (signal: AbortSignal) => Promise<void>): Promise<void> {
@@ -474,6 +504,8 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 				this.compactConfirmation = undefined;
 				this.message = undefined;
 				this.tui.requestRender();
+			} else if (this.searchInput.getValue()) {
+				this.clearSearch();
 			} else if (this.searchFocused) {
 				this.searchFocused = false;
 				this.message = undefined;
@@ -686,13 +718,21 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 		const favoriteAll = formatEffectiveJouzuKeybinding(this.jouzuKeybindings, "jouzu.model.toggleFavorite");
 		const refreshKey = formatEffectiveJouzuKeybinding(this.jouzuKeybindings, "jouzu.model.refresh");
 		const refreshHints: PaletteKeyHint[] = refreshKey === "Unbound" ? [] : [{ key: refreshKey, label: "refresh" }];
+		const hasQuery = Boolean(this.searchInput.getValue());
 		// A favorite binding that is not live inside the search field is advertised
 		// as its browse-mode route rather than dropped, so the accelerator stays
-		// discoverable while the user is typing.
+		// discoverable while the user is typing. Cancel clears a non-empty query,
+		// so that route exists only before anything is typed.
 		const favoriteHints: PaletteKeyHint[] =
-			this.searchFocused && favoriteNow === "Unbound" && favoriteAll !== "Unbound"
-				? [{ key: `${cancel} then ${favoriteAll}`, label: "favorite" }]
+			this.searchFocused && favoriteNow === "Unbound"
+				? favoriteAll !== "Unbound" && !hasQuery
+					? [{ key: `${cancel} then ${favoriteAll}`, label: "favorite" }]
+					: []
 				: [{ key: favoriteNow, label: "favorite" }];
+		const cancelHint: PaletteKeyHint = {
+			key: cancel,
+			label: hasQuery ? "clear search" : this.searchFocused ? "browse" : "close",
+		};
 		const hints: PaletteKeyHint[] = this.compactConfirmation
 			? [
 					{ key: confirm, label: "compact and switch" },
@@ -706,7 +746,7 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 						{ key: "←→", label: "cursor" },
 						{ key: move, label: "move" },
 						{ key: "Tab", label: "section" },
-						{ key: cancel, label: "browse" },
+						cancelHint,
 					]
 				: [
 						{ key: confirm, label: "select and save for project" },
@@ -715,7 +755,7 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 						{ key: "/", label: "search" },
 						{ key: move, label: "move" },
 						{ key: "Tab", label: "section" },
-						{ key: cancel, label: "close" },
+						cancelHint,
 					];
 		lines.push(...renderPaletteKeyBar(hints, innerWidth, this.theme, this.styles).map(line));
 		lines.push(renderTerminalFrameBorder(width, { ...frameOptions, left: "╰", right: "╯" }));
