@@ -1,6 +1,7 @@
 import { BackgroundRenderer } from "./background-renderer";
 import { FlowReportRenderer, flowReport } from "./flow-report";
 import { GenericRenderer } from "./generic-renderer";
+import { isNamedTool, NamedRenderer } from "./named-renderer";
 import { TaskRenderer } from "./task-renderer";
 import { WaitRenderer } from "./wait-renderer";
 import { toolText, type ToolRendererProps } from "./types";
@@ -16,6 +17,7 @@ export function ToolRenderer(props: ToolRendererProps) {
   if (taskTools.test(props.tool.name)) return <TaskRenderer {...props} />;
   if (waitTools.test(props.tool.name)) return <WaitRenderer {...props} />;
   if (backgroundTools.test(props.tool.name)) return <BackgroundRenderer {...props} />;
+  if (isNamedTool(props.tool.name)) return <NamedRenderer {...props} />;
   return <GenericRenderer {...props} />;
 }
 export { ActivityRow, StateDot } from "./activity-row";

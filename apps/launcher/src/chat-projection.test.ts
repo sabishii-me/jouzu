@@ -33,6 +33,17 @@ describe("released runtime event projection", () => {
     state = projectEvent(state, { type: "message_end", message });
     expect(state.messages).toEqual([{ role: "user", content: [{ type: "text", text: "hello" }] }]);
   });
+  it("keeps displayed Jouzu flow reports as structured session activity", () => {
+    const state = projectEvent(emptyProjection(), {
+      type: "custom_message",
+      customType: "jouzu-flow",
+      display: true,
+      timestamp: 123,
+      content: [{ type: "text", text: JSON.stringify({ kind: "work", content: "Continue task #1" }) }],
+    });
+    expect(state.flowReports).toEqual([{ kind: "work", text: JSON.stringify({ kind: "work", content: "Continue task #1" }), timestamp: 123 }]);
+    expect(projectEvent(state, { type: "custom_message", customType: "other", content: [] }).flowReports).toHaveLength(1);
+  });
   it("reconstructs tool cards and task state from resumed history", () => {
     const state = historyProjection([
       { role: "assistant", content: [{ type: "toolCall", id: "t1", name: "TaskCreateMany", arguments: { tasks: [{ subject: "A" }] } }] },

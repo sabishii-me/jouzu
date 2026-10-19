@@ -44,9 +44,9 @@ export function flowReport(text: string): FlowReport | undefined {
   return undefined;
 }
 
-export function FlowReportRenderer({ tool }: ToolRendererProps) {
-  const report = flowReport(toolText(tool.result));
-  if (!report) return undefined;
+export function FlowReportSummary({ text }: { text: string }) {
+  const report = flowReport(text);
+  if (!report) return null;
   if (report.kind === "result") return <section aria-label="Flow results" className="space-y-1">
     {report.rows.map((row, index) => <ActivityRow key={index} title={row.title} state={row.state} defaultOpen={row.warnings.length > 0}>
       {row.reference && <p className="text-muted-foreground">Log: {row.reference}</p>}
@@ -57,5 +57,8 @@ export function FlowReportRenderer({ tool }: ToolRendererProps) {
   if (report.kind === "wait") return <ActivityRow title="Waiting" summary={report.reason} state={report.state} defaultOpen={report.observations.length > 0}>
     <ul className="space-y-1">{report.observations.map((observation, index) => <li key={index} className="truncate text-muted-foreground">{observation}</li>)}</ul>
   </ActivityRow>;
-  return <ActivityRow title={report.title} state={report.state} />;
+  return <ActivityRow title={report.kind === "alert" ? "Flow alert" : "Flow work"} summary={report.title} state={report.state} />;
+}
+export function FlowReportRenderer({ tool }: ToolRendererProps) {
+  return <FlowReportSummary text={toolText(tool.result)} />;
 }

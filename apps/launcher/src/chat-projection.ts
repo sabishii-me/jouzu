@@ -4,14 +4,16 @@ export type WireObject = Record<string, unknown>;
 export interface ChatBlock { type: string; text?: string; thinking?: string; id?: string; name?: string; arguments?: unknown; data?: string; mimeType?: string }
 export interface ChatMessage { role: string; content: ChatBlock[]; timestamp?: number; stopReason?: string; errorMessage?: string; toolCallId?: string; toolName?: string; isError?: boolean }
 export interface ToolView { id: string; name: string; args: unknown; phase: "running" | "complete" | "error"; result?: unknown }
+export interface FlowReportRecord { kind: string; text: string; timestamp?: number }
 export interface ChatProjection {
   messages: ChatMessage[];
   activeMessage: number | null;
   tools: Record<string, ToolView>;
+  flowReports: FlowReportRecord[];
   running: boolean;
   compatibility: string[];
 }
-export function emptyProjection(): ChatProjection { return { messages: [], activeMessage: null, tools: {}, running: false, compatibility: [] }; }
+export function emptyProjection(): ChatProjection { return { messages: [], activeMessage: null, tools: {}, flowReports: [], running: false, compatibility: [] }; }
 export function object(value: unknown): value is WireObject { return !!value && typeof value === "object" && !Array.isArray(value); }
 export function parseMessage(value: unknown): ChatMessage {
   if (!object(value) || typeof value.role !== "string") throw new Error("Invalid runtime message");
@@ -93,8 +95,20 @@ export function projectEvent(state: ChatProjection, event: WireObject): ChatProj
     }
     return { ...state, messages: state.messages.map((item, position) => position === state.activeMessage ? { ...message, content } : item) };
   }
-  if (type === "tool_execution_start" || type === "tool_execution_update" || type === "tool_execution_end") {
-    if (typeof event.toolCallId !== "string" || typeof event.toolName !== "string") throw new Error("Invalid runtime tool event");
+  if (type === "custom_message" && typeof event.customType === "string" && event.customType.startsWith("jouzu-flow") && event.display !== false) {
+    const text = (Array.isArray(event.content) ? event.content : [])
+      .map(block => object(block) && block.type === "text" && typeof block.text === "string" ? block.text : "")
+      .filter(Boolean)
+      .join("\n");
+    let kind: string | undefined;
+    try { const parsed = JSON.parse(text); kind = object(parsed) && typeof parsed.kind === "string" ? parsed.kind : undefined; } catch { /* keep the raw text */ }
+    if (text && kind) {
+      const report = { kind, text, ...(typeof event.timestamp === "number" ? { timestamp: event.timestamp } : {}) };
+      return { ...state, flowReports: [...state.flowReports, report].slice(-30) };
+    }
+    return state;
+  }
+  if (type === "tool_execution_start" || type === "tool_execution_update" || type === "tool_execution_end") {    if (typeof event.toolCallId !== "string" || typeof event.toolName !== "string") throw new Error("Invalid runtime tool event");
     const prior = state.tools[event.toolCallId];
     if (type !== "tool_execution_start" && !prior) throw new Error("Runtime tool update has no matching start");
     const tool: ToolView = { id: event.toolCallId, name: event.toolName, args: event.args ?? prior?.args, phase: type === "tool_execution_end" ? event.isError === true ? "error" : "complete" : "running", result: type === "tool_execution_end" ? event.result : type === "tool_execution_update" ? event.partialResult : undefined };
