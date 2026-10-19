@@ -38,8 +38,7 @@ interface Components { jouzu: string | null; development: boolean; launcherUpdat
 export function App() {
   const [locale, setLocale] = useState<Locale>(() => resolveLocale(localStorage.getItem("jouzu.ui.language") ?? navigator.language));
   const t = messages[locale];
-  const [workspacePage, setWorkspacePage] = useState(false);
-  const [chatPath, setChatPath] = useState<string | null>(null);
+  const [activePath, setActivePath] = useState<string | null>(null);
   const [japaneseOverride, setJapaneseOverride] = useState<boolean | null>(null);
   const japaneseChoice = japaneseOverride ?? locale === "ja";
 
@@ -69,7 +68,7 @@ export function App() {
   const [setup, setSetup] = useState<ControlState | null>(null);
   const modelReady = setup?.modelReady;
   const needsSetup = modelReady === false;
-  const showSetup = needsSetup && !workspacePage;
+  const showSetup = needsSetup;
   const [device, setDevice] = useState<{url:string;code:string} | null>(null);
   useEffect(() => {
     if (!isTauri()) return;
@@ -105,7 +104,12 @@ export function App() {
   const [dragging, setDragging] = useState(false);
   async function addFolders(paths: string[]) {
     setOperation("saving"); setError(null);
-    try { await invoke("add_workspaces", { paths }); setQuery(""); await refresh(); }
+    try {
+      await invoke("add_workspaces", { paths });
+      setQuery("");
+      await refresh();
+      if (paths.length && !activePath) setActivePath(paths[0]);
+    }
     catch (error) { setError(String(error)); }
     finally { setOperation(null); }
   }
@@ -179,21 +183,23 @@ export function App() {
     getVersion().then(setVersion).catch(error => setError(String(error)));
     invoke<Components>("component_versions").then(setComponents).catch(error => setError(String(error)));
   }, []);
+  // Open into the last workspace so the runtime can be warmed while the window is still loading.
+  const initialWorkspaceChosen = useRef(false);
+  useEffect(() => {
+    if (initialWorkspaceChosen.current || activePath || !state) return;
+    const first = state.recent[0]?.path;
+    if (first) { initialWorkspaceChosen.current = true; setActivePath(first); }
+  }, [state, activePath]);
   async function repairConsole(): Promise<boolean> {
     setRepair({ error: null });
     try { await invoke("terminal_install"); setRepair(null); return true; }
     catch (failure) { setRepair({ error: String(failure) }); return false; }
   }
-  function launch(path: string) {
-    if (!state?.ready) return;
-    if (needsSetup) { setWorkspacePage(false); return; }
-    setError(null); setChatPath(path);
-  }
   async function launchTerminal(path: string) {
     if (!state?.ready) return;
     setOperation("launching"); setError(null); setNotice(null);
     try {
-      if (needsSetup) {setWorkspacePage(false);return;}
+      if (needsSetup) return;
       setOperation("launching");
       // A console this machine cannot draw correctly is repaired before Jouzu starts, not instead of it.
       if ((await invoke<boolean>("console_repair_needed").catch(() => false)) === true && !(await repairConsole())) return;
@@ -207,20 +213,23 @@ export function App() {
   // already works with is used, and the backend opens it in the user's home when there is none.
   async function openTerminal() {
     setError(null);
-    try { await invoke("terminal_open", { path: state?.recent[0]?.path ?? null }); }
+    try { await invoke("terminal_open", { path: activePath ?? state?.recent[0]?.path ?? null }); }
     catch (error) { setError(String(error)); }
   }
   async function chooseFolder() {
     setOperation("choosing"); setError(null);
     try {
       const path = await open({ directory: true, multiple: false, title: t.picker });
-      if (typeof path === "string") await addFolders([path]);
+      if (typeof path === "string") { await addFolders([path]); setActivePath(path); }
     } catch (error) { setError(String(error)); } finally { setOperation(null); }
   }
   async function forget(workspace: Workspace) {
     setOperation("saving"); setError(null);
     try {
-      await invoke("forget_workspace", { id: workspace.id }); await refresh();
+      await invoke("forget_workspace", { id: workspace.id });
+      const next = state?.recent.find(item => item.id !== workspace.id)?.path ?? null;
+      if (activePath === workspace.path) setActivePath(next);
+      await refresh();
       setNotice("removed");
     } catch (error) { setError(String(error)); } finally { setOperation(null); }
   }
@@ -334,7 +343,18 @@ export function App() {
         </DialogContent>
       </Dialog>
     {error && <div role="alert" className="mt-5 flex items-start justify-between gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-900"><div><p className="font-medium">{t.error}</p><details className="mt-2 break-all"><summary className="cursor-pointer">{t.details}</summary><p className="mt-2">{error}</p></details></div><button onClick={() => setError(null)} aria-label={t.dismiss}><X className="size-4" /></button></div>}
-    {chatPath ? <ChatWorkspace path={chatPath} onBack={() => setChatPath(null)} onTerminal={() => void launchTerminal(chatPath)} /> : !setup ? <section aria-label={t.connecting} className="flex min-h-0 flex-1 flex-col items-center justify-center gap-5"><JouzuLoader className="scale-125" /><span role="status" aria-live="polite" className="sr-only">{t.connecting}</span>{statusError && <div className="flex w-full max-w-xl flex-col items-center gap-3"><p className="text-sm text-muted-foreground" role="alert">{t.connectFailed}</p><div className="flex w-full items-center gap-2 rounded-lg border border-border bg-card py-2 pl-3 pr-1"><code className="select-text min-w-0 flex-1 truncate text-xs text-muted-foreground" title={statusError}>{statusError}</code><Button variant="ghost" className="shrink-0" aria-label={t.copy} title={t.copy} onClick={() => void copyStatusError()}>{statusCopied ? <Check className="text-primary" /> : <Copy />}</Button></div><Button onClick={() => void readStatus()}>{t.retry}</Button></div>}</section> : showSetup ? <LauncherPage title={setup?.profile ? t.setupConnect : t.setupMake} description={setup?.profile ? t.setupHint : t.setupPreferencesHint} action={!!state?.recent.length && <Button variant="ghost" onClick={()=>setWorkspacePage(true)}>{t.setupWorkspaces}</Button>}>
+    {activePath && <div className={!setup || showSetup ? "hidden" : "flex min-h-0 flex-1"}>
+      <ChatWorkspace
+        path={activePath}
+        workspaces={state?.recent ?? []}
+        onSelect={setActivePath}
+        onAddFolder={() => void chooseFolder()}
+        onRemove={id => { const workspace = state?.recent.find(item => item.id === id); if (workspace) void forget(workspace); }}
+        onTerminal={path => void launchTerminal(path)}
+        onSettings={() => setSettingsOpen(true)}
+      />
+    </div>}
+    {!setup ? <section aria-label={t.connecting} className="flex min-h-0 flex-1 flex-col items-center justify-center gap-5"><JouzuLoader className="scale-125" /><span role="status" aria-live="polite" className="sr-only">{t.connecting}</span>{statusError && <div className="flex w-full max-w-xl flex-col items-center gap-3"><p className="text-sm text-muted-foreground" role="alert">{t.connectFailed}</p><div className="flex w-full items-center gap-2 rounded-lg border border-border bg-card py-2 pl-3 pr-1"><code className="select-text min-w-0 flex-1 truncate text-xs text-muted-foreground" title={statusError}>{statusError}</code><Button variant="ghost" className="shrink-0" aria-label={t.copy} title={t.copy} onClick={() => void copyStatusError()}>{statusCopied ? <Check className="text-primary" /> : <Copy />}</Button></div><Button onClick={() => void readStatus()}>{t.retry}</Button></div>}</section> : showSetup ? <LauncherPage title={setup?.profile ? t.setupConnect : t.setupMake} description={setup?.profile ? t.setupHint : t.setupPreferencesHint}>
       <ScrollArea className="min-h-0 flex-1"><div className="p-5 sm:p-6">
         {!setup?.profile ? <div className="space-y-6 pt-2">
           <div className="space-y-2"><Label>{t.language}</Label><div role="group" aria-label={t.language} className="flex flex-wrap gap-2">{Object.entries(locales).map(([key,label])=><Button key={key} lang={key} className="min-w-28" variant={locale===key ? "default" : "outline"} aria-pressed={locale===key} onClick={()=>setLocale(key as Locale)}>{label}</Button>)}</div><p className="text-sm text-muted-foreground">{t.languageHint}</p></div>
@@ -342,19 +362,9 @@ export function App() {
           <div className="flex justify-end pt-1"><Button onClick={()=>void configure({action:"profile",profile:japaneseChoice ? "ja" : "core"})}>{t.setupContinue}</Button></div>
         </div> : <>{!settingsOpen && providerContent}</>}
       </div></ScrollArea>
-    </LauncherPage> : <LauncherPage title={t.heading} description={t.intro} action={needsSetup && <Button variant="ghost" onClick={()=>setWorkspacePage(false)}>{t.setupModels}</Button>}>
-      <div className="flex items-center gap-2 border-b border-border px-3 py-2"><Search className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" /><Input aria-label={t.search} placeholder={t.search} value={query} onChange={event => setQuery(event.target.value)} /><Select value={sort} onValueChange={value => { setSort(value); localStorage.setItem("jouzu.folder.sort",value); }}><SelectTrigger className="w-40 shrink-0" aria-label={t.sort}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="added">{t.sortAdded}</SelectItem><SelectItem value="name">{t.sortName}</SelectItem><SelectItem value="path">{t.sortPath}</SelectItem></SelectContent></Select></div>
-      <div ref={listRef} aria-busy={busy} className={`flex min-h-0 flex-1 flex-col overflow-hidden ${dragging ? "ring-2 ring-inset ring-primary/30" : ""}`}>
-        <ScrollArea className="min-h-0 flex-1">
-          <ul className="divide-y divide-border">
-            <li><Button variant="ghost" className="w-full justify-start rounded-none px-5 py-4" onClick={chooseFolder} disabled={!state || busy} aria-label={t.addFolder} title={t.addFolder}><Plus /><span>{t.addFolder}</span></Button></li>
-            {recent.map(workspace => <li key={workspace.id} className="flex items-center gap-1 px-2 hover:bg-muted/50"><Button variant="ghost" disabled={busy || !state?.ready} onClick={() => launch(workspace.path)} className="h-auto min-w-0 flex-1 justify-start rounded-none px-3 py-3 text-left" title={workspace.path}><FolderOpen className="shrink-0 text-primary" /><span className="min-w-0 flex-1"><span className="block truncate">{workspace.path.replaceAll(String.fromCharCode(92), "/").split("/").filter(Boolean).at(-1) ?? workspace.path}</span><span className="mt-1 block select-text truncate text-xs font-normal text-muted-foreground">{workspace.path}</span></span><span className="text-xs text-primary">{t.launch}</span><ArrowUpRight className="shrink-0 text-primary" /></Button><Button variant="ghost" disabled={busy} onClick={() => forget(workspace)} title={t.remove} aria-label={`${t.remove}: ${workspace.path}`}><X /></Button></li>)}
-          </ul>
-          {!query && !recent.length && <p className="px-5 py-8 text-center text-sm text-muted-foreground">{t.dropHint}</p>}
-          {query && !recent.length && <p className="p-5 text-sm text-muted-foreground">{t.noResults}</p>}
-        </ScrollArea>
-      </div>
-    </LauncherPage>}
+    </LauncherPage> : !activePath ? <LauncherPage title={t.heading} description={t.intro}>
+      <div className="flex min-h-0 flex-1 items-center justify-center p-6"><Button onClick={() => void chooseFolder()} disabled={!state || busy}><Plus />{t.addFolder}</Button></div>
+    </LauncherPage> : null}
     {(busy || notice || (state && !state.ready)) && <footer className="flex min-h-10 items-center gap-2 border-t border-border py-4 text-xs text-muted-foreground" role="status" aria-live="polite">{busy && <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />}{operation === "preparing" ? t.preparing : operation === "launching" ? t.launching : operation === "choosing" ? t.choosing : operation === "saving" ? t.saving : (notice ? t[notice] : null) ?? (!state ? t.connecting : !state.ready ? t.repair : "")}</footer>}
   </main>;
 }
