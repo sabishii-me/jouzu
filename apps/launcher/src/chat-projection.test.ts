@@ -33,8 +33,15 @@ describe("released runtime event projection", () => {
     state = projectEvent(state, { type: "message_end", message });
     expect(state.messages).toEqual([{ role: "user", content: [{ type: "text", text: "hello" }] }]);
   });
-  it("correlates tool lifecycle without promoting partial output to completion", () => {
-    let state = projectEvent(emptyProjection(), { type: "tool_execution_start", toolCallId: "a", toolName: "read", args: { path: "file" } });
+  it("reconstructs tool cards and task state from resumed history", () => {
+    const state = historyProjection([
+      { role: "assistant", content: [{ type: "toolCall", id: "t1", name: "TaskCreateMany", arguments: { tasks: [{ subject: "A" }] } }] },
+      { role: "toolResult", toolCallId: "t1", toolName: "TaskCreateMany", content: [{ type: "text", text: "Created 1 task:\n  #1 A" }], isError: false },
+    ]);
+    expect(state.tools.t1).toMatchObject({ name: "TaskCreateMany", phase: "complete", args: { tasks: [{ subject: "A" }] } });
+    expect(state.tools.t1.result).toEqual({ content: [{ type: "text", text: "Created 1 task:\n  #1 A" }] });
+  });
+  it("correlates tool lifecycle without promoting partial output to completion", () => {    let state = projectEvent(emptyProjection(), { type: "tool_execution_start", toolCallId: "a", toolName: "read", args: { path: "file" } });
     state = projectEvent(state, { type: "tool_execution_update", toolCallId: "a", toolName: "read", partialResult: { content: [] } });
     expect(state.tools.a.phase).toBe("running");
     state = projectEvent(state, { type: "tool_execution_end", toolCallId: "a", toolName: "read", result: { content: [{ type: "text", text: "done" }] }, isError: true });

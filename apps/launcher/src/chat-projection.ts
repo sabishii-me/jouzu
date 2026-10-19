@@ -2,7 +2,7 @@
 // Agent history and completion remain authoritative in the runtime.
 export type WireObject = Record<string, unknown>;
 export interface ChatBlock { type: string; text?: string; thinking?: string; id?: string; name?: string; arguments?: unknown; data?: string; mimeType?: string }
-export interface ChatMessage { role: string; content: ChatBlock[]; timestamp?: number; stopReason?: string; errorMessage?: string; toolCallId?: string }
+export interface ChatMessage { role: string; content: ChatBlock[]; timestamp?: number; stopReason?: string; errorMessage?: string; toolCallId?: string; toolName?: string; isError?: boolean }
 export interface ToolView { id: string; name: string; args: unknown; phase: "running" | "complete" | "error"; result?: unknown }
 export interface ChatProjection {
   messages: ChatMessage[];
@@ -21,7 +21,20 @@ export function parseMessage(value: unknown): ChatMessage {
 }
 export function historyProjection(messages: unknown): ChatProjection {
   if (!Array.isArray(messages)) throw new Error("Invalid runtime history");
-  return { ...emptyProjection(), messages: messages.map(parseMessage) };
+  const parsed = messages.map(parseMessage);
+  const tools: Record<string, ToolView> = {};
+  for (const message of parsed) {
+    for (const block of message.content) {
+      if (block.type === "toolCall" && typeof block.id === "string") {
+        tools[block.id] = { id: block.id, name: block.name ?? "tool", args: block.arguments, phase: tools[block.id]?.phase ?? "running", result: tools[block.id]?.result };
+      }
+    }
+    if (message.role === "toolResult" && typeof message.toolCallId === "string") {
+      const id = message.toolCallId;
+      tools[id] = { id, name: message.toolName ?? tools[id]?.name ?? "tool", args: tools[id]?.args, phase: message.isError === true ? "error" : "complete", result: { content: message.content } };
+    }
+  }
+  return { ...emptyProjection(), messages: parsed, tools };
 }
 function compatibility(state: ChatProjection, type: string): ChatProjection {
   return { ...state, compatibility: [...new Set([...state.compatibility, type])].slice(-32) };
