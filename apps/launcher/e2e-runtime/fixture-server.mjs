@@ -23,8 +23,17 @@ export function startFixtureServer(port = 0) {
       const chunk = (delta, finish = null) => response.write(`data: ${JSON.stringify({ id: 'fixture', object: 'chat.completion.chunk', created: 1, model: 'deterministic', choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`);
       chunk({ role: 'assistant' });
       if (text.includes('SLOW')) {
+        chunk({ content: 'waiting-for-steer' });
+        setTimeout(() => {
+          chunk({ content: 'slow finished' });
+          chunk({}, 'stop');
+          response.end('data: [DONE]\n\n');
+        }, 2500);
+        return;
+      }
+      if (text.includes('ABORT')) {
         chunk({ content: 'waiting-for-abort' });
-        const timer = setInterval(() => response.write(': keep-alive\n\n'), 1000);
+        const timer = setInterval(() => { if (!response.destroyed) response.write(': keep-alive\n\n'); }, 1000);
         request.on('close', () => clearInterval(timer));
         return;
       }
