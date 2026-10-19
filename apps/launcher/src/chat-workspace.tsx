@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { FolderOpen, PanelRight, Plus, Settings, SquareTerminal, X } from "lucide-react";
-import { confirm, open } from "@tauri-apps/plugin-dialog";
+import { FolderOpen, PanelLeft, Plus, Settings, SquareTerminal, X } from "lucide-react";
+import { confirm, open, save } from "@tauri-apps/plugin-dialog";
 import { Button } from "./components/ui/button";
 import { ChatConversation } from "./chat-conversation";
 import { Composer } from "./composer";
@@ -116,6 +116,25 @@ export function ChatWorkspace({ path, revision = 0, onBusyChange, catalogRefresh
     } catch { /* Keep the draft and images available after rejection. */ }
   }
   const working = choosingSession || (snapshot.connected && (snapshot.pending || snapshot.projection.running));
+  const name = path.replaceAll("\\", "/").split("/").filter(Boolean).at(-1) ?? path;
+  async function compactConversation() {
+    const client = connection.current;
+    if (!client) return;
+    try {
+      await client.compact();
+      if (connection.current === client) setNotification("Earlier conversation compacted.");
+    } catch (error) { if (connection.current === client) setNotification(String(error).replace(/^Error:\s*/u, "")); }
+  }
+  async function exportConversation() {
+    const client = connection.current;
+    if (!client || !snapshot.connected) return;
+    const selected = await save({ title: "Export conversation", defaultPath: `${name}-conversation.html`, filters: [{ name: "HTML", extensions: ["html"] }] });
+    if (typeof selected !== "string" || connection.current !== client) return;
+    try {
+      await client.exportHtml(selected);
+      if (connection.current === client) setNotification(`Conversation exported to ${selected}`);
+    } catch (error) { if (connection.current === client) setNotification(String(error)); }
+  }
   async function changeSession(resume: boolean) {
     const client = connection.current;
     if (!client || !snapshot.connected || working || sessionChange.current || queue.current.items.length) return;
@@ -135,22 +154,8 @@ export function ChatWorkspace({ path, revision = 0, onBusyChange, catalogRefresh
     if (snapshot.projection.running && !await confirm("Stop the current run and switch workspace?", { title: "Switch workspace", kind: "warning" })) return;
     onSelect(next);
   }
-  const name = path.replaceAll("\\", "/").split("/").filter(Boolean).at(-1) ?? path;
   return <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
-    <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <div className="flex items-center gap-1 border-b border-border px-2 py-2 sm:px-3">
-        <div className="min-w-0 flex-1 px-1"><h2 className="truncate text-sm font-semibold" title={path}>{name}</h2><p className="truncate text-xs text-muted-foreground" title={path}>{snapshot.model ?? path}</p></div>
-        <Button variant="ghost" className="h-8 px-2" disabled={working || !snapshot.connected} onClick={() => void changeSession(false)}><Plus className="size-4" />New chat</Button>
-        <Button variant="ghost" className="h-8 px-2" disabled={working || !snapshot.connected} onClick={() => void changeSession(true)}><FolderOpen className="size-4" />Resume</Button>
-        <Button variant="ghost" className="size-8 p-0" aria-label={sidebar ? "Hide workspaces" : "Show workspaces"} title="Workspaces" aria-expanded={sidebar} onClick={() => setSidebar(value => !value)}><PanelRight className="size-4" /></Button>
-      </div>
-      {notification && <div role="status" className="flex items-center justify-between border-b border-border px-3 py-1.5 text-xs"><span className="min-w-0 truncate">{notification}</span><Button variant="ghost" className="h-7 px-2" onClick={() => setNotification("")}>Dismiss</Button></div>}
-      {dialog && <section role="dialog" aria-modal="false" aria-label={dialog.title} className="m-3 rounded-xl border border-primary bg-card p-4"><h3 className="font-semibold">{dialog.title}</h3>{dialog.message && <p className="my-2 text-sm">{dialog.message}</p>}{["input", "editor"].includes(dialog.method) && <textarea aria-label="Response" disabled={dialog.responding} className="my-2 w-full rounded border border-border bg-background p-2" value={answer} onChange={event => setAnswer(event.target.value)} />}
-        <fieldset disabled={dialog.responding || !snapshot.transportReady} className="mt-3 flex flex-wrap justify-end gap-2"><Button variant="outline" onClick={() => void reply({ cancelled: true })}>Cancel</Button>{dialog.method === "confirm" ? <><Button variant="outline" onClick={() => void reply({ confirmed: false })}>No</Button><Button onClick={() => void reply({ confirmed: true })}>Yes</Button></> : dialog.method === "select" ? dialog.options.map(option => <Button key={option} onClick={() => void reply({ value: option })}>{option}</Button>) : <Button onClick={() => void reply({ value: answer })}>Submit</Button>}</fieldset></section>}
-      <ChatConversation projection={snapshot.projection} />
-      <Composer connected={snapshot.connected} pending={snapshot.pending || choosingSession} running={snapshot.projection.running} draft={draft} onDraft={setDraft} onSend={() => void send()} onStop={() => void connection.current?.abort()} error={snapshot.error} compatibility={snapshot.projection.compatibility} attachments={attachments} onAddImages={files => void addImages(files)} onRemoveImage={id => updateAttachments(attachmentRef.current.filter(item => item.id !== id))} readingImages={readingImages} attachmentError={attachmentError} models={snapshot.models ?? []} model={snapshot.model} onSelectModel={(provider, id) => void connection.current?.selectModel(provider, id)} onRefreshModels={() => void connection.current?.loadModels()} thinkingLevel={snapshot.thinkingLevel} thinkingLevels={snapshot.thinkingLevels ?? []} onThinkingLevel={level => void connection.current?.setThinkingLevel(level)} />
-    </section>
-    {sidebar && <aside aria-label="Workspaces" className="absolute inset-y-0 right-0 z-20 flex w-80 max-w-[85%] flex-col border-l border-border bg-background shadow-xl md:static md:z-auto md:shadow-none">
+    {sidebar && <aside aria-label="Workspaces" className="absolute inset-y-0 left-0 z-20 flex w-72 max-w-[85%] flex-col border-r border-border bg-background shadow-xl md:static md:z-auto md:shadow-none">
       <div className="flex items-center justify-between border-b border-border px-3 py-2"><h2 className="text-sm font-semibold">Workspaces</h2><div className="flex items-center gap-1"><Button variant="ghost" className="size-8 p-0" aria-label="Add folder" title="Add folder" onClick={onAddFolder}><Plus className="size-4" /></Button><Button variant="ghost" className="size-8 p-0" aria-label="Hide workspaces" onClick={() => setSidebar(false)}><X className="size-4" /></Button></div></div>
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {workspaces.map(workspace => <div key={workspace.id} className={`group mb-1 flex items-center gap-1 rounded-lg ${workspace.path === path ? "bg-accent" : "hover:bg-muted/60"}`}>
@@ -169,5 +174,18 @@ export function ChatWorkspace({ path, revision = 0, onBusyChange, catalogRefresh
         <p className="px-2 pt-1 text-xs text-muted-foreground">{catalogRefreshing ? "Refreshing models…" : snapshot.connected ? "Connected" : snapshot.transportReady ? "Starting Jouzu…" : "Connecting…"}</p>
       </div>
     </aside>}
+    <section className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="flex items-center gap-1 border-b border-border px-2 py-2 sm:px-3">
+        <Button variant="ghost" className="size-8 shrink-0 p-0" aria-label={sidebar ? "Hide workspaces" : "Show workspaces"} title="Workspaces" aria-expanded={sidebar} onClick={() => setSidebar(value => !value)}><PanelLeft className="size-4" /></Button>
+        <div className="min-w-0 flex-1 px-1"><h2 className="truncate text-sm font-semibold" title={path}>{name}</h2><p className="truncate text-xs text-muted-foreground" title={path}>{snapshot.model ?? path}</p></div>
+        <Button variant="ghost" className="h-8 px-2" disabled={working || !snapshot.connected} onClick={() => void changeSession(false)}><Plus className="size-4" />New chat</Button>
+        <Button variant="ghost" className="h-8 px-2" disabled={working || !snapshot.connected} onClick={() => void changeSession(true)}><FolderOpen className="size-4" />Resume</Button>
+      </div>
+      {notification && <div role="status" className="flex items-center justify-between border-b border-border px-3 py-1.5 text-xs"><span className="min-w-0 truncate">{notification}</span><Button variant="ghost" className="h-7 px-2" onClick={() => setNotification("")}>Dismiss</Button></div>}
+      {dialog && <section role="dialog" aria-modal="false" aria-label={dialog.title} className="m-3 rounded-xl border border-primary bg-card p-4"><h3 className="font-semibold">{dialog.title}</h3>{dialog.message && <p className="my-2 text-sm">{dialog.message}</p>}{["input", "editor"].includes(dialog.method) && <textarea aria-label="Response" disabled={dialog.responding} className="my-2 w-full rounded border border-border bg-background p-2" value={answer} onChange={event => setAnswer(event.target.value)} />}
+        <fieldset disabled={dialog.responding || !snapshot.transportReady} className="mt-3 flex flex-wrap justify-end gap-2"><Button variant="outline" onClick={() => void reply({ cancelled: true })}>Cancel</Button>{dialog.method === "confirm" ? <><Button variant="outline" onClick={() => void reply({ confirmed: false })}>No</Button><Button onClick={() => void reply({ confirmed: true })}>Yes</Button></> : dialog.method === "select" ? dialog.options.map(option => <Button key={option} onClick={() => void reply({ value: option })}>{option}</Button>) : <Button onClick={() => void reply({ value: answer })}>Submit</Button>}</fieldset></section>}
+      <ChatConversation projection={snapshot.projection} />
+      <Composer connected={snapshot.connected} pending={snapshot.pending || choosingSession} running={snapshot.projection.running} draft={draft} onDraft={setDraft} onSend={() => void send()} onStop={() => void connection.current?.abort()} onCompact={() => void compactConversation()} onExport={() => void exportConversation()} error={snapshot.error} compatibility={snapshot.projection.compatibility} attachments={attachments} onAddImages={files => void addImages(files)} onRemoveImage={id => updateAttachments(attachmentRef.current.filter(item => item.id !== id))} readingImages={readingImages} attachmentError={attachmentError} models={snapshot.models ?? []} model={snapshot.model} onSelectModel={(provider, id) => void connection.current?.selectModel(provider, id)} onRefreshModels={() => void connection.current?.loadModels()} thinkingLevel={snapshot.thinkingLevel} thinkingLevels={snapshot.thinkingLevels ?? []} onThinkingLevel={level => void connection.current?.setThinkingLevel(level)} />
+    </section>
   </div>;
 }

@@ -11,6 +11,7 @@ test("the last workspace opens and prewarms chat without a workspace click", asy
     w.isTauri = true;
     w.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener() {} };
     w.chatCalls = [];
+    w.chatRequests = [];
     // The test serves assets over a plain-HTTP origin; real webviews and localhost are secure contexts.
     if (!crypto.randomUUID) Object.defineProperty(crypto, "randomUUID", { value: () => `test-${Math.random().toString(16).slice(2)}` });
     const records: any[] = [];
@@ -30,6 +31,7 @@ test("the last workspace opens and prewarms chat without a workspace click", asy
         if (command === "chat_poll") return { records: records.splice(0), closed: false };
         if (command === "chat_send") {
           const r = args.request;
+          w.chatRequests.push(r.type);
           if (r.type === "get_state") response(r, { sessionId: "fixture", isStreaming: false, model: { name: "Fixture model" } });
           else if (r.type === "get_messages") response(r, { messages: history });
           else if (r.type === "get_available_models") response(r, { models });
@@ -68,6 +70,17 @@ test("the last workspace opens and prewarms chat without a workspace click", asy
   await expect.poll(() => page.evaluate(() => (window as any).chatCalls.includes("chat_start"))).toBe(true);
   expect(await page.evaluate(() => (window as any).chatCalls.includes("launch_jouzu"))).toBe(false);
   await expect(page.getByRole("complementary", { name: "Workspaces" })).toBeVisible();
+  const sidebarBox = await page.getByRole("complementary", { name: "Workspaces" }).boundingBox();
+  const chatBox = await page.getByLabel("Message Jouzu").boundingBox();
+  expect(sidebarBox!.x).toBeLessThan(chatBox!.x);
+  await page.getByRole("button", { name: "Add files or run commands" }).click();
+  for (const item of ["Image", "Compact", "Model", "Export conversation"]) await expect(page.getByRole("menuitem", { name: new RegExp(`^${item}`) })).toBeVisible();
+  await page.getByRole("menuitem", { name: /^Compact/ }).click();
+  await expect.poll(() => page.evaluate(() => (window as any).chatRequests.includes("compact"))).toBe(true);
+  await page.getByRole("button", { name: "Add files or run commands" }).click();
+  await page.getByRole("menuitem", { name: /^Model/ }).click();
+  await expect(page.getByLabel("Search models")).toBeVisible();
+  await page.keyboard.press("Escape");
   await page.getByLabel("Message Jouzu").fill("Explain this project");
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.getByRole("article", { name: "assistant message" })).toContainText("Hello from Jouzu");

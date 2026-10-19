@@ -168,6 +168,19 @@ export class ChatConnection {
     try { await this.request("clear_queue"); } catch { /* The queue may already be empty; abort still applies. */ }
     try { await this.request("abort"); } catch (error) { this.update({ error: String(error) }); }
   }
+  async compact() {
+    if (!this.snapshot.connected || this.snapshot.pending || this.snapshot.projection.running) throw new Error("Wait for the current conversation to settle before compacting.");
+    this.update({ pending: true, error: null });
+    try {
+      await this.request("compact");
+      await this.refreshHistory();
+    } catch (error) { throw error; }
+    finally { this.update({ pending: false }); }
+  }
+  async exportHtml(outputPath: string) {
+    if (!this.snapshot.connected) throw new Error("Chat is not connected.");
+    await this.request("export_html", { outputPath });
+  }
   async loadModels() {
     try {
       const data = await this.request("get_available_models");

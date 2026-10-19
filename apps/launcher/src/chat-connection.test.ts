@@ -51,6 +51,21 @@ describe("desktop RPC connection", () => {
     expect(images[0]).toEqual(image);
     expect(client.snapshot.pending).toBe(false);
   });
+  it("compacts and exports through the released runtime commands", async () => {
+    const client = new ChatConnection(() => {}, () => {});
+    client.snapshot = { ...client.snapshot, connected: true };
+    const request = vi.spyOn(client, "request").mockImplementation(async (command: string) => {
+      if (command === "get_state") return { sessionId: "compact-id", isStreaming: false, model: { name: "model", provider: "catalog", id: "model" } };
+      if (command === "get_messages") return { messages: [] };
+      if (command === "export_html") return { path: "C:\\tmp\\chat.html" };
+      return undefined;
+    });
+    await client.compact();
+    expect(request).toHaveBeenCalledWith("compact");
+    expect(client.snapshot.pending).toBe(false);
+    await client.exportHtml("C:\\tmp\\chat.html");
+    expect(request).toHaveBeenLastCalledWith("export_html", { outputPath: "C:\\tmp\\chat.html" });
+  });
   it("waits out a long released-runtime cold start", async () => {
     vi.useFakeTimers();
     const requests: Record<string, unknown>[] = [];

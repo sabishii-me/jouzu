@@ -169,9 +169,10 @@ fn validate(request: &Value) -> Result<(), String> {
     }
     let fields: &[&str] = match kind {
         "get_state" | "get_messages" | "abort" | "clear_queue" | "new_session"
-        | "get_available_models" | "get_available_thinking_levels" => &["type", "id"],
+        | "get_available_models" | "get_available_thinking_levels" | "compact" => &["type", "id"],
         "prompt" | "steer" => &["type", "id", "message", "images"],
         "switch_session" => &["type", "id", "sessionPath"],
+        "export_html" => &["type", "id", "outputPath"],
         "set_model" => &["type", "id", "provider", "modelId"],
         "set_thinking_level" => &["type", "id", "level"],
         "extension_ui_response" => &["type", "id", "value", "confirmed", "cancelled"],
@@ -238,6 +239,15 @@ fn validate(request: &Value) -> Result<(), String> {
             .ok_or("Missing session path")?;
         if path.contains('\0') || path.len() > 32767 || !std::path::Path::new(path).is_absolute() {
             return Err("Session path must be an absolute file path".into());
+        }
+    }
+    if kind == "export_html" {
+        let path = object
+            .get("outputPath")
+            .and_then(Value::as_str)
+            .ok_or("Missing export path")?;
+        if path.contains('\0') || path.len() > 32767 || !std::path::Path::new(path).is_absolute() {
+            return Err("Export path must be an absolute file path".into());
         }
     }
     if kind == "set_model" {
@@ -852,6 +862,25 @@ mod tests {
             &serde_json::json!({"type":"switch_session","id":"s","sessionPath":path})
         )
         .is_ok());
+    }
+    #[test]
+    fn compaction_and_export_validate_paths() {
+        assert!(validate(&serde_json::json!({"type":"compact","id":"c"})).is_ok());
+        for path in ["relative.html", "", "bad\0path"] {
+            assert!(validate(
+                &serde_json::json!({"type":"export_html","id":"e","outputPath":path})
+            )
+            .is_err());
+        }
+        let path = std::env::temp_dir().join("conversation.html");
+        assert!(validate(
+            &serde_json::json!({"type":"export_html","id":"e","outputPath":path})
+        )
+        .is_ok());
+        assert!(validate(
+            &serde_json::json!({"type":"export_html","id":"e","outputPath":"C:\\chat.html","extra":true})
+        )
+        .is_err());
     }
     #[test]
     fn request_boundary_rejects_unknown_fields_and_commands() {

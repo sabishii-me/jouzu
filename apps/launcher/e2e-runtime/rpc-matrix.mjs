@@ -1,6 +1,8 @@
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { writeFile } from 'node:fs/promises';
+import { existsSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { startFixtureServer } from './fixture-server.mjs';
 
 // Real released-runtime RPC matrix. Requires JOUZU_E2E_RUNTIME to point at an
@@ -120,6 +122,14 @@ try {
   results.push(record('model catalog', available.some(model => model.provider === 'matrix-fixture' && model.id === 'deterministic'), available.length));
   const selected = await send('set_model', { provider: 'matrix-fixture', modelId: 'deterministic' });
   results.push(record('set_model', selected.success === true, selected.data?.name));
+
+  let compacted;
+  try { compacted = await send('compact'); }
+  catch (error) { compacted = { error: String(error) }; }
+  results.push(record('compact', compacted.success === true || String(compacted.error).includes('Nothing to compact'), compacted.data ?? compacted.error));
+  const exportPath = join(tmpdir(), `jouzu-rpc-matrix-${Date.now()}.html`);
+  const exported = await send('export_html', { outputPath: exportPath });
+  results.push(record('export_html', exported.success === true && existsSync(exportPath) && statSync(exportPath).size > 0, { path: exportPath, size: existsSync(exportPath) ? statSync(exportPath).size : 0 }));
 } catch (error) {
   failures.push({ name: 'sequence', detail: String(error) });
 }
