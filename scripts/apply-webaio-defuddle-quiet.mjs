@@ -1,5 +1,14 @@
 #!/usr/bin/env node
 
+import { realpathSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, resolve } from "node:path";
+
+export function resolveDefuddleSource(webaioRoot) {
+	const require = createRequire(realpathSync(resolve(webaioRoot, "package.json")));
+	return resolve(dirname(require.resolve("defuddle")), "defuddle.js");
+}
+
 /**
  * Defuddle is intentionally a fallback extractor, but some versions log
  * recoverable parse failures with console.error. In a Pi TUI that writes over
