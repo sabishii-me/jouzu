@@ -228,6 +228,16 @@ test("CI qualification matrices stay on hosted Linux and macOS with Windows as m
 	assert.match(workflow, /legacy-linux-static-fetch:[\s\S]*if: inputs\.platform != 'windows'/u);
 });
 
+test("CI cancels superseded pull request runs but never another commit's qualification", () => {
+	const workflow = readFileSync(join(root, ".github", "workflows", "ci.yml"), "utf8");
+	assert.match(
+		workflow,
+		/group: ci-\$\{\{ github\.ref \}\}-\$\{\{ github\.event_name == 'pull_request' && 'pr' \|\| github\.sha \}\}/u,
+	);
+	assert.match(workflow, /cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}/u);
+	assert.doesNotMatch(workflow, /cancel-in-progress: true/u);
+});
+
 test("the npm publish workflow passes the recipe signing key to the called workflow", () => {
 	const workflow = readFileSync(join(root, ".github", "workflows", "publish-npm.yml"), "utf8");
 	const recipe = readFileSync(join(root, ".github", "workflows", "launcher-recipe.yml"), "utf8");

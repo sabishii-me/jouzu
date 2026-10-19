@@ -27,8 +27,10 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}-${{ github.event_name }}
-  cancel-in-progress: true
+  # Pull requests cancel superseded runs. Pushes and dispatches queue per commit, so a later push
+  # never cancels another commit's qualification run.
+  group: ci-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   node:
