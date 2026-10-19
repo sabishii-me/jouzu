@@ -70,18 +70,14 @@ Review all manifest/lock/dependency changes. A bump remains pending until qualif
 
 ## Validation
 
-For ordinary changes, run the narrowest tests plus:
+| Situation | Command |
+| --- | --- |
+| Editing a module | `npm run test:affected`, or `npm run test:node -- <files>` |
+| Before a commit | `npm run check` and `npm run test:affected` |
+| Before pushing product code | `npm run check` and `npm test` |
+| Dependency, packaging, Pi, or release change | `npm run release:check` |
 
-```bash
-npm run check
-npm test
-```
-
-For dependency, packaging, Pi, or release changes:
-
-```bash
-npm run release:check
-```
+`npm run test:affected` runs the test files that import a changed file; see [`docs/testing.md`](docs/testing.md#which-gate-to-run).
 
 Do not claim Windows/macOS behavior from Linux-only results. Installer work uses its platform-native acceptance corpus.
 

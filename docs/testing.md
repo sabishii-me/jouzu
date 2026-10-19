@@ -36,6 +36,19 @@ npm run build
 
 Each gate runs each command once. `scripts/gate-commands.test.mjs` expands `npm run check`, `npm test`, `release:check:candidate`, and every CI job into their commands and fails on a repeat.
 
+### Which gate to run
+
+| Situation | Command |
+| --- | --- |
+| Editing a module | `npm run test:affected`, or `npm run test:node -- <files>` |
+| Before a commit | `npm run check` and `npm run test:affected` |
+| Before pushing product code | `npm run check` and `npm test` |
+| Release candidate, dependency, Pi, or packaging change | `npm run release:check` |
+
+`npm run test:affected` compares the working tree and untracked files with `HEAD` (or `--base REF`) and runs the Node test files that import a changed file, directly or through other sources and test fixtures. Compiled imports under `dist/` map to their `src/` files, and tests that launch the built CLI count as importing it. A changed workflow, manifest, or document selects the tests that name it. Changes to dependencies, build scripts, `upstream/`, or shared script fixtures select every test file. It skips `@endurance` tests unless you pass `--endurance`, and it refuses to run CLI tests against a stale build. Pass paths to select tests for specific files, and run `node scripts/affected-tests.mjs` without `--run` to list the selection.
+
+Hosted CI runs the full qualification on every push, so a local `release:check` is needed only for the release-boundary cases in the table.
+
 ### Endurance tests
 
 Tests whose names end in `@endurance` repeat full runtime operations until they cross a production storage limit, such as 1,120 tool turns past the native request quota. The default CLI suite (`npm run test --workspace packages/cli`) skips them; `npm run test:endurance --workspace packages/cli` runs only them. `npm test` runs `test:full`, the whole CLI suite including endurance tests, so they share the suite's parallel workers. Tag a new test `@endurance` only when it must cross an exact production limit, and list its file in the `test:endurance` script. `scripts/gate-commands.test.mjs` fails when the list and the tagged files differ.
