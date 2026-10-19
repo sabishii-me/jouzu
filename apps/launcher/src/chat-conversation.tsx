@@ -40,7 +40,7 @@ function ThinkingRow({ thinking, streaming }: { thinking: string; streaming: boo
   </details>;
 }
 
-export function ChatConversation({ projection, pending = false }: { projection: ChatProjection; pending?: boolean }) {
+export function ChatConversation({ projection, pending = false, startedAt }: { projection: ChatProjection; pending?: boolean; startedAt?: number }) {
   const scroll = useRef<HTMLDivElement>(null);
   const following = useRef(true);
   const [showLatest, setShowLatest] = useState(false);
@@ -53,7 +53,7 @@ export function ChatConversation({ projection, pending = false }: { projection: 
     const timer = setInterval(() => setNow(Date.now()), 500);
     return () => clearInterval(timer);
   }, [working]);
-  const elapsed = working && projection.turnStartedAt ? Math.max(0, Math.floor((now - projection.turnStartedAt) / 1000)) : null;
+  const elapsed = working && (projection.turnStartedAt ?? startedAt) ? Math.max(0, Math.floor((now - (projection.turnStartedAt ?? startedAt)!) / 1000)) : null;
   return <section aria-label="Conversation" className="relative flex min-h-0 min-w-0 flex-1 flex-col">
     <div ref={scroll} className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-8" onScroll={event => { const view = event.currentTarget; following.current = view.scrollHeight - view.scrollTop - view.clientHeight < 80; setShowLatest(!following.current); }}>
       {!projection.messages.length && <div className="mx-auto max-w-xl py-16 text-center"><h2 className="text-xl font-semibold">What would you like to work on?</h2><p className="mt-3 text-sm text-muted-foreground">Ask Jouzu to explore your workspace, explain code, or make a change.</p></div>}
