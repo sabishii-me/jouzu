@@ -245,3 +245,80 @@ test("actual compaction hook separates custom results and mixed flow user frames
 	assert.match(summary, /unrelated suggestion/);
 	assert.match(summary, /delete the project/);
 });
+
+test("declarative user instructions become scope changes instead of being dropped", async (t) => {
+	const { compile } = await load(t);
+	let summary = compile({
+		messages: [user("(we can use `hf` and `gh` to look at stuff if we don't have it locally)")],
+		sourceIndices: [1],
+	});
+	summary = compile({
+		previousSummary: summary,
+		messages: [
+			user(
+				"i've created a new shisa-asr-2 git repo - check out our jouzu-dev or other repos, we want to have our git hygiene, worklog and workflow stuff setup for this repo.",
+			),
+		],
+		sourceIndices: [2],
+	});
+	assert.match(goalSection(summary), /\[Scope change\]/);
+	assert.match(goalSection(summary), /shisa-asr-2 git repo/);
+	assert.match(goalSection(summary), /hf/);
+	summary = compile({
+		previousSummary: summary,
+		messages: [user("our gpus are idle, why is this the case?")],
+		sourceIndices: [3],
+	});
+	assert.match(goalSection(summary), /our gpus are idle/);
+	assert.match(goalSection(summary), /hf/);
+});
+
+test("legacy batch results with trailing status text cannot become goals", async (t) => {
+	const { extractGoals } = await load(t);
+	assert.deepEqual(
+		extractGoals([
+			{
+				kind: "user",
+				text: "Subagent batch f2c63804-bb9f-4957-81b5-3990dc9256b1. Agents: 3 finished — completed 3, failed 0, cancelled 0,\ninterrupted 0.\nAgent reviewer (b396d007-39ed-455b-b617-c312f2c9a389) completed.",
+			},
+		]),
+		[],
+	);
+	assert.deepEqual(
+		extractGoals([{ kind: "user", text: "0 omitted; use subagent list for IDs and subagent read for output." }]),
+		[],
+	);
+});
+
+test("bare status sentences are not scope changes and do not hide a later instruction", async (t) => {
+	const { compile } = await load(t);
+	let summary = compile({ messages: [user("Fix the login timeout.")], sourceIndices: [1] });
+	summary = compile({
+		previousSummary: summary,
+		messages: [user("The build passed.\nThe tests are green.")],
+		sourceIndices: [2],
+	});
+	assert.doesNotMatch(goalSection(summary), /build passed|tests are green/);
+	summary = compile({
+		previousSummary: summary,
+		messages: [user("our gpus are idle, why is this the case?")],
+		sourceIndices: [3],
+	});
+	assert.match(goalSection(summary), /our gpus are idle/);
+	assert.match(goalSection(summary), /Fix the login timeout/);
+});
+
+test("same-window instructions survive regardless of language or phrasing", async (t) => {
+	const { compile } = await load(t);
+	for (const instruction of [
+		"please rerun the cache benchmark.",
+		"请把缓存基准测试跑一遍，然后汇报结果。",
+		"キャッシュのベンチマークを実行してください。",
+		"캐시 벤치마크를 실행해 주세요.",
+		"our gpus are idle, why is this the case?",
+	]) {
+		const summary = compile({ messages: [user("Fix the login timeout."), user(instruction)] });
+		assert.match(goalSection(summary), /\[Scope change\]/, instruction);
+		assert.ok(goalSection(summary).includes(instruction), instruction);
+	}
+});

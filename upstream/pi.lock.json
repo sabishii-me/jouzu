@@ -19,7 +19,7 @@
 	"deviations": [
 		{
 			"path": "upstream/vcc-goals/patch.lock.json",
-			"sha256": "11f5dc1b51e9b2ba9682a747c4d6610871e87a13c7a2c096e7ab132052a999f2"
+			"sha256": "d8092c252e571ce6cc59b02b2d33c748ffab0892c93f3859d1d7df143446c147"
 		},
 		{
 			"path": "upstream/pi-content-policy/patch.lock.json",
