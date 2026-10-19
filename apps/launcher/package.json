@@ -6,7 +6,9 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:runtime": "node e2e-runtime/rpc-matrix.mjs",
+    "test:ui": "node e2e-runtime/ui-flow.mjs"
   },
   "license": "Apache-2.0",
   "type": "module",
