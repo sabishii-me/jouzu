@@ -3,6 +3,14 @@ import { emptyProjection, historyProjection, object, projectEvent, type ChatProj
 
 export interface ChatImage { type: "image"; data: string; mimeType: "image/png" | "image/jpeg" | "image/webp" | "image/gif" }
 export interface ChatModel { provider: string; id: string; name: string }
+export interface SessionStats {
+  userMessages?: number;
+  assistantMessages?: number;
+  toolCalls?: number;
+  toolResults?: number;
+  tokens?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; total?: number };
+  contextUsage?: { percent?: number | null; tokens?: number; contextWindow?: number };
+}
 const MODEL_PREFERENCE_KEY = "jouzu.chat.model";
 function readModelPreference(): { provider: string; id: string } | undefined {
   try {
@@ -31,6 +39,7 @@ export interface ChatSnapshot {
   modelsLoaded?: boolean;
   widgets?: Record<string, string[]>;
   statuses?: Record<string, string>;
+  stats?: SessionStats;
   thinkingLevel?: string;
   thinkingLevels?: string[];
 }
@@ -63,6 +72,7 @@ export class ChatConnection {
       this.update({ connected: true });
       await this.applyPreferredModel();
       void this.loadModels();
+      void this.loadStats();
       void this.loadThinkingLevels();
     } catch (error) { this.fail(error); }
   }
@@ -204,6 +214,12 @@ export class ChatConnection {
       this.update({ models });
     } catch (error) { this.update({ error: `Could not read the model list. ${String(error)}` }); }
     finally { this.update({ modelsLoaded: true }); }
+  }
+  async loadStats() {
+    try {
+      const data = await this.request("get_session_stats");
+      this.update({ stats: object(data) ? data as SessionStats : undefined });
+    } catch { /* Session counters are ancillary; chat remains usable. */ }
   }
   async selectModel(provider: string, id: string) {
     this.update({ error: null });

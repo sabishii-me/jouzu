@@ -171,7 +171,7 @@ fn validate(request: &Value) -> Result<(), String> {
     }
     let fields: &[&str] = match kind {
         "get_state" | "get_messages" | "abort" | "clear_queue" | "new_session"
-        | "get_available_models" | "get_available_thinking_levels" | "compact" => &["type", "id"],
+        | "get_available_models" | "get_available_thinking_levels" | "compact" | "get_session_stats" => &["type", "id"],
         "prompt" | "steer" => &["type", "id", "message", "images"],
         "switch_session" => &["type", "id", "sessionPath"],
         "export_html" => &["type", "id", "outputPath"],
@@ -902,6 +902,7 @@ mod tests {
             assert!(validate(&value).is_err());
         }
         assert!(validate(&serde_json::json!({"type":"prompt","id":"1","message":"hi"})).is_ok());
+        assert!(validate(&serde_json::json!({"type":"get_session_stats","id":"1"})).is_ok());
         assert!(validate(
             &serde_json::json!({"type":"extension_ui_response","id":"a","cancelled":true})
         )

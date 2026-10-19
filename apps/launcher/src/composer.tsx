@@ -141,7 +141,7 @@ export function Composer({ hero = false, connected, pending, running, draft, onD
   const submit = () => { if (connected && !pending && !readingImages && draft.trim()) onSend(); };
   const compactDisabled = !connected || pending || running;
   const exportDisabled = !connected || pending;
-  return <div className={hero ? "px-0 pb-0 pt-0" : "border-t border-border px-3 pb-3 pt-2 sm:px-6"}>
+  return <div className={hero ? "px-0 pb-0 pt-0" : "px-3 pb-3 pt-2 sm:px-6"}>
     {error && <p role="alert" className="mx-auto mb-2 max-w-3xl select-text text-sm text-destructive">{error}</p>}
     {!!compatibility.length && <p role="status" className="mx-auto mb-2 max-w-3xl text-xs text-muted-foreground">Some runtime events have no display: {compatibility.join(", ")}</p>}
     <form aria-label="Message composer" className={`mx-auto flex max-w-3xl flex-col gap-2 border border-border bg-card shadow-[0_8px_30px_rgba(0,0,0,0.12)] focus-within:ring-1 focus-within:ring-ring ${hero ? "rounded-3xl p-3" : "rounded-2xl p-2.5"}`} onSubmit={event => { event.preventDefault(); submit(); }}>

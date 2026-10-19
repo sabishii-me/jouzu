@@ -18,7 +18,7 @@ export function FlowPanel({ flow, widgets, statuses, reports = [] }: {
   const pending = flow.tasks.filter(task => task.status === "pending").length;
   const waiting = flow.waits.filter(wait => wait.state === "running").length;
   const summary = [active ? `${active} active` : "", pending ? `${pending} pending` : "", waiting ? `${waiting} waiting` : ""].filter(Boolean).join(" · ") || "Session work";
-  return <section aria-label="Flow" className="border-b border-border bg-muted/20">
+  return <section aria-label="Flow" className="border-t border-border bg-muted/20">
     <button type="button" onClick={() => setOpen(value => !value)} aria-expanded={open} className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-muted/40">
       <GitBranch className="size-3.5 shrink-0 text-muted-foreground" />
       <span className="font-medium">Flow</span>
@@ -38,7 +38,7 @@ export function FlowPanel({ flow, widgets, statuses, reports = [] }: {
         {wait.handles.length > 0 && <ul className="space-y-0.5">{wait.handles.map(handle => <li key={handle} className="truncate font-mono text-[10px] text-muted-foreground">{handle}</li>)}</ul>}
       </ActivityRow>)}
       {flow.background.map((job, index) => <ActivityRow key={index} title="Background task" summary={job.command} state={job.state} />)}
-      {reports.slice(-3).map((report, index) => <FlowReportSummary key={`${report.timestamp ?? index}-${report.kind}`} text={report.text} />)}
+      {reports.filter((report, index, all) => all.findIndex(item => item.text === report.text) === index).slice(-3).map((report, index) => <FlowReportSummary key={`${report.timestamp ?? index}-${report.kind}`} text={report.text} />)}
       {flowWidgetEntries(widgets).map(([key, lines]) => <div key={key} className="mb-2">
         <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{widgetLabel(key)}</p>
         <ul className="space-y-0.5">{lines.slice(0, 12).map((line, index) => <li key={index} className="truncate whitespace-pre text-[11px] text-muted-foreground">{line}</li>)}</ul>

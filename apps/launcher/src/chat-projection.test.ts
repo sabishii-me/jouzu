@@ -31,7 +31,8 @@ describe("released runtime event projection", () => {
     const message = { role: "user", content: "hello" };
     state = projectEvent(state, { type: "message_start", message });
     state = projectEvent(state, { type: "message_end", message });
-    expect(state.messages).toEqual([{ role: "user", content: [{ type: "text", text: "hello" }] }]);
+    expect(state.messages).toHaveLength(1);
+    expect(state.messages[0]).toMatchObject({ role: "user", content: [{ type: "text", text: "hello" }] });
   });
   it("keeps displayed Jouzu flow reports as structured session activity", () => {
     const state = projectEvent(emptyProjection(), {

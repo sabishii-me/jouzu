@@ -38,6 +38,7 @@ test("the last workspace opens and prewarms chat without a workspace click", asy
           else if (r.type === "get_messages") response(r, { messages: history });
           else if (r.type === "get_available_models") response(r, { models });
           else if (r.type === "get_available_thinking_levels") response(r, { levels: [] });
+          else if (r.type === "get_session_stats") response(r, { userMessages: 2, toolCalls: 3, tokens: { total: 1000, output: 500 }, contextUsage: { percent: 42 } });
           else if (r.type === "set_model") response(r, models.find(model => model.provider === r.provider && model.id === r.modelId) ?? models[0]);
           else if (r.type === "prompt" || r.type === "steer") {
             w.lastPrompt = r;
@@ -72,6 +73,8 @@ test("the last workspace opens and prewarms chat without a workspace click", asy
   await expect(page.getByText("What would you like to build?")).toBeVisible();
   await expect(page.getByRole("region", { name: "Flow" })).toContainText("multiloop");
   await expect(page.getByRole("region", { name: "Flow" })).toContainText("Resume flow");
+  await expect(page.getByLabel("Session usage")).toContainText("2 turns · 3 steps");
+  await expect(page.getByLabel("Session usage")).toContainText("42%");
   await expect.poll(() => page.evaluate(() => (window as any).chatCalls.includes("chat_start"))).toBe(true);
   expect(await page.evaluate(() => (window as any).chatCalls.includes("launch_jouzu"))).toBe(false);
   await expect(page.getByRole("complementary", { name: "Workspaces" })).toBeVisible();

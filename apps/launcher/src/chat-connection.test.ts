@@ -32,6 +32,14 @@ describe("desktop RPC connection", () => {
     expect(client.snapshot.error).toBeNull();
     expect(client.snapshot.pending).toBe(false);
   });
+  it("loads session counters without treating them as chat failure", async () => {
+    const client = new ChatConnection(() => {}, () => {});
+    client.snapshot = { ...client.snapshot, connected: true };
+    vi.spyOn(client, "request").mockResolvedValue({ userMessages: 3, toolCalls: 7, tokens: { total: 1234 }, contextUsage: { percent: 42 } });
+    await client.loadStats();
+    expect(client.snapshot.stats).toMatchObject({ userMessages: 3, toolCalls: 7, tokens: { total: 1234 }, contextUsage: { percent: 42 } });
+    expect(client.snapshot.error).toBeNull();
+  });
   it("accepts a Pi 1.0 prompt success that carries a disposition", async () => {
     const client = new ChatConnection(() => {}, () => {});
     client.snapshot = { ...client.snapshot, connected: true };
