@@ -59,7 +59,11 @@ export function App() {
   const [version, setVersion] = useState<string | null>(null);
   const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
   const [components, setComponents] = useState<Components | null>(null);
-  const jouzuUpdater = useJouzuUpdate(components?.jouzuUpdaterConfigured === true, () => {void invoke<Components>("component_versions").then(setComponents).catch(error => setError(String(error)));});
+  const jouzuUpdater = useJouzuUpdate(components?.jouzuUpdaterConfigured === true, () => {
+    void invoke<Components>("component_versions").then(setComponents).catch(error => setError(String(error)));
+    // A runtime update is only visible to a fresh supervised process.
+    requestSessionRestart();
+  });
   const updater = useLauncherUpdate(components?.launcherUpdaterConfigured === true);
   const gitBash = useGitBash();
   const [settingsTab,setSettingsTab] = useState("providers");
