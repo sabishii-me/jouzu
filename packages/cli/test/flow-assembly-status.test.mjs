@@ -62,7 +62,10 @@ test("/flow reset requires explicit confirmation before destructive recovery", a
 	try {
 		await f.session.prompt("/flow reset");
 		assert.equal(resets, 0);
-		assert.match(notices.at(-1).text, /discards flow receipts.*\/flow reset confirm/);
+		assert.match(
+			notices.at(-1).text,
+			/discards all queued messages.*Try \/flow clear first.*only if \/flow clear does not fix the problem.*\/flow reset confirm/,
+		);
 		for (const args of ["yes", "confirm extra"]) {
 			await f.session.prompt(`/flow reset ${args}`);
 			assert.equal(resets, 0);

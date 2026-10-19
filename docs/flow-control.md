@@ -15,14 +15,14 @@ Flow control coordinates background jobs, goals, loops, and tasks in one session
 | `/flow resume` | Allow automatic replies again |
 | `/flow off` | Turn flow control off for this session. Messages run as ordinary turns; jobs, tasks, and loops send their own notifications. |
 | `/flow on` | Turn flow control back on |
-| `/flow reset` | Explain the destructive reset without changing state. |
-| `/flow reset confirm` | Destructive idle reset. Discard flow receipts, queued submissions, and waits, release native holds, and leave jobs running. |
+| `/flow reset` | Explain the destructive reset without changing anything. |
+| `/flow reset confirm` | Destructive idle reset. Discards all queued messages, flow receipts, and waits, and releases native holds. Running jobs keep running. Use it only if `/flow clear` does not fix the problem. |
 | `/flow clear` | Release a stuck reservation while preserving receipts, waits, and running jobs. Run while Jouzu is idle. |
 | `/flow resolve <attempt> retry` or `discard` | Settle a model request with an unknown outcome, using the attempt ID shown by `/flow` |
 | `/flow runtime` | Show startup package paths and hashes |
 
 - Interrupting a reply also pauses automatic work until your next message or `/flow resume`.
-- `/flow clear` repairs a reservation without discarding flow evidence. `/flow reset confirm` is the destructive fallback: it discards flow delivery state, cancels waits, and leaves underlying jobs running.
+- `/flow clear` repairs a reservation without discarding flow evidence. `/flow reset confirm` is the destructive fallback for when `/flow clear` does not fix the problem: it discards all queued messages and flow delivery state, cancels waits, and leaves underlying jobs running.
 - `retry` may repeat a request the model already answered.
 - Set `JOUZU_FLOW_CONTROL=0` before starting Jouzu to disable flow control for that process.
 

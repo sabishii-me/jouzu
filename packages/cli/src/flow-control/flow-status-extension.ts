@@ -49,7 +49,7 @@ const USAGE = [
 	"/flow pause <work> holds one campaign's automated turns; /flow resume <work> releases it.",
 	"/flow stop <work> retires a campaign and ends its waits. None of these stop a running job.",
 	"/flow resolve <attempt> retry|discard decides an interrupted turn whose outcome is unknown.",
-	"/flow reset explains the destructive idle reset; /flow reset confirm discards flow receipts and waits, releases native holds, and leaves jobs running.",
+	"/flow reset explains the destructive idle reset; /flow reset confirm discards all queued messages, flow receipts, and waits. Use it only if /flow clear does not fix the problem.",
 	"/flow clear releases a stuck reservation while preserving receipts, waits, and running jobs.",
 ].join("\n");
 
@@ -148,7 +148,7 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 							}
 							if (!target) {
 								notify(
-									"This discards flow receipts, queued submissions, and waits, releases native holds, and leaves jobs running. Use /flow clear to repair a reservation without discarding that state. To discard it, run /flow reset confirm while the session is idle.",
+									"Flow reset discards all queued messages, flow receipts, and waits, and releases native holds. Running jobs keep running. Try /flow clear first; it repairs a stuck reservation without discarding anything. Use reset only if /flow clear does not fix the problem: run /flow reset confirm while the session is idle.",
 								);
 								return;
 							}
