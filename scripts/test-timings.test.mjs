@@ -6,7 +6,18 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { testInvocation, timingContext } from "./run-tests.mjs";
-import { compare, diffMarkdown, parseArguments, parseRecord, summarize, summaryMarkdown } from "./test-timings.mjs";
+import {
+	budget,
+	budgetMarkdown,
+	compare,
+	diffMarkdown,
+	parseArguments,
+	parseRecord,
+	summarize,
+	summaryMarkdown,
+	tierOf,
+	validateTiers,
+} from "./test-timings.mjs";
 
 const runner = fileURLToPath(new URL("./run-tests.mjs", import.meta.url));
 
@@ -223,5 +234,50 @@ test("the timing command rejects incomplete arguments", () => {
 	assert.throws(() => parseArguments(["summary", "--where", "node", "x"]), /key=value/);
 	assert.throws(() => parseArguments(["summary", "--top", "0", "x"]), /--top/);
 	assert.throws(() => parseArguments(["report", "x"]), /Usage/);
+	assert.throws(() => parseArguments(["budget", "x"]), /--tiers/);
 	assert.deepEqual(parseArguments(["summary", "--where", "node=22", "x"]).where, { node: "22" });
+});
+
+test("tier budgets resolve name tags, tests, and files, and separate failures from warnings", () => {
+	const tiers = validateTiers({
+		budgets: {
+			unit: { warnMs: 1_000, failMs: 3_000 },
+			integration: { warnMs: 5_000, failMs: 15_000 },
+			endurance: { warnMs: 60_000, failMs: 120_000 },
+		},
+		tests: { "packages/cli/test/example.test.mjs :: tagged": "integration" },
+		files: { "packages/cli/test/other.test.mjs": "integration" },
+	});
+	const summary = summarize([
+		record("cli", [
+			["fast", 10],
+			["slow unit", 2_000],
+			["too slow unit", 4_000],
+			["tagged", 7_000],
+			["long @endurance", 90_000],
+		]),
+	]);
+	assert.equal(tierOf({ file: "packages/cli/test/other.test.mjs", test: "any" }, tiers), "integration");
+	assert.equal(tierOf({ file: "x", test: "y @endurance" }, tiers), "endurance");
+	const result = budget(summary, tiers);
+	assert.deepEqual(
+		result.failures.map((row) => [row.test, row.tier, row.limitMs]),
+		[["too slow unit", "unit", 3_000]],
+	);
+	assert.deepEqual(
+		result.warnings.map((row) => row.test),
+		["long @endurance", "tagged", "slow unit"],
+	);
+	assert.deepEqual(result.totals.unit, { tests: 3, medianMs: 6_010 });
+	assert.match(budgetMarkdown(result), /Over the failure budget/);
+	assert.throws(() => validateTiers({ budgets: { unit: { warnMs: 2, failMs: 1 } } }), /warnMs <= failMs/);
+	assert.throws(
+		() => validateTiers({ budgets: { unit: { warnMs: 1, failMs: 2 } }, tests: { a: "missing" } }),
+		/Unknown tier/,
+	);
+});
+
+test("the checked-in tier manifest is valid and leaves endurance tests to their name tag", () => {
+	const tiers = validateTiers(JSON.parse(readFileSync(new URL("./test-tiers.json", import.meta.url), "utf8")));
+	assert.ok(Object.keys(tiers.tests).every((key) => !key.endsWith(" @endurance")));
 });

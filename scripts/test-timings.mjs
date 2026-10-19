@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 const usage = `Usage:
   node scripts/test-timings.mjs summary [--top N] [--where key=value]... [--json] <record files or directories>
   node scripts/test-timings.mjs diff --base <path> --head <path> [--where key=value]... [--json]
+  node scripts/test-timings.mjs budget --tiers <tiers.json> [--warn-only] [--where key=value]... [--json] <paths>
 
 --where filters runs by a run-context field (label, platform, node, job, commit, hosted, concurrency).
 node matches a major version (--where node=22) or an exact version.`;
@@ -137,6 +138,73 @@ export function compare(base, head, { minDeltaMs = 1_000, minRatio = 0.2 } = {})
 	};
 }
 
+// Tier lookup: an @tier suffix in the test name, then the exact test, then its file, then "unit".
+export function tierOf(row, tiers) {
+	const tag = row.test.match(/ @([a-z-]+)$/)?.[1];
+	if (tag && tiers.budgets[tag]) return tag;
+	return tiers.tests?.[`${row.file} :: ${row.test}`] ?? tiers.files?.[row.file] ?? "unit";
+}
+
+export function validateTiers(tiers) {
+	if (!tiers?.budgets?.unit) throw new Error("Tier budgets must define unit.");
+	for (const [name, budget] of Object.entries(tiers.budgets))
+		if (!(budget.warnMs > 0 && budget.failMs >= budget.warnMs)) throw new Error(`Tier ${name} needs warnMs <= failMs.`);
+	for (const tier of [...Object.values(tiers.tests ?? {}), ...Object.values(tiers.files ?? {})])
+		if (!tiers.budgets[tier]) throw new Error(`Unknown tier ${tier}.`);
+	return tiers;
+}
+
+// Compare each top-level test's median with its tier's budget.
+export function budget(summary, tiers) {
+	const rows = summary.all
+		.filter((row) => row.nesting === 0)
+		.map((row) => ({ ...row, tier: tierOf(row, tiers) }))
+		.map((row) => ({ ...row, budget: tiers.budgets[row.tier] }));
+	const totals = {};
+	for (const row of rows) {
+		totals[row.tier] ??= { tests: 0, medianMs: 0 };
+		const total = totals[row.tier];
+		total.tests++;
+		total.medianMs += row.median;
+	}
+	const pick = (key) =>
+		rows
+			.filter((row) => row.median > row.budget[key])
+			.map(({ budget: limit, ...row }) => ({ ...row, limitMs: limit[key] }))
+			.sort((a, b) => b.median - a.median);
+	const failures = pick("failMs");
+	const warnings = pick("warnMs").filter(
+		(row) => !failures.some((failure) => failure.test === row.test && failure.file === row.file),
+	);
+	return { totals, failures, warnings };
+}
+
+export function budgetMarkdown(result) {
+	const row = (r) => `| ${cell(r.test)} | ${cell(r.file)} | ${r.tier} | ${seconds(r.median)} | ${seconds(r.limitMs)} |`;
+	const table = (title, rows) =>
+		rows.length
+			? [
+					"",
+					`${title}:`,
+					"",
+					"| Test | File | Tier | Median | Limit |",
+					"| --- | --- | --- | ---: | ---: |",
+					...rows.map(row),
+				]
+			: [];
+	const lines = [
+		"| Tier | Tests | Summed median |",
+		"| --- | ---: | ---: |",
+		...Object.entries(result.totals).map(
+			([tier, total]) => `| ${tier} | ${total.tests} | ${seconds(total.medianMs)} |`,
+		),
+		...table("Over the failure budget", result.failures),
+		...table("Over the warning budget", result.warnings),
+	];
+	if (!result.failures.length && !result.warnings.length) lines.push("", "Every test is within its tier budget.");
+	return `${lines.join("\n")}\n`;
+}
+
 const seconds = (ms) => (ms === null ? "—" : `${(ms / 1000).toFixed(1)} s`);
 const percent = (value) => `${Math.round(value * 100)}%`;
 const cell = (text) => String(text).replaceAll("|", "\\|");
@@ -182,7 +250,17 @@ export function diffMarkdown(diff) {
 
 export function parseArguments(args) {
 	const [command, ...rest] = args;
-	const options = { command, where: {}, top: 25, json: false, paths: [], base: [], head: [] };
+	const options = {
+		command,
+		where: {},
+		top: 25,
+		json: false,
+		warnOnly: false,
+		tiers: null,
+		paths: [],
+		base: [],
+		head: [],
+	};
 	for (let i = 0; i < rest.length; i++) {
 		const argument = rest[i];
 		const value = () => {
@@ -191,6 +269,8 @@ export function parseArguments(args) {
 			return next;
 		};
 		if (argument === "--json") options.json = true;
+		else if (argument === "--warn-only") options.warnOnly = true;
+		else if (argument === "--tiers") options.tiers = value();
 		else if (argument === "--top") options.top = Number(value());
 		else if (argument === "--where") {
 			const [key, ...parts] = value().split("=");
@@ -202,10 +282,12 @@ export function parseArguments(args) {
 		else options.paths.push(argument);
 	}
 	if (!Number.isInteger(options.top) || options.top < 1) throw new Error("--top must be a positive integer.");
-	if (command === "summary" && !options.paths.length) throw new Error("summary needs record files or directories.");
+	if (["summary", "budget"].includes(command) && !options.paths.length)
+		throw new Error(`${command} needs record files or directories.`);
+	if (command === "budget" && !options.tiers) throw new Error("budget needs --tiers.");
 	if (command === "diff" && (!options.base.length || !options.head.length))
 		throw new Error("diff needs --base and --head.");
-	if (!["summary", "diff"].includes(command)) throw new Error(usage);
+	if (!["summary", "diff", "budget"].includes(command)) throw new Error(usage);
 	return options;
 }
 
@@ -222,6 +304,11 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
 			const summary = summarize(load(options.paths, options.where), options);
 			const { all, ...visible } = summary;
 			process.stdout.write(options.json ? `${JSON.stringify(visible, null, 2)}\n` : summaryMarkdown(summary));
+		} else if (options.command === "budget") {
+			const tiers = validateTiers(JSON.parse(readFileSync(options.tiers, "utf8")));
+			const result = budget(summarize(load(options.paths, options.where)), tiers);
+			process.stdout.write(options.json ? `${JSON.stringify(result, null, 2)}\n` : budgetMarkdown(result));
+			if (result.failures.length && !options.warnOnly) process.exitCode = 1;
 		} else {
 			const diff = compare(summarize(load(options.base, options.where)), summarize(load(options.head, options.where)));
 			process.stdout.write(options.json ? `${JSON.stringify(diff, null, 2)}\n` : diffMarkdown(diff));

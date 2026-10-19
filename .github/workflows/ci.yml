@@ -101,6 +101,11 @@ jobs:
           # 240 s is about twice the slowest test file on CI (~107 s).
           JOUZU_TEST_TIMEOUT_MS: "240000"
           JOUZU_TEST_SUITE_TIMEOUT_MS: "900000"
+      - name: Check test duration budgets
+        # The budgets in scripts/test-tiers.json are calibrated on this runner. Pull requests warn.
+        if: matrix.os == 'ubuntu-latest' && matrix.node == 22
+        shell: bash
+        run: npm run test:timings -- budget --tiers scripts/test-tiers.json --where label=jouzu.test ${{ github.event_name == 'pull_request' && '--warn-only' || '' }} "$JOUZU_TEST_TIMINGS_DIR"
       - if: matrix.os == 'windows-latest' && matrix.node == 24
         name: Run production-limit endurance tests
         run: npm run test:endurance --workspace packages/cli
@@ -185,6 +190,9 @@ jobs:
         env:
           JOUZU_TEST_TIMEOUT_MS: "240000"
           JOUZU_TEST_SUITE_TIMEOUT_MS: "900000"
+      - name: Check test duration budgets
+        shell: bash
+        run: npm run test:timings -- budget --tiers scripts/test-tiers.json --where label=jouzu.test_endurance ${{ github.event_name == 'pull_request' && '--warn-only' || '' }} "$JOUZU_TEST_TIMINGS_DIR"
       - name: Save test timings
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

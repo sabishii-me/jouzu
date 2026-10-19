@@ -93,6 +93,25 @@ overrides apply only to that step. The `npm test --workspaces` steps use a
 the slowest measured CI test file (107 seconds); the whole CLI suite needs about
 280 seconds on CI.
 
+### Test tiers and budgets
+
+Each test belongs to one tier with a duration budget, calibrated on the hosted Ubuntu/Node 22 runner:
+
+| Tier | Warn above | Fail above | Use for |
+| --- | ---: | ---: | --- |
+| `unit` | 1 s | 3 s | Default for every test |
+| `integration` | 5 s | 15 s | Tests that drive a full session, storage, or many turns in process |
+| `child-process` | 15 s | 45 s | Tests that launch the built CLI or real child agents |
+| `endurance` | 60 s | 120 s | Tests tagged `@endurance` that cross exact production limits |
+
+`scripts/test-tiers.json` holds the budgets and assigns `integration` or `child-process` to specific tests by `file :: full test name`. A test name ending in `@endurance` selects that tier. Any other test is `unit`.
+
+```bash
+npm run test:timings -- budget --tiers scripts/test-tiers.json --where label=jouzu.test <timing records>
+```
+
+The budget compares each test's median with its tier. CI checks the Ubuntu/Node 22 CLI suite and the endurance job: a test over its failure budget fails pushes and manual runs and warns on pull requests. A new test that needs more than its tier allows must state the guarantee it adds and be assigned a tier in the manifest; prefer making it faster.
+
 Keep the full output while preserving failures in a Bash pipeline:
 
 ```bash
