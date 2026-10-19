@@ -49,7 +49,8 @@ test("CLI starts without browser tools when the Camoufox idle delay is invalid",
 						...(value === undefined ? {} : { JOUZU_CAMOUFOX_IDLE_STOP_MS: value }),
 					},
 					encoding: "utf8",
-					timeout: 15_000,
+					// Guards against a hung startup; a loaded runner can take more than 15 s to start the CLI.
+					timeout: 60_000,
 					input: '{"id":"state","type":"get_state"}\n',
 				},
 			);
