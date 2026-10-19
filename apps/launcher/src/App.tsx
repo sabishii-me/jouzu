@@ -343,7 +343,7 @@ export function App() {
         </DialogContent>
       </Dialog>
     {error && <div role="alert" className="mt-5 flex items-start justify-between gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-900"><div><p className="font-medium">{t.error}</p><details className="mt-2 break-all"><summary className="cursor-pointer">{t.details}</summary><p className="mt-2">{error}</p></details></div><button onClick={() => setError(null)} aria-label={t.dismiss}><X className="size-4" /></button></div>}
-    {activePath && <div className={!setup || showSetup ? "hidden" : "flex min-h-0 flex-1"}>
+    {activePath && setup?.modelReady === true && <div className={!setup || showSetup ? "hidden" : "flex min-h-0 flex-1"}>
       <ChatWorkspace
         path={activePath}
         workspaces={state?.recent ?? []}

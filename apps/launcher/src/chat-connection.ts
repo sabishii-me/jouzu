@@ -128,7 +128,7 @@ export class ChatConnection {
     try { await this.request("clear_queue"); } catch { /* The queue may already be empty; abort still applies. */ }
     try { await this.request("abort"); } catch (error) { this.update({ error: String(error) }); }
   }
-  private async loadModels() {
+  async loadModels() {
     try {
       const data = await this.request("get_available_models");
       const models = object(data) && Array.isArray(data.models)

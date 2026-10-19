@@ -5,13 +5,14 @@ import type { ChatModel } from "./chat-connection";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 
-function ModelMenu({ models, model, onSelect, thinkingLevel, thinkingLevels, onThinking }: {
+function ModelMenu({ models, model, onSelect, thinkingLevel, thinkingLevels, onThinking, onOpen }: {
   models: readonly ChatModel[];
   model?: string;
   onSelect: (provider: string, id: string) => void;
   thinkingLevel?: string;
   thinkingLevels: readonly string[];
   onThinking: (level: string) => void;
+  onOpen?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -25,7 +26,7 @@ function ModelMenu({ models, model, onSelect, thinkingLevel, thinkingLevels, onT
   const visible = models.filter(item => `${item.provider} ${item.name} ${item.id}`.toLowerCase().includes(query.toLowerCase()));
   const providers = [...new Set(visible.map(item => item.provider))];
   return <div ref={root} className="relative">
-    <Button type="button" variant="ghost" className="h-8 gap-1 px-2 text-xs" aria-label="Model" aria-expanded={open} onClick={() => setOpen(value => !value)}>
+    <Button type="button" variant="ghost" className="h-8 gap-1 px-2 text-xs" aria-label="Model" aria-expanded={open} onClick={() => { const next = !open; setOpen(next); if (next) onOpen?.(); }}>
       <Cpu className="size-4 shrink-0" aria-hidden="true" />
       <span className="max-w-40 truncate">{model ?? "Select model"}</span>
       <ChevronDown className="size-3 shrink-0" aria-hidden="true" />
@@ -69,11 +70,12 @@ export interface ComposerProps {
   models: readonly ChatModel[];
   model?: string;
   onSelectModel: (provider: string, id: string) => void;
+  onRefreshModels?: () => void;
   thinkingLevel?: string;
   thinkingLevels: readonly string[];
   onThinkingLevel: (level: string) => void;
 }
-export function Composer({ connected, pending, running, draft, onDraft, onSend, onStop, error, compatibility = [], attachments = [], onAddImages, onRemoveImage, readingImages = false, attachmentError, models, model, onSelectModel, thinkingLevel, thinkingLevels, onThinkingLevel }: ComposerProps) {
+export function Composer({ connected, pending, running, draft, onDraft, onSend, onStop, error, compatibility = [], attachments = [], onAddImages, onRemoveImage, readingImages = false, attachmentError, models, model, onSelectModel, onRefreshModels, thinkingLevel, thinkingLevels, onThinkingLevel }: ComposerProps) {
   const imageInput = useRef<HTMLInputElement>(null);
   const submit = () => { if (connected && !pending && !readingImages && draft.trim()) onSend(); };
   return <div className="border-t border-border px-3 pb-3 pt-2 sm:px-6">
@@ -85,7 +87,7 @@ export function Composer({ connected, pending, running, draft, onDraft, onSend, 
       <textarea aria-label="Message Jouzu" placeholder="Message Jouzu…" value={draft} onChange={event => onDraft(event.target.value)} rows={3} className="max-h-60 min-h-16 w-full resize-y bg-transparent px-1 text-sm outline-none" onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); submit(); } }} />
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-1">
-          <ModelMenu models={models} model={model} onSelect={onSelectModel} thinkingLevel={thinkingLevel} thinkingLevels={thinkingLevels} onThinking={onThinkingLevel} />
+          <ModelMenu models={models} model={model} onSelect={onSelectModel} onOpen={onRefreshModels} thinkingLevel={thinkingLevel} thinkingLevels={thinkingLevels} onThinking={onThinkingLevel} />
           {onAddImages && <><input ref={imageInput} type="file" accept={IMAGE_ACCEPT} multiple className="hidden" aria-label="Choose images" onChange={event => { const files = Array.from(event.currentTarget.files ?? []); event.currentTarget.value = ""; onAddImages(files); }} /><Button type="button" variant="ghost" className="size-8 p-0" aria-label="Attach images" title={readingImages ? "Reading images…" : "Attach images"} disabled={readingImages || attachments.length >= MAX_IMAGES} onClick={() => imageInput.current?.click()}><ImagePlus className="size-4" /></Button></>}
         </div>
         <div className="flex shrink-0 items-center gap-2">
