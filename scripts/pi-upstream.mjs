@@ -110,17 +110,29 @@ function registryVersion(spec) {
 	return version;
 }
 
-function dependencyRangeTargetsVersion(range, version) {
-	return range === version || range === `^${version}` || range === `~${version}`;
-}
-
 function dependencyRangeSupportsVersion(range, version) {
-	if (dependencyRangeTargetsVersion(range, version)) return true;
-	const match = /^(\^|~)(\d+)\.(\d+)\.(\d+)$/.exec(range ?? "");
-	const target = /^(\d+)\.(\d+)\.(\d+)$/.exec(version ?? "");
-	if (!match || !target) return false;
-	if (match[1] === "~") return match[2] === target[1] && match[3] === target[2];
-	return match[2] === target[1];
+	// Pins use complete stable versions: exact, caret, or tilde. Reject other syntax
+	// rather than guessing at npm's meaning for a partial or compound range.
+	const component = "(0|[1-9]\\d*)";
+	const stable = `${component}\\.${component}\\.${component}`;
+	const requested = new RegExp(`^(\\^|~)?${stable}$`).exec(range ?? "");
+	const selected = new RegExp(`^${stable}$`).exec(version ?? "");
+	if (!requested || !selected) return false;
+	const lower = requested.slice(2).map(BigInt);
+	const target = selected.slice(1).map(BigInt);
+	const compare = (a, b) => {
+		for (let index = 0; index < 3; index++) {
+			if (a[index] < b[index]) return -1;
+			if (a[index] > b[index]) return 1;
+		}
+		return 0;
+	};
+	if (!requested[1]) return compare(target, lower) === 0;
+	const upper = [...lower];
+	const pivot = requested[1] === "~" ? 1 : lower[0] > 0n ? 0 : lower[1] > 0n ? 1 : 2;
+	upper[pivot]++;
+	for (let index = pivot + 1; index < 3; index++) upper[index] = 0n;
+	return compare(target, lower) >= 0 && compare(target, upper) < 0;
 }
 
 function upstreamTagCommit(tag) {

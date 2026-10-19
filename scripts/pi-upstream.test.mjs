@@ -49,6 +49,41 @@ function check(directory) {
 	});
 }
 
+for (const [range, version, accepted] of [
+	["^1.1.0", "1.0.0", false],
+	["^1.1.0", "1.1.0", true],
+	["^1.1.0", "1.9.0", true],
+	["^1.1.0", "2.0.0", false],
+	["~1.3.5", "1.3.0", false],
+	["~1.3.5", "1.3.5", true],
+	["~1.3.5", "1.3.9", true],
+	["~1.3.5", "1.4.0", false],
+	["^0.2.0", "0.3.0", false],
+	["^0.2.3", "0.2.2", false],
+	["^0.2.3", "0.2.4", true],
+	["^0.0.3", "0.0.3", true],
+	["^0.0.3", "0.0.4", false],
+	["1.3.0", "1.3.0", true],
+	["1.3.0", "1.3.1", false],
+	["^1.1.0", "1.2.0-beta.1", false],
+	["^01.1.0", "1.1.0", false],
+	[">=1.0.0", "1.3.0", false],
+]) {
+	test(`Pi dependency validation ${accepted ? "accepts" : "rejects"} ${version} for ${range}`, (t) => {
+		const { directory, lock } = fixture(t);
+		const chord = "@earendil-works/chord";
+		lock.packages["node_modules/@earendil-works/pi-server"].dependencies[chord] = range;
+		lock.packages[`node_modules/${chord}`].version = version;
+		writeJson(join(directory, "package-lock.json"), lock);
+		const result = check(directory);
+		if (accepted) assert.equal(result.status, 0, result.stderr);
+		else {
+			assert.notEqual(result.status, 0);
+			assert.match(result.stderr, /Pi server does not target the pinned @earendil-works\/chord/);
+		}
+	});
+}
+
 test("the Pi offline check accepts explicit aligned core and AI dependencies", (t) => {
 	const { directory } = fixture(t);
 	const result = check(directory);
