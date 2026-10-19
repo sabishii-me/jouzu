@@ -16,11 +16,11 @@ function messageText(message: ChatMessage) {
   return message.content.filter(block => block.type === "text").map(block => block.text ?? "").join("\n").trim();
 }
 /** End-of-turn actions: copy/share and the turn's own usage. Feedback is intentionally omitted. */
-export function TurnFooter({ message, startedAt }: { message: ChatMessage; startedAt?: number }) {
+export function TurnFooter({ message, usage, startedAt }: { message: ChatMessage; usage?: ChatMessage["usage"]; startedAt?: number }) {
   const [copied, setCopied] = useState(false);
   const text = messageText(message);
-  const usage = message.usage;
-  const total = usage ? (usage.total ?? usage.totalTokens ?? (usage.input ?? 0) + (usage.output ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0)) : 0;
+  const turnUsage = usage ?? message.usage;
+  const total = turnUsage ? (turnUsage.total ?? turnUsage.totalTokens ?? (turnUsage.input ?? 0) + (turnUsage.output ?? 0) + (turnUsage.cacheRead ?? 0) + (turnUsage.cacheWrite ?? 0)) : 0;
   const elapsed = message.endedAt && startedAt ? message.endedAt - startedAt : undefined;
   if (!text) return null;
   const copy = async (share: boolean) => {

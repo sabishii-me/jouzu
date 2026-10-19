@@ -2,9 +2,25 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowDown } from "lucide-react";
 import { Button } from "./components/ui/button";
 import { ChatMarkdown } from "./chat-markdown";
-import type { ChatProjection } from "./chat-projection";
+import type { ChatMessage, ChatProjection } from "./chat-projection";
 import { ToolRenderer } from "./tool-renderers";
 import { TurnFooter } from "./turn-footer";
+
+function turnUsageAt(messages: ChatMessage[], end: number) {
+  let start = end;
+  while (start >= 0 && messages[start].role !== "user") start--;
+  let total = 0;
+  for (let index = Math.max(0, start); index <= end; index++) {
+    const usage = messages[index].usage;
+    if (!usage) continue;
+    total += usage.total ?? usage.totalTokens ?? (usage.input ?? 0) + (usage.output ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
+  }
+  return { usage: { total }, startedAt: messages[start]?.timestamp };
+}
+function FinalTurnFooter({ messages, index, message }: { messages: ChatMessage[]; index: number; message: ChatMessage }) {
+  const metrics = turnUsageAt(messages, index);
+  return <TurnFooter message={message} usage={metrics.usage} startedAt={metrics.startedAt} />;
+}
 
 export function ChatConversation({ projection }: { projection: ChatProjection }) {
   const scroll = useRef<HTMLDivElement>(null);
@@ -18,7 +34,7 @@ export function ChatConversation({ projection }: { projection: ChatProjection })
         <div className="mb-2 text-xs font-medium text-muted-foreground">{message.role === "assistant" ? "Jouzu" : message.role === "user" ? "You" : message.role}</div>
         {message.content.map((block, position) => block.type === "text" ? <ChatMarkdown key={position} text={block.text ?? ""} /> : block.type === "thinking" ? <details key={position} className="my-2 border-l-2 border-border pl-3 text-muted-foreground"><summary className="cursor-pointer text-xs">Thinking</summary><ChatMarkdown text={block.thinking ?? ""} /></details> : block.type === "toolCall" ? projection.tools[block.id ?? ""] ? <ToolRenderer key={position} tool={projection.tools[block.id!]} /> : <p key={position} className="text-xs text-muted-foreground">{block.name ?? "Tool call"}</p> : block.type === "image" && typeof block.data === "string" && ["image/png", "image/jpeg", "image/webp", "image/gif"].includes(block.mimeType ?? "") ? <img key={position} className="my-2 max-h-80 rounded-lg" src={`data:${block.mimeType};base64,${block.data}`} alt="Conversation attachment" /> : <p key={position} className="text-xs text-muted-foreground">Unsupported content: {block.type}</p>)}
         {message.errorMessage && <p role="alert" className="select-text text-sm text-destructive">{message.errorMessage}</p>}
-        {message.role === "assistant" && !message.content.some(block => block.type === "toolCall") && message.stopReason !== "toolUse" && <TurnFooter message={message} startedAt={[...projection.messages.slice(0, index)].reverse().find(item => item.role === "user")?.timestamp} />}
+        {message.role === "assistant" && !message.content.some(block => block.type === "toolCall") && message.stopReason !== "toolUse" && <FinalTurnFooter messages={projection.messages} index={index} message={message} />}
       </article>)}</div>
     </div>
     {showLatest && <Button variant="outline" className="absolute bottom-4 right-6 shadow" onClick={() => { following.current = true; if (scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight; setShowLatest(false); }}><ArrowDown />Latest</Button>}

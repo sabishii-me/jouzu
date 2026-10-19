@@ -38,7 +38,7 @@ test("the last workspace opens and prewarms chat without a workspace click", asy
           else if (r.type === "get_messages") response(r, { messages: history });
           else if (r.type === "get_available_models") response(r, { models });
           else if (r.type === "get_available_thinking_levels") response(r, { levels: [] });
-          else if (r.type === "get_session_stats") response(r, { userMessages: 2, toolCalls: 3, tokens: { total: 1000, output: 500 }, contextUsage: { percent: 42 } });
+          else if (r.type === "get_session_stats") response(r, { userMessages: 2, assistantMessages: 3, toolCalls: 1, tokens: { total: 1000, output: 500 }, contextUsage: { percent: 42 } });
           else if (r.type === "set_model") response(r, models.find(model => model.provider === r.provider && model.id === r.modelId) ?? models[0]);
           else if (r.type === "prompt" || r.type === "steer") {
             w.lastPrompt = r;
