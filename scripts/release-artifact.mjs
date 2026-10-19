@@ -13,7 +13,7 @@ export const pinnedNpm = "11.16.0";
 export function requiredJobs() {
 	const names = ["release-artifacts", "legacy-linux-static-fetch (22.19.0)", "legacy-linux-static-fetch (24)"];
 	for (const os of ["ubuntu-latest", "macos-latest"]) {
-		for (const node of os === "ubuntu-latest" ? [22] : [22, 24]) names.push(`node (${os}, ${node})`);
+		for (const node of [22, 24]) names.push(`node (${os}, ${node})`);
 		names.push(`optional-camoufox (${os})`, `published-upgrade (${os})`);
 		for (const scope of ["local", "npm-exec", "global"]) names.push(`packed-install (${os}, ${scope})`);
 		for (const scope of ["success", "rollback"]) names.push(`automatic-update (${os}, ${scope})`);
