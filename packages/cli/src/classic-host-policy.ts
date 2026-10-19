@@ -1,4 +1,5 @@
 import type { InlineExtension } from "@earendil-works/pi-coding-agent";
+import { createDeferredMcpExtension } from "./mcp.js";
 
 /** These tools require their own transcript result to establish ownership or acknowledge delivery. */
 export function requiresDirectToolCall(name: string): boolean {
@@ -37,7 +38,7 @@ export function createDirectToolPolicyExtension(): InlineExtension {
 	};
 }
 
-/** Load only built-ins whose model-request and instruction admission paths are qualified. */
+/** Keep codemode disabled and load MCP with deferred discovery. */
 export function classicHostBuiltinOverrides(): InlineExtension[] {
 	return [
 		{
@@ -47,21 +48,6 @@ export function classicHostBuiltinOverrides(): InlineExtension[] {
 			// Scripts can issue model requests outside the classic host's request checkpoint.
 			factory() {},
 		},
-		{
-			name: "mcp",
-			builtin: true,
-			replaceable: true,
-			factory(pi) {
-				pi.registerCommand("mcp", {
-					description: "Show MCP session availability",
-					handler: async (_args, ctx) => {
-						ctx.ui.notify(
-							"Built-in Model Context Protocol (MCP) connections are not enabled in this session. Use Jouzu's file and web tools instead.",
-							"warning",
-						);
-					},
-				});
-			},
-		},
+		createDeferredMcpExtension(),
 	];
 }
