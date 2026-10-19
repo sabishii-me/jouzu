@@ -114,8 +114,10 @@ test("compaction cleans legacy notification goals without deleting useful transc
 test("patch refuses unknown source before changing any files", async (t) => {
 	const temp = await mkdtemp(join(tmpdir(), "jouzu-vcc-drift-"));
 	t.after(() => rm(temp, { recursive: true, force: true }));
-	const { cp } = await import("node:fs/promises");
-	await cp(packageRoot, temp, { recursive: true });
+	const { cp, realpath } = await import("node:fs/promises");
+	// A Windows source install links the package through a junction, which cp refuses to copy
+	// into a directory. Copy the directory it resolves to.
+	await cp(await realpath(packageRoot), temp, { recursive: true });
 	const path = join(temp, "src/core/normalize.ts");
 	const source = await readFile(path, "utf8");
 	await writeFile(path, `${source}\n// unexpected change\n`);
