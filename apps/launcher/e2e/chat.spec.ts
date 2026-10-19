@@ -72,6 +72,7 @@ test("the last workspace opens and prewarms chat without a workspace click", asy
   // No workspace click: the launcher opens the last workspace and starts the runtime itself.
   await expect(page.getByLabel("Message Jouzu")).toBeVisible();
   await expect(page.getByText("What would you like to build?")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "New session" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Open in terminal", exact: true })).toHaveCount(0);
   await expect(page.getByRole("region", { name: "Flow" })).toContainText("multiloop");
   await expect(page.getByRole("region", { name: "Flow" })).toContainText("Resume flow");
