@@ -125,7 +125,7 @@ Building also requires Go (for [textguard-go](https://github.com/shisa-ai/textgu
 | [Shisa AI account](https://github.com/shisa-ai/jouzu/blob/main/docs/shisa.md) | Sign-in, sign-out, credentials |
 | [Model catalogs](https://github.com/shisa-ai/jouzu/blob/main/docs/catalogs.md) | Catalog sources, refresh, publishing a catalog |
 | [Flow control](https://github.com/shisa-ai/jouzu/blob/main/docs/flow-control.md) | `/flow` commands, pausing and resuming automatic work |
-| [Built-in tools](https://github.com/shisa-ai/jouzu/blob/main/docs/tools.md) | Tools, goals and loops, compaction |
+| [Built-in tools](https://github.com/shisa-ai/jouzu/blob/main/docs/tools.md) | Tools, MCP servers, goals and loops, compaction |
 | [Web tools](https://github.com/shisa-ai/jouzu/blob/main/docs/web.md) | Fetch and browser tools, limits, browser settings |
 | [Agents and runs](https://github.com/shisa-ai/jouzu/blob/main/docs/subagents.md) | Child agents and roles |
 | [TextGuard](https://github.com/shisa-ai/jouzu/blob/main/docs/textguard.md) | Content scanning and approvals |
