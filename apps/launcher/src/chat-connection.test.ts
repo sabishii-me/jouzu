@@ -4,17 +4,35 @@ import { invoke } from "@tauri-apps/api/core";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 afterEach(() => { vi.resetAllMocks(); vi.useRealTimers(); });
 describe("desktop RPC connection", () => {
+  it("accepts the released prompt success response without a disposition", async () => {
+    const client = new ChatConnection(() => {}, () => {});
+    client.snapshot = { ...client.snapshot, connected: true };
+    const request = vi.spyOn(client, "request").mockResolvedValue(undefined);
+    await client.sendOrSteer("hello", [], false);
+    expect(request).toHaveBeenCalledWith("prompt", { message: "hello" });
+    expect(client.snapshot.error).toBeNull();
+    expect(client.snapshot.pending).toBe(false);
+  });
+  it("steers while a run is active and prompts while idle", async () => {
+    const client = new ChatConnection(() => {}, () => {});
+    client.snapshot = { ...client.snapshot, connected: true };
+    const request = vi.spyOn(client, "request").mockResolvedValue(undefined);
+    await client.sendOrSteer("more", [], true);
+    expect(request).toHaveBeenLastCalledWith("steer", { message: "more" });
+    await client.sendOrSteer("next", [], false);
+    expect(request).toHaveBeenLastCalledWith("prompt", { message: "next" });
+  });
   it("forwards image content once and preserves caller data on rejection", async () => {
     const client = new ChatConnection(() => {}, () => {});
     const image = { type: "image" as const, mimeType: "image/png" as const, data: "aGVsbG8=" };
     const images = Object.freeze([Object.freeze(image)]);
     const request = vi.spyOn(client, "request").mockRejectedValue(new Error("rejected"));
-    await expect(client.send("Inspect", images)).rejects.toThrow("rejected");
-    expect(request).toHaveBeenCalledExactlyOnceWith("prompt", { message: "Inspect", images });
+    await expect(client.sendOrSteer("Inspect", images, false)).rejects.toThrow("rejected");
+    expect(request).toHaveBeenCalledWith("prompt", { message: "Inspect", images });
     expect(images[0]).toEqual(image);
     expect(client.snapshot.pending).toBe(false);
   });
-  it("waits out a cold released-runtime startup beyond the command deadline", async () => {
+  it("waits out a long released-runtime cold start", async () => {
     vi.useFakeTimers();
     const requests: Record<string, unknown>[] = [];
     const replied = new Set<unknown>();
@@ -23,9 +41,8 @@ describe("desktop RPC connection", () => {
       if (command === "chat_start") return "cold" as never;
       if (command === "chat_send") { requests.push((args as { request: Record<string, unknown> }).request); return undefined as never; }
       if (command === "chat_poll") {
-        // The released runtime answers its first request only after a long cold start.
         if (Date.now() - startedAt < 60_000) return { records: [], closed: false } as never;
-        const request = requests.find(request => ["get_state", "get_messages"].includes(String(request.type)) && !replied.has(request.id));
+        const request = requests.find(item => ["get_state", "get_messages"].includes(String(item.type)) && !replied.has(item.id));
         if (request) { replied.add(request.id); return { records: [{ type: "response", id: request.id, command: request.type, success: true, data: request.type === "get_state" ? { sessionId: "cold-id", isStreaming: false } : { messages: [] } }], closed: false } as never; }
         return { records: [], closed: false } as never;
       }
@@ -39,7 +56,7 @@ describe("desktop RPC connection", () => {
     expect(client.snapshot.error).toBeNull();
     await client.close();
   });
-  it("registers polling before state handshake and never replays after timeout", async () => {
+  it("reports an unanswered request after the watchdog without replaying it", async () => {
     vi.useFakeTimers();
     const requests: Record<string, unknown>[] = [];
     const replied = new Set<unknown>();
@@ -47,7 +64,7 @@ describe("desktop RPC connection", () => {
       if (command === "chat_start") return "h" as never;
       if (command === "chat_send") { requests.push((args as { request: Record<string, unknown> }).request); return undefined as never; }
       if (command === "chat_poll") {
-        const request = requests.find(request => ["get_state", "get_messages"].includes(String(request.type)) && !replied.has(request.id));
+        const request = requests.find(item => ["get_state", "get_messages"].includes(String(item.type)) && !replied.has(item.id));
         if (request) { replied.add(request.id); return { records: [{ type: "response", id: request.id, command: request.type, success: true, data: request.type === "get_state" ? { sessionId: "runtime-id", isStreaming: false } : { messages: [] } }], closed: false } as never; }
         return { records: [], closed: false } as never;
       }
@@ -58,14 +75,14 @@ describe("desktop RPC connection", () => {
     await vi.advanceTimersByTimeAsync(100);
     await starting;
     expect(client.snapshot.connected).toBe(true);
-    const sending = client.send("one prompt").catch(error => error);
-    await vi.advanceTimersByTimeAsync(31000);
+    const sending = client.sendOrSteer("one prompt", [], false).catch(error => error);
+    await vi.advanceTimersByTimeAsync(301_000);
     expect(await sending).toBeInstanceOf(Error);
     expect(client.snapshot.connected).toBe(false);
     expect(requests.filter(request => request.type === "prompt")).toHaveLength(1);
     await client.close();
   });
-  it("keeps startup dialogs answerable without timing out human interaction", async () => {
+  it("keeps startup dialogs answerable without charging user time to the watchdog", async () => {
     vi.useFakeTimers();
     const requests: Record<string, unknown>[] = [];
     let emitted = false;
@@ -80,7 +97,7 @@ describe("desktop RPC connection", () => {
     });
     const client = new ChatConnection(() => {}, () => {});
     const starting = client.start("folder");
-    await vi.advanceTimersByTimeAsync(45000);
+    await vi.advanceTimersByTimeAsync(45_000);
     expect(client.snapshot.transportReady).toBe(true);
     expect(client.snapshot.connected).toBe(false);
     expect(client.snapshot.error).toBeNull();
@@ -89,14 +106,15 @@ describe("desktop RPC connection", () => {
     await client.close();
     await starting;
   });
-  it("keeps history when session switching is cancelled and refreshes after success", async () => {
+  it("keeps history when session switching is cancelled and refreshes after any success", async () => {
     const client = new ChatConnection(() => {}, () => {});
     client.snapshot = { ...client.snapshot, connected: true };
     const request = vi.spyOn(client, "request");
     request.mockResolvedValueOnce({ cancelled: true });
     await expect(client.resumeSession("C:\\sessions\\saved.jsonl")).rejects.toThrow("cancelled");
     expect(request).toHaveBeenCalledTimes(1);
-    request.mockResolvedValueOnce({ cancelled: false }).mockResolvedValueOnce({ sessionId: "saved", sessionFile: "saved.jsonl", isStreaming: false }).mockResolvedValueOnce({ messages: [{ role: "user", content: "saved prompt" }] });
+    // A released success may omit its data entirely; the desktop still refreshes authoritative state.
+    request.mockResolvedValueOnce(undefined).mockResolvedValueOnce({ sessionId: "saved", sessionFile: "saved.jsonl", isStreaming: false }).mockResolvedValueOnce({ messages: [{ role: "user", content: "saved prompt" }] });
     await client.newSession();
     expect(client.snapshot.sessionId).toBe("saved");
     expect(client.snapshot.projection.messages[0].content[0].text).toBe("saved prompt");
