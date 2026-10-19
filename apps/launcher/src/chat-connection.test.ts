@@ -32,6 +32,15 @@ describe("desktop RPC connection", () => {
     expect(client.snapshot.error).toBeNull();
     expect(client.snapshot.pending).toBe(false);
   });
+  it("accepts a Pi 1.0 prompt success that carries a disposition", async () => {
+    const client = new ChatConnection(() => {}, () => {});
+    client.snapshot = { ...client.snapshot, connected: true };
+    const request = vi.spyOn(client, "request").mockResolvedValue({ disposition: "started" });
+    await client.sendOrSteer("hello", [], false);
+    expect(request).toHaveBeenCalledWith("prompt", { message: "hello" });
+    expect(client.snapshot.error).toBeNull();
+    expect(client.snapshot.pending).toBe(false);
+  });
   it("steers while a run is active and prompts while idle", async () => {
     const client = new ChatConnection(() => {}, () => {});
     client.snapshot = { ...client.snapshot, connected: true };
