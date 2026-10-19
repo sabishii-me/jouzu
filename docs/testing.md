@@ -24,14 +24,16 @@ npm run build
 
 | Command | Scope |
 | --- | --- |
-| `npm run test:runner` | Test-runner deadlines, diagnostics, and command contracts |
+| `npm run test:runner` | Test-runner deadlines, diagnostics, timing records, and command contracts |
 | `npm run test --workspace packages/session-ui` | Session UI |
 | `npm run test --workspace packages/cli` | CLI and session flow control |
 | `npm run test:python` | Python package reservation |
 | `npm run test:pack-check` | Package contents and `dev-build.sh` |
 | `npm run test:release-metadata` | Release metadata, smoke phases, and live-smoke event analysis |
 
-`npm run check` adds type checks, Biome, and the Pi patch and content-policy checks. `npm run release:check` runs the full release gate.
+`npm run check` runs `check:types` (TypeScript without output) and `check:static` (Biome, the Pi patch and content-policy checks, and the build-transform checks). `npm run build` already type-checks, so after a build run `npm run check:static`. `npm run release:check` runs the full release gate.
+
+Each gate runs each command once. `scripts/gate-commands.test.mjs` expands `npm run check`, `npm test`, `release:check:candidate`, and every CI job into their commands and fails on a repeat.
 
 ### Bounded Node runs
 
@@ -83,7 +85,7 @@ Do not pipe a running suite through `tail`: that hides progress and may hide
 the failing exit status. Inspect the first failure's diagnostics while the
 suite is running. A focused rerun diagnoses a failure; it does not replace the
 full required gate. Runner regression tests check these package and CI entry
-points as part of `npm run check` and `npm test`.
+points as part of `npm run test:runner` and `npm test`.
 
 ### Timing records
 

@@ -91,8 +91,10 @@ jobs:
         env:
           JOUZU_BUILD_SOURCE_ONLY: "1"
         timeout-minutes: 15
-      - run: npm run check
+      - run: npm run check:static
         timeout-minutes: 10
+      - run: npm run test:runner
+        timeout-minutes: 5
       - run: npm test --workspaces --if-present
         timeout-minutes: 20
         env:
@@ -212,8 +214,12 @@ jobs:
           cache-dependency-path: upstream/textguard/source/go.sum
       - run: npm run build
         timeout-minutes: 15
+      - run: npm run check:static
+        timeout-minutes: 10
       - run: npm run test:release-metadata
         timeout-minutes: 5
+      - run: npm run test:pack-check
+        timeout-minutes: 10
       - run: npm run pack:prepare:ci
         timeout-minutes: 10
       - run: npm run pack:check
