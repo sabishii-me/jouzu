@@ -24,6 +24,11 @@ try {
   const auth = AuthStorage.create(join(paths.agentDir, 'auth.json'));
   const settings = SettingsManager.create(paths.configDir, paths.agentDir);
   const runtime = await ModelRuntime.create({ authPath: join(paths.agentDir, 'auth.json'), modelsPath: join(paths.agentDir, 'models.json'), allowModelNetwork: false, refreshOnCreate: false });
+  // Model availability is the published catalog, not a hardcoded provider list.
+  const refreshModelCatalogs = async () => {
+    const { refreshAvailableModelCatalogs } = await load('model-catalog-sync');
+    return refreshAvailableModelCatalogs(paths, { env: process.env, timeoutMs: 20000 });
+  };
   const profilePath = join(paths.stateDir, 'profile-choice.json');
   if (request.action === 'profile') {
     if (!['core', 'ja'].includes(request.profile)) throw new Error('Invalid profile');
@@ -50,6 +55,11 @@ try {
       onAuth: () => {}, onProgress: () => {}, onSelect: async () => undefined,
       onPrompt: async () => { throw new Error('Unsupported interactive prompt'); },
     }, { paths, gatewayUrl: resolveShisaGatewayUrl(process.env), jouzuVersion: loadMetadata().jouzuVersion });
+    // Signing in must make the account's models usable without a terminal /reload.
+    try { await refreshModelCatalogs(); } catch { /* The next explicit refresh can report it. */ }
+  } else if (request.action === 'refresh-catalogs') {
+    const refreshed = await refreshModelCatalogs();
+    if (refreshed?.status !== 'complete') throw new Error('Catalog refresh failed');
   } else if (request.action === 'shisa-logout') {
     const { logoutShisa } = await load('shisa-link/logout');
     const result = await logoutShisa({ paths });
@@ -119,6 +129,7 @@ try {
     'custom-provider': 'Could not save the custom connection. Check its unique ID, endpoint and model. Existing advanced configurations cannot be edited with this form.',
     'default-model': 'Could not save the default model. Refresh the model list and retry.',
     'shisa-login': 'Shisa.AI sign-in did not complete. Refresh its state before retrying.',
+    'refresh-catalogs': 'Models could not be refreshed. Sign in to Shisa.AI again or add a provider key.',
     'shisa-logout': 'Shisa.AI sign-out could not be fully confirmed. Refresh its state and check the Shisa.AI dashboard.',
   };
   console.log(JSON.stringify({ error: messages[action] ?? 'Unsupported configuration operation.' }));

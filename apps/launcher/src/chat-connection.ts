@@ -3,6 +3,19 @@ import { emptyProjection, historyProjection, object, projectEvent, type ChatProj
 
 export interface ChatImage { type: "image"; data: string; mimeType: "image/png" | "image/jpeg" | "image/webp" | "image/gif" }
 export interface ChatModel { provider: string; id: string; name: string }
+const MODEL_PREFERENCE_KEY = "jouzu.chat.model";
+function readModelPreference(): { provider: string; id: string } | undefined {
+  try {
+    const value = JSON.parse(localStorage.getItem(MODEL_PREFERENCE_KEY) ?? "null");
+    return value && typeof value.provider === "string" && typeof value.id === "string" ? value : undefined;
+  } catch { return undefined; }
+}
+function writeModelPreference(value: { provider: string; id: string } | undefined) {
+  try {
+    if (value) localStorage.setItem(MODEL_PREFERENCE_KEY, JSON.stringify(value));
+    else localStorage.removeItem(MODEL_PREFERENCE_KEY);
+  } catch { /* A webview without storage keeps the selection for this session only. */ }
+}
 export interface ChatSnapshot {
   projection: ChatProjection;
   connected: boolean;
@@ -12,7 +25,10 @@ export interface ChatSnapshot {
   sessionId?: string;
   sessionFile?: string;
   model?: string;
+  modelProvider?: string;
+  modelId?: string;
   models?: ChatModel[];
+  modelsLoaded?: boolean;
   thinkingLevel?: string;
   thinkingLevels?: string[];
 }
@@ -29,6 +45,7 @@ export class ChatConnection {
   private nextId = 0;
   private dialogs = new Map<string, number | null>();
   private lastPoll = Date.now();
+  private preferredModel = readModelPreference();
   private requests = new Map<string, { command: string; resolve: (value: unknown) => void; reject: (error: Error) => void; deadline: number }>();
   snapshot: ChatSnapshot = { projection: emptyProjection(), connected: false, pending: false, error: null, models: [], thinkingLevels: [] };
   constructor(private publish: (state: ChatSnapshot) => void, private dialog: (request: WireObject) => void) {}
@@ -42,6 +59,7 @@ export class ChatConnection {
       this.poll();
       await this.refreshHistory();
       this.update({ connected: true });
+      await this.applyPreferredModel();
       void this.loadModels();
       void this.loadThinkingLevels();
     } catch (error) { this.fail(error); }
@@ -88,21 +106,41 @@ export class ChatConnection {
       void invoke("chat_send", { handle: this.handle, request: { ...fields, type: command, id } }).catch(error => { this.requests.delete(id); reject(new Error(String(error))); });
     });
   }
-  async refreshHistory() {
+  async refreshHistory(rememberModel = false) {
     const state = await this.request("get_state");
     if (!object(state) || typeof state.sessionId !== "string" || typeof state.isStreaming !== "boolean") throw new Error("Runtime returned incompatible session state.");
     const history = await this.request("get_messages");
     if (!object(history) || !Array.isArray(history.messages)) throw new Error("Runtime returned incompatible history.");
     const projection = historyProjection(history.messages);
     projection.running = state.isStreaming;
-    const model = object(state.model) && typeof state.model.name === "string" && state.model.name !== "unknown" ? state.model.name : undefined;
+    const detail = object(state.model) ? state.model : undefined;
+    const model = detail && typeof detail.name === "string" && detail.name !== "unknown" ? detail.name : undefined;
+    const modelProvider = detail && typeof detail.provider === "string" && detail.provider !== "unknown" ? detail.provider : undefined;
+    const modelId = detail && typeof detail.id === "string" && detail.id !== "unknown" ? detail.id : undefined;
     this.update({
       projection,
       sessionId: state.sessionId,
       sessionFile: typeof state.sessionFile === "string" ? state.sessionFile : undefined,
       model,
+      modelProvider,
+      modelId,
       thinkingLevel: typeof state.thinkingLevel === "string" ? state.thinkingLevel : undefined,
     });
+    if (rememberModel && modelProvider && modelId) {
+      this.preferredModel = { provider: modelProvider, id: modelId };
+      writeModelPreference(this.preferredModel);
+    }
+  }
+  private async applyPreferredModel() {
+    const preferred = this.preferredModel;
+    if (!preferred) return;
+    if (this.snapshot.modelProvider === preferred.provider && this.snapshot.modelId === preferred.id) return;
+    try { await this.selectModel(preferred.provider, preferred.id); }
+    catch {
+      // A saved model may disappear from the catalog; fall back to the runtime default.
+      this.preferredModel = undefined;
+      writeModelPreference(undefined);
+    }
   }
   private async changeSession(command: "new_session" | "switch_session", fields: WireObject = {}) {
     if (!this.snapshot.connected || this.snapshot.pending || this.snapshot.projection.running) throw new Error("Wait for the current conversation to settle.");
@@ -110,7 +148,9 @@ export class ChatConnection {
     try {
       const result = await this.request(command, fields);
       if (object(result) && result.cancelled === true) throw new Error("The runtime cancelled the conversation change.");
-      await this.refreshHistory();
+      // A resumed session owns its model; a new session should keep the model the user chose here.
+      await this.refreshHistory(command === "switch_session");
+      if (command === "new_session") await this.applyPreferredModel();
     } catch (error) { this.update({ error: String(error) }); throw error; }
     finally { this.update({ pending: false }); }
   }
@@ -138,13 +178,16 @@ export class ChatConnection {
         : [];
       this.update({ models });
     } catch (error) { this.update({ error: `Could not read the model list. ${String(error)}` }); }
+    finally { this.update({ modelsLoaded: true }); }
   }
   async selectModel(provider: string, id: string) {
     this.update({ error: null });
     try {
       const data = await this.request("set_model", { provider, modelId: id });
       const name = object(data) && typeof data.name === "string" ? data.name : this.snapshot.models?.find(model => model.provider === provider && model.id === id)?.name ?? id;
-      this.update({ model: name });
+      this.preferredModel = { provider, id };
+      writeModelPreference(this.preferredModel);
+      this.update({ model: name, modelProvider: provider, modelId: id });
     } catch (error) { this.update({ error: String(error) }); throw error; }
   }
   private async loadThinkingLevels() {

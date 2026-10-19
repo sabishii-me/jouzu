@@ -39,6 +39,11 @@ export function App() {
   const [locale, setLocale] = useState<Locale>(() => resolveLocale(localStorage.getItem("jouzu.ui.language") ?? navigator.language));
   const t = messages[locale];
   const [activePath, setActivePath] = useState<string | null>(null);
+  const [sessionRevision, setSessionRevision] = useState(0);
+  const [chatBusy, setChatBusy] = useState(false);
+  const [restartPending, setRestartPending] = useState(false);
+  const [catalogRefreshing, setCatalogRefreshing] = useState(false);
+  const catalogAttempted = useRef(false);
   const [japaneseOverride, setJapaneseOverride] = useState<boolean | null>(null);
   const japaneseChoice = japaneseOverride ?? locale === "ja";
 
@@ -129,14 +134,23 @@ export function App() {
     subscription.then(unlisten => { if (disposed) unlisten(); }).catch(error => setError(String(error)));
     return () => { disposed = true; subscription.then(unlisten => unlisten()).catch(() => {}); };
   }, [settingsOpen]);
+  function requestSessionRestart() {
+    if (chatBusy) setRestartPending(true);
+    else setSessionRevision(value => value + 1);
+  }
   async function configure(request: Record<string, unknown>) {
     // A status read is not a user-visible change; only mutations show progress.
     const mutates = request.action !== "status";
     const run = controlQueue.current.then(async () => {
       if (mutates) setOperation("saving");
       setError(null);
-      try { const next = parseControlState(await invoke<unknown>("control_request", { request })); setSetup(next);
-        return true; }
+      try {
+        const next = parseControlState(await invoke<unknown>("control_request", { request }));
+        setSetup(next);
+        // Provider, credential and model changes only take effect in a fresh runtime process.
+        if (request.action !== "status" && request.action !== "import" && request.action !== "profile") requestSessionRestart();
+        return true;
+      }
       catch (error) { setError(String(error)); return false; }
       finally { if (mutates) setOperation(null); setDevice(null); }
     });
@@ -190,6 +204,19 @@ export function App() {
     const first = state.recent[0]?.path;
     if (first) { initialWorkspaceChosen.current = true; setActivePath(first); }
   }, [state, activePath]);
+  // A signed-in account supplies models through Jouzu's published catalog. The chat shell
+  // asks for a refresh only when the connected runtime has no models, so warm starts do not
+  // pay a network round trip. A successful refresh restarts the session with the new catalog.
+  async function refreshModelCatalog() {
+    if (catalogAttempted.current) return;
+    catalogAttempted.current = true;
+    setCatalogRefreshing(true);
+    try { await configure({ action: "refresh-catalogs" }); }
+    finally { setCatalogRefreshing(false); }
+  }
+  useEffect(() => {
+    if (restartPending && !chatBusy) { setRestartPending(false); setSessionRevision(value => value + 1); }
+  }, [restartPending, chatBusy]);
   async function repairConsole(): Promise<boolean> {
     setRepair({ error: null });
     try { await invoke("terminal_install"); setRepair(null); return true; }
@@ -343,9 +370,14 @@ export function App() {
         </DialogContent>
       </Dialog>
     {error && <div role="alert" className="mt-5 flex items-start justify-between gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-900"><div><p className="font-medium">{t.error}</p><details className="mt-2 break-all"><summary className="cursor-pointer">{t.details}</summary><p className="mt-2">{error}</p></details></div><button onClick={() => setError(null)} aria-label={t.dismiss}><X className="size-4" /></button></div>}
-    {activePath && setup?.modelReady === true && <div className={!setup || showSetup ? "hidden" : "flex min-h-0 flex-1"}>
+    {activePath && <div className={showSetup ? "hidden" : "flex min-h-0 flex-1"}>
       <ChatWorkspace
         path={activePath}
+        revision={sessionRevision}
+        onBusyChange={setChatBusy}
+        catalogRefreshing={catalogRefreshing}
+        canRefreshModels={setup?.account.signedIn === true}
+        onModelsMissing={() => void refreshModelCatalog()}
         workspaces={state?.recent ?? []}
         onSelect={setActivePath}
         onAddFolder={() => void chooseFolder()}
@@ -354,7 +386,7 @@ export function App() {
         onSettings={() => setSettingsOpen(true)}
       />
     </div>}
-    {!setup ? <section aria-label={t.connecting} className="flex min-h-0 flex-1 flex-col items-center justify-center gap-5"><JouzuLoader className="scale-125" /><span role="status" aria-live="polite" className="sr-only">{t.connecting}</span>{statusError && <div className="flex w-full max-w-xl flex-col items-center gap-3"><p className="text-sm text-muted-foreground" role="alert">{t.connectFailed}</p><div className="flex w-full items-center gap-2 rounded-lg border border-border bg-card py-2 pl-3 pr-1"><code className="select-text min-w-0 flex-1 truncate text-xs text-muted-foreground" title={statusError}>{statusError}</code><Button variant="ghost" className="shrink-0" aria-label={t.copy} title={t.copy} onClick={() => void copyStatusError()}>{statusCopied ? <Check className="text-primary" /> : <Copy />}</Button></div><Button onClick={() => void readStatus()}>{t.retry}</Button></div>}</section> : showSetup ? <LauncherPage title={setup?.profile ? t.setupConnect : t.setupMake} description={setup?.profile ? t.setupHint : t.setupPreferencesHint}>
+    {!activePath && !setup ? <section aria-label={t.connecting} className="flex min-h-0 flex-1 flex-col items-center justify-center gap-5"><JouzuLoader className="scale-125" /><span role="status" aria-live="polite" className="sr-only">{t.connecting}</span>{statusError && <div className="flex w-full max-w-xl flex-col items-center gap-3"><p className="text-sm text-muted-foreground" role="alert">{t.connectFailed}</p><div className="flex w-full items-center gap-2 rounded-lg border border-border bg-card py-2 pl-3 pr-1"><code className="select-text min-w-0 flex-1 truncate text-xs text-muted-foreground" title={statusError}>{statusError}</code><Button variant="ghost" className="shrink-0" aria-label={t.copy} title={t.copy} onClick={() => void copyStatusError()}>{statusCopied ? <Check className="text-primary" /> : <Copy />}</Button></div><Button onClick={() => void readStatus()}>{t.retry}</Button></div>}</section> : showSetup ? <LauncherPage title={setup?.profile ? t.setupConnect : t.setupMake} description={setup?.profile ? t.setupHint : t.setupPreferencesHint}>
       <ScrollArea className="min-h-0 flex-1"><div className="p-5 sm:p-6">
         {!setup?.profile ? <div className="space-y-6 pt-2">
           <div className="space-y-2"><Label>{t.language}</Label><div role="group" aria-label={t.language} className="flex flex-wrap gap-2">{Object.entries(locales).map(([key,label])=><Button key={key} lang={key} className="min-w-28" variant={locale===key ? "default" : "outline"} aria-pressed={locale===key} onClick={()=>setLocale(key as Locale)}>{label}</Button>)}</div><p className="text-sm text-muted-foreground">{t.languageHint}</p></div>

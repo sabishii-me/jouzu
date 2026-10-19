@@ -12,6 +12,11 @@ import { beginDialogResponse, emptyDialogQueue, enqueueDialog, expireDialogs, ne
 interface WorkspaceItem { id: string; path: string }
 export interface ChatWorkspaceProps {
   path: string;
+  revision?: number;
+  onBusyChange?: (busy: boolean) => void;
+  catalogRefreshing?: boolean;
+  canRefreshModels?: boolean;
+  onModelsMissing?: () => void;
   workspaces: readonly WorkspaceItem[];
   onSelect: (path: string) => void;
   onAddFolder: () => void;
@@ -19,7 +24,7 @@ export interface ChatWorkspaceProps {
   onTerminal: (path: string) => void;
   onSettings: () => void;
 }
-export function ChatWorkspace({ path, workspaces, onSelect, onAddFolder, onRemove, onTerminal, onSettings }: ChatWorkspaceProps) {
+export function ChatWorkspace({ path, revision = 0, onBusyChange, catalogRefreshing = false, canRefreshModels = false, onModelsMissing, workspaces, onSelect, onAddFolder, onRemove, onTerminal, onSettings }: ChatWorkspaceProps) {
   const [snapshot, setSnapshot] = useState<ChatSnapshot>({ projection: emptyProjection(), connected: false, pending: false, error: null, models: [], thinkingLevels: [] });
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
@@ -63,7 +68,11 @@ export function ChatWorkspace({ path, workspaces, onSelect, onAddFolder, onRemov
     connection.current = client;
     void client.start(path);
     return () => { connection.current = null; void client.close().catch(() => {}); };
-  }, [path]);
+  }, [path, revision]);
+  useEffect(() => { onBusyChange?.(snapshot.pending || snapshot.projection.running || draft.trim().length > 0); }, [snapshot.pending, snapshot.projection.running, draft, onBusyChange]);
+  useEffect(() => {
+    if (snapshot.connected && snapshot.modelsLoaded === true && (snapshot.models?.length ?? 0) === 0 && canRefreshModels) onModelsMissing?.();
+  }, [snapshot.connected, snapshot.models, snapshot.modelsLoaded, canRefreshModels, onModelsMissing]);
   useEffect(() => { setAnswer(dialog?.prefill ?? ""); }, [dialog?.id, dialog?.prefill]);
   useEffect(() => {
     const deadline = nextDialogDeadline(dialogs);
@@ -157,7 +166,7 @@ export function ChatWorkspace({ path, workspaces, onSelect, onAddFolder, onRemov
         <Button variant="ghost" className="w-full justify-start" onClick={onAddFolder}><Plus className="size-4" />Add folder</Button>
         <Button variant="ghost" className="w-full justify-start" onClick={() => onTerminal(path)}><SquareTerminal className="size-4" />Open in terminal</Button>
         <Button variant="ghost" className="w-full justify-start" onClick={onSettings}><Settings className="size-4" />Settings</Button>
-        <p className="px-2 pt-1 text-xs text-muted-foreground">{snapshot.connected ? "Connected" : snapshot.transportReady ? "Starting Jouzu…" : "Connecting…"}</p>
+        <p className="px-2 pt-1 text-xs text-muted-foreground">{catalogRefreshing ? "Refreshing models…" : snapshot.connected ? "Connected" : snapshot.transportReady ? "Starting Jouzu…" : "Connecting…"}</p>
       </div>
     </aside>}
   </div>;

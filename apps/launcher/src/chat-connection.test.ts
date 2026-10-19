@@ -4,6 +4,25 @@ import { invoke } from "@tauri-apps/api/core";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 afterEach(() => { vi.resetAllMocks(); vi.useRealTimers(); });
 describe("desktop RPC connection", () => {
+  it("keeps the chosen model when the user starts a new session", async () => {
+    const client = new ChatConnection(() => {}, () => {});
+    client.snapshot = { ...client.snapshot, connected: true };
+    const calls: string[] = [];
+    const request = vi.spyOn(client, "request").mockImplementation(async (command: string, fields: Record<string, unknown> = {}) => {
+      calls.push(command);
+      if (command === "set_model") return { name: `${fields.provider}/${fields.modelId}` };
+      if (command === "new_session") return { cancelled: false };
+      if (command === "get_state") return { sessionId: "new", isStreaming: false, model: { name: "runtime-default", provider: "catalog", id: "default" } };
+      if (command === "get_messages") return { messages: [] };
+      return undefined;
+    });
+    await client.selectModel("catalog", "chosen");
+    expect(client.snapshot.model).toBe("catalog/chosen");
+    await client.newSession();
+    expect(calls.filter(command => command === "set_model")).toHaveLength(2);
+    expect(request).toHaveBeenLastCalledWith("set_model", { provider: "catalog", modelId: "chosen" });
+    expect(client.snapshot.model).toBe("catalog/chosen");
+  });
   it("accepts the released prompt success response without a disposition", async () => {
     const client = new ChatConnection(() => {}, () => {});
     client.snapshot = { ...client.snapshot, connected: true };
