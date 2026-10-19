@@ -1,8 +1,12 @@
 #!/usr/bin/env node
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, globSync, statSync } from "node:fs";
-import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { existsSync, globSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { availableParallelism, release } from "node:os";
+import { join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+const root = fileURLToPath(new URL("..", import.meta.url));
+const reporter = pathToFileURL(fileURLToPath(new URL("./test-timing-reporter.mjs", import.meta.url))).href;
 
 function limit(env, name, fallback) {
 	const raw = env[name];
@@ -43,11 +47,60 @@ export function testInvocation(args, env = process.env, cwd = process.cwd()) {
 			files.add(path);
 		}
 	}
+	const timingsDir = env.JOUZU_TEST_TIMINGS_DIR ? resolve(cwd, env.JOUZU_TEST_TIMINGS_DIR) : null;
+	// Without an explicit label, name the suite after the npm script that started it.
+	const script = env.npm_lifecycle_event ? `${env.npm_package_name ?? "jouzu"}.${env.npm_lifecycle_event}` : "tests";
+	const label =
+		env.JOUZU_TEST_TIMINGS_LABEL ??
+		script
+			.replace(/[^A-Za-z0-9._-]+/g, "_")
+			.replace(/^_+/, "")
+			.slice(0, 80);
+	if (timingsDir && !/^[A-Za-z0-9._-]{1,80}$/.test(label))
+		throw new Error("JOUZU_TEST_TIMINGS_LABEL must be 1-80 letters, digits, dots, underscores, or hyphens.");
 	return {
 		files: [...files].sort(),
 		options,
 		testTimeout: limit(env, "JOUZU_TEST_TIMEOUT_MS", 120_000),
 		suiteTimeout: limit(env, "JOUZU_TEST_SUITE_TIMEOUT_MS", 600_000),
+		timings: timingsDir ? { dir: timingsDir, label } : null,
+	};
+}
+
+function commit(env) {
+	if (env.GITHUB_SHA) return env.GITHUB_SHA;
+	const result = spawnSync("git", ["rev-parse", "HEAD"], {
+		cwd: root,
+		encoding: "utf8",
+		windowsHide: true,
+		timeout: 10_000,
+	});
+	return result.status === 0 ? result.stdout.trim() : null;
+}
+
+// Run context recorded with each timing file so runs are compared only with comparable runs.
+export function timingContext(invocation, env = process.env, now = new Date()) {
+	const concurrency = invocation.options.find((option) => option.startsWith("--test-concurrency="));
+	return {
+		type: "run",
+		schemaVersion: 1,
+		label: invocation.timings?.label ?? "tests",
+		startedAt: now.toISOString(),
+		commit: commit(env),
+		platform: process.platform,
+		arch: process.arch,
+		osRelease: release(),
+		node: process.version,
+		cpus: availableParallelism(),
+		concurrency: concurrency ? Number(concurrency.split("=")[1]) : null,
+		files: invocation.files.length,
+		testTimeout: invocation.testTimeout,
+		suiteTimeout: invocation.suiteTimeout,
+		hosted: env.GITHUB_ACTIONS === "true",
+		job: env.JOUZU_TEST_TIMINGS_JOB ?? env.GITHUB_JOB ?? null,
+		runId: env.GITHUB_RUN_ID ?? null,
+		runAttempt: env.GITHUB_RUN_ATTEMPT ?? null,
+		image: env.ImageOS ? `${env.ImageOS} ${env.ImageVersion ?? ""}`.trim() : null,
 	};
 }
 
@@ -70,16 +123,31 @@ function terminate(child) {
 }
 
 export async function runTests(invocation) {
-	const { files, options, testTimeout, suiteTimeout } = invocation;
+	const { files, options, testTimeout, suiteTimeout, timings } = invocation;
 	console.error(
 		`[tests] ${files.length} test files; test timeout ${testTimeout}ms; suite deadline ${suiteTimeout}ms; TAP output`,
 	);
 	const env = { ...process.env };
-	// The runner's own tests launch nested invocations. Each must get a fresh Node test harness.
+	// The runner's own tests launch nested invocations. Each must get a fresh Node test harness
+	// and must not add fixture results to the caller's timing record.
 	delete env.NODE_TEST_CONTEXT;
+	delete env.JOUZU_TEST_TIMINGS_DIR;
+	let record, partial;
+	const reporters = ["--test-reporter=tap"];
+	if (timings) {
+		mkdirSync(timings.dir, { recursive: true });
+		record = join(timings.dir, `${timings.label}-${Date.now()}-${process.pid}.jsonl`);
+		partial = `${record}.partial`;
+		reporters.push(
+			"--test-reporter-destination=stdout",
+			`--test-reporter=${reporter}`,
+			`--test-reporter-destination=${partial}`,
+		);
+	}
+	const context = timings ? timingContext(invocation) : null;
 	const child = spawn(
 		process.execPath,
-		["--test", "--test-reporter=tap", `--test-timeout=${testTimeout}`, ...options, ...files],
+		["--test", ...reporters, `--test-timeout=${testTimeout}`, ...options, ...files],
 		{
 			env,
 			stdio: ["ignore", "inherit", "inherit"],
@@ -90,8 +158,9 @@ export async function runTests(invocation) {
 	const started = Date.now();
 	let deadline, heartbeat;
 	let interrupt, terminateSignal;
+	let exitCode = 1;
 	try {
-		return await new Promise((done) => {
+		exitCode = await new Promise((done) => {
 			let stopping = false;
 			const stop = (code, reason) => {
 				if (stopping) return;
@@ -127,12 +196,37 @@ export async function runTests(invocation) {
 			process.once("SIGINT", interrupt);
 			process.once("SIGTERM", terminateSignal);
 		});
+		return exitCode;
 	} finally {
 		clearTimeout(deadline);
 		clearInterval(heartbeat);
 		if (interrupt) process.removeListener("SIGINT", interrupt);
 		if (terminateSignal) process.removeListener("SIGTERM", terminateSignal);
+		if (record) writeTimingRecord(record, partial, context, { wallMs: Date.now() - started, exitCode });
 	}
+}
+
+function writeTimingRecord(record, partial, context, end) {
+	let tests = "";
+	try {
+		tests = readFileSync(partial, "utf8");
+		rmSync(partial, { force: true });
+	} catch (error) {
+		if (error.code !== "ENOENT") throw error;
+	}
+	const lines = [context];
+	let truncated = false;
+	for (const line of tests.split("\n").filter(Boolean)) {
+		try {
+			lines.push(JSON.parse(line));
+		} catch {
+			// A terminated run can leave the reporter's last line unfinished.
+			truncated = true;
+		}
+	}
+	lines.push({ type: "end", endedAt: new Date().toISOString(), ...end, truncated });
+	writeFileSync(record, `${lines.map((line) => JSON.stringify(line)).join("\n")}\n`);
+	console.error(`[tests] timing record ${record}`);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

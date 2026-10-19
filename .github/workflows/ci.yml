@@ -46,6 +46,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Record test timings
+        shell: bash
+        run: |
+          echo "JOUZU_TEST_TIMINGS_DIR=$RUNNER_TEMP/test-timings" >> "$GITHUB_ENV"
+          echo "JOUZU_TEST_TIMINGS_JOB=node (${{ matrix.os }}, ${{ matrix.node }})" >> "$GITHUB_ENV"
       - name: Configure Windows fixture and npm paths
         if: runner.os == 'Windows'
         shell: pwsh
@@ -109,6 +114,14 @@ jobs:
           JOUZU_EXTENSION_NETWORK: "1"
           JOUZU_TEST_TIMEOUT_MS: "600000"
           JOUZU_TEST_SUITE_TIMEOUT_MS: "900000"
+      - name: Save test timings
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-timings-node-${{ matrix.os }}-${{ matrix.node }}
+          path: ${{ runner.temp }}/test-timings
+          if-no-files-found: warn
+          retention-days: 30
       - name: Remove Windows Defender exclusions
         if: always() && (matrix.os == 'windows-latest')
         shell: pwsh
@@ -188,6 +201,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Record test timings
+        shell: bash
+        run: |
+          echo "JOUZU_TEST_TIMINGS_DIR=$RUNNER_TEMP/test-timings" >> "$GITHUB_ENV"
+          echo "JOUZU_TEST_TIMINGS_JOB=release-artifacts" >> "$GITHUB_ENV"
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
@@ -223,6 +241,14 @@ jobs:
         timeout-minutes: 5
         env:
           JOUZU_PACK_METADATA: dist/ci-artifacts/pack-metadata.json
+      - name: Save test timings
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-timings-release-artifacts
+          path: ${{ runner.temp }}/test-timings
+          if-no-files-found: warn
+          retention-days: 30
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: jouzu-candidate

@@ -85,6 +85,36 @@ suite is running. A focused rerun diagnoses a failure; it does not replace the
 full required gate. Runner regression tests check these package and CI entry
 points as part of `npm run check` and `npm test`.
 
+### Timing records
+
+Set `JOUZU_TEST_TIMINGS_DIR` to record each test's duration beside the TAP
+output. Every runner invocation writes one JSON Lines file to that directory:
+a run line (label, commit, OS, Node version, CPU count, concurrency, CI job and
+image), one line per finished test (file, full name including parent tests,
+nesting, duration, and status), and an end line (wall time and exit status).
+Runner invocations started by tests do not inherit the variable.
+
+| Environment variable | Default | Purpose |
+| --- | --- | --- |
+| `JOUZU_TEST_TIMINGS_DIR` | unset (no record) | Directory for timing records |
+| `JOUZU_TEST_TIMINGS_LABEL` | npm package and script name, such as `jouzu_cli.test` | Suite label: letters, digits, `.`, `_`, `-` |
+| `JOUZU_TEST_TIMINGS_JOB` | `GITHUB_JOB` | Job name recorded with the run |
+
+```bash
+JOUZU_TEST_TIMINGS_DIR=/tmp/jouzu-timings npm test
+npm run test:timings -- summary --top 20 /tmp/jouzu-timings
+npm run test:timings -- diff --base before/ --head after/ --where node=22
+```
+
+`summary` reports per-suite wall time, the slowest top-level tests and files
+by median across runs, the count of tests over 1 and 10 seconds, and the share
+of time in the slowest 10 and 50 tests. `diff` lists added and removed tests
+and tests whose median changed by at least 1 second and 20%. `--where` limits
+either command to runs with a matching context field, such as `label`,
+`platform`, `node` (major or exact version), or `job`. Add `--json` for
+machine-readable output. CI uploads the records from each test job as
+`test-timings-*` artifacts.
+
 ## Session flow control
 
 Flow control has a deterministic suite, a patched-Pi conformance check, and a live smoke. The deterministic suite is the gate; the live smoke measures whether a real model follows the wait contract.
