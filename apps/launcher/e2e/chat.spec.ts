@@ -28,6 +28,7 @@ test("the last workspace opens and prewarms chat without a workspace click", asy
         if (command === "component_versions") return { jouzu: "0.3.8", development: true };
         if (command === "chat_sessions") return [];
         if (command === "chat_flow_reports") return [{ kind: "work", text: JSON.stringify({ kind: "work", content: "Resume flow" }) }];
+        if (command === "chat_session_timing") return { modelMs: 60000, toolMs: 30000, turns: 2, steps: 3, outputTokens: 500 };
         if (command === "environment_read") return [];
         if (command === "chat_start") { records.push({ type: "extension_ui_request", id: "widget", method: "setWidget", widgetKey: "multiloop", widgetLines: ["multiloop: 1 running"] }, { type: "extension_ui_request", id: "status", method: "setStatus", statusKey: "multiloop", statusText: "multiloop: 1 running" }); return "chat-test"; }
         if (command === "chat_poll") return { records: records.splice(0), closed: false };
@@ -38,13 +39,13 @@ test("the last workspace opens and prewarms chat without a workspace click", asy
           else if (r.type === "get_messages") response(r, { messages: history });
           else if (r.type === "get_available_models") response(r, { models });
           else if (r.type === "get_available_thinking_levels") response(r, { levels: [] });
-          else if (r.type === "get_session_stats") response(r, { userMessages: 2, assistantMessages: 3, toolCalls: 1, tokens: { total: 1000, output: 500 }, contextUsage: { percent: 42 } });
+          else if (r.type === "get_session_stats") response(r, { userMessages: 2, assistantMessages: 3, toolCalls: 1, tokens: { input: 200, output: 100, cacheRead: 700, cacheWrite: 0, total: 1000 }, contextUsage: { percent: 42, tokens: 42000, contextWindow: 100000 } });
           else if (r.type === "set_model") response(r, models.find(model => model.provider === r.provider && model.id === r.modelId) ?? models[0]);
           else if (r.type === "prompt" || r.type === "steer") {
             w.lastPrompt = r;
             if (r.type === "prompt") {
               const user = { role: "user", content: r.message };
-              const assistant = { role: "assistant", content: [{ type: "text", text: "**Hello** from Jouzu" }] };
+              const assistant = { role: "assistant", content: [{ type: "text", text: "**Hello** from Jouzu" }], provider: "fixture", model: "deterministic", usage: { input: 200, output: 100, cacheRead: 700, cacheWrite: 0, total: 1000 } };
               history.push(user, assistant);
               records.push({ type: "agent_start" }, { type: "message_start", message: user }, { type: "message_end", message: user }, { type: "message_start", message: { role: "assistant", content: [] } }, { type: "message_update", assistantMessageEvent: { type: "text_start", contentIndex: 0 } }, { type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "**Hello** from Jouzu" } }, { type: "message_end", message: assistant }, { type: "agent_end", willRetry: false }, { type: "agent_settled" });
             }
@@ -76,6 +77,18 @@ test("the last workspace opens and prewarms chat without a workspace click", asy
   await expect(page.getByRole("region", { name: "Flow" })).toContainText("Resume flow");
   await expect(page.getByLabel("Session usage")).toContainText("2 turns · 3 steps");
   await expect(page.getByLabel("Session usage")).toContainText("42%");
+  await page.getByRole("button", { name: /2 turns · 3 steps/ }).click();
+  await expect(page.getByRole("dialog")).toContainText("Session stats");
+  await expect(page.getByRole("dialog")).toContainText("Model time");
+  await expect(page.getByRole("dialog")).toContainText("Output speed (TPS)");
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: /1k tok/ }).click();
+  await expect(page.getByRole("dialog")).toContainText("Token usage");
+  await expect(page.getByRole("dialog")).toContainText("Cache read");
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "42%" }).click();
+  await expect(page.getByRole("dialog")).toContainText("Context used");
+  await page.keyboard.press("Escape");
   await expect.poll(() => page.evaluate(() => (window as any).chatCalls.includes("chat_start"))).toBe(true);
   expect(await page.evaluate(() => (window as any).chatCalls.includes("launch_jouzu"))).toBe(false);
   await expect(page.getByRole("complementary", { name: "Workspaces" })).toBeVisible();
@@ -93,6 +106,13 @@ test("the last workspace opens and prewarms chat without a workspace click", asy
   await page.getByLabel("Message Jouzu").fill("Explain this project");
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.getByRole("article", { name: "assistant message" })).toContainText("Hello from Jouzu");
+  await expect(page.getByRole("group", { name: "Turn actions" }).getByRole("button", { name: /Usage 1k tok/ })).toBeVisible();
+  await page.getByRole("group", { name: "Turn actions" }).getByRole("button", { name: /Usage 1k tok/ }).click();
+  await expect(page.getByRole("dialog")).toContainText("Turn usage");
+  await expect(page.getByRole("dialog")).toContainText("fixture / deterministic");
+  await expect(page.getByRole("dialog")).toContainText("Uncached input");
+  await expect(page.getByRole("dialog")).toContainText("200 tok");
+  await page.keyboard.press("Escape");
   await expect(page.getByRole("article", { name: "user message" })).toHaveCount(1);
   await expect(page.getByRole("button", { name: "Open in terminal", exact: true })).toBeVisible();
   await expect(page.getByLabel("Message Jouzu")).toHaveValue("");

@@ -12,6 +12,7 @@ import { emptyProjection, type FlowReportRecord } from "./chat-projection";
 import { beginDialogResponse, emptyDialogQueue, enqueueDialog, expireDialogs, nextDialogDeadline, removeDialog, type DialogAnswer, type DialogQueue } from "./dialog-queue";
 import { deriveFlow, FlowPanel } from "./tool-renderers";
 import { SessionStatsBar } from "./session-stats-bar";
+import type { SessionTiming } from "./chat-connection";
 
 interface WorkspaceItem { id: string; path: string }
 interface SessionSummary { path: string; title: string; workspace: string; updated: number }
@@ -62,6 +63,7 @@ export function ChatWorkspace({ path, revision = 0, newSession = true, onNewSess
   const [hero, setHero] = useState(newSession);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [diskReports, setDiskReports] = useState<FlowReportRecord[]>([]);
+  const [timing, setTiming] = useState<SessionTiming>();
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [searchOpen, setSearchOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -133,11 +135,14 @@ export function ChatWorkspace({ path, revision = 0, newSession = true, onNewSess
   useEffect(() => { if (snapshot.connected) void connection.current?.loadStats(); }, [snapshot.connected, snapshot.sessionFile, snapshot.projection.messages.length, snapshot.projection.running]);
   useEffect(() => {
     const file = snapshot.sessionFile;
-    if (!file) { setDiskReports([]); return; }
+    if (!file) { setDiskReports([]); setTiming(undefined); return; }
     let disposed = false;
     void invoke<FlowReportRecord[]>("chat_flow_reports", { sessionPath: file })
       .then(reports => { if (!disposed) setDiskReports(Array.isArray(reports) ? reports : []); })
       .catch(() => { if (!disposed) setDiskReports([]); });
+    void invoke<SessionTiming>("chat_session_timing", { sessionPath: file })
+      .then(value => { if (!disposed && value && typeof value.modelMs === "number") setTiming(value); })
+      .catch(() => { if (!disposed) setTiming(undefined); });
     return () => { disposed = true; };
   }, [snapshot.sessionFile, snapshot.projection.messages.length]);
   async function reply(fields: DialogAnswer) {
@@ -313,13 +318,13 @@ export function ChatWorkspace({ path, revision = 0, newSession = true, onNewSess
           <div className="mb-2 flex flex-wrap items-center gap-2 px-1">{workspacePicker}<span className="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground">Standard mode</span></div>
           <FlowPanel flow={flow} widgets={snapshot.widgets ?? {}} statuses={snapshot.statuses ?? {}} reports={diskReports.length ? diskReports : snapshot.projection.flowReports} />
           <Composer hero connected={snapshot.connected} pending={snapshot.pending || switching} running={snapshot.projection.running} draft={draft} onDraft={setDraft} onSend={() => void send()} onStop={() => void connection.current?.abort()} onCompact={() => void compactConversation()} onExport={() => void exportConversation()} error={snapshot.error} compatibility={snapshot.projection.compatibility} attachments={attachments} onAddImages={files => void addImages(files)} onRemoveImage={id => updateAttachments(attachmentRef.current.filter(item => item.id !== id))} readingImages={readingImages} attachmentError={attachmentError} models={snapshot.models ?? []} model={snapshot.model} onSelectModel={(provider, id) => void connection.current?.selectModel(provider, id)} onRefreshModels={() => void connection.current?.loadModels()} thinkingLevel={snapshot.thinkingLevel} thinkingLevels={snapshot.thinkingLevels ?? []} onThinkingLevel={level => void connection.current?.setThinkingLevel(level)} />
-          <SessionStatsBar stats={snapshot.stats} />
+          <SessionStatsBar stats={snapshot.stats} timing={timing} />
         </div>
       </div> : <>
         <ChatConversation projection={snapshot.projection} />
         <FlowPanel flow={flow} widgets={snapshot.widgets ?? {}} statuses={snapshot.statuses ?? {}} reports={diskReports.length ? diskReports : snapshot.projection.flowReports} />
         <Composer connected={snapshot.connected} pending={snapshot.pending || switching} running={snapshot.projection.running} draft={draft} onDraft={setDraft} onSend={() => void send()} onStop={() => void connection.current?.abort()} onCompact={() => void compactConversation()} onExport={() => void exportConversation()} error={snapshot.error} compatibility={snapshot.projection.compatibility} attachments={attachments} onAddImages={files => void addImages(files)} onRemoveImage={id => updateAttachments(attachmentRef.current.filter(item => item.id !== id))} readingImages={readingImages} attachmentError={attachmentError} models={snapshot.models ?? []} model={snapshot.model} onSelectModel={(provider, id) => void connection.current?.selectModel(provider, id)} onRefreshModels={() => void connection.current?.loadModels()} thinkingLevel={snapshot.thinkingLevel} thinkingLevels={snapshot.thinkingLevels ?? []} onThinkingLevel={level => void connection.current?.setThinkingLevel(level)} />
-        <SessionStatsBar stats={snapshot.stats} />
+        <SessionStatsBar stats={snapshot.stats} timing={timing} />
       </>}
     </section>
   </div>;

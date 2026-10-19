@@ -31,17 +31,98 @@ pub fn chat_sessions() -> Result<Vec<SessionSummary>, String> {
     Ok(list_sessions(&home.join("state/sessions")))
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionTiming {
+    pub model_ms: u64,
+    pub tool_ms: u64,
+    pub turns: u32,
+    pub steps: u32,
+    pub output_tokens: u64,
+}
+
 #[tauri::command]
-pub fn chat_flow_reports(session_path: String) -> Result<Vec<FlowReportRecord>, String> {
-    if session_path.contains('\0') || !Path::new(&session_path).is_absolute() {
+pub fn chat_session_timing(session_path: String) -> Result<SessionTiming, String> {
+    let path = validated_session_path(&session_path)?;
+    Ok(read_session_timing(&path))
+}
+
+fn validated_session_path(session_path: &str) -> Result<std::path::PathBuf, String> {
+    if session_path.contains('\0') || !Path::new(session_path).is_absolute() {
         return Err("Session path must be absolute".into());
     }
     let root = crate::runtime::effective_home()?.join("state").join("sessions");
     let root = fs::canonicalize(root).map_err(|error| error.to_string())?;
-    let path = fs::canonicalize(&session_path).map_err(|error| error.to_string())?;
+    let path = fs::canonicalize(session_path).map_err(|error| error.to_string())?;
     if !path.starts_with(&root) || path.extension().and_then(|value| value.to_str()) != Some("jsonl") {
-        return Err("Flow reports are only available for session files".into());
+        return Err("Only session files are accepted".into());
     }
+    Ok(path)
+}
+
+fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
+    let year = year - if month <= 2 { 1 } else { 0 };
+    let era = if year >= 0 { year } else { year - 399 } / 400;
+    let year_of_era = year - era * 400;
+    let month_index = month + if month > 2 { -3 } else { 9 };
+    let day_of_year = (153 * month_index + 2) / 5 + day - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    era * 146_097 + day_of_era - 719_468
+}
+fn iso_to_millis(value: &str) -> Option<i64> {
+    let value = value.strip_suffix('Z')?;
+    let (date, time) = value.split_once('T')?;
+    let mut date_parts = date.split('-');
+    let year = date_parts.next()?.parse::<i64>().ok()?;
+    let month = date_parts.next()?.parse::<i64>().ok()?;
+    let day = date_parts.next()?.parse::<i64>().ok()?;
+    let mut time_parts = time.split(':');
+    let hour = time_parts.next()?.parse::<i64>().ok()?;
+    let minute = time_parts.next()?.parse::<i64>().ok()?;
+    let seconds = time_parts.next()?;
+    let (second, millis) = seconds.split_once('.').map_or((seconds, "0"), |(second, fraction)| (second, fraction));
+    let second = second.parse::<i64>().ok()?;
+    let millis = format!("{millis:0<3}").chars().take(3).collect::<String>().parse::<i64>().ok()?;
+    let days = days_from_civil(year, month, day);
+    Some(((days * 86_400 + hour * 3_600 + minute * 60 + second) * 1_000) + millis)
+}
+
+fn read_session_timing(path: &Path) -> SessionTiming {
+    let Ok(file) = File::open(path) else { return SessionTiming { model_ms: 0, tool_ms: 0, turns: 0, steps: 0, output_tokens: 0 } };
+    let reader = BufReader::new(file.take(32 * 1024 * 1024));
+    let mut result = SessionTiming { model_ms: 0, tool_ms: 0, turns: 0, steps: 0, output_tokens: 0 };
+    let mut previous_entry_ts: Option<i64> = None;
+    for line in reader.lines() {
+        let Ok(line) = line else { break };
+        let Ok(value) = serde_json::from_str::<Value>(&line) else { continue };
+        let entry_ts = value.get("timestamp").and_then(Value::as_str).and_then(iso_to_millis);
+        if value.get("type").and_then(Value::as_str) != Some("message") {
+            if entry_ts.is_some() { previous_entry_ts = entry_ts; }
+            continue;
+        }
+        let Some(message) = value.get("message") else { continue };
+        let role = message.get("role").and_then(Value::as_str).unwrap_or_default();
+        if role == "toolResult" {
+            if let (Some(started), Some(ended)) = (previous_entry_ts, entry_ts) {
+                result.tool_ms += ended.saturating_sub(started).max(0) as u64;
+            }
+        } else if role == "user" {
+            result.turns += 1;
+        } else if role == "assistant" {
+            result.steps += 1;
+            result.output_tokens += message.get("usage").and_then(|usage| usage.get("output")).and_then(Value::as_u64).unwrap_or(0);
+            if let (Some(started), Some(ended)) = (message.get("timestamp").and_then(Value::as_i64), entry_ts) {
+                result.model_ms += ended.saturating_sub(started).max(0) as u64;
+            }
+        }
+        if entry_ts.is_some() { previous_entry_ts = entry_ts; }
+    }
+    result
+}
+
+#[tauri::command]
+pub fn chat_flow_reports(session_path: String) -> Result<Vec<FlowReportRecord>, String> {
+    let path = validated_session_path(&session_path)?;
     Ok(read_flow_reports(&path))
 }
 
@@ -241,6 +322,22 @@ mod tests {
         assert_eq!(reports[0].kind, "work");
         assert!(reports[0].text.contains("Continue"));
         assert!(reports[1].text.contains("long long"));
+    }
+
+    #[test]
+    fn derives_model_and_tool_time_from_session_entries() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("timing.jsonl");
+        let mut file = File::create(&path).unwrap();
+        writeln!(file, "{}", serde_json::json!({"type":"message","timestamp":"2026-10-19T15:08:07.000Z","message":{"role":"user","content":[]}})).unwrap();
+        writeln!(file, "{}", serde_json::json!({"type":"message","timestamp":"2026-10-19T15:08:08.797Z","message":{"role":"assistant","timestamp":1792422487810_i64,"usage":{"output":96},"content":[{"type":"toolCall","id":"call"}]}})).unwrap();
+        writeln!(file, "{}", serde_json::json!({"type":"message","timestamp":"2026-10-19T15:08:08.824Z","message":{"role":"toolResult","content":[]}})).unwrap();
+        let timing = read_session_timing(&path);
+        assert_eq!(timing.turns, 1);
+        assert_eq!(timing.steps, 1);
+        assert_eq!(timing.output_tokens, 96);
+        assert_eq!(timing.model_ms, 987);
+        assert_eq!(timing.tool_ms, 27);
     }
 
     #[test]

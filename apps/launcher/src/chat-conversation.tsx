@@ -9,13 +9,17 @@ import { TurnFooter } from "./turn-footer";
 function turnUsageAt(messages: ChatMessage[], end: number) {
   let start = end;
   while (start >= 0 && messages[start].role !== "user") start--;
-  let total = 0;
+  const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 };
   for (let index = Math.max(0, start); index <= end; index++) {
-    const usage = messages[index].usage;
-    if (!usage) continue;
-    total += usage.total ?? usage.totalTokens ?? (usage.input ?? 0) + (usage.output ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
+    const item = messages[index].usage;
+    if (!item) continue;
+    usage.input += item.input ?? 0;
+    usage.output += item.output ?? 0;
+    usage.cacheRead += item.cacheRead ?? 0;
+    usage.cacheWrite += item.cacheWrite ?? 0;
+    usage.total += item.total ?? item.totalTokens ?? (item.input ?? 0) + (item.output ?? 0) + (item.cacheRead ?? 0) + (item.cacheWrite ?? 0);
   }
-  return { usage: { total }, startedAt: messages[start]?.timestamp };
+  return { usage, startedAt: messages[start]?.timestamp };
 }
 function FinalTurnFooter({ messages, index, message }: { messages: ChatMessage[]; index: number; message: ChatMessage }) {
   const metrics = turnUsageAt(messages, index);

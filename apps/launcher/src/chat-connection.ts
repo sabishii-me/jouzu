@@ -11,6 +11,7 @@ export interface SessionStats {
   tokens?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; total?: number };
   contextUsage?: { percent?: number | null; tokens?: number; contextWindow?: number };
 }
+export interface SessionTiming { modelMs: number; toolMs: number; turns: number; steps: number; outputTokens: number }
 const MODEL_PREFERENCE_KEY = "jouzu.chat.model";
 function readModelPreference(): { provider: string; id: string } | undefined {
   try {

@@ -2,7 +2,7 @@
 // Agent history and completion remain authoritative in the runtime.
 export type WireObject = Record<string, unknown>;
 export interface ChatBlock { type: string; text?: string; thinking?: string; id?: string; name?: string; arguments?: unknown; data?: string; mimeType?: string }
-export interface ChatMessage { role: string; content: ChatBlock[]; timestamp?: number; endedAt?: number; stopReason?: string; errorMessage?: string; toolCallId?: string; toolName?: string; isError?: boolean; usage?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; total?: number; totalTokens?: number } }
+export interface ChatMessage { role: string; content: ChatBlock[]; timestamp?: number; endedAt?: number; stopReason?: string; errorMessage?: string; toolCallId?: string; toolName?: string; isError?: boolean; provider?: string; model?: string; usage?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; total?: number; totalTokens?: number } }
 export interface ToolView { id: string; name: string; args: unknown; phase: "running" | "complete" | "error"; result?: unknown }
 export interface FlowReportRecord { kind: string; text: string; timestamp?: number }
 export interface ChatProjection {
