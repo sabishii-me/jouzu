@@ -21,7 +21,9 @@ export function verifyPublicationSource(qualifiedCommit, releaseCommit) {
 	execFileSync("git", ["merge-base", "--is-ancestor", qualifiedCommit, releaseCommit]);
 	const paths = execFileSync("git", ["diff", "--name-only", `${qualifiedCommit}..${releaseCommit}`], {
 		encoding: "utf8",
-	}).trim().split("\n");
+	})
+		.trim()
+		.split("\n");
 	verifyPublicationDelta(paths);
 }
 

@@ -87,7 +87,12 @@ export async function verifyPublished(manifest, npmCli, publishRunId, releaseCom
 			certificateIssuer: "https://token.actions.githubusercontent.com",
 			certificateIdentityURI: `https://github.com/${repository}/.github/workflows/publish-npm.yml@refs/tags/v${manifest.version}`,
 		});
-		verifyProvenance(JSON.parse(Buffer.from(bundle.dsseEnvelope.payload, "base64")), manifest, publishRunId, releaseCommit);
+		verifyProvenance(
+			JSON.parse(Buffer.from(bundle.dsseEnvelope.payload, "base64")),
+			manifest,
+			publishRunId,
+			releaseCommit,
+		);
 		assert.equal(new URL(metadata._resolved).origin, new URL(registry).origin);
 		const bytes = await pacote.tarball(`jouzu@${manifest.version}`, {
 			registry,
@@ -117,5 +122,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
 		manifestPath && npmCli && runId,
 		"Usage: node scripts/verify-published-release.mjs MANIFEST NPM_CLI PUBLISH_RUN_ID",
 	);
-	console.log(JSON.stringify(await verifyPublished(JSON.parse(readFileSync(manifestPath, "utf8")), npmCli, runId, releaseCommit)));
+	console.log(
+		JSON.stringify(await verifyPublished(JSON.parse(readFileSync(manifestPath, "utf8")), npmCli, runId, releaseCommit)),
+	);
 }
