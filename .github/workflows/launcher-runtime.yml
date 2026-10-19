@@ -87,20 +87,18 @@ jobs:
           "jouzu_version=$version" | Out-File $env:GITHUB_OUTPUT -Append
         env:
           JOUZU_VERSION_INPUT: ${{ inputs.jouzu_version }}
-      # A completed run is validated by its conclusion and workflow path before its
-      # artifact is trusted. The calling run instead reuses the artifact its own recipe
-      # job just uploaded: `needs:` already required that job to succeed, and the archive
-      # digest is checked on both paths by the verification step below.
+      # Validate the completed source run and artifact before download. For npm publish
+      # runs, require the recipe job to succeed even if a later installer job failed.
+      # The calling run uses its own artifact after the recipe dependency succeeds.
+      # Both paths still verify archive integrity and the requested package version.
       - name: Restore qualified runtime from a completed run
         if: inputs.runtime_run_id != github.run_id
         env:
           GH_TOKEN: ${{ github.token }}
           RUNTIME_RUN_ID: ${{ inputs.runtime_run_id }}
         run: |
-          if ($env:RUNTIME_RUN_ID -notmatch '^\d+$') { throw 'Invalid runtime run ID' }
-          $run = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:RUNTIME_RUN_ID" | ConvertFrom-Json
-          $sources = @('.github/workflows/launcher-recipe.yml', '.github/workflows/launcher-runtime.yml', '.github/workflows/publish-npm.yml')
-          if ($LASTEXITCODE -or $run.conclusion -ne 'success' -or $sources -notcontains $run.path) { throw 'Runtime source must be a successful recipe, runtime, or npm publish workflow' }
+          node packaging/launcher/runtime-source.mjs
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           gh run download $env:RUNTIME_RUN_ID --repo $env:GITHUB_REPOSITORY --name windows-published-runtime --dir "$env:RUNNER_TEMP/runtime-input"
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Reuse the runtime this run produced

@@ -262,7 +262,13 @@ test("the npm publish workflow builds and signs the launcher automatically", () 
 	assert.match(launcher, /name: Reuse the runtime this run produced/u);
 	assert.match(launcher, /name: Verify the restored runtime/u);
 	// A publication dispatch sources its runtime from the run whose recipe job produced it.
-	assert.match(launcher, /sources = @\([^)]*'\.github\/workflows\/publish-npm\.yml'\)/u);
+	assert.match(
+		launcher,
+		/node packaging\/launcher\/runtime-source\.mjs\n\s+if \(\$LASTEXITCODE\) \{ exit \$LASTEXITCODE \}/u,
+	);
+	const validator = readFileSync(join(root, "packaging", "launcher", "runtime-source.mjs"), "utf8");
+	assert.match(validator, /\.github\/workflows\/publish-npm\.yml/u);
+	assert.match(validator, /windows-update \/ recipe/u);
 });
 
 test("windows artifacts are named for the Jouzu release and land on it", () => {
