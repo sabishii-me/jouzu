@@ -168,23 +168,29 @@ fn validate(request: &Value) -> Result<(), String> {
         return Err("Invalid request id".into());
     }
     let fields: &[&str] = match kind {
-        "get_state" | "get_messages" | "abort" | "clear_queue" | "new_session" => &["type", "id"],
-        "prompt" => &["type", "id", "message", "images"],
+        "get_state" | "get_messages" | "abort" | "clear_queue" | "new_session"
+        | "get_available_models" | "get_available_thinking_levels" => &["type", "id"],
+        "prompt" | "steer" => &["type", "id", "message", "images"],
         "switch_session" => &["type", "id", "sessionPath"],
+        "set_model" => &["type", "id", "provider", "modelId"],
+        "set_thinking_level" => &["type", "id", "level"],
         "extension_ui_response" => &["type", "id", "value", "confirmed", "cancelled"],
         _ => return Err("Unsupported desktop chat request".into()),
     };
     if object.keys().any(|key| !fields.contains(&key.as_str())) {
         return Err("Unexpected chat request field".into());
     }
-    if kind == "prompt"
+    if matches!(kind, "prompt" | "steer")
         && !object
             .get("message")
             .is_some_and(|v| v.as_str().is_some_and(|s| !s.trim().is_empty()))
     {
-        return Err("Prompt must contain text".into());
+        return Err("Message must contain text".into());
     }
-    if kind == "prompt" {
+    if kind == "steer" && object.get("images").is_some() {
+        return Err("Steering images are not supported by this desktop".into());
+    }
+    if matches!(kind, "prompt" | "steer") {
         if let Some(images) = object.get("images") {
             let images = images.as_array().ok_or("Images must be an array")?;
             if images.len() > 4 {
@@ -232,6 +238,26 @@ fn validate(request: &Value) -> Result<(), String> {
             .ok_or("Missing session path")?;
         if path.contains('\0') || path.len() > 32767 || !std::path::Path::new(path).is_absolute() {
             return Err("Session path must be an absolute file path".into());
+        }
+    }
+    if kind == "set_model" {
+        for key in ["provider", "modelId"] {
+            let value = object
+                .get(key)
+                .and_then(Value::as_str)
+                .ok_or("Missing model identity")?;
+            if value.is_empty() || value.len() > 256 || value.contains('\0') {
+                return Err("Invalid model identity".into());
+            }
+        }
+    }
+    if kind == "set_thinking_level" {
+        let level = object
+            .get("level")
+            .and_then(Value::as_str)
+            .ok_or("Missing thinking level")?;
+        if level.is_empty() || level.len() > 64 || level.contains('\0') {
+            return Err("Invalid thinking level".into());
         }
     }
     if kind == "extension_ui_response" {
