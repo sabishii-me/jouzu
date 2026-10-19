@@ -14,6 +14,19 @@ describe("released runtime event projection", () => {
     expect(state.running).toBe(true);
     expect(projectEvent(state, { type: "agent_settled" }).running).toBe(false);
   });
+  it("streams thinking deltas into the visible active message", () => {
+    let state = projectEvent(emptyProjection(), { type: "agent_start" });
+    expect(state.turnStartedAt).toBeTypeOf("number");
+    state = projectEvent(state, { type: "message_start", message: { role: "assistant", content: [] } });
+    for (const update of [
+      { type: "thinking_start", contentIndex: 0 },
+      { type: "thinking_delta", contentIndex: 0, delta: "considering " },
+      { type: "thinking_delta", contentIndex: 0, delta: "the options" },
+    ]) state = projectEvent(state, { type: "message_update", assistantMessageEvent: update });
+    expect(state.messages[0].content[0]).toMatchObject({ type: "thinking", thinking: "considering the options" });
+    expect(state.running).toBe(true);
+    expect(projectEvent(state, { type: "agent_settled" })).toMatchObject({ running: false, turnStartedAt: undefined });
+  });
   it("reconstructs deltas and replaces them with authoritative final content", () => {
     let state = projectEvent(emptyProjection(), { type: "message_start", message: { role: "assistant", content: [] } });
     for (const update of [

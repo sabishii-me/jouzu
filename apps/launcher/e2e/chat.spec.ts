@@ -45,9 +45,9 @@ test("the last workspace opens and prewarms chat without a workspace click", asy
             w.lastPrompt = r;
             if (r.type === "prompt") {
               const user = { role: "user", content: r.message };
-              const assistant = { role: "assistant", content: [{ type: "text", text: "**Hello** from Jouzu" }], provider: "fixture", model: "deterministic", usage: { input: 200, output: 100, cacheRead: 700, cacheWrite: 0, total: 1000 } };
+              const assistant = { role: "assistant", content: [{ type: "thinking", thinking: "Live thinking preview" }, { type: "text", text: "**Hello** from Jouzu" }], provider: "fixture", model: "deterministic", usage: { input: 200, output: 100, cacheRead: 700, cacheWrite: 0, total: 1000 } };
               history.push(user, assistant);
-              records.push({ type: "agent_start" }, { type: "message_start", message: user }, { type: "message_end", message: user }, { type: "message_start", message: { role: "assistant", content: [] } }, { type: "message_update", assistantMessageEvent: { type: "text_start", contentIndex: 0 } }, { type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "**Hello** from Jouzu" } }, { type: "message_end", message: assistant }, { type: "agent_end", willRetry: false }, { type: "agent_settled" });
+              records.push({ type: "agent_start" }, { type: "message_start", message: user }, { type: "message_end", message: user }, { type: "message_start", message: { role: "assistant", content: [] } }, { type: "message_update", assistantMessageEvent: { type: "thinking_start", contentIndex: 0 } }, { type: "message_update", assistantMessageEvent: { type: "thinking_delta", contentIndex: 0, delta: "Live thinking preview" } }, { type: "message_update", assistantMessageEvent: { type: "thinking_end", contentIndex: 0, content: "Live thinking preview" } }, { type: "message_update", assistantMessageEvent: { type: "text_start", contentIndex: 1 } }, { type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 1, delta: "**Hello** from Jouzu" } }, { type: "message_end", message: assistant }, { type: "agent_end", willRetry: false }, { type: "agent_settled" });
             }
             // The released runtime answers a successful prompt with no data at all.
             response(r);
@@ -106,6 +106,7 @@ test("the last workspace opens and prewarms chat without a workspace click", asy
   await page.getByLabel("Message Jouzu").fill("Explain this project");
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.getByRole("article", { name: "assistant message" })).toContainText("Hello from Jouzu");
+  await expect(page.getByRole("article", { name: "assistant message" })).toContainText("Live thinking preview");
   await expect(page.getByRole("group", { name: "Turn actions" }).getByRole("button", { name: /Usage 1k tok/ })).toBeVisible();
   await page.getByRole("group", { name: "Turn actions" }).getByRole("button", { name: /Usage 1k tok/ }).click();
   await expect(page.getByRole("dialog")).toContainText("Turn usage");

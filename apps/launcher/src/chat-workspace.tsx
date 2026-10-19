@@ -321,7 +321,7 @@ export function ChatWorkspace({ path, revision = 0, newSession = true, onNewSess
           <SessionStatsBar stats={snapshot.stats} timing={timing} />
         </div>
       </div> : <>
-        <ChatConversation projection={snapshot.projection} />
+        <ChatConversation projection={snapshot.projection} pending={snapshot.pending} />
         <FlowPanel flow={flow} widgets={snapshot.widgets ?? {}} statuses={snapshot.statuses ?? {}} reports={diskReports.length ? diskReports : snapshot.projection.flowReports} />
         <Composer connected={snapshot.connected} pending={snapshot.pending || switching} running={snapshot.projection.running} draft={draft} onDraft={setDraft} onSend={() => void send()} onStop={() => void connection.current?.abort()} onCompact={() => void compactConversation()} onExport={() => void exportConversation()} error={snapshot.error} compatibility={snapshot.projection.compatibility} attachments={attachments} onAddImages={files => void addImages(files)} onRemoveImage={id => updateAttachments(attachmentRef.current.filter(item => item.id !== id))} readingImages={readingImages} attachmentError={attachmentError} models={snapshot.models ?? []} model={snapshot.model} onSelectModel={(provider, id) => void connection.current?.selectModel(provider, id)} onRefreshModels={() => void connection.current?.loadModels()} thinkingLevel={snapshot.thinkingLevel} thinkingLevels={snapshot.thinkingLevels ?? []} onThinkingLevel={level => void connection.current?.setThinkingLevel(level)} />
         <SessionStatsBar stats={snapshot.stats} timing={timing} />

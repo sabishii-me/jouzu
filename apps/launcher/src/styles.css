@@ -44,6 +44,8 @@
 .jouzu-loader span:nth-child(2) { background: #39c8e8; animation-delay: 0.15s; }
 .jouzu-loader span:nth-child(3) { background: #ae92c9; animation-delay: 0.3s; }
 .jouzu-loader span:nth-child(4) { background: #c588c2; animation-delay: 0.45s; }
+.jouzu-loader-sm { height: 1rem; gap: 0.25rem; }
+.jouzu-loader-sm span { width: 0.35rem; height: 0.35rem; }
 @media (prefers-reduced-motion: reduce) {
   .jouzu-loader span { animation: none; opacity: 1; transform: none; }
   .jouzu-loader span:nth-child(2), .jouzu-loader span:nth-child(4) { opacity: 0.5; }

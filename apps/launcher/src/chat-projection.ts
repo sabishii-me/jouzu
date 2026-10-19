@@ -11,9 +11,10 @@ export interface ChatProjection {
   tools: Record<string, ToolView>;
   flowReports: FlowReportRecord[];
   running: boolean;
+  turnStartedAt?: number;
   compatibility: string[];
 }
-export function emptyProjection(): ChatProjection { return { messages: [], activeMessage: null, tools: {}, flowReports: [], running: false, compatibility: [] }; }
+export function emptyProjection(): ChatProjection { return { messages: [], activeMessage: null, tools: {}, flowReports: [], running: false, turnStartedAt: undefined, compatibility: [] }; }
 export function object(value: unknown): value is WireObject { return !!value && typeof value === "object" && !Array.isArray(value); }
 export function parseMessage(value: unknown): ChatMessage {
   if (!object(value) || typeof value.role !== "string") throw new Error("Invalid runtime message");
@@ -45,8 +46,8 @@ const passiveEvents = new Set(["turn_start", "turn_end", "agent_end", "queue_upd
 export function projectEvent(state: ChatProjection, event: WireObject): ChatProjection {
   const type = event.type;
   if (typeof type !== "string") throw new Error("Runtime event has no type");
-  if (type === "agent_start") return { ...state, running: true };
-  if (type === "agent_settled") return { ...state, running: false };
+  if (type === "agent_start") return { ...state, running: true, turnStartedAt: state.turnStartedAt ?? Date.now() };
+  if (type === "agent_settled") return { ...state, running: false, turnStartedAt: undefined };
   if (type === "message_start") {
     const message = parseMessage(event.message);
     return { ...state, messages: [...state.messages, { ...message, timestamp: message.timestamp ?? Date.now() }], activeMessage: state.messages.length };
