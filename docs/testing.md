@@ -112,6 +112,16 @@ npm run test:timings -- budget --tiers scripts/test-tiers.json --where label=jou
 
 The budget compares each test's median with its tier. CI checks the Ubuntu/Node 22 CLI suite and the endurance job: a test over its failure budget fails pushes and manual runs and warns on pull requests. A new test that needs more than its tier allows must state the guarantee it adds and be assigned a tier in the manifest; prefer making it faster.
 
+### Timing-sensitive tests
+
+Before committing a test that depends on sleeps, deadlines, process lifetimes, or concurrency, run it repeatedly on an oversubscribed machine:
+
+```bash
+npm run test:stress -- --repeat 10 packages/cli/test/flow-native-inclusion.test.mjs
+```
+
+`test:stress` runs the selected files `--repeat` times (default 10) while `--load` busy workers (default four per CPU) compete for the CPUs, and lists each test that failed in any run with its failure count. Runner options such as `--test-name-pattern` pass through; the command fails if no test ran. A test that waited on a 0.3-second dependency before checking its state failed 8 of 8 runs at this load and passed 8 of 8 after the fix.
+
 Keep the full output while preserving failures in a Bash pipeline:
 
 ```bash
