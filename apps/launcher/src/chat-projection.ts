@@ -95,18 +95,21 @@ export function projectEvent(state: ChatProjection, event: WireObject): ChatProj
     }
     return { ...state, messages: state.messages.map((item, position) => position === state.activeMessage ? { ...message, content } : item) };
   }
-  if (type === "custom_message" && typeof event.customType === "string" && event.customType.startsWith("jouzu-flow") && event.display !== false) {
-    const text = (Array.isArray(event.content) ? event.content : [])
-      .map(block => object(block) && block.type === "text" && typeof block.text === "string" ? block.text : "")
-      .filter(Boolean)
-      .join("\n");
-    let kind: string | undefined;
-    try { const parsed = JSON.parse(text); kind = object(parsed) && typeof parsed.kind === "string" ? parsed.kind : undefined; } catch { /* keep the raw text */ }
-    if (text && kind) {
-      const report = { kind, text, ...(typeof event.timestamp === "number" ? { timestamp: event.timestamp } : {}) };
-      return { ...state, flowReports: [...state.flowReports, report].slice(-30) };
+  if (type === "custom_message" || type === "entry_appended") {
+    const entry = type === "entry_appended" ? (object(event.entry) ? event.entry : undefined) : event;
+    if (entry && typeof entry.customType === "string" && entry.customType.startsWith("jouzu-flow") && entry.display !== false) {
+      const text = (Array.isArray(entry.content) ? entry.content : [])
+        .map(block => object(block) && block.type === "text" && typeof block.text === "string" ? block.text : "")
+        .filter(Boolean)
+        .join("\n");
+      let kind: string | undefined;
+      try { const parsed = JSON.parse(text); kind = object(parsed) && typeof parsed.kind === "string" ? parsed.kind : undefined; } catch { /* keep the raw text */ }
+      if (text && kind) {
+        const report = { kind, text, ...(typeof entry.timestamp === "number" ? { timestamp: entry.timestamp } : {}) };
+        return { ...state, flowReports: [...state.flowReports, report].slice(-30) };
+      }
     }
-    return state;
+    if (type === "entry_appended") return state;
   }
   if (type === "tool_execution_start" || type === "tool_execution_update" || type === "tool_execution_end") {    if (typeof event.toolCallId !== "string" || typeof event.toolName !== "string") throw new Error("Invalid runtime tool event");
     const prior = state.tools[event.toolCallId];

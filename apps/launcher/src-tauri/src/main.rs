@@ -471,6 +471,7 @@ fn main() {
             chat::chat_poll,
             chat::chat_stop,
             sessions::chat_sessions,
+            sessions::chat_flow_reports,
             launcher_state,
             launch_jouzu,
             forget_workspace,

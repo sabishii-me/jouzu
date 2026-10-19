@@ -27,13 +27,14 @@ test("the last workspace opens and prewarms chat without a workspace click", asy
         if (command === "control_request") return { schemaVersion: 1, modelReady: true, profile: "core", account: { signedIn: false }, credentials: [], customProviders: [], providers: [], models: [] };
         if (command === "component_versions") return { jouzu: "0.3.8", development: true };
         if (command === "chat_sessions") return [];
+        if (command === "chat_flow_reports") return [{ kind: "work", text: JSON.stringify({ kind: "work", content: "Resume flow" }) }];
         if (command === "environment_read") return [];
         if (command === "chat_start") { records.push({ type: "extension_ui_request", id: "widget", method: "setWidget", widgetKey: "multiloop", widgetLines: ["multiloop: 1 running"] }, { type: "extension_ui_request", id: "status", method: "setStatus", statusKey: "multiloop", statusText: "multiloop: 1 running" }); return "chat-test"; }
         if (command === "chat_poll") return { records: records.splice(0), closed: false };
         if (command === "chat_send") {
           const r = args.request;
           w.chatRequests.push(r.type);
-          if (r.type === "get_state") response(r, { sessionId: "fixture", isStreaming: false, model: { name: "Fixture model" } });
+          if (r.type === "get_state") response(r, { sessionId: "fixture", sessionFile: "C:/sessions/fixture.jsonl", isStreaming: false, model: { name: "Fixture model" } });
           else if (r.type === "get_messages") response(r, { messages: history });
           else if (r.type === "get_available_models") response(r, { models });
           else if (r.type === "get_available_thinking_levels") response(r, { levels: [] });
@@ -70,6 +71,7 @@ test("the last workspace opens and prewarms chat without a workspace click", asy
   await expect(page.getByLabel("Message Jouzu")).toBeVisible();
   await expect(page.getByText("What would you like to build?")).toBeVisible();
   await expect(page.getByRole("region", { name: "Flow" })).toContainText("multiloop");
+  await expect(page.getByRole("region", { name: "Flow" })).toContainText("Resume flow");
   await expect.poll(() => page.evaluate(() => (window as any).chatCalls.includes("chat_start"))).toBe(true);
   expect(await page.evaluate(() => (window as any).chatCalls.includes("launch_jouzu"))).toBe(false);
   await expect(page.getByRole("complementary", { name: "Workspaces" })).toBeVisible();

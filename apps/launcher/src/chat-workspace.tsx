@@ -8,7 +8,7 @@ import { ChatConversation } from "./chat-conversation";
 import { Composer } from "./composer";
 import { ChatConnection, type ChatSnapshot } from "./chat-connection";
 import { readImageAttachment, removeSubmittedImages, validateImageSelection, type ImageAttachment } from "./chat-attachments";
-import { emptyProjection } from "./chat-projection";
+import { emptyProjection, type FlowReportRecord } from "./chat-projection";
 import { beginDialogResponse, emptyDialogQueue, enqueueDialog, expireDialogs, nextDialogDeadline, removeDialog, type DialogAnswer, type DialogQueue } from "./dialog-queue";
 import { deriveFlow, FlowPanel } from "./tool-renderers";
 
@@ -60,6 +60,7 @@ export function ChatWorkspace({ path, revision = 0, newSession = true, onNewSess
   const [sidebar, setSidebar] = useState(true);
   const [hero, setHero] = useState(newSession);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [diskReports, setDiskReports] = useState<FlowReportRecord[]>([]);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [searchOpen, setSearchOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -128,6 +129,15 @@ export function ChatWorkspace({ path, revision = 0, newSession = true, onNewSess
   }
   useEffect(() => { void refreshSessions(); }, [path, revision]);
   useEffect(() => { if (snapshot.connected) void refreshSessions(); }, [snapshot.connected, snapshot.sessionFile]);
+  useEffect(() => {
+    const file = snapshot.sessionFile;
+    if (!file) { setDiskReports([]); return; }
+    let disposed = false;
+    void invoke<FlowReportRecord[]>("chat_flow_reports", { sessionPath: file })
+      .then(reports => { if (!disposed) setDiskReports(Array.isArray(reports) ? reports : []); })
+      .catch(() => { if (!disposed) setDiskReports([]); });
+    return () => { disposed = true; };
+  }, [snapshot.sessionFile, snapshot.projection.messages.length]);
   async function reply(fields: DialogAnswer) {
     const client = connection.current;
     if (!dialog || !client || !snapshot.transportReady) return;
@@ -289,7 +299,7 @@ export function ChatWorkspace({ path, revision = 0, newSession = true, onNewSess
       </div>
       {connectionState}
       {notification && <div role="status" className="flex items-center justify-between border-b border-border px-3 py-1.5 text-xs"><span className="min-w-0 truncate">{notification}</span><Button variant="ghost" className="h-7 px-2" onClick={() => setNotification("")}>Dismiss</Button></div>}
-      <FlowPanel flow={flow} widgets={snapshot.widgets ?? {}} statuses={snapshot.statuses ?? {}} reports={snapshot.projection.flowReports} />
+      <FlowPanel flow={flow} widgets={snapshot.widgets ?? {}} statuses={snapshot.statuses ?? {}} reports={diskReports.length ? diskReports : snapshot.projection.flowReports} />
       {dialog && <section role="dialog" aria-modal="false" aria-label={dialog.title} className="m-3 rounded-xl border border-primary bg-card p-4"><h3 className="font-semibold">{dialog.title}</h3>{dialog.message && <p className="my-2 text-sm">{dialog.message}</p>}{["input", "editor"].includes(dialog.method) && <textarea aria-label="Response" disabled={dialog.responding} className="my-2 w-full rounded border border-border bg-background p-2" value={answer} onChange={event => setAnswer(event.target.value)} />}
         <fieldset disabled={dialog.responding || !snapshot.transportReady} className="mt-3 flex flex-wrap justify-end gap-2"><Button variant="outline" onClick={() => void reply({ cancelled: true })}>Cancel</Button>{dialog.method === "confirm" ? <><Button variant="outline" onClick={() => void reply({ confirmed: false })}>No</Button><Button onClick={() => void reply({ confirmed: true })}>Yes</Button></> : dialog.method === "select" ? dialog.options.map(option => <Button key={option} onClick={() => void reply({ value: option })}>{option}</Button>) : <Button onClick={() => void reply({ value: answer })}>Submit</Button>}</fieldset></section>}
       {hero ? <div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-4 py-8 sm:px-8">

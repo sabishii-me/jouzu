@@ -42,6 +42,8 @@ describe("released runtime event projection", () => {
       content: [{ type: "text", text: JSON.stringify({ kind: "work", content: "Continue task #1" }) }],
     });
     expect(state.flowReports).toEqual([{ kind: "work", text: JSON.stringify({ kind: "work", content: "Continue task #1" }), timestamp: 123 }]);
+    const appended = projectEvent(emptyProjection(), { type: "entry_appended", entry: { type: "custom_message", customType: "jouzu-flow", display: true, timestamp: 456, content: [{ type: "text", text: JSON.stringify({ kind: "alert", content: "Paused" }) }] } });
+    expect(appended.flowReports).toEqual([{ kind: "alert", text: JSON.stringify({ kind: "alert", content: "Paused" }), timestamp: 456 }]);
     expect(projectEvent(state, { type: "custom_message", customType: "other", content: [] }).flowReports).toHaveLength(1);
   });
   it("reconstructs tool cards and task state from resumed history", () => {

@@ -4,7 +4,6 @@ use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
 use std::time::UNIX_EPOCH;
-
 const MAX_SESSIONS: usize = 200;
 const MAX_PREFIX_BYTES: u64 = 512 * 1024;
 const MAX_LINES: usize = 400;
@@ -19,10 +18,60 @@ pub struct SessionSummary {
     updated: u64,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FlowReportRecord {
+    pub kind: String,
+    pub text: String,
+}
+
 #[tauri::command]
 pub fn chat_sessions() -> Result<Vec<SessionSummary>, String> {
     let home = crate::runtime::effective_home()?;
     Ok(list_sessions(&home.join("state/sessions")))
+}
+
+#[tauri::command]
+pub fn chat_flow_reports(session_path: String) -> Result<Vec<FlowReportRecord>, String> {
+    if session_path.contains('\0') || !Path::new(&session_path).is_absolute() {
+        return Err("Session path must be absolute".into());
+    }
+    let root = crate::runtime::effective_home()?.join("state").join("sessions");
+    let root = fs::canonicalize(root).map_err(|error| error.to_string())?;
+    let path = fs::canonicalize(&session_path).map_err(|error| error.to_string())?;
+    if !path.starts_with(&root) || path.extension().and_then(|value| value.to_str()) != Some("jsonl") {
+        return Err("Flow reports are only available for session files".into());
+    }
+    Ok(read_flow_reports(&path))
+}
+
+fn read_flow_reports(path: &Path) -> Vec<FlowReportRecord> {
+    let Ok(file) = File::open(path) else { return Vec::new() };
+    let reader = BufReader::new(file.take(32 * 1024 * 1024));
+    let mut reports = Vec::new();
+    for line in reader.lines() {
+        let Ok(line) = line else { break };
+        let Ok(value) = serde_json::from_str::<Value>(&line) else { continue };
+        if value.get("type").and_then(Value::as_str) != Some("custom_message") {
+            continue;
+        }
+        if value.get("display").and_then(Value::as_bool) == Some(false) {
+            continue;
+        }
+        let Some(custom_type) = value.get("customType").and_then(Value::as_str) else { continue };
+        if !custom_type.starts_with("jouzu-flow") {
+            continue;
+        }
+        let Some(content) = value.get("content") else { continue };
+        let text = text_from_content(content);
+        let Ok(parsed) = serde_json::from_str::<Value>(&text) else { continue };
+        let Some(kind) = parsed.get("kind").and_then(Value::as_str) else { continue };
+        reports.push(FlowReportRecord { kind: kind.to_string(), text });
+    }
+    if reports.len() > 30 {
+        reports.drain(0..reports.len() - 30);
+    }
+    reports
 }
 
 fn normalize_workspace(value: &str) -> String {
@@ -33,8 +82,8 @@ fn normalize_workspace(value: &str) -> String {
         .to_string()
 }
 
-fn title_from_content(content: &Value) -> String {
-    let text = match content {
+fn text_from_content(content: &Value) -> String {
+    match content {
         Value::String(text) => text.clone(),
         Value::Array(blocks) => blocks
             .iter()
@@ -46,10 +95,13 @@ fn title_from_content(content: &Value) -> String {
                 }
             })
             .collect::<Vec<_>>()
-            .join(" "),
+            .join("\n"),
         _ => String::new(),
-    };
-    let cleaned = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    }
+}
+
+fn title_from_content(content: &Value) -> String {
+    let cleaned = text_from_content(content).split_whitespace().collect::<Vec<_>>().join(" ");
     let mut title = cleaned.chars().take(MAX_TITLE_CHARS).collect::<String>();
     if cleaned.chars().count() > MAX_TITLE_CHARS {
         title.push('…');
@@ -176,8 +228,23 @@ mod tests {
     }
 
     #[test]
-    fn ignores_invalid_and_empty_files() {
+    fn reads_only_displayed_flow_reports() {
         let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("flow.jsonl");
+        let mut file = File::create(&path).unwrap();
+        writeln!(file, "{}", serde_json::json!({"type":"custom_message","customType":"jouzu-flow","display":true,"content":[{"type":"text","text":"{\"kind\":\"work\",\"content\":\"Continue\"}"}]})).unwrap();
+        writeln!(file, "{}", serde_json::json!({"type":"custom_message","customType":"jouzu-flow","content":[{"type":"text","text":format!("{{\"kind\":\"work\",\"content\":\"{}\"}}", "long ".repeat(40))}]})).unwrap();
+        writeln!(file, "{}", serde_json::json!({"type":"custom_message","customType":"jouzu-flow","display":false,"content":[{"type":"text","text":"{\"kind\":\"alert\",\"content\":\"Hidden\"}"}]})).unwrap();
+        writeln!(file, "{}", serde_json::json!({"type":"custom_message","customType":"other","content":[{"type":"text","text":"{\"kind\":\"result\"}"}]})).unwrap();
+        let reports = read_flow_reports(&path);
+        assert_eq!(reports.len(), 2);
+        assert_eq!(reports[0].kind, "work");
+        assert!(reports[0].text.contains("Continue"));
+        assert!(reports[1].text.contains("long long"));
+    }
+
+    #[test]
+    fn ignores_invalid_and_empty_files() {        let directory = tempfile::tempdir().unwrap();
         std::fs::write(directory.path().join("broken.jsonl"), "not json\n").unwrap();
         std::fs::write(directory.path().join("ignore.txt"), "{}").unwrap();
         std::fs::write(directory.path().join("empty.jsonl"), "{\"type\":\"session\",\"cwd\":\"C:\\\\Empty\"}\n").unwrap();
