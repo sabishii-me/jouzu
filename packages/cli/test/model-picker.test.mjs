@@ -302,7 +302,7 @@ function rows() {
 			rank: 0,
 		},
 		{
-			section: "all",
+			section: "other",
 			model: {
 				provider: "large",
 				modelId: "fit",
@@ -320,7 +320,7 @@ function rows() {
 }
 
 function createComponent(overrides = {}) {
-	const calls = { close: 0, selected: [], compacted: [], favorites: [], filters: [], renders: 0 };
+	const calls = { close: 0, selected: [], compacted: [], favorites: [], renders: 0 };
 	const component = new ModelPickerComponent({
 		context: {
 			tui: {
@@ -338,7 +338,6 @@ function createComponent(overrides = {}) {
 			},
 		},
 		initialRoute: { view: "models" },
-		...(overrides.initialFilter ? { initialFilter: overrides.initialFilter } : {}),
 		getRows: overrides.getRows ?? (() => rows()),
 		onSelect: async (row) => {
 			calls.selected.push(row.model.modelId);
@@ -350,10 +349,6 @@ function createComponent(overrides = {}) {
 		onToggleFavorite: (row) => {
 			calls.favorites.push(row.model.modelId);
 			overrides.onToggleFavorite?.(row);
-		},
-		onFilterChange: (filter) => {
-			calls.filters.push(filter);
-			overrides.onFilterChange?.(filter);
 		},
 		...(overrides.onRefresh ? { onRefresh: overrides.onRefresh } : {}),
 		...(overrides.onRefreshCatalogs ? { onRefreshCatalogs: overrides.onRefreshCatalogs } : {}),
@@ -440,8 +435,11 @@ test("Models view confirms compaction before selecting a context-small model", a
 	assert.ok(rendered.every((line) => visibleWidth(line) === 72));
 	assert.match(stripSgr(rendered[0]), /JOUZU · Models/);
 	assert.match(stripSgr(rendered.join("\n")), /\[Models\].*Settings/u);
-	assert.match(rendered.join("\n"), /small\/tiny/);
-	assert.match(rendered.join("\n"), /large\/fit/);
+	const listing = stripSgr(rendered.join("\n"));
+	assert.match(listing, /Name\s+Provider\s+Context/u, "the list has a column header");
+	assert.match(listing, /→ ●\s+Tiny context-small\s+small\s+1K/u, "the current row shows name, provider, and context");
+	assert.match(listing, /Large Model\s+large\s+200K/u);
+	assert.match(listing, /small\/tiny · context 1K/u, "the details line keeps the exact identity visible");
 
 	component.handleInput("enter");
 	assert.deepEqual(calls.selected, []);
@@ -578,7 +576,7 @@ test("Models view keeps ANSI and CJK content inside aligned display-width border
 		const { component } = createComponent({
 			getRows: () => [
 				{
-					section: "all",
+					section: "other",
 					model: {
 						provider: "日本語プロバイダー",
 						modelId: "モデル・長い識別子",
@@ -652,7 +650,7 @@ test("Models view recomputes rows when catalogs reload in the background", () =>
 	assert.equal(listeners.size, 0, "dispose unsubscribes the view");
 });
 
-test("Models view selects and saves for the project, toggles filters and favorites, and cancels", async () => {
+test("Models view selects and saves for the project, toggles favorites, and cancels", async () => {
 	const first = createComponent();
 	first.component.handleInput("\u0006");
 	assert.deepEqual(first.calls.favorites, ["tiny"], "Ctrl+F toggles favorite for the selected row");
@@ -664,74 +662,80 @@ test("Models view selects and saves for the project, toggles filters and favorit
 	assert.deepEqual(first.calls.selected, ["fit"]);
 	assert.equal(first.calls.close, 1);
 
-	const third = createComponent();
-	third.component.handleInput("\u001b[C");
-	third.component.handleInput("\u001b[D");
-	third.component.handleInput("down");
-	third.component.handleInput("\u0006");
-	assert.deepEqual(third.calls.filters, ["favorite", "recent"]);
-	assert.deepEqual(third.calls.favorites, ["fit"]);
-	third.component.handleInput("escape");
-	assert.equal(third.calls.close, 1);
+	const second = createComponent();
+	second.component.handleInput("down");
+	second.component.handleInput("\u0006");
+	assert.deepEqual(second.calls.favorites, ["fit"]);
+	second.component.handleInput("escape");
+	assert.equal(second.calls.close, 1);
 });
 
-test("Models view restores the last filter and reports filter changes", () => {
-	const activeFilters = [];
-	const { component, calls } = createComponent({
-		initialFilter: "favorite",
-		getRows(_query, filter) {
-			activeFilters.push(filter);
-			return rows();
+test("Models columns name the catalog for shared identities and drop on narrow terminals", () => {
+	const shared = (catalogLabel, rank) => ({
+		section: "other",
+		model: {
+			provider: "shisa",
+			providerName: "Shisa AI",
+			modelId: "shisa-v2.1-70b",
+			name: "Shisa V2.1 70B",
+			catalogLabel,
+			contextWindow: 65_536,
+			available: true,
 		},
+		contextFit: "fits",
+		favorite: rank === 0,
+		projectDefault: false,
+		rank,
 	});
-	assert.equal(activeFilters.at(-1), "favorite");
-
-	component.handleInput("\u001b[C");
-	assert.equal(activeFilters.at(-1), "all");
-	component.handleInput("\u001b[D");
-	assert.equal(activeFilters.at(-1), "favorite");
-	assert.deepEqual(calls.filters, ["all", "favorite"]);
+	const { component } = createComponent({ getRows: () => [shared("Shisa API", 0), shared("codex-pool", 1)] });
+	const wide = stripSgr(component.render(96).join("\n"));
+	assert.match(wide, /→ {2}★ {2}Shisa V2\.1 70B\s+Shisa AI · Shisa API\s+65\.5K/u);
+	assert.match(wide, /Shisa V2\.1 70B\s+Shisa AI · codex-pool\s+65\.5K/u);
+	assert.match(wide, /shisa\/shisa-v2\.1-70b · Shisa API · context 65\.5K/u);
+	for (const width of [24, 48, 96]) {
+		assert.ok(
+			component.render(width).every((line) => visibleWidth(line) === width),
+			`width ${width}`,
+		);
+	}
+	const narrow = stripSgr(component.render(36).join("\n"));
+	assert.doesNotMatch(narrow, /Provider|Context/u, "narrow terminals keep only the name column");
+	assert.match(narrow, /Shisa V2\.1 70B/u);
 });
 
-test("Models view keeps the selected filter when saving it fails", () => {
-	const activeFilters = [];
+test("Models view has one list with no view choice", () => {
+	const queries = [];
 	const { component } = createComponent({
-		getRows(_query, filter) {
-			activeFilters.push(filter);
+		getRows(query) {
+			queries.push(query);
 			return rows();
 		},
-		onFilterChange() {
-			throw new Error("broken\u001b]0;hidden\u0007 state");
-		},
 	});
+	const before = queries.length;
+	const browseText = stripSgr(component.render(72).join("\n"));
+	assert.doesNotMatch(browseText, /View|Recent|Favorite|‹/u);
+	assert.doesNotMatch(browseText, /←→/u, "browse hints do not advertise horizontal arrows");
 	component.handleInput("\u001b[C");
-	assert.equal(activeFilters.at(-1), "favorite");
-	const rendered = component.render(72).join("\n");
-	assert.match(rendered, /Filter choice was not saved: broken state/);
-	assert.doesNotMatch(rendered, /hidden/);
+	component.handleInput("\u001b[D");
+	assert.equal(queries.length, before, "horizontal arrows do not re-rank the list in browse state");
 });
 
-test("Models view separates browse choices from search cursor input", () => {
-	const activeFilters = [];
+test("Models view separates browse keys from search cursor input", () => {
 	const queries = [];
 	const { component, calls } = createComponent({
-		getRows(query, filter) {
+		getRows(query) {
 			queries.push(query);
-			activeFilters.push(filter);
 			return rows();
 		},
 	});
 	const browseText = component.render(72).join("\n");
-	assert.match(browseText, /View\s+‹ Recent ›/u);
 	assert.match(browseText, /Tab section/u);
 	assert.doesNotMatch(browseText, /Ctrl\+,|Tab filter/u);
 
-	component.handleInput("\u001b[C");
-	assert.equal(activeFilters.at(-1), "favorite");
 	component.handleInput("q");
-	const filterChanges = calls.filters.length;
+	component.handleInput("\u001b[D");
 	component.handleInput("\u001b[C");
-	assert.equal(calls.filters.length, filterChanges, "horizontal arrows edit search instead of changing View");
+	assert.equal(queries.at(-1), "q", "horizontal arrows move the search cursor without editing the query");
 	component.handleInput(" ");
 	assert.equal(queries.at(-1), "q ");
 	assert.deepEqual(calls.favorites, []);
@@ -883,7 +887,7 @@ test("Models view silently reranks the inventory after refresh", async () => {
 	const { component, calls } = createComponent({
 		getRows: () => [
 			{
-				section: "all",
+				section: "other",
 				model: {
 					provider: "p",
 					modelId: refreshed ? "fresh" : "cached",
@@ -1180,8 +1184,6 @@ test("Jouzu editor wrapper opens the Models component through the Palette surfac
 							resolve,
 						);
 						setImmediate(() => {
-							component.handleInput("\u001b[C");
-							component.handleInput("\u001b[C");
 							component.handleInput("down");
 							component.handleInput("\u0006");
 							rendered = component.render(72).join("\n");
@@ -1194,15 +1196,10 @@ test("Jouzu editor wrapper opens the Models component through the Palette surfac
 		await handlers.get("session_start")({}, ctx);
 		assert.equal(await integration.open({ source: "action" }), true);
 		assert.match(stripSgr(rendered), /JOUZU · Models/);
-		assert.match(rendered, /p\/fresh/, "the Palette must render models discovered by the refresh");
+		assert.match(stripSgr(rendered), /Fresh\s+p\s/u, "the Palette must render models discovered by the refresh");
 		assert.doesNotMatch(rendered, /Model catalogs refreshed\./);
 		assert.equal(customOptions.overlay, true);
 		assert.equal(refreshCalls, 1, "opening the Palette must refresh Pi's effective model inventory");
-		assert.equal(
-			new ModelPickerStore(paths).load().state.filter,
-			"all",
-			"filter changes must persist through the integration",
-		);
 		assert.equal(await integration.cycleFavorite("forward"), true);
 		assert.deepEqual(selected, ["fresh"], "Ctrl+P must immediately use a favorite added in the open picker");
 		assert.equal(await integration.handleScopedModelsCommand(), true);
@@ -1216,7 +1213,6 @@ test("Enter selects a model and stores it for the project", async () => {
 	const root = mkdtempSync(join(tmpdir(), "jouzu-model-picker-persist-selection-"));
 	try {
 		const paths = resolveJouzuPaths({ homeOverride: join(root, "home") });
-		new ModelPickerStore(paths).setFilter("all");
 		const integration = createJouzuModelPicker(paths);
 		const handlers = new Map();
 		const selected = [];
@@ -1286,7 +1282,6 @@ test("Models selection during an active call switches after turn_end", async () 
 	const root = mkdtempSync(join(tmpdir(), "jouzu-model-picker-queued-"));
 	try {
 		const paths = resolveJouzuPaths({ homeOverride: join(root, "home") });
-		new ModelPickerStore(paths).setFilter("all");
 		const integration = createJouzuModelPicker(paths);
 		const handlers = new Map();
 		const selected = [];
@@ -1361,7 +1356,6 @@ test("context-small selection compacts before switching models", async () => {
 	const root = mkdtempSync(join(tmpdir(), "jouzu-model-picker-compact-switch-"));
 	try {
 		const paths = resolveJouzuPaths({ homeOverride: join(root, "home") });
-		new ModelPickerStore(paths).setFilter("all");
 		const integration = createJouzuModelPicker(paths);
 		const handlers = new Map();
 		const selected = [];
@@ -1947,7 +1941,7 @@ test("integration records recency only on the first physical dispatch after each
 	}
 });
 
-test("typing reuses cached filter counts instead of re-ranking the inventory", () => {
+test("typing reuses the cached total instead of re-ranking the inventory", () => {
 	const queries = [];
 	const { component } = createComponent({
 		getRows: (query) => {
@@ -1956,28 +1950,21 @@ test("typing reuses cached filter counts instead of re-ranking the inventory", (
 		},
 	});
 
-	// Construction ranks the active query once and the three filter counts once each.
-	assert.equal(queries.length, 4);
-	assert.deepEqual(queries.slice(1).sort(), ["", "", ""], "filter counts are computed with an empty query");
+	// Construction ranks the empty-query total once and the active query once.
+	assert.deepEqual(queries, ["", ""]);
 
 	queries.length = 0;
 	component.handleInput("a");
-	assert.equal(queries.length, 1, "a keystroke must rank once, not once per filter");
+	assert.equal(queries.length, 1, "a keystroke must rank once and reuse the total");
 	assert.equal(queries[0], "a");
 
 	queries.length = 0;
 	component.handleInput("b");
 	component.handleInput("c");
 	assert.equal(queries.length, 2);
-
-	// Leaving search and changing View re-ranks the active list without disturbing the counts.
-	component.handleInput("escape");
-	queries.length = 0;
-	component.handleInput("\u001b[C");
-	assert.equal(queries.length, 1);
 });
 
-test("toggling a favorite refreshes the cached filter counts", () => {
+test("toggling a favorite refreshes the cached total", () => {
 	const queries = [];
 	const { component } = createComponent({
 		getRows: (query) => {
@@ -1992,9 +1979,9 @@ test("toggling a favorite refreshes the cached filter counts", () => {
 	queries.length = 0;
 
 	component.handleInput("\u0006");
-	// A favorite changes the inventory partition, so the three counts are
-	// recomputed and the active query is ranked once more.
-	assert.equal(queries.filter((query) => query === "").length, 3, "all three filter counts refresh");
+	// A favorite moves the row in the base order, so the total is recomputed
+	// and the active query is ranked once more.
+	assert.equal(queries.filter((query) => query === "").length, 1, "the total refreshes once");
 	assert.deepEqual(
 		queries.filter((query) => query !== ""),
 		["z"],

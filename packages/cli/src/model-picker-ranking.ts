@@ -1,15 +1,17 @@
-import type { ModelPickerFilter, ModelPickerState, ModelReference } from "./model-picker-state.js";
+import type { ModelPickerState, ModelReference } from "./model-picker-state.js";
 import { modelReferenceKey, modelReferencesEqual } from "./model-picker-state.js";
 import { sanitizeTerminalText } from "./terminal-layout.js";
 
-export type PickerFilter = ModelPickerFilter;
-export type PickerSection = "current" | "previous" | "favorite" | "project_recent" | "global_recent" | "all";
+/** Why a row holds its empty-query position: current, previous, favorite, recent, then alphabetical. */
+export type PickerSection = "current" | "previous" | "favorite" | "recent" | "other";
 export type ContextFit = "fits" | "too-small" | "unknown";
 
 export const MODEL_SWITCH_CONTEXT_SAFETY_TOKENS = 4_096;
 
 export interface PickerModel extends ModelReference {
 	name: string;
+	/** Display name the catalog publishes for the provider; the provider ID is shown without one. */
+	providerName?: string;
 	catalogLabel?: string;
 	contextWindow?: number;
 	maxTokens?: number;
@@ -18,6 +20,7 @@ export interface PickerModel extends ModelReference {
 		provider: string;
 		modelId: string;
 		name: string;
+		providerName: string;
 	};
 }
 
@@ -38,7 +41,8 @@ export interface BuildPickerRowsOptions {
 	current?: ModelReference;
 	previous?: ModelReference[];
 	query?: string;
-	filter?: PickerFilter;
+	/** Return only global favorites in their saved order, for favorite cycling. */
+	favoritesOnly?: boolean;
 	activeContextTokens?: number | null;
 	maxRows?: number;
 }
@@ -103,17 +107,24 @@ function legacyReferenceKey(reference: ModelReference): string {
 	return `legacy\0${reference.provider}\0${reference.modelId}`;
 }
 
+/** Terminal-safe row text; the name falls back to the model ID and the provider name to the provider ID. */
+export function displayFields(
+	model: Pick<PickerModel, "provider" | "modelId" | "name" | "providerName">,
+): NonNullable<PickerModel["display"]> {
+	const provider = sanitizeTerminalText(model.provider);
+	const modelId = sanitizeTerminalText(model.modelId);
+	return {
+		provider,
+		modelId,
+		name: sanitizeTerminalText(model.name) || modelId,
+		providerName: sanitizeTerminalText(model.providerName ?? "") || provider,
+	};
+}
+
 function resolvedModels(options: BuildPickerRowsOptions): Map<string, PickerModel> {
 	const models = new Map<string, PickerModel>();
 	for (const model of options.models) {
-		const resolved = {
-			...model,
-			display: {
-				provider: sanitizeTerminalText(model.provider),
-				modelId: sanitizeTerminalText(model.modelId),
-				name: sanitizeTerminalText(model.name),
-			},
-		};
+		const resolved = { ...model, display: displayFields(model) };
 		models.set(modelReferenceKey(model), resolved);
 		const legacyKey = legacyReferenceKey(model);
 		if (!models.has(legacyKey)) models.set(legacyKey, resolved);
@@ -121,24 +132,29 @@ function resolvedModels(options: BuildPickerRowsOptions): Map<string, PickerMode
 	for (const favorite of options.state.favorites) {
 		const key = modelReferenceKey(favorite);
 		if (!models.has(key)) {
-			models.set(key, {
-				...favorite,
-				name: favorite.modelId,
-				available: false,
-				display: {
-					provider: sanitizeTerminalText(favorite.provider),
-					modelId: sanitizeTerminalText(favorite.modelId),
-					name: sanitizeTerminalText(favorite.modelId),
-				},
-			});
+			const unavailable = { ...favorite, name: favorite.modelId, available: false };
+			models.set(key, { ...unavailable, display: displayFields(unavailable) });
 		}
 	}
 	return models;
 }
 
+function compareText(left: string, right: string): number {
+	return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function compareAlphabetical(left: PickerModel, right: PickerModel): number {
+	const leftDisplay = left.display ?? displayFields(left);
+	const rightDisplay = right.display ?? displayFields(right);
+	return (
+		compareText(normalized(leftDisplay.name), normalized(rightDisplay.name)) ||
+		compareText(normalized(leftDisplay.providerName), normalized(rightDisplay.providerName)) ||
+		compareText(modelReferenceKey(left), modelReferenceKey(right))
+	);
+}
+
 export function buildPickerRows(options: BuildPickerRowsOptions): PickerRow[] {
 	const models = resolvedModels(options);
-	const filter = options.filter ?? "recent";
 	const query = options.query?.trim() ?? "";
 	const rows: PickerRow[] = [];
 	const seen = new Set<string>();
@@ -161,29 +177,25 @@ export function buildPickerRows(options: BuildPickerRowsOptions): PickerRow[] {
 		});
 	};
 
-	if (filter === "recent") {
-		add(options.current, "current");
-		for (const reference of options.previous ?? []) add(reference, "previous");
-		for (const recent of options.state.recents.projects[options.projectKey] ?? []) {
-			add(recent, "project_recent", "project");
-		}
-		for (const recent of options.state.recents.global) add(recent, "global_recent", "global");
-	} else if (filter === "favorite") {
+	if (options.favoritesOnly) {
 		for (const favorite of options.state.favorites) add(favorite, "favorite");
-	} else {
-		for (const model of options.models) add(model, "all");
+		return rows.slice(0, options.maxRows ?? Number.MAX_SAFE_INTEGER);
 	}
+	// One list: current, previous, favorites, recents, then the remaining
+	// inventory alphabetically. A query ranks this same list by text match, so
+	// the base order only breaks ties.
+	add(options.current, "current");
+	for (const reference of options.previous ?? []) add(reference, "previous");
+	for (const favorite of options.state.favorites) add(favorite, "favorite");
+	for (const recent of options.state.recents.projects[options.projectKey] ?? []) add(recent, "recent", "project");
+	for (const recent of options.state.recents.global) add(recent, "recent", "global");
+	const remaining = options.models
+		.map((model) => models.get(modelReferenceKey(model)))
+		.filter((model): model is PickerModel => model !== undefined && !seen.has(modelReferenceKey(model)))
+		.sort(compareAlphabetical);
+	for (const model of remaining) add(model, "other");
 
 	if (!query) return rows.slice(0, options.maxRows ?? Number.MAX_SAFE_INTEGER);
-	// A query searches the whole inventory, not only the active view's rows, so
-	// a model outside Recent or Favorite stays reachable. Appended rows keep
-	// larger ranks, so view-local matches still win ties in the ranking below.
-	for (const model of options.models) add(model, "all");
-	const compareIdentity = (left: PickerRow, right: PickerRow): number => {
-		const leftKey = modelReferenceKey(left.model);
-		const rightKey = modelReferenceKey(right.model);
-		return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
-	};
 	return rows
 		.map((row) => ({ row, score: searchScore(row.model, query) }))
 		.filter((value): value is { row: PickerRow; score: number } => value.score !== undefined)
@@ -191,8 +203,7 @@ export function buildPickerRows(options: BuildPickerRowsOptions): PickerRow[] {
 			(left, right) =>
 				left.score - right.score ||
 				Number(right.row.model.available) - Number(left.row.model.available) ||
-				(filter === "all" ? 0 : left.row.rank - right.row.rank) ||
-				compareIdentity(left.row, right.row),
+				left.row.rank - right.row.rank,
 		)
 		.slice(0, options.maxRows ?? 200)
 		.map(({ row, score }) => ({ ...row, rank: score }));
