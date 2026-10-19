@@ -33,14 +33,41 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  changes:
+    # Classifies pull requests into the required tier or full qualification. Pushes and manual runs
+    # skip it and run full qualification.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      full: ${{ steps.classify.outputs.full }}
+      endurance: ${{ steps.classify.outputs.endurance }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: classify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: |
+          gh api --paginate "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" --jq '.[].filename' > "$RUNNER_TEMP/changed-files"
+          node scripts/ci-changes.mjs "$RUNNER_TEMP/changed-files" "$LABELS" >> "$GITHUB_OUTPUT"
+
   node:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.result != 'failure' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(inputs.platform == 'windows' && '["windows-latest"]' || '["ubuntu-latest","macos-latest"]') }}
-        node: [22, 24]
+        # Pull requests in the required tier run the canonical Ubuntu/Node 22 suite only.
+        os: ${{ fromJSON(inputs.platform == 'windows' && '["windows-latest"]' || (github.event_name == 'pull_request' && needs.changes.outputs.full != 'true') && '["ubuntu-latest"]' || '["ubuntu-latest","macos-latest"]') }}
+        node: ${{ fromJSON((github.event_name == 'pull_request' && needs.changes.outputs.full != 'true') && '[22]' || '[22, 24]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -158,8 +185,10 @@ jobs:
           retention-days: 7
 
   endurance:
-    # Production-limit cases run once per Linux/macOS qualification instead of in every suite.
-    if: inputs.platform != 'windows'
+    # Production-limit cases run once per Linux/macOS qualification instead of in every suite, and
+    # on pull requests that change flow control.
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.result != 'failure' && inputs.platform != 'windows' && (github.event_name != 'pull_request' || needs.changes.outputs.endurance == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -203,7 +232,8 @@ jobs:
           retention-days: 30
 
   legacy-linux-static-fetch:
-    if: inputs.platform != 'windows'
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.result != 'failure' && inputs.platform != 'windows' }}
     runs-on: ubuntu-latest
     container: rockylinux:8@sha256:9794037624aaa6212aeada1d28861ef5e0a935adaf93e4ef79837119f2a2d04c
     timeout-minutes: 25
@@ -253,6 +283,9 @@ jobs:
         timeout-minutes: 5
 
   release-artifacts:
+    # Package consumers need this job, so they also run only in full qualification.
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.result != 'failure' && (github.event_name != 'pull_request' || needs.changes.outputs.full == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
@@ -308,6 +341,7 @@ jobs:
 
   optional-camoufox:
     needs: release-artifacts
+    if: ${{ !cancelled() && needs.release-artifacts.result == 'success' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
@@ -376,6 +410,7 @@ jobs:
 
   packed-install:
     needs: release-artifacts
+    if: ${{ !cancelled() && needs.release-artifacts.result == 'success' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
     strategy:
@@ -461,6 +496,7 @@ jobs:
 
   automatic-update:
     needs: release-artifacts
+    if: ${{ !cancelled() && needs.release-artifacts.result == 'success' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 75
     strategy:
@@ -545,6 +581,7 @@ jobs:
 
   published-upgrade:
     needs: release-artifacts
+    if: ${{ !cancelled() && needs.release-artifacts.result == 'success' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 65
     strategy:
@@ -588,12 +625,14 @@ jobs:
           retention-days: 30
 
   python:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.result != 'failure' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(inputs.platform == 'windows' && '["windows-latest"]' || '["ubuntu-latest","macos-latest"]') }}
+        os: ${{ fromJSON(inputs.platform == 'windows' && '["windows-latest"]' || (github.event_name == 'pull_request' && needs.changes.outputs.full != 'true') && '["ubuntu-latest"]' || '["ubuntu-latest","macos-latest"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -617,3 +656,40 @@ jobs:
         run: uv build --project python/jouzu --out-dir dist/python
       - if: matrix.os == 'ubuntu-latest'
         run: uvx --from twine twine check dist/python/*
+
+  ci-result:
+    # The one check for branch protection: every job passed, or was skipped by the pull request tier
+    # or the Windows-only diagnostics.
+    if: always()
+    needs:
+      [
+        changes,
+        node,
+        endurance,
+        legacy-linux-static-fetch,
+        release-artifacts,
+        optional-camoufox,
+        packed-install,
+        automatic-update,
+        published-upgrade,
+        python,
+      ]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every selected job to pass
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+          PARTIAL: ${{ github.event_name == 'pull_request' || inputs.platform == 'windows' }}
+        run: |
+          node --input-type=module -e '
+            const results = Object.entries(JSON.parse(process.env.RESULTS)).map(([job, value]) => [job, value.result]);
+            const allowed = (job, result) =>
+              result === "success" || (result === "skipped" && (job === "changes" || process.env.PARTIAL === "true"));
+            for (const [job, result] of results) console.log(`${job}: ${result}`);
+            const failed = results.filter(([job, result]) => !allowed(job, result));
+            if (failed.length) {
+              console.error(`Not passed: ${failed.map(([job, result]) => `${job} (${result})`).join(", ")}`);
+              process.exit(1);
+            }
+          '

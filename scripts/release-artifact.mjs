@@ -14,6 +14,7 @@ export function requiredJobs() {
 	const names = [
 		"release-artifacts",
 		"endurance",
+		"ci-result",
 		"legacy-linux-static-fetch (22.19.0)",
 		"legacy-linux-static-fetch (24)",
 	];
@@ -43,7 +44,8 @@ export function verifyQualification(run, jobs, manifest) {
 	}
 	for (const job of jobs) {
 		assert.equal(job.status, "completed", job.name);
-		assert.equal(job.conclusion, "success", job.name);
+		// The pull request classifier is skipped on pushes and manual runs.
+		assert.equal(job.conclusion, job.name === "changes" ? "skipped" : "success", job.name);
 	}
 }
 

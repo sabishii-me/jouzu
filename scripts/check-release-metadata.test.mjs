@@ -207,7 +207,7 @@ test("CI packs once and shares exact artifacts with parallel native gates", () =
 	assert.match(workflow, /JOUZU_UPDATE_CURRENT_TARBALL: dist\/ci-artifacts\/candidate\.tgz/u);
 	assert.match(workflow, /JOUZU_UPDATE_NEXT_TARBALL: dist\/ci-artifacts\/next\.tgz/u);
 	assert.match(workflow, /JOUZU_UPDATE_BROKEN_TARBALL: dist\/ci-artifacts\/broken\.tgz/u);
-	assert.match(workflow, /node: \[22, 24\]/u);
+	assert.match(workflow, /'\[22, 24\]'\) \}\}/u);
 	assert.match(workflow, /published-upgrade:[\s\S]*needs: release-artifacts/u);
 	assert.match(workflow, /retention-days: 30/u);
 	assert.match(workflow, /release-manifest\.json/u);
@@ -220,12 +220,44 @@ test("CI qualification matrices stay on hosted Linux and macOS with Windows as m
 		workflow.match(
 			/inputs\.platform == 'windows' && '\["windows-latest"\]' \|\| '\["ubuntu-latest","macos-latest"\]'/gu,
 		)?.length,
-		6,
-		"every hosted matrix must run ubuntu-latest and macos-latest only",
+		4,
+		"every package consumer matrix must run ubuntu-latest and macos-latest only",
+	);
+	// The node and python matrices add the pull request tier to the same platform choice.
+	assert.equal(
+		workflow.match(
+			/inputs\.platform == 'windows' && '\["windows-latest"\]' \|\| \(github\.event_name == 'pull_request' && needs\.changes\.outputs\.full != 'true'\) && '\["ubuntu-latest"\]' \|\| '\["ubuntu-latest","macos-latest"\]'/gu,
+		)?.length,
+		2,
 	);
 	assert.match(workflow, /options: \[windows, all\]/u);
 	assert.match(workflow, /default: windows/u);
-	assert.match(workflow, /legacy-linux-static-fetch:[\s\S]*if: inputs\.platform != 'windows'/u);
+	assert.match(
+		workflow,
+		/legacy-linux-static-fetch:\n {4}needs: changes\n {4}if: \$\{\{[^\n]*inputs\.platform != 'windows' \}\}/u,
+	);
+});
+
+test("pull requests run the required tier unless a change needs full qualification, and ci-result covers every job", () => {
+	const workflow = readFileSync(join(root, ".github", "workflows", "ci.yml"), "utf8");
+	assert.match(workflow, /changes:\n[^\n]*\n[^\n]*\n {4}if: github\.event_name == 'pull_request'/u);
+	assert.match(workflow, /node scripts\/ci-changes\.mjs/u);
+	assert.match(
+		workflow,
+		/release-artifacts:\n[^\n]*\n {4}needs: changes\n {4}if: \$\{\{ !cancelled\(\) && needs\.changes\.result != 'failure' && \(github\.event_name != 'pull_request' \|\| needs\.changes\.outputs\.full == 'true'\) \}\}/u,
+	);
+	assert.equal(
+		workflow.match(
+			/needs: release-artifacts\n {4}if: \$\{\{ !cancelled\(\) && needs\.release-artifacts\.result == 'success' \}\}/gu,
+		)?.length,
+		4,
+	);
+	const jobs = [...workflow.slice(workflow.indexOf("\njobs:\n")).matchAll(/^ {2}([a-z][a-z0-9-]*):\s*$/gmu)]
+		.map((match) => match[1])
+		.filter((job) => job !== "ci-result");
+	const result = workflow.slice(workflow.indexOf("  ci-result:"));
+	assert.match(result, /if: always\(\)/u);
+	for (const job of jobs) assert.match(result, new RegExp(`\\b${job},`, "u"), `ci-result must need ${job}`);
 });
 
 test("CI cancels superseded pull request runs but never another commit's qualification", () => {
