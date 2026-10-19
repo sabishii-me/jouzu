@@ -2,6 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { emptyProjection, historyProjection, object, projectEvent, type ChatProjection, type WireObject } from "./chat-projection";
 
 export interface ChatImage { type: "image"; data: string; mimeType: "image/png" | "image/jpeg" | "image/webp" | "image/gif" }
+const REQUEST_TIMEOUT = 30_000;
+const STARTUP_TIMEOUT = 120_000;
 export interface ChatSnapshot { projection: ChatProjection; connected: boolean; transportReady?: boolean; pending: boolean; error: string | null; sessionId?: string; sessionFile?: string; model?: string }
 interface Poll { records: WireObject[]; closed: boolean; error?: string }
 // A desktop connection, not an agent loop: never retries a prompt or writes history.
@@ -61,16 +63,19 @@ export class ChatConnection {
       this.timer = setTimeout(this.poll, 30);
     } catch (error) { this.fail(error); }
   };
-  request(command: string, fields: WireObject = {}): Promise<unknown> {
+  request(command: string, fields: WireObject = {}, timeoutMs = REQUEST_TIMEOUT): Promise<unknown> {
     if (!this.handle || this.disposed || this.failed) return Promise.reject(new Error("Chat is not connected."));
     const id = `desktop-${++this.nextId}`;
     return new Promise((resolve, reject) => {
-      this.requests.set(id, { command, resolve, reject, deadline: Date.now() + 30000 });
+      this.requests.set(id, { command, resolve, reject, deadline: Date.now() + timeoutMs });
       void invoke("chat_send", { handle: this.handle, request: { ...fields, type: command, id } }).catch(error => { this.requests.delete(id); reject(new Error(String(error))); });
     });
   }
   async refreshHistory() {
-    const state = await this.request("get_state");
+    // The released runtime loads extensions and sessions before it answers its first request.
+    // That cold start is outside this desktop's control and has been measured near 30 seconds,
+    // so the initial handshake gets its own budget instead of the command deadline.
+    const state = await this.request("get_state", {}, STARTUP_TIMEOUT);
     if (!object(state) || typeof state.sessionId !== "string" || typeof state.isStreaming !== "boolean") throw new Error("Runtime returned incompatible session state.");
     const history = await this.request("get_messages");
     if (!object(history)) throw new Error("Runtime returned incompatible history.");

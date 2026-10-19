@@ -14,6 +14,31 @@ describe("desktop RPC connection", () => {
     expect(images[0]).toEqual(image);
     expect(client.snapshot.pending).toBe(false);
   });
+  it("waits out a cold released-runtime startup beyond the command deadline", async () => {
+    vi.useFakeTimers();
+    const requests: Record<string, unknown>[] = [];
+    const replied = new Set<unknown>();
+    const startedAt = Date.now();
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      if (command === "chat_start") return "cold" as never;
+      if (command === "chat_send") { requests.push((args as { request: Record<string, unknown> }).request); return undefined as never; }
+      if (command === "chat_poll") {
+        // The released runtime answers its first request only after a long cold start.
+        if (Date.now() - startedAt < 60_000) return { records: [], closed: false } as never;
+        const request = requests.find(request => ["get_state", "get_messages"].includes(String(request.type)) && !replied.has(request.id));
+        if (request) { replied.add(request.id); return { records: [{ type: "response", id: request.id, command: request.type, success: true, data: request.type === "get_state" ? { sessionId: "cold-id", isStreaming: false } : { messages: [] } }], closed: false } as never; }
+        return { records: [], closed: false } as never;
+      }
+      return undefined as never;
+    });
+    const client = new ChatConnection(() => {}, () => {});
+    const starting = client.start("folder");
+    await vi.advanceTimersByTimeAsync(61_000);
+    await starting;
+    expect(client.snapshot.connected).toBe(true);
+    expect(client.snapshot.error).toBeNull();
+    await client.close();
+  });
   it("registers polling before state handshake and never replays after timeout", async () => {
     vi.useFakeTimers();
     const requests: Record<string, unknown>[] = [];
