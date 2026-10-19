@@ -431,9 +431,9 @@ fn main() {
                     let _ = close_window.hide();
                 }
             });
-            let show = tauri::menu::MenuItem::with_id(app, "show", "Show Jouzu", true, None::<&str>)?;
+            let show = tauri::menu::MenuItem::with_id(app, "show", "Show jouzu-desktop", true, None::<&str>)?;
             let new_session = tauri::menu::MenuItem::with_id(app, "new", "New Session", true, None::<&str>)?;
-            let quit = tauri::menu::MenuItem::with_id(app, "quit", "Quit Jouzu", true, None::<&str>)?;
+            let quit = tauri::menu::MenuItem::with_id(app, "quit", "Quit jouzu-desktop", true, None::<&str>)?;
             let menu = tauri::menu::Menu::with_items(app, &[&show, &new_session, &quit])?;
             let icon = app
                 .default_window_icon()
@@ -502,7 +502,7 @@ fn main() {
 
         ])
         .build(tauri::generate_context!())
-        .expect("Unable to start Jouzu launcher")
+        .expect("Unable to start jouzu-desktop")
         .run(|app, event| {
             if matches!(event, tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit) {
                 use tauri::Manager;

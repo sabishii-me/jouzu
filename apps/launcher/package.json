@@ -1,6 +1,6 @@
 {
-  "name": "@shisa-ai/jouzu-launcher",
-  "version": "0.3.9",
+  "name": "@shisa-ai/jouzu-desktop",
+  "version": "1.0.0",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
