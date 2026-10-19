@@ -14,9 +14,10 @@ npm run test:runtime
 
 Covers `get_state`, `prompt` (success without `data`), `steer`, `abort`, `clear_queue`,
 `new_session`, `get_messages`, `switch_session` with restored history, model catalog and
-`set_model`. It starts a loopback OpenAI-compatible server and a test-only provider
-extension; it never contacts a paid provider, installs anything, or patches the runtime.
-Results are written to `rpc-matrix-result.json`.
+`set_model`, `compact` (or its small-session guard), and `export_html` with a written file.
+It starts a loopback OpenAI-compatible server and a test-only provider extension; it never
+contacts a paid provider, installs anything, or patches the runtime. Results are written to
+`rpc-matrix-result.json`.
 
 ## UI flow
 
