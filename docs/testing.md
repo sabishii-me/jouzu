@@ -86,6 +86,8 @@ status 124. Interrupts exit with status 130 or 143. Timeout and interrupt
 handling kills the test process group on POSIX and uses `taskkill /T /F` on
 Windows; independently detached processes may require separate cleanup.
 
+Hosted Linux and macOS CI jobs set `JOUZU_TEST_CONCURRENCY=4`. In the Test benchmark workflow (three runs each on Node 22), 4 gave the lowest stable CLI suite median: 170 s on Ubuntu (default 3: 166 s median but a 247 s 90th percentile) and 259 s on macOS (default 2: 297 s). Concurrency 8 failed timing-sensitive tests on both runners. Windows jobs keep Node's default.
+
 CI's opt-in extension network qualification uses a 600000ms test budget and
 900000ms suite budget to accommodate its declared ten-minute network test; those
 overrides apply only to that step. The `npm test --workspaces` steps use a
