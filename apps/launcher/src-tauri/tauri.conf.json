@@ -38,6 +38,9 @@
     "copyright": "Copyright © Shisa, Inc.",
     "windows": {
       "nsis": {
+        "installMode": "currentUser",
+        "template": "../../../packaging/launcher/installer.nsi",
+        "installerHooks": "../../../packaging/launcher/installer-hooks.nsh",
         "languages": [
           "English",
           "Japanese",
