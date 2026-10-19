@@ -247,6 +247,15 @@ Function PageReinstall
 
   nsis_tauri_utils::SemverCompare "${VERSION}" $R0
   Pop $R0
+
+  ; Upgrading an existing launcher installs over it. The previous uninstaller
+  ; refuses while Jouzu sessions/runtime processes are alive, so running it
+  ; here is what produced "unable to uninstall". NSIS_HOOK_PREINSTALL stops
+  ; those processes immediately before the files are replaced instead.
+  ${If} $R0 = 1
+    Abort
+  ${EndIf}
+
   ; Reinstalling the same version
   ${If} $R0 = 0
     StrCpy $R1 "$(alreadyInstalledLong)"
