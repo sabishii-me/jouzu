@@ -7,11 +7,12 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { digest, pinnedNpm, repository, verifyManifest } from "./release-artifact.mjs";
+import { verifyPublicationSource } from "./release-publication-source.mjs";
 
 const registry = "https://registry.npmjs.org/";
 const predicateType = "https://slsa.dev/provenance/v1";
 
-export function verifyProvenance(statement, manifest, publishRunId) {
+export function verifyProvenance(statement, manifest, publishRunId, releaseCommit = manifest.sourceCommit) {
 	const ref = `refs/tags/v${manifest.version}`;
 	assert.equal(statement._type, "https://in-toto.io/Statement/v1");
 	assert.equal(statement.predicateType, predicateType);
@@ -33,7 +34,7 @@ export function verifyProvenance(statement, manifest, publishRunId) {
 		definition.resolvedDependencies.some(
 			(dependency) =>
 				dependency.uri === `git+https://github.com/${repository}@${ref}` &&
-				dependency.digest.gitCommit === manifest.sourceCommit,
+				dependency.digest.gitCommit === releaseCommit,
 		),
 		"provenance source commit mismatch",
 	);
@@ -44,7 +45,8 @@ export function verifyProvenance(statement, manifest, publishRunId) {
 	);
 }
 
-export async function verifyPublished(manifest, npmCli, publishRunId) {
+export async function verifyPublished(manifest, npmCli, publishRunId, releaseCommit = manifest.sourceCommit) {
+	verifyPublicationSource(manifest.sourceCommit, releaseCommit);
 	// Use the same pinned verification libraries as npm audit signatures, without
 	// installing or executing the package or auditing unrelated dependencies.
 	const require = createRequire(realpathSync(npmCli));
@@ -85,7 +87,7 @@ export async function verifyPublished(manifest, npmCli, publishRunId) {
 			certificateIssuer: "https://token.actions.githubusercontent.com",
 			certificateIdentityURI: `https://github.com/${repository}/.github/workflows/publish-npm.yml@refs/tags/v${manifest.version}`,
 		});
-		verifyProvenance(JSON.parse(Buffer.from(bundle.dsseEnvelope.payload, "base64")), manifest, publishRunId);
+		verifyProvenance(JSON.parse(Buffer.from(bundle.dsseEnvelope.payload, "base64")), manifest, publishRunId, releaseCommit);
 		assert.equal(new URL(metadata._resolved).origin, new URL(registry).origin);
 		const bytes = await pacote.tarball(`jouzu@${manifest.version}`, {
 			registry,
@@ -110,10 +112,10 @@ export async function verifyPublished(manifest, npmCli, publishRunId) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-	const [manifestPath, npmCli, runId] = process.argv.slice(2);
+	const [manifestPath, npmCli, runId, releaseCommit] = process.argv.slice(2);
 	assert.ok(
 		manifestPath && npmCli && runId,
 		"Usage: node scripts/verify-published-release.mjs MANIFEST NPM_CLI PUBLISH_RUN_ID",
 	);
-	console.log(JSON.stringify(await verifyPublished(JSON.parse(readFileSync(manifestPath, "utf8")), npmCli, runId)));
+	console.log(JSON.stringify(await verifyPublished(JSON.parse(readFileSync(manifestPath, "utf8")), npmCli, runId, releaseCommit)));
 }

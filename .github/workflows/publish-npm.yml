@@ -16,6 +16,21 @@ on:
         required: true
         type: string
 
+      qualified-source:
+        description: Original tested source commit when only publication tooling changed
+        required: false
+        default: ''
+        type: string
+      candidate-from-release:
+        description: Restore the preserved candidate from the version release
+        required: false
+        default: false
+        type: boolean
+      candidate-sha256:
+        description: Expected SHA-256 of the preserved candidate
+        required: false
+        default: ''
+        type: string
       windows-evidence:
         description: Native Windows qualification JSON when available; installer qualification may follow npm publication
         required: false
@@ -56,11 +71,24 @@ jobs:
           git merge-base --is-ancestor HEAD refs/remotes/origin/main
           node -e 'const p=require("./packages/cli/package.json"); if (`v${p.version}` !== process.env.RELEASE_REF) process.exit(1)'
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        if: ${{ !inputs.candidate-from-release }}
         with:
           name: jouzu-candidate
           path: dist/ci-artifacts
           github-token: ${{ github.token }}
           run-id: ${{ inputs.ci-run-id }}
+      - name: Restore the preserved candidate
+        if: ${{ inputs.candidate-from-release }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_REF: ${{ inputs.ref }}
+          CANDIDATE_SHA256: ${{ inputs.candidate-sha256 }}
+        run: |
+          [[ "$CANDIDATE_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          mkdir -p dist/ci-artifacts
+          gh release download "$RELEASE_REF" --repo "$GITHUB_REPOSITORY" --dir dist/ci-artifacts --pattern "jouzu-${RELEASE_REF#v}.tgz" --pattern release-manifest.json --pattern SHA256SUMS
+          mv "dist/ci-artifacts/jouzu-${RELEASE_REF#v}.tgz" dist/ci-artifacts/candidate.tgz
+          echo "$CANDIDATE_SHA256  dist/ci-artifacts/candidate.tgz" | sha256sum --check
       - name: Read qualification evidence
         env:
           GH_TOKEN: ${{ github.token }}
@@ -75,11 +103,17 @@ jobs:
           [[ "$CI_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CI_RUN_ID/attempts/$CI_RUN_ATTEMPT" > dist/ci-artifacts/ci-run.json
           gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$CI_RUN_ID/attempts/$CI_RUN_ATTEMPT/jobs?per_page=100" | jq '[.[].jobs[]]' > dist/ci-artifacts/ci-jobs.json
-          node -e 'const m=require("./dist/ci-artifacts/release-manifest.json"); if(m.qualification.runId!==process.env.CI_RUN_ID || String(m.qualification.runAttempt)!==process.env.CI_RUN_ATTEMPT) process.exit(1)'
+          ARTIFACT_ATTEMPT=$(node -p 'require("./dist/ci-artifacts/release-manifest.json").qualification.runAttempt')
+          [[ "$ARTIFACT_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$CI_RUN_ID/attempts/$ARTIFACT_ATTEMPT/jobs?per_page=100" | jq '[.[].jobs[]]' > dist/ci-artifacts/artifact-jobs.json
+          node --input-type=module -e 'import{readFileSync}from"node:fs";import{qualificationManifest}from"./scripts/release-publication-source.mjs";const d="dist/ci-artifacts/";const load=n=>JSON.parse(readFileSync(d+n));qualificationManifest(load("release-manifest.json"),load("ci-run.json"),load("ci-jobs.json"),load("artifact-jobs.json"));'
         timeout-minutes: 2
       - run: npm install --global npm@11.16.0 --ignore-scripts
         timeout-minutes: 3
       - run: node scripts/publish-npm.mjs dist/ci-artifacts
+        env:
+          QUALIFIED_SOURCE_COMMIT: ${{ inputs.qualified-source }}
+          CANDIDATE_SHA256: ${{ inputs.candidate-sha256 }}
         timeout-minutes: 5
   windows-update:
     # A published version must never exist without its signed Windows update artifact.
