@@ -675,7 +675,17 @@ export class PiSessionFlowIngress implements Ingress {
 	}
 	resetFlow() {
 		return this.manage(async (service) => {
-			const result = await service.resetFlow();
+			const branch = service.branch();
+			const result = await service.resetFlow(() => {
+				for (const [id, pending] of this.pending) {
+					if (pending.branch !== branch) continue;
+					this.pending.delete(id);
+					this.retainedUserInput.delete(id);
+				}
+				for (const [id, context] of this.waitContexts)
+					if (context.branch === branch) this.waitContexts.delete(id);
+				this.replayIds?.clear();
+			});
 			this.automatedPauseReason = undefined;
 			return result;
 		});

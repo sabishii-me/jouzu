@@ -410,6 +410,7 @@ test("an interrupted dispatch without native evidence exposes a recovery blocker
 	assert.equal(discarded.dispatch.phase, "started", "discard preserves the unknown execution history");
 	const reset = await next.ingress.resetFlow();
 	assert.equal(reset.recoveryHeld, false);
+	assert.equal(recoveredBranch.host.gate().recoveryBlocked, false);
 	assert.equal(await next.ingress.recoveryHold(), undefined);
 	assert.deepEqual(
 		await next.ingress.branch().attachment.submissions.snapshot(false),

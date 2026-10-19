@@ -191,7 +191,12 @@ export async function recoverNativeSources(
 			const expected = observed(input, receipt.prompt?.messageIndex ?? 0);
 			const target = targets[0];
 			const ignoreTimestamp = expected.nativeTimestamp || target.entry.type === "custom_message";
-			if (!isDeepStrictEqual(persistedAgentMessage(expected.message, ignoreTimestamp), persistedAgentMessage(target.message, ignoreTimestamp)))
+			if (
+				!isDeepStrictEqual(
+					persistedAgentMessage(expected.message, ignoreTimestamp),
+					persistedAgentMessage(target.message, ignoreTimestamp),
+				)
+			)
 				throw new FlowLedgerError("identity", "Native observed input differs from its transcript message.");
 			const liveMessage = live[projected.indexOf(target)];
 			const source: Source = {

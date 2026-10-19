@@ -48,7 +48,12 @@ test("native source recovery rebinds exact duplicate transcript entries for late
 test("native custom-message recovery uses Pi's persisted renderer data and timestamp", async (t) => {
 	const first = await nativeRequests(t, { retainInputs: true });
 	await first.session.sendCustomMessage(
-		{ customType: "fixture", content: [{ type: "text", text: "custom" }], display: true, details: { exact: 1, omitted: undefined } },
+		{
+			customType: "fixture",
+			content: [{ type: "text", text: "custom" }],
+			display: true,
+			details: { exact: 1, omitted: undefined },
+		},
 		{ triggerTurn: true },
 	);
 	const next = await reopen(t, first);
