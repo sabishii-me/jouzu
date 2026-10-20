@@ -101,14 +101,14 @@ jobs:
               cargo build --locked --release --bins
               if ($LASTEXITCODE) { exit $LASTEXITCODE }
             } finally { Pop-Location }
-            npm run tauri -- build --no-bundle --config "$env:RUNNER_TEMP/windows-bundle/tauri-build.json"
+            node node_modules/@tauri-apps/cli/tauri.js build --no-bundle --config "$env:RUNNER_TEMP/windows-bundle/tauri-build.json"
             if ($LASTEXITCODE) { exit $LASTEXITCODE }
           } finally { Pop-Location }
       - name: Archive signing inputs
         run: |
           $stage = "$env:RUNNER_TEMP/signing-inputs"
           New-Item -ItemType Directory "$stage/bin" -Force | Out-Null
-          Copy-Item apps/launcher/src-tauri/target/release/launcher.exe,apps/launcher/src-tauri/target/release/console.exe "$stage/bin"
+          Copy-Item apps/launcher/src-tauri/target/release/jouzu-desktop.exe,apps/launcher/src-tauri/target/release/console.exe "$stage/bin"
           Copy-Item apps/launcher/dist "$stage/dist" -Recurse
           Copy-Item "$env:RUNNER_TEMP/jouzu-runtime/app" "$stage/app" -Recurse
           Copy-Item "$env:RUNNER_TEMP/windows-bundle/runtime" "$stage/runtime" -Recurse

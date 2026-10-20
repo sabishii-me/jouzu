@@ -6,14 +6,14 @@ $repository = $env:GITHUB_REPOSITORY
 if ($repository -notmatch '^[\w.-]+/[\w.-]+$') { throw 'Invalid repository' }
 # The full package serves first install and repair; the launcher-only package is what the
 # in-app updater installs, so the feed must point at the launcher-only artifact.
-$fullSetup = Join-Path $Directory "Jouzu Launcher_${Version}_x64-setup.exe"
-$updateSetup = Join-Path $Directory "Jouzu Launcher_${Version}_x64-update.exe"
+$fullSetup = Join-Path $Directory "jouzu-desktop_${Version}_x64-setup.exe"
+$updateSetup = Join-Path $Directory "jouzu-desktop_${Version}_x64-update.exe"
 foreach ($file in @($fullSetup,$updateSetup,"$updateSetup.sig","$Directory/build.json","$Directory/source.json")) {
  if (-not (Test-Path -LiteralPath $file)) { throw "Missing release output: $file" }
 }
 $tag = "launcher-v$Version"
 # Version releases are immutable; only the discovery feed is replaceable.
-& gh release create $tag $fullSetup $updateSetup "$updateSetup.sig" "$Directory/build.json" "$Directory/source.json" --repo $repository --target $env:GITHUB_SHA --title "Jouzu Launcher $Version" --notes 'The x64-setup asset installs the launcher with the runtime; the x64-update asset updates an installed launcher without rewriting the Jouzu payload.'
+& gh release create $tag $fullSetup $updateSetup "$updateSetup.sig" "$Directory/build.json" "$Directory/source.json" --repo $repository --target $env:GITHUB_SHA --title "jouzu-desktop $Version" --notes 'The x64-setup asset installs the launcher with the runtime; the x64-update asset updates an installed launcher without rewriting the Jouzu payload.'
 if ($LASTEXITCODE) { throw 'Version release creation failed; feed unchanged' }
 # GitHub rewrites spaces in asset names, so the download URL is built from the name the release
 # actually stored; a URL built from the local file name is a 404.

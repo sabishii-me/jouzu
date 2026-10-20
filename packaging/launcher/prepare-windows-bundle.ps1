@@ -38,6 +38,12 @@ $resources["$runtime/"] = 'runtime/'
 $resources["$repo/packaging/launcher/"] = 'runtime/launcher-update/'
 $resources["$repo/apps/launcher/src-tauri/target/release/console.exe"] = 'console.exe'
 $config = @{
+ build = @{
+  beforeDevCommand = 'npm run dev'
+  beforeBuildCommand = 'npm run build'
+  devUrl = 'http://localhost:1420'
+  frontendDist = "$repo/apps/launcher/dist"
+ }
  bundle = @{
   active = $true
   targets = @('nsis')
