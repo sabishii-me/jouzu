@@ -221,9 +221,13 @@ export function App() {
   const initialWorkspaceChosen = useRef(false);
   useEffect(() => {
     if (initialWorkspaceChosen.current || activePath || !state) return;
-    const first = state.recent[0]?.path;
+    const saved = localStorage.getItem("jouzu.chat.workspace");
+    const first = state.recent.find(item => item.path === saved)?.path ?? state.recent[0]?.path;
     if (first) { initialWorkspaceChosen.current = true; setActivePath(first); }
   }, [state, activePath]);
+  useEffect(() => {
+    if (activePath) localStorage.setItem("jouzu.chat.workspace", activePath);
+  }, [activePath]);
   // A signed-in account supplies models through Jouzu's published catalog. The chat shell
   // asks for a refresh only when the connected runtime has no models, so warm starts do not
   // pay a network round trip. A successful refresh restarts the session with the new catalog.
