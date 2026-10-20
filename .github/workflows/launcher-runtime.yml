@@ -101,7 +101,7 @@ jobs:
               cargo build --locked --release --bins
               if ($LASTEXITCODE) { exit $LASTEXITCODE }
             } finally { Pop-Location }
-            node node_modules/@tauri-apps/cli/tauri.js build --no-bundle --config "$env:RUNNER_TEMP/windows-bundle/tauri-build.json"
+            npm run tauri -- build --no-bundle --config "$env:RUNNER_TEMP/windows-bundle/tauri-build.json"
             if ($LASTEXITCODE) { exit $LASTEXITCODE }
           } finally { Pop-Location }
       - name: Archive signing inputs

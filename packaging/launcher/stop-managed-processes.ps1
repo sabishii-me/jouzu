@@ -6,7 +6,7 @@ try {
     if (-not (Test-Path -LiteralPath $directory)) { exit 0 }
     $root = $directory + '\'
     $launcher = Join-Path $directory 'jouzu-desktop.exe'
-    # Accept either the current name or the previous launcher name when upgrading.
+    # Accept either the new name or the previous launcher name when upgrading.
     if (-not (Test-Path -LiteralPath $launcher)) {
         $launcher = Join-Path $directory 'launcher.exe'
     }
