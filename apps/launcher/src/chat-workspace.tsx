@@ -135,10 +135,10 @@ export function ChatWorkspace({ path, revision = 0, newSession = true, onNewSess
   }
   useEffect(() => { void refreshSessions(); }, [path, revision]);
   useEffect(() => {
-    if (!snapshot.connected || snapshot.projection.running || snapshot.projection.messages.length === 0) return;
-    const timer = setTimeout(() => { void refreshSessions(); }, 150);
+    if (!snapshot.connected || snapshot.projection.messages.length === 0) return;
+    const timer = setTimeout(() => { void refreshSessions(); }, 500);
     return () => clearTimeout(timer);
-  }, [snapshot.connected, snapshot.projection.running, snapshot.projection.messages.length]);
+  }, [snapshot.connected, snapshot.projection.messages.length]);
   useEffect(() => { if (snapshot.connected) void refreshSessions(); }, [snapshot.connected, snapshot.sessionFile]);
   useEffect(() => { if (snapshot.connected) void connection.current?.loadStats(); }, [snapshot.connected, snapshot.sessionFile, snapshot.projection.messages.length, snapshot.projection.running]);
   useEffect(() => {
