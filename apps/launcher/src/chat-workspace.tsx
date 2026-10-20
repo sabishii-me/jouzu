@@ -206,7 +206,7 @@ export function ChatWorkspace({ path, revision = 0, newSession = true, onNewSess
   }
   async function openSession(sessionPath: string) {
     const client = connection.current;
-    if (!client || sessionChange.current || snapshot.projection.running) return;
+    if (!client || sessionChange.current) return;
     const cached = historyCache.current.get(sessionPath);
     // A hovered/prefetched session can replace the transcript immediately, even if
     // the runtime is still finishing a New Session request.

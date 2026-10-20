@@ -173,7 +173,7 @@ export class ChatConnection {
     }
   }
   private async changeSession(command: "new_session" | "switch_session", fields: WireObject = {}) {
-    if (!this.snapshot.connected || this.snapshot.pending || this.snapshot.projection.running) throw new Error("Wait for the current conversation to settle.");
+    if (!this.snapshot.connected || this.snapshot.pending) throw new Error("Wait for the current request to be accepted.");
     this.replaying = true;
     this.update({ pending: true, error: null });
     try {
