@@ -5,10 +5,15 @@ struct Guard;
 impl Drop for Guard {fn drop(&mut self){ACTIVE.store(false,Ordering::SeqCst);}}
 
 #[tauri::command]
-pub async fn jouzu_update(app: tauri::AppHandle, action: String, version: Option<String>) -> Result<serde_json::Value,String> {
+pub async fn jouzu_update(app: tauri::AppHandle, chat: tauri::State<'_, crate::chat::ChatService>, action: String, version: Option<String>) -> Result<serde_json::Value,String> {
  if action != "check" && action != "install" {return Err("Invalid update action".into());}
  if ACTIVE.swap(true,Ordering::SeqCst){return Err("A Jouzu update is already running".into());}
  let guard=Guard;
+ if action=="install" {
+  // The running desktop runtime holds the shared update-session lock. Stop it
+  // before taking the exclusive installer lock; the frontend reconnects after install.
+  chat.pause();
+ }
  tauri::async_runtime::spawn_blocking(move || {
   let _guard=guard;
   let root=crate::runtime::application_root(&app)?;
@@ -23,6 +28,11 @@ pub async fn jouzu_update(app: tauri::AppHandle, action: String, version: Option
   }
   let mut command=Command::new(root.join("runtime/node/node.exe"));
   command.arg(root.join("runtime/launcher-update/update-service.mjs")).arg(&root).arg(&managed).arg(&action).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+  // The staged health check uses os.tmpdir(). A desktop child can inherit a TEMP
+  // directory it cannot create under; keep the check inside the managed update root.
+  let updater_temp=managed.join("updates").join("tmp");
+  std::fs::create_dir_all(&updater_temp).map_err(|e|e.to_string())?;
+  command.env("TEMP",&updater_temp).env("TMP",&updater_temp).env("TMPDIR",&updater_temp);
   command.env_remove("NODE_OPTIONS").env_remove("NODE_PATH");
   #[cfg(windows)] {use std::os::windows::process::CommandExt;command.creation_flags(0x08000000);}
   let mut child=command.spawn().map_err(|_|"Cannot start Jouzu updater")?;

@@ -125,6 +125,11 @@ impl ChatService {
             stop_sessions(sessions.drain().map(|(_, session)| session).collect());
         }
     }
+    /// Release the runtime and its shared update lock before an installer transaction.
+    /// The desktop will reconnect the chat after the update completes.
+    pub fn pause(&self) {
+        self.shutdown();
+    }
 }
 impl Drop for ChatService {
     fn drop(&mut self) {
