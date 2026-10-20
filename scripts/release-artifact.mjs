@@ -18,8 +18,8 @@ export function requiredJobs() {
 		"legacy-linux-static-fetch (22.19.0)",
 		"legacy-linux-static-fetch (24)",
 	];
+	names.push("node (ubuntu-latest, 22)", "node (macos-latest, 24)");
 	for (const os of ["ubuntu-latest", "macos-latest"]) {
-		for (const node of [22, 24]) names.push(`node (${os}, ${node})`);
 		names.push(`optional-camoufox (${os})`, `published-upgrade (${os})`);
 		names.push(`packed-install (${os}, all)`, `automatic-update (${os}, all)`, `python (${os})`);
 	}

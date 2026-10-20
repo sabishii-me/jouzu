@@ -63,10 +63,10 @@ test("required hosted jobs cover Linux and macOS only", () => {
 		),
 	);
 	assert.ok(requiredJobs().every((name) => !name.includes("windows")));
+	assert.ok(requiredJobs().includes("node (ubuntu-latest, 22)"));
+	assert.ok(requiredJobs().includes("node (macos-latest, 24)"));
 	for (const os of ["ubuntu-latest", "macos-latest"]) {
 		for (const name of [
-			`node (${os}, 22)`,
-			`node (${os}, 24)`,
 			`optional-camoufox (${os})`,
 			`published-upgrade (${os})`,
 			`packed-install (${os}, all)`,

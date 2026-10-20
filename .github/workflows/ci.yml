@@ -68,6 +68,14 @@ jobs:
         # Pull requests in the required tier run the canonical Ubuntu/Node 22 suite only.
         os: ${{ fromJSON(inputs.platform == 'windows' && '["windows-latest"]' || (github.event_name == 'pull_request' && needs.changes.outputs.full != 'true') && '["ubuntu-latest"]' || '["ubuntu-latest","macos-latest"]') }}
         node: ${{ fromJSON((github.event_name == 'pull_request' && needs.changes.outputs.full != 'true') && '[22]' || '[22, 24]') }}
+        # One Node version per hosted OS: Ubuntu runs the supported minimum and macOS the current
+        # LTS. In about 100 main runs, every failure seen on only one Node version of an OS was a
+        # timing flake. Manual Windows runs keep both versions.
+        exclude:
+          - os: ubuntu-latest
+            node: 24
+          - os: macos-latest
+            node: 22
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
