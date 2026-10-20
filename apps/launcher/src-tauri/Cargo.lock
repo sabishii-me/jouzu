@@ -1984,7 +1984,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "jouzu-desktop"
+name = "jouzu-launcher"
 version = "1.0.0"
 dependencies = [
  "reqwest 0.12.28",

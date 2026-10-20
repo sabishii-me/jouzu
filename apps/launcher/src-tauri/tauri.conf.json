@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "jouzu-desktop",
+  "productName": "Jouzu Launcher",
   "version": "../package.json",
   "identifier": "ai.shisa.jouzu.launcher",
   "build": {
@@ -15,7 +15,7 @@
   "app": {
     "windows": [
       {
-        "title": "jouzu-desktop",
+        "title": "Jouzu",
         "width": 1440,
         "height": 900,
         "minWidth": 960,

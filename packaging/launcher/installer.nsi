@@ -66,10 +66,7 @@ ${StrLoc}
 !define WEBVIEW2BOOTSTRAPPERPATH "{{webview2_bootstrapper_path}}"
 !define WEBVIEW2INSTALLERPATH "{{webview2_installer_path}}"
 !define MINIMUMWEBVIEW2VERSION "{{minimum_webview2_version}}"
-!define UNINSTKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\Jouzu Launcher"
-; Keep the old uninstall identity so the renamed desktop build upgrades the
-; existing installation instead of creating a second one. The install directory
-; is already pinned to %LOCALAPPDATA%\Shisa.ai\Jouzu.
+!define UNINSTKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCTNAME}"
 !define MANUKEY "Software\${MANUFACTURER}"
 !define MANUPRODUCTKEY "${MANUKEY}\${PRODUCTNAME}"
 !define UNINSTALLERSIGNCOMMAND "{{uninstaller_sign_cmd}}"
@@ -247,14 +244,6 @@ Function PageReinstall
 
   nsis_tauri_utils::SemverCompare "${VERSION}" $R0
   Pop $R0
-
-  ; Upgrading installs over the existing launcher. Its old uninstaller can fail
-  ; while the runtime or terminals are running; the preinstall hook stops them
-  ; immediately before replacing files instead.
-  ${If} $R0 = 1
-    Abort
-  ${EndIf}
-
   ; Reinstalling the same version
   ${If} $R0 = 0
     StrCpy $R1 "$(alreadyInstalledLong)"

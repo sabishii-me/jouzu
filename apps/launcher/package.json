@@ -1,5 +1,5 @@
 {
-  "name": "@shisa-ai/jouzu-desktop",
+  "name": "@shisa-ai/jouzu-launcher",
   "version": "1.0.0",
   "scripts": {
     "dev": "vite",

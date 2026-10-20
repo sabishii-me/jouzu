@@ -51,9 +51,9 @@ Copy-Item "$inputRoot/bin/*" $target
 Copy-Item "$inputRoot/dist" "$repo/apps/launcher/dist" -Recurse -Force
 # A launcher whose webview loads a development server is unusable for a user, so the binary the
 # bundler carries has to answer the check the launcher itself performs.
-$check = Start-Process -FilePath (Join-Path $target 'jouzu-desktop.exe') -ArgumentList '--production-build-check' -Wait -PassThru
-if ($check.ExitCode -ne 0) { throw 'jouzu-desktop.exe does not embed the frontend; produce the binaries with the Tauri CLI (tauri build --no-bundle) before bundling' }
-$setupPath = Join-Path $target "bundle/nsis/jouzu-desktop_${Version}_x64-setup.exe"
+$check = Start-Process -FilePath (Join-Path $target 'launcher.exe') -ArgumentList '--production-build-check' -Wait -PassThru
+if ($check.ExitCode -ne 0) { throw 'launcher.exe does not embed the frontend; produce the binaries with the Tauri CLI (tauri build --no-bundle) before bundling' }
+$setupPath = Join-Path $target "bundle/nsis/Jouzu Launcher_${Version}_x64-setup.exe"
 
 # The bundler calls this for every own binary, every resource it considers signable and the
 # NSIS uninstaller; each call runs the documented signtool command and verifies the result.
@@ -111,11 +111,11 @@ try {
  if ($LASTEXITCODE) { throw 'Cannot install bundler' }
 
  Invoke-Bundle (New-Config (New-Template '') $true) 'Full package'
- $fullSetup = Join-Path $output "jouzu-desktop_${Version}_x64-setup.exe"
+ $fullSetup = Join-Path $output "Jouzu Launcher_${Version}_x64-setup.exe"
  Copy-Item -LiteralPath $setupPath -Destination $fullSetup -Force
 
  Invoke-Bundle (New-Config (New-Template '!define JOUZU_LAUNCHER_ONLY 1') $false) 'Launcher-only package'
- $updateSetup = Join-Path $output "jouzu-desktop_${Version}_x64-update.exe"
+ $updateSetup = Join-Path $output "Jouzu Launcher_${Version}_x64-update.exe"
  Copy-Item -LiteralPath $setupPath -Destination $updateSetup -Force
 
  # The bundler restores the application binary it patched for bundle-type marking after the
