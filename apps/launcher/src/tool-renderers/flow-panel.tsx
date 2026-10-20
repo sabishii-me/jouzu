@@ -29,7 +29,7 @@ export function FlowPanel({ flow, widgets, statuses, reports = [] }: {
   const summary = active?.subject ?? (tasks.length ? `${completed} of ${tasks.length} tasks` : "Session activity");
   const statusPills = flowStatusEntries(statuses);
   const widgetEntries = flowWidgetEntries(widgets);
-  return <section aria-label="Flow" className="mx-4 mb-3 shrink-0 overflow-hidden rounded-xl border border-border bg-card/95 shadow-sm sm:mx-8">
+  return <section aria-label="Flow" className="mx-auto mb-3 w-[calc(100%-2rem)] max-w-3xl shrink-0 overflow-hidden rounded-xl border border-border bg-card/95 shadow-sm sm:w-[calc(100%-4rem)]">
     <button type="button" onClick={() => setOpen(value => !value)} aria-expanded={open} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted/40">
       <ListTodo className="size-4 shrink-0 text-muted-foreground" />
       <span className="shrink-0 text-xs font-semibold">Tasks</span>
