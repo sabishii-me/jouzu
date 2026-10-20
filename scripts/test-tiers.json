@@ -3,19 +3,19 @@
 	"budgets": {
 		"unit": {
 			"warnMs": 1000,
-			"failMs": 3000
+			"failMs": 10000
 		},
 		"integration": {
 			"warnMs": 5000,
-			"failMs": 15000
+			"failMs": 30000
 		},
 		"child-process": {
 			"warnMs": 15000,
-			"failMs": 45000
+			"failMs": 90000
 		},
 		"endurance": {
 			"warnMs": 60000,
-			"failMs": 120000
+			"failMs": 180000
 		}
 	},
 	"tests": {

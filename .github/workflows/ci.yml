@@ -77,8 +77,9 @@ jobs:
         run: |
           echo "JOUZU_TEST_TIMINGS_DIR=$RUNNER_TEMP/test-timings" >> "$GITHUB_ENV"
           echo "JOUZU_TEST_TIMINGS_JOB=node (${{ matrix.os }}, ${{ matrix.node }})" >> "$GITHUB_ENV"
-          # Test benchmark run 39336748771: 4 gave the lowest stable suite median on hosted Ubuntu and macOS.
-          if [ "$RUNNER_OS" != Windows ]; then echo "JOUZU_TEST_CONCURRENCY=4" >> "$GITHUB_ENV"; fi
+          # Test benchmark run 39336748771: 4 gave the lowest stable suite median on hosted Ubuntu. On macOS
+          # (3 CPUs) it failed timing-sensitive tests, so macOS and Windows keep Node's default.
+          if [ "$RUNNER_OS" = Linux ]; then echo "JOUZU_TEST_CONCURRENCY=4" >> "$GITHUB_ENV"; fi
       - name: Configure Windows fixture and npm paths
         if: runner.os == 'Windows'
         shell: pwsh
@@ -202,8 +203,9 @@ jobs:
         run: |
           echo "JOUZU_TEST_TIMINGS_DIR=$RUNNER_TEMP/test-timings" >> "$GITHUB_ENV"
           echo "JOUZU_TEST_TIMINGS_JOB=endurance" >> "$GITHUB_ENV"
-          # Test benchmark run 39336748771: 4 gave the lowest stable suite median on hosted Ubuntu and macOS.
-          if [ "$RUNNER_OS" != Windows ]; then echo "JOUZU_TEST_CONCURRENCY=4" >> "$GITHUB_ENV"; fi
+          # Test benchmark run 39336748771: 4 gave the lowest stable suite median on hosted Ubuntu. On macOS
+          # (3 CPUs) it failed timing-sensitive tests, so macOS and Windows keep Node's default.
+          if [ "$RUNNER_OS" = Linux ]; then echo "JOUZU_TEST_CONCURRENCY=4" >> "$GITHUB_ENV"; fi
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22

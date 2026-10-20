@@ -86,7 +86,7 @@ status 124. Interrupts exit with status 130 or 143. Timeout and interrupt
 handling kills the test process group on POSIX and uses `taskkill /T /F` on
 Windows; independently detached processes may require separate cleanup.
 
-Hosted Linux and macOS CI jobs set `JOUZU_TEST_CONCURRENCY=4`. In the Test benchmark workflow (three runs each on Node 22), 4 gave the lowest stable CLI suite median: 170 s on Ubuntu (default 3: 166 s median but a 247 s 90th percentile) and 259 s on macOS (default 2: 297 s). Concurrency 8 failed timing-sensitive tests on both runners. Windows jobs keep Node's default.
+Hosted Linux CI jobs set `JOUZU_TEST_CONCURRENCY=4`; macOS and Windows jobs keep Node's default. In the Test benchmark workflow (three runs each on Node 22), 4 gave the lowest stable CLI suite median: 170 s on Ubuntu (default 3: 166 s median but a 247 s 90th percentile) and 259 s on macOS (default 2: 297 s). Concurrency 8 failed timing-sensitive tests on both runners, and on macOS concurrency 4 failed timing-sensitive tests in one benchmark run and in CI, so macOS stays at the default.
 
 CI's opt-in extension network qualification uses a 600000ms test budget and
 900000ms suite budget to accommodate its declared ten-minute network test; those
@@ -101,10 +101,10 @@ Each test belongs to one tier with a duration budget, calibrated on the hosted U
 
 | Tier | Warn above | Fail above | Use for |
 | --- | ---: | ---: | --- |
-| `unit` | 1 s | 3 s | Default for every test |
-| `integration` | 5 s | 15 s | Tests that drive a full session, storage, or many turns in process |
-| `child-process` | 15 s | 45 s | Tests that launch the built CLI or real child agents |
-| `endurance` | 60 s | 120 s | Tests tagged `@endurance` that cross exact production limits |
+| `unit` | 1 s | 10 s | Default for every test |
+| `integration` | 5 s | 30 s | Tests that drive a full session, storage, or many turns in process |
+| `child-process` | 15 s | 90 s | Tests that launch the built CLI or real child agents |
+| `endurance` | 60 s | 180 s | Tests tagged `@endurance` that cross exact production limits |
 
 `scripts/test-tiers.json` holds the budgets and assigns `integration` or `child-process` to specific tests by `file :: full test name`. A test name ending in `@endurance` selects that tier. Any other test is `unit`.
 
@@ -112,7 +112,7 @@ Each test belongs to one tier with a duration budget, calibrated on the hosted U
 npm run test:timings -- budget --tiers scripts/test-tiers.json --where label=jouzu.test <timing records>
 ```
 
-The budget compares each test's median with its tier. CI checks the Ubuntu/Node 22 CLI suite and the endurance job: a test over its failure budget fails pushes and manual runs and warns on pull requests. A new test that needs more than its tier allows must state the guarantee it adds and be assigned a tier in the manifest; prefer making it faster.
+The budget compares each test's median with its tier. Each CI job contributes one sample, so failure limits leave room for a runner stall (a 0.07-second test once took 4 seconds); warnings report smaller growth. CI checks the Ubuntu/Node 22 CLI suite and the endurance job: a test over its failure budget fails pushes and manual runs and warns on pull requests. A new test that needs more than its tier allows must state the guarantee it adds and be assigned a tier in the manifest; prefer making it faster.
 
 ### Timing-sensitive tests
 
