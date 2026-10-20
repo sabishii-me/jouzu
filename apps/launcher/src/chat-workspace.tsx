@@ -134,6 +134,11 @@ export function ChatWorkspace({ path, revision = 0, newSession = true, onNewSess
     catch { /* Session history is ancillary; chat remains usable. */ }
   }
   useEffect(() => { void refreshSessions(); }, [path, revision]);
+  useEffect(() => {
+    if (!snapshot.connected || snapshot.projection.running || snapshot.projection.messages.length === 0) return;
+    const timer = setTimeout(() => { void refreshSessions(); }, 150);
+    return () => clearTimeout(timer);
+  }, [snapshot.connected, snapshot.projection.running, snapshot.projection.messages.length]);
   useEffect(() => { if (snapshot.connected) void refreshSessions(); }, [snapshot.connected, snapshot.sessionFile]);
   useEffect(() => { if (snapshot.connected) void connection.current?.loadStats(); }, [snapshot.connected, snapshot.sessionFile, snapshot.projection.messages.length, snapshot.projection.running]);
   useEffect(() => {
@@ -205,7 +210,7 @@ export function ChatWorkspace({ path, revision = 0, newSession = true, onNewSess
       await client.resumeSession(sessionPath);
       const session = sessions.find(item => normalizedPath(item.path) === normalizedPath(sessionPath));
       if (session) localStorage.setItem("jouzu.chat.workspace", session.workspace);
-      setHero(false); onStartSession?.(); await refreshSessions();
+      setHero(false); onStartSession?.(); void refreshSessions();
     } catch (error) { if (connection.current === client) setNotification(String(error).replace(/^Error:\s*/u, "")); }
     finally { sessionChange.current = false; setSwitching(false); }
   }
@@ -338,7 +343,7 @@ export function ChatWorkspace({ path, revision = 0, newSession = true, onNewSess
           <SessionStatsBar stats={snapshot.stats} timing={timing} />
         </div>
       </div> : <>
-        <ChatConversation projection={snapshot.projection} pending={snapshot.pending} startedAt={workingStartedAt} />
+        <ChatConversation projection={snapshot.projection} pending={snapshot.pending} startedAt={workingStartedAt} opening={switching} />
         <FlowPanel flow={flow} widgets={snapshot.widgets ?? {}} statuses={snapshot.statuses ?? {}} reports={diskReports.length ? diskReports : snapshot.projection.flowReports} />
         <Composer connected={snapshot.connected} pending={snapshot.pending || switching} running={snapshot.projection.running} draft={draft} onDraft={setDraft} onSend={() => void send()} onStop={() => void connection.current?.abort()} onCompact={() => void compactConversation()} onExport={() => void exportConversation()} error={snapshot.error} compatibility={snapshot.projection.compatibility} attachments={attachments} onAddImages={files => void addImages(files)} onRemoveImage={id => updateAttachments(attachmentRef.current.filter(item => item.id !== id))} readingImages={readingImages} attachmentError={attachmentError} models={snapshot.models ?? []} model={snapshot.model} onSelectModel={(provider, id) => void connection.current?.selectModel(provider, id)} onRefreshModels={() => void connection.current?.loadModels()} thinkingLevel={snapshot.thinkingLevel} thinkingLevels={snapshot.thinkingLevels ?? []} onThinkingLevel={level => void connection.current?.setThinkingLevel(level)} />
         <SessionStatsBar stats={snapshot.stats} timing={timing} />

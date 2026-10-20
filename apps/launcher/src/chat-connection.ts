@@ -54,6 +54,7 @@ export class ChatConnection {
   private disposed = false;
   private failed = false;
   private timer?: ReturnType<typeof setTimeout>;
+  private replaying = false;
   private nextId = 0;
   private dialogs = new Map<string, number | null>();
   private lastPoll = Date.now();
@@ -88,6 +89,13 @@ export class ChatConnection {
           if (!pending || record.command !== pending.command || typeof record.success !== "boolean") throw new Error("Uncorrelated runtime response.");
           this.requests.delete(record.id as string);
           if (record.success) pending.resolve(record.data); else pending.reject(new Error(typeof record.error === "string" ? record.error : "Runtime request failed."));
+        }
+        // Session replacement replays historical messages as ordinary wire events. The
+        // authoritative get_messages response below renders the final transcript once,
+        // instead of animating the old conversation again.
+        if (this.replaying) continue;
+        if (record.type === "response") {
+          continue;
         } else if (record.type === "extension_ui_request") {
           if (record.method === "setWidget" && typeof record.widgetKey === "string") {
             const widgets = { ...(this.snapshot.widgets ?? {}) };
@@ -166,6 +174,7 @@ export class ChatConnection {
   }
   private async changeSession(command: "new_session" | "switch_session", fields: WireObject = {}) {
     if (!this.snapshot.connected || this.snapshot.pending || this.snapshot.projection.running) throw new Error("Wait for the current conversation to settle.");
+    this.replaying = true;
     this.update({ pending: true, error: null });
     try {
       const result = await this.request(command, fields);
@@ -175,7 +184,7 @@ export class ChatConnection {
       await this.refreshHistory();
       if (command === "new_session") await this.applyPreferredModel();
     } catch (error) { this.update({ error: String(error) }); throw error; }
-    finally { this.update({ pending: false }); }
+    finally { this.replaying = false; this.update({ pending: false }); }
   }
   newSession() { return this.changeSession("new_session"); }
   resumeSession(sessionPath: string) { return this.changeSession("switch_session", { sessionPath }); }
