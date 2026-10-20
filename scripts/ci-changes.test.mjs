@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { classify } from "./ci-changes.mjs";
 
-test("product-only pull requests get the required tier", () => {
+test("product-only changes get the required tier", () => {
 	assert.deepEqual(classify(["packages/cli/src/model-picker.ts", "docs/models.md"]), { full: false, endurance: false });
 });
 

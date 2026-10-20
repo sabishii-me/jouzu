@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Classify a pull request's changed files into the CI tiers it needs. See docs/ci.md.
+// Classify the files a push or pull request changes into the CI tiers it needs. See docs/ci.md.
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";

@@ -55,6 +55,10 @@ test("required hosted jobs cover Linux and macOS only", () => {
 	assert.ok(requiredJobs().includes("endurance"));
 	assert.ok(requiredJobs().includes("ci-result"));
 	verifyQualification(run, [...jobs, { name: "changes", status: "completed", conclusion: "skipped" }], manifest);
+	verifyQualification(run, [...jobs, { name: "changes", status: "completed", conclusion: "success" }], manifest);
+	assert.throws(() =>
+		verifyQualification(run, [...jobs, { name: "changes", status: "completed", conclusion: "failure" }], manifest),
+	);
 	assert.throws(() =>
 		verifyQualification(
 			run,
@@ -63,10 +67,10 @@ test("required hosted jobs cover Linux and macOS only", () => {
 		),
 	);
 	assert.ok(requiredJobs().every((name) => !name.includes("windows")));
-	assert.ok(requiredJobs().includes("node (ubuntu-latest, 22)"));
-	assert.ok(requiredJobs().includes("node (macos-latest, 24)"));
+	assert.ok(requiredJobs().every((name) => !name.includes(", 24)") && !name.endsWith("(24)")));
 	for (const os of ["ubuntu-latest", "macos-latest"]) {
 		for (const name of [
+			`node (${os}, 22)`,
 			`optional-camoufox (${os})`,
 			`published-upgrade (${os})`,
 			`packed-install (${os}, all)`,
@@ -87,7 +91,7 @@ for (const [name, change] of [
 	["duplicate job", (list) => [...list, list[0]]],
 	[
 		"skipped hosted job",
-		(list) => list.map((job) => (job.name === "node (macos-latest, 24)" ? { ...job, conclusion: "skipped" } : job)),
+		(list) => list.map((job) => (job.name === "node (macos-latest, 22)" ? { ...job, conclusion: "skipped" } : job)),
 	],
 	[
 		"failed hosted job",

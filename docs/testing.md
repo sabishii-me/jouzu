@@ -47,7 +47,7 @@ Each gate runs each command once. `scripts/gate-commands.test.mjs` expands `npm 
 
 `npm run test:affected` compares the working tree and untracked files with `HEAD` (or `--base REF`) and runs the Node test files that import a changed file, directly or through other sources and test fixtures. Compiled imports under `dist/` map to their `src/` files, and tests that launch the built CLI count as importing it. A changed workflow, manifest, or document selects the tests that name it. Changes to dependencies, build scripts, `upstream/`, or shared script fixtures select every test file. It skips `@endurance` tests unless you pass `--endurance`, and it refuses to run CLI tests against a stale build. Pass paths to select tests for specific files, and run `node scripts/affected-tests.mjs` without `--run` to list the selection.
 
-Hosted CI runs the full qualification on every push, so a local `release:check` is needed only for the release-boundary cases in the table.
+Hosted CI runs full qualification for release commits and for pushes that change packaging, installation, updates, dependencies, or workflows (see [CI runs](ci.md)), so a local `release:check` is needed only for the release-boundary cases in the table.
 
 ### Endurance tests
 

@@ -207,7 +207,8 @@ test("CI packs once and shares exact artifacts with parallel native gates", () =
 	assert.match(workflow, /JOUZU_UPDATE_CURRENT_TARBALL: dist\/ci-artifacts\/candidate\.tgz/u);
 	assert.match(workflow, /JOUZU_UPDATE_NEXT_TARBALL: dist\/ci-artifacts\/next\.tgz/u);
 	assert.match(workflow, /JOUZU_UPDATE_BROKEN_TARBALL: dist\/ci-artifacts\/broken\.tgz/u);
-	assert.match(workflow, /'\[22, 24\]'\) \}\}/u);
+	// Linux and macOS test Node 22; Windows runs add Node 24, the runtime the launcher bundles.
+	assert.match(workflow, /node: \$\{\{ fromJSON\(inputs\.platform == 'windows' && '\[22, 24\]' \|\| '\[22\]'\) \}\}/u);
 	assert.match(workflow, /published-upgrade:[\s\S]*needs: release-artifacts/u);
 	assert.match(workflow, /retention-days: 30/u);
 	assert.match(workflow, /release-manifest\.json/u);
@@ -223,10 +224,10 @@ test("CI qualification matrices stay on hosted Linux and macOS with Windows as m
 		4,
 		"every package consumer matrix must run ubuntu-latest and macos-latest only",
 	);
-	// The node and python matrices add the pull request tier to the same platform choice.
+	// The node and python matrices add the required tier to the same platform choice.
 	assert.equal(
 		workflow.match(
-			/inputs\.platform == 'windows' && '\["windows-latest"\]' \|\| \(github\.event_name == 'pull_request' && needs\.changes\.outputs\.full != 'true'\) && '\["ubuntu-latest"\]' \|\| '\["ubuntu-latest","macos-latest"\]'/gu,
+			/inputs\.platform == 'windows' && '\["windows-latest"\]' \|\| \(github\.event_name != 'workflow_dispatch' && needs\.changes\.outputs\.full != 'true'\) && '\["ubuntu-latest"\]' \|\| '\["ubuntu-latest","macos-latest"\]'/gu,
 		)?.length,
 		2,
 	);
@@ -238,13 +239,16 @@ test("CI qualification matrices stay on hosted Linux and macOS with Windows as m
 	);
 });
 
-test("pull requests run the required tier unless a change needs full qualification, and ci-result covers every job", () => {
+test("pushes and pull requests run the required tier unless a change needs full qualification, and ci-result covers every job", () => {
 	const workflow = readFileSync(join(root, ".github", "workflows", "ci.yml"), "utf8");
-	assert.match(workflow, /changes:\n[^\n]*\n[^\n]*\n {4}if: github\.event_name == 'pull_request'/u);
+	assert.match(workflow, /changes:\n[^\n]*\n[^\n]*\n {4}if: github\.event_name != 'workflow_dispatch'/u);
+	// A push without a complete changed-file list falls back to full qualification.
+	assert.match(workflow, /compare\/\$BEFORE\.\.\.\$SHA/u);
+	assert.match(workflow, /LABELS=full-ci/u);
 	assert.match(workflow, /node scripts\/ci-changes\.mjs/u);
 	assert.match(
 		workflow,
-		/release-artifacts:\n[^\n]*\n {4}needs: changes\n {4}if: \$\{\{ !cancelled\(\) && needs\.changes\.result != 'failure' && \(github\.event_name != 'pull_request' \|\| needs\.changes\.outputs\.full == 'true'\) \}\}/u,
+		/release-artifacts:\n[^\n]*\n {4}needs: changes\n {4}if: \$\{\{ !cancelled\(\) && needs\.changes\.result != 'failure' && \(github\.event_name == 'workflow_dispatch' \|\| needs\.changes\.outputs\.full == 'true'\) \}\}/u,
 	);
 	assert.equal(
 		workflow.match(
