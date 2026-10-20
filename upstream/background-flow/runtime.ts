@@ -16,6 +16,12 @@ type Evidence = Identity & {
 	predicates: { until: string; state: "pending" | "satisfied" | "failed" | "cancelled" | "missing" }[];
 	health?: HealthEvidence;
 };
+type ExecutionListener = {
+	identity: Identity;
+	changed(evidence: Evidence): void;
+	signature?: string;
+	health?: HealthEvidence;
+};
 export interface BackgroundTerminalResult {
 	metadata: { id: string; producer: string; execution: string; revision: string; status: "success" | "failure" | "cancelled"; title: string; reference: string; warnings: string[] };
 	delivered?: boolean;
@@ -82,14 +88,28 @@ function livenessEvidence(task: Snapshot, now: number): HealthEvidence | undefin
 	};
 }
 
+/** Publications reuse a subscription's last real probe until its health cadence elapses. */
+function publicationHealth(task: Snapshot, now: number, retained?: HealthEvidence): HealthEvidence | undefined {
+	if (task.status !== "running" || !usablePid(task)) return undefined;
+	if (
+		retained && retained.marker === String(task.pid) &&
+		now >= retained.observedAt && now - retained.observedAt < PROCESS_ALIVE.cadenceMs
+	) return retained;
+	return livenessEvidence(task, now);
+}
+
 /** Bind the existing task snapshot owner to Jouzu's execution subscription protocol. */
 export function createBackgroundFlowSource(list: () => Iterable<Snapshot>) {
 	const scopes = new Map<string, { scope: Scope; currentWork(): Work }>();
 	const deliveries = new Map<string, { scope: Scope; changed(): void }>();
 	const results = new Map<string, { scope: Scope; work?: Work; result: BackgroundTerminalResult }>();
-	const listeners = new Set<{ identity: Identity; changed(evidence: Evidence): void; signature?: string }>();
+	const listeners = new Set<ExecutionListener>();
 	const inventoryListeners = new Set<() => void>();
-	function evidence(task: Snapshot, identity: Identity): Evidence {
+	/**
+	 * Build the evidence for one execution. `liveness` says how health is observed: `probe` rechecks
+	 * the process now, `cadence` reuses the retained check until the policy cadence elapses.
+	 */
+	function evidence(task: Snapshot, identity: Identity, liveness: "probe" | "cadence", retained?: HealthEvidence): Evidence {
 		if (
 			task.sessionId !== identity.scope.sessionId ||
 			!sameScope(task.flow?.scope, identity.scope) ||
@@ -112,7 +132,8 @@ export function createBackgroundFlowSource(list: () => Iterable<Snapshot>) {
 								: "missing"
 							: undefined;
 		if (!state) throw new Error("Background execution has an unsupported status.");
-		const health = livenessEvidence(task, Date.now());
+		const now = Date.now(),
+			health = liveness === "cadence" ? publicationHealth(task, now, retained) : livenessEvidence(task, now);
 		return {
 			...structuredClone(identity),
 			revision: state === "pending" ? 1 : 2,
@@ -298,8 +319,10 @@ export function createBackgroundFlowSource(list: () => Iterable<Snapshot>) {
 					task.flow.work?.id !== listener.identity.workId
 				)
 					continue;
-				const current = evidence(task, listener.identity),
+				// Publication is how an unchanged task would otherwise re-report its own liveness.
+				const current = evidence(task, listener.identity, "cadence", listener.health),
 					signature = JSON.stringify(current);
+				listener.health = current.health ? { ...current.health } : undefined;
 				if (signature === listener.signature) continue;
 				listener.signature = signature;
 				listener.changed(current);
@@ -317,7 +340,7 @@ export function createBackgroundFlowSource(list: () => Iterable<Snapshot>) {
 			const lease = { scope: { ...scope }, currentWork };
 			scopes.set(scope.sessionId, lease);
 			let closed = false;
-			const owned = new Set<{ identity: Identity; changed(evidence: Evidence): void; signature?: string }>();
+			const owned = new Set<ExecutionListener>();
 			const assertIdentity = (identity: Identity) => {
 				if (closed || !sameScope(identity.scope, lease.scope))
 					throw new Error("Background flow source is closed or foreign.");
@@ -345,7 +368,7 @@ export function createBackgroundFlowSource(list: () => Iterable<Snapshot>) {
 				canRetireExecution(identity: Identity): boolean {
 					assertIdentity(identity);
 					const task = [...list()].find(task => task.id === identity.handle && task.flow?.execution === identity.execution && sameScope(task.flow.scope, identity.scope));
-					if (!task || evidence(task, identity).predicates.some(predicate => predicate.state === "pending")) return false;
+					if (!task || evidence(task, identity, "probe").predicates.some(predicate => predicate.state === "pending")) return false;
 					const saved = results.get(JSON.stringify([scope.sessionId, scope.branchId, identity.execution]));
 					return saved?.result.observed === true;
 				},
@@ -359,7 +382,8 @@ export function createBackgroundFlowSource(list: () => Iterable<Snapshot>) {
 							sameScope(task.flow.scope, identity.scope),
 					);
 					if (!task) throw new Error("Exact background execution is unavailable; inspect the producer task.");
-					return evidence(task, identity);
+					// An explicit probe is the host asking now, so it always runs the check.
+					return evidence(task, identity, "probe");
 				},
 				close() {
 					closed = true;
