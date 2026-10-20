@@ -133,6 +133,10 @@ async function createPackage(rootDirectory, directory, version, broken = false) 
 	return { version, path, bytes, integrity: metadata.integrity, shasum: metadata.shasum };
 }
 
+// Tarballs the fixture registry served during this run. Phases share one npm cache, and npm 10
+// (bundled with Node 22) installs a cached tarball with matching integrity without fetching it again.
+const servedTarballs = new Set();
+
 async function withRegistry(release, callback) {
 	const requests = [];
 	const server = createServer(async (request, response) => {
@@ -159,6 +163,7 @@ async function withRegistry(release, callback) {
 			return;
 		}
 		if (request.url === `/jouzu/-/${basename(release.path)}`) {
+			servedTarballs.add(request.url);
 			response.writeHead(200, {
 				"content-type": "application/octet-stream",
 				"content-length": release.bytes.length,
@@ -361,7 +366,10 @@ try {
 				assert.equal(readFileSync(userConfig.path, "utf8"), userConfig.content, "update changed user configuration");
 				assert.deepEqual(projectSnapshot(project), before, "startup update changed the working directory");
 				assert.ok(requests.some((request) => request === "/jouzu" || request.startsWith("/jouzu?")));
-				assert.ok(requests.includes(`/jouzu/-/${basename(next.path)}`));
+				assert.ok(
+					servedTarballs.has(`/jouzu/-/${basename(next.path)}`),
+					"the update must install the candidate the fixture registry served",
+				);
 				const version = await runGlobal(successPrefix, ["--version"], {
 					phase: `${mode} verify installed version`,
 					cwd: temp,
