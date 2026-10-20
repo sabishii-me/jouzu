@@ -13,6 +13,16 @@ import {
 import { campaignScript, liveWait } from "./fixtures/flow-campaign.mjs";
 
 const idle = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+// Guards against a missing event, not a speed check: a loaded runner can take seconds per turn.
+const until = async (predicate, label, timeoutMs = 30_000) => {
+	const deadline = Date.now() + timeoutMs;
+	while (Date.now() < deadline) {
+		if (predicate()) return;
+		await idle(10);
+	}
+	assert.fail(`timed out waiting for ${label}`);
+};
+const settled = (session) => session.isIdle && !session.isStreaming;
 
 async function persistentRoot(t) {
 	const root = await mkdtemp(join(tmpdir(), "jouzu-flow-reopen-"));
@@ -74,9 +84,10 @@ test("a shutdown-terminated dependency delivers one decision after reopen and ne
 	const { next, wait } = await campaignThenReopen(t);
 	// The task extension kills every running task on session_shutdown, whatever its reason, so the
 	// wait is decided while no session can receive it. The decision must survive to the next one.
-	await idle(500);
 	const decisions = () =>
 		next.bodies.map((body) => JSON.stringify(body.messages.at(-1))).filter((text) => text.includes('kind\\":\\"wait'));
+	// The wake turn must finish first: a plain prompt while the agent is streaming is rejected by Pi.
+	await until(() => decisions().length > 0 && settled(next.session), "the reopened session to deliver the decision");
 	const delivered = decisions();
 	assert.equal(delivered.length, 1, "the pending wait decision is delivered exactly once after reopen");
 	assert.ok(delivered[0].includes(wait.token), "it carries the original wait token");
@@ -87,7 +98,8 @@ test("a shutdown-terminated dependency delivers one decision after reopen and ne
 
 	// A new user turn and the active loop's work turns are not replayed wait decisions.
 	await next.session.prompt("continue after the wait decision");
-	await idle(600);
+	await until(() => settled(next.session), "the user turn to finish");
+	await idle(300);
 	assert.deepEqual(
 		decisions(),
 		delivered,
