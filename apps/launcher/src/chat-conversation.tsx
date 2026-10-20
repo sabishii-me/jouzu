@@ -54,6 +54,8 @@ export function ChatConversation({ projection, pending = false, startedAt, openi
     return () => clearInterval(timer);
   }, [working]);
   const elapsed = working && (projection.turnStartedAt ?? startedAt) ? Math.max(0, Math.floor((now - (projection.turnStartedAt ?? startedAt)!) / 1000)) : null;
+  const hasVisibleHistory = projection.messages.some(message => message.role === "user" || message.role === "assistant");
+  const showWorking = working && !(opening && hasVisibleHistory);
   const visible = projection.messages.flatMap((message, index) => message.role === "user" || message.role === "assistant" ? [{ message, index }] : []);
   const lastAssistantIndex = visible.filter(item => item.message.role === "assistant").at(-1)?.index;
   return <section aria-label="Conversation" className="relative flex min-h-0 min-w-0 flex-1 flex-col">
@@ -65,7 +67,7 @@ export function ChatConversation({ projection, pending = false, startedAt, openi
         {message.errorMessage && <p role="alert" className="select-text text-sm text-destructive">{message.errorMessage}</p>}
         {message.role === "assistant" && !message.content.some(block => block.type === "toolCall") && message.stopReason !== "toolUse" && <FinalTurnFooter messages={projection.messages} index={index} message={message} />}
       </article>)}
-        {working && <div role="status" aria-live="polite" className="flex items-center gap-2 text-xs text-muted-foreground"><JouzuLoader className="jouzu-loader-sm" /><span>{opening ? "Opening session…" : "Working…"}</span>{!opening && elapsed !== null && <span className="tabular-nums">{String(Math.floor(elapsed / 60)).padStart(2, "0")}:{String(elapsed % 60).padStart(2, "0")}</span>}</div>}
+        {showWorking && <div role="status" aria-live="polite" className="flex items-center gap-2 text-xs text-muted-foreground"><JouzuLoader className="jouzu-loader-sm" /><span>{opening ? "Opening session…" : "Working…"}</span>{!opening && elapsed !== null && <span className="tabular-nums">{String(Math.floor(elapsed / 60)).padStart(2, "0")}:{String(elapsed % 60).padStart(2, "0")}</span>}</div>}
       </div>
     </div>
     {showLatest && <Button variant="outline" className="absolute bottom-4 right-6 shadow" onClick={() => { following.current = true; if (scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight; setShowLatest(false); }}><ArrowDown />Latest</Button>}
