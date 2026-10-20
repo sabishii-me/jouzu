@@ -9,7 +9,7 @@
 		},
 		"dist/core/cache-warmer.js": {
 			"before": "9c4b000930d6d3c567073102f6b6a52660110bb0f79cf78dd72c4dd1ebc87fc0",
-			"after": "d1ccccbb4661e335254a8d38adba82345a829417b0b83ea55645f3d94d9e2b1c"
+			"after": "0f89726acfaa9a843696c175f96af7f1cc41bb53af420c88f6f03ef010a624b2"
 		},
 		"dist/main.js": {
 			"before": "08b91f9eb3adf9a5027c18732d1e4de70999bd15c445b65cb0ddd0cd68f2746b",

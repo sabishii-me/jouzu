@@ -39,6 +39,33 @@ export function transform(path, source) {
                 ? await run.options.flowCacheWarm(options, send)
                 : await send(options);`,
 		);
+		// The provider bills a completed warm even when the next request replaces the run or the context
+		// changes while it is in flight, so record its usage before validating the run. A cancelled
+		// warmer (abort, disposal, mode off) or a switched session writes nothing.
+		change(
+			`        try {
+            const options = {`,
+			`        const sessionId = this.sessionManager.getSessionId();
+        try {
+            const options = {`,
+		);
+		change(
+			`            if (!this.validateRun(run))
+                return;
+            if (message.stopReason !== "error" && message.stopReason !== "aborted") {
+                const entry = this.sessionManager.appendUsage("cache_warm", message.provider, message.responseModel ?? message.model, message.usage, extensionOverride ? "extension override" : undefined);
+                this.onWarmed?.(entry);
+            }`,
+			`            if (message.stopReason !== "error" &&
+                message.stopReason !== "aborted" &&
+                this.run !== undefined &&
+                this.sessionManager.getSessionId() === sessionId) {
+                const entry = this.sessionManager.appendUsage("cache_warm", message.provider, message.responseModel ?? message.model, message.usage, extensionOverride ? "extension override" : undefined);
+                this.onWarmed?.(entry);
+            }
+            if (!this.validateRun(run))
+                return;`,
+		);
 	} else if (path === "dist/core/model-runtime.js") {
 		text = `import { isBuiltinApiProvider } from "@earendil-works/pi-ai/compat";
 function attachPreparedPayloadMetadata(prepared) {

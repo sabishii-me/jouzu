@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Count prompt-cache refreshes that complete after the next request or a context change replaces their schedule in usage and cost totals. See [Prompt-cache warming](docs/cache-warming.md).
+
 ## 0.2.1 - 2026-10-19
 
 ### Added

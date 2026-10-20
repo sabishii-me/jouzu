@@ -22,7 +22,7 @@ The main session checks that the replay matches the admitted request before send
 
 Each captured request has a one-hour warming limit while running. In `idle` mode, the limit is 30 minutes from that request's capture, not 30 minutes after the run settles. A new request starts its own interval. Context changes and session disposal cancel the previous refresh schedule.
 
-Successful refresh usage is recorded separately from assistant messages. A response arriving after its warming run was cancelled does not add usage. Local usage records therefore do not establish that a provider charged nothing for a cancelled request.
+Successful refresh usage is recorded separately from assistant messages. A refresh that completes after the next request or a context change replaced its schedule still adds its usage. A response arriving after warming was cancelled by an interrupt, session disposal, a session switch, or turning warming off does not add usage. Local usage records therefore do not establish that a provider charged nothing for a cancelled request.
 
 ## Subagents
 
