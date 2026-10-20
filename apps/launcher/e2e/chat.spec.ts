@@ -74,8 +74,8 @@ test("the last workspace opens and prewarms chat without a workspace click", asy
   await expect(page.getByText("What would you like to build?")).toBeVisible();
   await expect(page.getByRole("heading", { name: "New session" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Open in terminal", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("region", { name: "Flow" })).toContainText("multiloop");
-  await expect(page.getByRole("region", { name: "Flow" })).toContainText("Resume flow");
+  // Flow belongs to the open conversation, not to the new-session hero.
+  await expect(page.getByRole("region", { name: "Flow" })).toHaveCount(0);
   await expect(page.getByLabel("Session usage")).toContainText("2 turns · 3 steps");
   await expect(page.getByLabel("Session usage")).toContainText("42%");
   await page.getByRole("button", { name: /2 turns · 3 steps/ }).click();
@@ -108,6 +108,9 @@ test("the last workspace opens and prewarms chat without a workspace click", asy
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.getByRole("article", { name: "assistant message" })).toContainText("Hello from Jouzu");
   await expect(page.getByRole("article", { name: "assistant message" })).toContainText("Live thinking preview");
+  const conversation = page.getByRole("region", { name: "Conversation" });
+  await expect(conversation.getByRole("region", { name: "Flow" })).toContainText("multiloop");
+  await expect(conversation.getByRole("region", { name: "Flow" })).toContainText("Resume flow");
   await expect(page.getByRole("group", { name: "Turn actions" }).getByRole("button", { name: /Usage 1k tok/ })).toBeVisible();
   await page.getByRole("group", { name: "Turn actions" }).getByRole("button", { name: /Usage 1k tok/ }).click();
   await expect(page.getByRole("dialog")).toContainText("Turn usage");

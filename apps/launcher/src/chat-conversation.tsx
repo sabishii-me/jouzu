@@ -3,6 +3,9 @@ import { ArrowDown, Brain } from "lucide-react";
 import { Button } from "./components/ui/button";
 import { JouzuLoader } from "./components/ui/jouzu-loader";
 import { ChatMarkdown } from "./chat-markdown";
+import { FlowPanel } from "./tool-renderers/flow-panel";
+import type { FlowState } from "./tool-renderers/flow-state";
+import type { FlowReportRecord } from "./chat-projection";
 import type { ChatMessage, ChatProjection } from "./chat-projection";
 import { ToolRenderer } from "./tool-renderers";
 import { TurnFooter } from "./turn-footer";
@@ -40,7 +43,7 @@ function ThinkingRow({ thinking, streaming }: { thinking: string; streaming: boo
   </details>;
 }
 
-export function ChatConversation({ projection, pending = false, startedAt, opening = false }: { projection: ChatProjection; pending?: boolean; startedAt?: number; opening?: boolean }) {
+export function ChatConversation({ projection, pending = false, startedAt, opening = false, flow, widgets, statuses, reports }: { projection: ChatProjection; pending?: boolean; startedAt?: number; opening?: boolean; flow: FlowState; widgets: Record<string, string[]>; statuses: Record<string, string>; reports?: readonly FlowReportRecord[] }) {
   const scroll = useRef<HTMLDivElement>(null);
   const following = useRef(true);
   const [showLatest, setShowLatest] = useState(false);
@@ -69,7 +72,8 @@ export function ChatConversation({ projection, pending = false, startedAt, openi
       </article>)}
         {showWorking && <div role="status" aria-live="polite" className="flex items-center gap-2 text-xs text-muted-foreground"><JouzuLoader className="jouzu-loader-sm" /><span>{opening ? "Opening session…" : "Working…"}</span>{!opening && elapsed !== null && <span className="tabular-nums">{String(Math.floor(elapsed / 60)).padStart(2, "0")}:{String(elapsed % 60).padStart(2, "0")}</span>}</div>}
       </div>
+      {showLatest && <div className="pointer-events-none sticky bottom-0 flex justify-end pt-3"><Button variant="outline" className="pointer-events-auto shadow" onClick={() => { following.current = true; if (scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight; setShowLatest(false); }}><ArrowDown />Latest</Button></div>}
     </div>
-    {showLatest && <Button variant="outline" className="absolute bottom-4 right-6 shadow" onClick={() => { following.current = true; if (scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight; setShowLatest(false); }}><ArrowDown />Latest</Button>}
+    <FlowPanel flow={flow} widgets={widgets} statuses={statuses} reports={reports} />
   </section>;
 }

@@ -10,7 +10,7 @@ import { ChatConnection, type ChatSnapshot } from "./chat-connection";
 import { readImageAttachment, removeSubmittedImages, validateImageSelection, type ImageAttachment } from "./chat-attachments";
 import { emptyProjection, type FlowReportRecord } from "./chat-projection";
 import { beginDialogResponse, emptyDialogQueue, enqueueDialog, expireDialogs, nextDialogDeadline, removeDialog, type DialogAnswer, type DialogQueue } from "./dialog-queue";
-import { deriveFlow, FlowPanel } from "./tool-renderers";
+import { deriveFlow } from "./tool-renderers";
 import { SessionStatsBar } from "./session-stats-bar";
 import type { SessionTiming } from "./chat-connection";
 
@@ -364,13 +364,11 @@ export function ChatWorkspace({ path, revision = 0, newSession = true, onNewSess
             <p className="max-w-md text-sm text-muted-foreground">Choose a workspace, then describe the task. Jouzu can explore code, explain it, or make a change.</p>
           </div>
           <div className="mb-2 flex flex-wrap items-center gap-2 px-1">{workspacePicker}<span className="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground">Standard mode</span></div>
-          {!switching && <FlowPanel flow={flow} widgets={snapshot.widgets ?? {}} statuses={snapshot.statuses ?? {}} reports={diskReports.length ? diskReports : snapshot.projection.flowReports} />}
           <Composer hero connected={snapshot.connected} pending={snapshot.pending || switching} running={snapshot.projection.running} draft={draft} onDraft={setDraft} onSend={() => void send()} onStop={() => void connection.current?.abort()} onCompact={() => void compactConversation()} onExport={() => void exportConversation()} error={snapshot.error} compatibility={snapshot.projection.compatibility} attachments={attachments} onAddImages={files => void addImages(files)} onRemoveImage={id => updateAttachments(attachmentRef.current.filter(item => item.id !== id))} readingImages={readingImages} attachmentError={attachmentError} models={snapshot.models ?? []} model={snapshot.model} onSelectModel={(provider, id) => void connection.current?.selectModel(provider, id)} onRefreshModels={() => void connection.current?.loadModels()} thinkingLevel={snapshot.thinkingLevel} thinkingLevels={snapshot.thinkingLevels ?? []} onThinkingLevel={level => void connection.current?.setThinkingLevel(level)} />
           <SessionStatsBar stats={snapshot.stats} timing={timing} />
         </div>
       </div> : <>
-        <ChatConversation projection={snapshot.projection} pending={snapshot.pending} startedAt={workingStartedAt} opening={switching} />
-        {!switching && <FlowPanel flow={flow} widgets={snapshot.widgets ?? {}} statuses={snapshot.statuses ?? {}} reports={diskReports.length ? diskReports : snapshot.projection.flowReports} />}
+        <ChatConversation projection={snapshot.projection} pending={snapshot.pending} startedAt={workingStartedAt} opening={switching} flow={flow} widgets={snapshot.widgets ?? {}} statuses={snapshot.statuses ?? {}} reports={diskReports.length ? diskReports : snapshot.projection.flowReports} />
         <Composer connected={snapshot.connected} pending={snapshot.pending || switching} running={snapshot.projection.running} draft={draft} onDraft={setDraft} onSend={() => void send()} onStop={() => void connection.current?.abort()} onCompact={() => void compactConversation()} onExport={() => void exportConversation()} error={snapshot.error} compatibility={snapshot.projection.compatibility} attachments={attachments} onAddImages={files => void addImages(files)} onRemoveImage={id => updateAttachments(attachmentRef.current.filter(item => item.id !== id))} readingImages={readingImages} attachmentError={attachmentError} models={snapshot.models ?? []} model={snapshot.model} onSelectModel={(provider, id) => void connection.current?.selectModel(provider, id)} onRefreshModels={() => void connection.current?.loadModels()} thinkingLevel={snapshot.thinkingLevel} thinkingLevels={snapshot.thinkingLevels ?? []} onThinkingLevel={level => void connection.current?.setThinkingLevel(level)} />
         <SessionStatsBar stats={snapshot.stats} timing={timing} />
       </>}
