@@ -10,7 +10,7 @@ import { ChatConnection, type ChatSnapshot } from "./chat-connection";
 import { readImageAttachment, removeSubmittedImages, validateImageSelection, type ImageAttachment } from "./chat-attachments";
 import { emptyProjection, type FlowReportRecord } from "./chat-projection";
 import { beginDialogResponse, emptyDialogQueue, enqueueDialog, expireDialogs, nextDialogDeadline, removeDialog, type DialogAnswer, type DialogQueue } from "./dialog-queue";
-import { deriveFlow } from "./tool-renderers";
+import { deriveFlow, FlowMenu } from "./tool-renderers";
 import { SessionStatsBar } from "./session-stats-bar";
 import type { SessionTiming } from "./chat-connection";
 
@@ -359,6 +359,8 @@ export function ChatWorkspace({ path, revision = 0, newSession = true, onNewSess
       {hero ? <div className="flex items-center px-2 py-1.5"><Button variant="ghost" className="size-8 shrink-0 p-0" aria-label={sidebar ? "Hide workspaces" : "Show workspaces"} title="Workspaces" aria-expanded={sidebar} onClick={() => setSidebar(value => !value)}><PanelLeft className="size-4" /></Button></div> : <div className="flex items-center gap-1 border-b border-border px-2 py-2 sm:px-3">
         <Button variant="ghost" className="size-8 shrink-0 p-0" aria-label={sidebar ? "Hide workspaces" : "Show workspaces"} title="Workspaces" aria-expanded={sidebar} onClick={() => setSidebar(value => !value)}><PanelLeft className="size-4" /></Button>
         <div className="min-w-0 flex-1 px-1"><h2 className="truncate text-sm font-semibold" title={path}>{name}</h2><p className="truncate text-xs text-muted-foreground" title={path}>{snapshot.model ?? path}</p></div>
+        <span className="hidden h-7 items-center gap-1.5 rounded-md border border-border px-2 text-xs text-muted-foreground sm:inline-flex">Standard mode</span>
+        <FlowMenu key={openedSession ?? snapshot.sessionFile ?? path} flow={flow} widgets={snapshot.widgets ?? {}} statuses={snapshot.statuses ?? {}} reports={reportsSession && normalizedPath(reportsSession) === normalizedPath(openedSession ?? snapshot.sessionFile ?? "") ? diskReports : []} />
         <Button variant="ghost" className="h-7 shrink-0 gap-1.5 px-2 text-xs" aria-label="Open in terminal" title="Open this session's workspace in a terminal" onClick={() => onTerminal(path)}><SquareTerminal className="size-3.5" /><span className="hidden sm:inline">Terminal</span></Button>
       </div>}
       {connectionState}
@@ -377,7 +379,7 @@ export function ChatWorkspace({ path, revision = 0, newSession = true, onNewSess
           <SessionStatsBar stats={snapshot.stats} timing={timing} />
         </div>
       </div> : <>
-        <ChatConversation key={openedSession ?? snapshot.sessionFile ?? path} projection={snapshot.projection} pending={snapshot.pending} startedAt={workingStartedAt} opening={switching} flow={flow} widgets={snapshot.widgets ?? {}} statuses={snapshot.statuses ?? {}} reports={reportsSession && normalizedPath(reportsSession) === normalizedPath(openedSession ?? snapshot.sessionFile ?? "") ? diskReports : []} />
+        <ChatConversation key={openedSession ?? snapshot.sessionFile ?? path} projection={snapshot.projection} pending={snapshot.pending} startedAt={workingStartedAt} opening={switching} />
         <Composer connected={snapshot.connected} pending={snapshot.pending || switching} running={snapshot.projection.running} draft={draft} onDraft={setDraft} onSend={() => void send()} onStop={() => void connection.current?.abort()} onCompact={() => void compactConversation()} onExport={() => void exportConversation()} error={snapshot.error} compatibility={snapshot.projection.compatibility} attachments={attachments} onAddImages={files => void addImages(files)} onRemoveImage={id => updateAttachments(attachmentRef.current.filter(item => item.id !== id))} readingImages={readingImages} attachmentError={attachmentError} models={snapshot.models ?? []} model={snapshot.model} onSelectModel={(provider, id) => void connection.current?.selectModel(provider, id)} onRefreshModels={() => void connection.current?.loadModels()} thinkingLevel={snapshot.thinkingLevel} thinkingLevels={snapshot.thinkingLevels ?? []} onThinkingLevel={level => void connection.current?.setThinkingLevel(level)} />
         <SessionStatsBar stats={snapshot.stats} timing={timing} />
       </>}

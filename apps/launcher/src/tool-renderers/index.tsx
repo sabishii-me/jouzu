@@ -23,6 +23,6 @@ export function ToolRenderer(props: ToolRendererProps) {
   return <GenericRenderer {...props} />;
 }
 export { ActivityRow, StateDot } from "./activity-row";
-export { FlowPanel } from "./flow-panel";
+export { FlowMenu } from "./flow-panel";
 export { deriveFlow, flowWidgetEntries, hasFlow, parseTaskLines, widgetLabel } from "./flow-state";
 export type { FlowState, FlowTask, FlowWait, FlowBackground, TaskStatus } from "./flow-state";
