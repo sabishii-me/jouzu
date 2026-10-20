@@ -315,6 +315,17 @@ pub fn chat_start(
     if window.label() != "main" {
         return Err("Chat is restricted to the main window".into());
     }
+    // A webview reload does not run the previous page's React cleanup, so its chat
+    // process can survive with a Flow attachment. The desktop owns exactly one chat
+    // view; retire any previous process before starting the next one.
+    let stale: Vec<Session> = {
+        let mut previous = state
+            .sessions
+            .lock()
+            .map_err(|_| "Chat state unavailable")?;
+        previous.drain().map(|(_, session)| session).collect()
+    };
+    stop_sessions(stale);
     let mut sessions = state
         .sessions
         .lock()
