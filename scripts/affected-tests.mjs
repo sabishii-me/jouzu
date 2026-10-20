@@ -10,7 +10,17 @@ const usage = `Usage: node scripts/affected-tests.mjs [--base REF] [--run] [--en
 
 Without files, compares the working tree and untracked files with REF (default HEAD).
 Prints the affected test files, or runs them with --run (skipping @endurance tests unless
---endurance). Changes to dependencies, build scripts, or shared fixtures select every test.`;
+--endurance). Changes to dependencies, build scripts, or shared fixtures select every test
+supported by the current platform.`;
+
+// These suites exercise Windows process locking, Authenticode, registry PATH, and native hosts.
+// Static launcher tests remain portable and must still run on every platform.
+const windowsOnly = new Set([
+	"packaging/launcher/command-entries.test.mjs",
+	"packaging/launcher/command-path.test.mjs",
+	"packaging/launcher/git-environment.test.mjs",
+	"packaging/launcher/terminal-environment.test.mjs",
+]);
 
 // Changes here can affect any test; select everything rather than guess.
 const global = [
@@ -80,8 +90,11 @@ export function affectedTests(
 	changed,
 	imports = dependencyGraph(),
 	read = (file) => readFileSync(join(root, file), "utf8"),
+	platform = process.platform,
 ) {
-	const tests = [...imports.keys()].filter((file) => file.endsWith(".test.mjs")).sort();
+	const tests = [...imports.keys()]
+		.filter((file) => file.endsWith(".test.mjs") && (platform === "win32" || !windowsOnly.has(file)))
+		.sort();
 	if (changed.some((file) => global.some((pattern) => pattern.test(file)))) return { all: true, tests };
 	// Reverse edges: every file that (transitively) imports a changed file is affected.
 	const importers = new Map();
@@ -132,7 +145,10 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
 		if (!base) throw new Error(usage);
 		const changed = files.length ? files : changedFiles(base);
 		const { all, tests } = affectedTests(changed);
-		if (all) console.error("[affected] a dependency, build, or shared fixture changed; selecting every test file");
+		if (all) {
+			console.error("[affected] a dependency, build, or shared fixture changed; selecting every supported test file");
+			if (process.platform !== "win32") console.error("[affected] native Windows launcher tests require Windows");
+		}
 		console.error(`[affected] ${changed.length} changed files; ${tests.length} test files`);
 		if (!run) {
 			for (const test of tests) console.log(test);

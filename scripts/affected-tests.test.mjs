@@ -41,6 +41,24 @@ test("dependency, build, and shared fixture changes select every test", () => {
 		});
 });
 
+test("native Windows launcher tests are selected only on Windows, while static checks remain portable", () => {
+	const native = ["command-entries", "command-path", "git-environment", "terminal-environment"].map(
+		(name) => `packaging/launcher/${name}.test.mjs`,
+	);
+	const portable = "packaging/launcher/runtime-source.test.mjs";
+	const imports = new Map([...native, portable].map((file) => [file, new Set()]));
+	for (const platform of ["linux", "darwin", "win32"]) {
+		assert.deepEqual(
+			affectedTests(["upstream/pi.lock.json"], imports, undefined, platform).tests,
+			platform === "win32" ? [...native, portable].sort() : [portable],
+		);
+		assert.deepEqual(
+			affectedTests([native[0]], imports, undefined, platform).tests,
+			platform === "win32" ? [native[0]] : [],
+		);
+	}
+});
+
 test("the repository graph maps compiled imports and launched CLI paths to their sources", () => {
 	const imports = dependencyGraph();
 	assert.ok(imports.get("packages/cli/test/model-picker.test.mjs").has("packages/cli/src/model-picker.ts"));
