@@ -1,8 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { assistant } from "../../../scripts/fixtures/pi-flow-session.mjs";
+import { assistant, deferred } from "../../../scripts/fixtures/pi-flow-session.mjs";
 import { isProviderPause, providerPause } from "../dist/flow-control/flow-pause.js";
-import { assembledSession, capturedNotices, installedProducerExtensions } from "./fixtures/flow-assembly.mjs";
+import {
+	assembledSession,
+	capturedNotices,
+	installedProducerExtensions,
+	syntheticProducer,
+} from "./fixtures/flow-assembly.mjs";
 import { nativeRequests } from "./fixtures/native-requests.mjs";
 
 const settle = () => new Promise((resolve) => setImmediate(resolve));
@@ -76,6 +81,55 @@ test("a failure the host retries and recovers from raises no provider pause", as
 	assert.equal(f.ingress.automatedPause(), undefined, "a turn the host repaired must not hold automated work");
 });
 
+test("a failed overflow compaction still pauses after the error leaves projected history", async (t) => {
+	const failures = [];
+	const f = await assembledSession(t, {
+		persist: true,
+		settings: { compaction: { enabled: true, reserveTokens: 512, keepRecentTokens: 1 } },
+		producerExtensions: await installedProducerExtensions(),
+		script: [
+			{ text: "Earlier successful response" },
+			{
+				httpStatus: 400,
+				httpBody: {
+					error: {
+						message:
+							"This model's maximum context length is 262144 tokens. However, you requested 87591 output tokens and your prompt contains at least 174554 input tokens, for a total of at least 262145 tokens. Please reduce the length of the input prompt or the number of requested output tokens. (parameter=input_tokens, value=174554)",
+						type: "BadRequestError",
+						code: 400,
+					},
+				},
+			},
+			rejection(),
+		],
+	});
+	const notices = capturedNotices(f.session);
+	const unsubscribe = f.session.subscribe((event) => {
+		if (event.type === "compaction_end" && event.errorMessage) failures.push(event.errorMessage);
+	});
+	t.after(unsubscribe);
+	await f.session.setModel({ ...f.session.model, contextWindow: 262144 });
+	await f.session.prompt("Establish earlier history");
+	await f.session.prompt("Continue after overflow");
+	await f.session.waitForIdle();
+	assert.equal(f.bodies.length, 3, "the provider error is followed by one failed summary request");
+	assert.equal(failures.length, 1);
+	assert.ok(
+		!f.session.agent.state.messages.some((message) => message.role === "assistant" && message.stopReason === "error"),
+	);
+	assert.ok(isProviderPause(f.ingress.automatedPause() ?? ""));
+	assert.match(f.ingress.automatedPause(), /maximum context length/);
+	assert.equal(notices.filter((notice) => notice.text.includes("Flow control paused")).length, 1);
+
+	const producer = syntheticProducer();
+	const registration = f.ingress.registerProducer(producer.producer);
+	t.after(() => registration.dispose());
+	producer.offer([{ id: "after-failed-recovery", revision: "1" }]);
+	await registration.changed();
+	assert.equal(f.bodies.length, 3, "failed context recovery must not admit another automatic request");
+	assert.deepEqual(f.errors, []);
+});
+
 test("one settled turn reports its provider failure once, and a later success reports nothing", async (t) => {
 	const reported = [];
 	let fail = true;
@@ -92,13 +146,120 @@ test("one settled turn reports its provider failure once, and a later success re
 	});
 	await f.session.prompt("First");
 	assert.deepEqual(reported, ["403 terminated"]);
-	// A host can settle again over an unchanged transcript. The failing message is the identity the
-	// observer records, so the same stop cannot be reported twice.
-	f.bridge.observeSettled({ type: "agent_settled" });
+	// Settlement consumes the observed outcome, so an unchanged transcript cannot report it twice.
+	f.bridge.observeTurn({ type: "agent_settled", aborted: false });
 	assert.deepEqual(reported, ["403 terminated"]);
 	fail = false;
 	await f.session.prompt("Second");
 	assert.deepEqual(reported, ["403 terminated"], "a successful turn replaces the failing message");
+	fail = true;
+	await f.session.prompt("Third");
+	assert.deepEqual(reported, ["403 terminated", "403 terminated"], "a new failure is reported even with the same text");
+});
+
+test("a settled event does not treat restored error history as a new provider failure", async (t) => {
+	const reported = [];
+	const f = await nativeRequests(t, {
+		turn: { aborted() {}, providerFailed: (detail) => reported.push(detail) },
+	});
+	f.session.agent.state.messages = [{ ...assistant(), stopReason: "error", errorMessage: "Historical failure" }];
+	f.bridge.observeTurn({ type: "agent_start" });
+	f.bridge.observeTurn({ type: "agent_settled", aborted: false });
+	assert.deepEqual(reported, []);
+});
+
+for (const initiallyOff of [true, false])
+	test(`a provider failure while flow is off leaves no pause after enabling it: initiallyOff=${initiallyOff}`, async (t) => {
+		const entered = deferred();
+		const release = deferred();
+		const f = await assembledSession(t, {
+			producerExtensions: await installedProducerExtensions(),
+			script: async (_body, index) => {
+				if (index > 0) return { text: "Automatic work resumed" };
+				entered.resolve();
+				await release.promise;
+				return rejection();
+			},
+		});
+		const notices = capturedNotices(f.session);
+		if (initiallyOff) await f.session.prompt("/flow off");
+		const prompted = f.session.prompt("Do the work");
+		await entered.promise;
+		try {
+			if (!initiallyOff) await f.session.prompt("/flow off");
+		} finally {
+			release.resolve();
+		}
+		await prompted;
+		await f.session.waitForIdle();
+		assert.equal(f.ingress.automatedPause(), undefined);
+		assert.ok(!notices.some((notice) => notice.text.includes("Flow control paused")));
+		await f.session.prompt("/flow on");
+		assert.equal(f.ingress.automatedPause(), undefined);
+
+		const producer = syntheticProducer();
+		const registration = f.ingress.registerProducer(producer.producer);
+		t.after(() => registration.dispose());
+		producer.offer([{ id: "after-disabled-failure", revision: "1" }]);
+		await registration.changed();
+		await f.session.waitForIdle();
+		assert.equal(f.bodies.length, 2, "enabling flow must not leave automatic work silently held");
+		assert.deepEqual(f.errors, []);
+	});
+
+for (const resume of ["command", "user"])
+	test(`a provider pause holds later work until resumed by ${resume}`, async (t) => {
+		const f = await assembledSession(t, {
+			producerExtensions: await installedProducerExtensions(),
+			script: (_body, index) => (index === 0 ? rejection() : { text: "Recovered" }),
+		});
+		const notices = capturedNotices(f.session);
+		const producer = syntheticProducer();
+		const registration = f.ingress.registerProducer(producer.producer);
+		t.after(() => registration.dispose());
+		producer.offer([{ id: "failed-work", revision: "1" }]);
+		await registration.changed();
+		await f.session.waitForIdle();
+		assert.ok(isProviderPause(f.ingress.automatedPause() ?? ""));
+		producer.offer([{ id: "later-work", revision: "1" }]);
+		await registration.changed();
+		assert.equal(f.bodies.length, 1, "later work stays held after the failed automatic request");
+		await f.session.prompt("/flow");
+		assert.equal(f.bodies.length, 1, "inspection does not release the pause");
+
+		await f.session.prompt(resume === "command" ? "/flow resume" : "Continue after repairing the provider");
+		await registration.changed();
+		await f.session.waitForIdle();
+		assert.equal(f.ingress.automatedPause(), undefined);
+		assert.equal(f.bodies.length, resume === "command" ? 2 : 3);
+		assert.ok(JSON.stringify(f.bodies.at(-1)).includes("work later-work"));
+		assert.equal(notices.filter((notice) => notice.text.includes("Flow control paused")).length, 1);
+		assert.deepEqual(f.errors, []);
+	});
+
+test("a provider failure does not replace an explicit pause", async (t) => {
+	const entered = deferred();
+	const release = deferred();
+	const f = await assembledSession(t, {
+		producerExtensions: await installedProducerExtensions(),
+		script: async () => {
+			entered.resolve();
+			await release.promise;
+			return rejection();
+		},
+	});
+	const notices = capturedNotices(f.session);
+	const prompted = f.session.prompt("Do the work");
+	await entered.promise;
+	try {
+		await f.session.prompt("/flow pause");
+	} finally {
+		release.resolve();
+	}
+	await prompted;
+	assert.equal(f.ingress.automatedPause(), "held from /flow");
+	assert.ok(!notices.some((notice) => notice.text.includes("a provider request failed")));
+	assert.deepEqual(f.errors, []);
 });
 
 test("a provider pause reason is bounded and carries no credential", () => {

@@ -1,9 +1,13 @@
-param([Parameter(Mandatory=$true)][string]$InputDirectory,[string]$Version)
+param([Parameter(Mandatory=$true)][string]$InputDirectory,[Parameter(Mandatory=$true)][string]$JouzuVersion)
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path "$PSScriptRoot/../..").Path
-# The launcher version is committed in the application package; nothing injects it.
-if (-not $Version) { $Version = (Get-Content (Join-Path $repo 'apps/launcher/package.json') -Raw | ConvertFrom-Json).version }
-if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid launcher version' }
+if ($JouzuVersion -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid Jouzu version' }
+# The launcher carries the version of the Jouzu release it ships in, committed in the application
+# package. The installer, the Add/Remove entry, the logs and bug reports then all name the release
+# the installer came from, and a launcher built from a commit of another release is refused.
+$Version = (Get-Content (Join-Path $repo 'apps/launcher/package.json') -Raw | ConvertFrom-Json).version
+if ($Version -ne $JouzuVersion) { throw "The launcher version $Version is not the Jouzu version $JouzuVersion; build from the commit of that release" }
+$assetPrefix = "jouzu-win-x64-v$JouzuVersion"
 $inputRoot = (Resolve-Path $InputDirectory).Path
 
 # Windows shows the publisher next to the signature, so the configured publisher and the organization
@@ -111,11 +115,11 @@ try {
  if ($LASTEXITCODE) { throw 'Cannot install bundler' }
 
  Invoke-Bundle (New-Config (New-Template '') $true) 'Full package'
- $fullSetup = Join-Path $output "Jouzu Launcher_${Version}_x64-setup.exe"
+ $fullSetup = Join-Path $output "$assetPrefix-setup.exe"
  Copy-Item -LiteralPath $setupPath -Destination $fullSetup -Force
 
  Invoke-Bundle (New-Config (New-Template '!define JOUZU_LAUNCHER_ONLY 1') $false) 'Launcher-only package'
- $updateSetup = Join-Path $output "Jouzu Launcher_${Version}_x64-update.exe"
+ $updateSetup = Join-Path $output "$assetPrefix-update.exe"
  Copy-Item -LiteralPath $setupPath -Destination $updateSetup -Force
 
  # The bundler restores the application binary it patched for bundle-type marking after the
@@ -141,5 +145,5 @@ try {
  if ($LASTEXITCODE) { throw 'Updater signature does not match the launcher public key' }
 
  Copy-Item "$inputRoot/source.json" $output
- @{version=$Version;commit=$env:GITHUB_SHA;run=$env:GITHUB_RUN_ID;setup=(Get-FileHash $fullSetup -Algorithm SHA256).Hash;update=(Get-FileHash $updateSetup -Algorithm SHA256).Hash} | ConvertTo-Json | Set-Content "$output/build.json"
+ @{jouzuVersion=$JouzuVersion;launcherVersion=$Version;commit=$env:GITHUB_SHA;run=$env:GITHUB_RUN_ID;setup=(Get-FileHash $fullSetup -Algorithm SHA256).Hash;update=(Get-FileHash $updateSetup -Algorithm SHA256).Hash} | ConvertTo-Json | Set-Content "$output/build.json"
 } finally { Pop-Location }

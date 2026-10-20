@@ -144,7 +144,6 @@ export class PiFlowSessionService {
 			const recovery = await recoverPiHistory(this.session.sessionManager, attachment.ledger);
 			const state = await attachment.ledger.snapshot();
 
-			const recoveryBlocked = waitSourceRecovery.missing.length > 0 || recovery.unresolved > 0;
 			this.outcomeUnresolved = state.attempts.some((attempt) => attempt.phase === "uncertain");
 			await attachment.submissions.archiveCompleted();
 			await attachment.submissions.recoverCallbacks();
@@ -214,7 +213,8 @@ export class PiFlowSessionService {
 							waits.updating ||
 							attachment.waitProducers.updating ||
 							this.outcomeUnresolved ||
-							recoveryBlocked ||
+							waitSourceRecovery.missing.length > 0 ||
+							recovery.unresolved > 0 ||
 							sourceRecovery.unresolved > 0 ||
 							attachment.nativeRequests.recoveryBlocked ||
 							policy.recoveryBlocked,
@@ -513,31 +513,70 @@ export class PiFlowSessionService {
 	}
 
 	/** Release a stuck active reservation without deleting receipts or stopping producer jobs. */
-	resetFlow() {
+	clearFlow() {
+		return this.resetFlowImpl(false);
+	}
+
+	/** Destructively reset flow delivery after an idle boundary; provider and producer jobs keep running. */
+	resetFlow(onReset?: () => void) {
+		return this.resetFlowImpl(true, onReset);
+	}
+
+	private resetFlowImpl(destructive: boolean, onReset?: () => void) {
 		return this.registry.run(async () => {
 			const branch = this.branch();
-			const result = await branch.host.atIdle(async () => {
+			const reserve = destructive
+				? branch.host.atQueueMaintenance.bind(branch.host)
+				: branch.host.atIdle.bind(branch.host);
+			const result = await reserve(async () => {
 				if (this.branch() !== branch) throw new FlowLedgerError("stale", "Flow reset branch changed.");
 				const state = await branch.attachment.ledger.snapshot();
 				const attemptId = state.activeAttemptId;
-				if (attemptId)
+				if (attemptId && !destructive)
 					await branch.attachment.ledger.emergencyReset(
 						attemptId,
 						"Emergency flow release from /flow; provider outcome may be unknown.",
 					);
-				await this.refreshOutcomeUnresolved(branch);
-				// Reset is an explicit decision to release unknown dispatch outcomes, never to replay them.
-				await branch.attachment.submissions.discardInterrupted();
-				Object.assign(branch.sourceRecovery, await branch.native.recoverSources());
-				await branch.attachment.submissions.archiveCompleted();
-				await reconcileNativeSources(this.session, branch.attachment, branch.native, "reset");
+				// A clear preserves evidence and reconciles it. A reset explicitly discards flow
+				// delivery state after the idle boundary, so an unknown provider outcome cannot keep
+				// the session blocked indefinitely.
+				if (destructive) {
+					branch.host.invalidate();
+					branch.native.reset();
+					await branch.attachment.waits.reset();
+					await branch.attachment.ledger.reset();
+					await branch.attachment.submissions.reset();
+					onReset?.();
+					this.outcomeUnresolved = false;
+					Object.assign(branch.recovery, { recovered: 0, unresolved: 0 });
+					Object.assign(branch.sourceRecovery, { recovered: 0, unresolved: 0 });
+					Object.assign(branch.waitSourceRecovery, { restored: 0, missing: [] });
+					branch.workContext.revoke();
+					await branch.workContext.attach();
+				} else {
+					await this.refreshOutcomeUnresolved(branch);
+					await branch.attachment.submissions.discardInterrupted();
+					Object.assign(branch.sourceRecovery, await branch.native.recoverSources());
+					await branch.attachment.submissions.archiveCompleted();
+					await reconcileNativeSources(this.session, branch.attachment, branch.native, "reset");
+				}
 				const releasedRequests = await branch.attachment.nativeRequests.reset();
 				await branch.attachment.nativeRequests.retireSuperseded();
+				const ledgerAfter = await branch.attachment.ledger.snapshot();
+				const waitRecoveryHeld = branch.waitSourceRecovery.missing.length > 0;
+				const recoveryHeld = destructive
+					? false
+					: branch.host.gate().recoveryBlocked ||
+						branch.attachment.nativeRequests.recoveryBlocked ||
+						branch.recovery.unresolved > 0 ||
+						branch.sourceRecovery.unresolved > 0 ||
+						waitRecoveryHeld ||
+						ledgerAfter.attempts.some((attempt) => attempt.phase === "uncertain");
 				return {
 					kind: attemptId ? ("cancelled" as const) : ("inactive" as const),
 					attemptId,
 					releasedRequests,
-					recoveryHeld: branch.host.gate().recoveryBlocked,
+					recoveryHeld,
 				};
 			});
 			if (result.kind === "busy") throw new FlowLedgerError("busy", "Flow reset requires an idle session.");

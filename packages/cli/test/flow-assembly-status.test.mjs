@@ -50,6 +50,35 @@ test("the status command reads and repairs holds without reaching the model", as
 	assert.deepEqual(f.errors, []);
 });
 
+test("/flow reset requires explicit confirmation before destructive recovery", async (t) => {
+	const f = await assembledSession(t, { producerExtensions: await installedProducerExtensions() });
+	const notices = capturedNotices(f.session);
+	let resets = 0;
+	const original = f.ingress.resetFlow.bind(f.ingress);
+	f.ingress.resetFlow = async () => {
+		resets++;
+		return { kind: "inactive", attemptId: undefined, releasedRequests: 0, recoveryHeld: false };
+	};
+	try {
+		await f.session.prompt("/flow reset");
+		assert.equal(resets, 0);
+		assert.match(
+			notices.at(-1).text,
+			/discards all queued messages.*Try \/flow clear first.*only if \/flow clear does not fix the problem.*\/flow reset confirm/,
+		);
+		for (const args of ["yes", "confirm extra"]) {
+			await f.session.prompt(`/flow reset ${args}`);
+			assert.equal(resets, 0);
+		}
+		await f.session.prompt("/flow reset confirm");
+		await settle();
+		assert.equal(resets, 1);
+		assert.match(notices.at(-1).text, /Flow reset completed\. Destructive flow state was discarded/);
+		assert.deepEqual(f.errors, []);
+	} finally {
+		f.ingress.resetFlow = original;
+	}
+});
 test("the status command refuses unknown targets and states what it accepts", async (t) => {
 	const f = await assembledSession(t, { producerExtensions: await installedProducerExtensions() });
 	const before = f.bodies.length;

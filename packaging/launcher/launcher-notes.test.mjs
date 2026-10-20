@@ -3,18 +3,17 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { launcherNotes } from './launcher-notes.mjs';
 
-const changelog = readFileSync(new URL('../../apps/launcher/CHANGELOG.md', import.meta.url), 'utf8');
+const changelog = readFileSync(new URL('../../CHANGELOG.md', import.meta.url), 'utf8');
 
-test('every released launcher version has update notes', () => {
-	const notes = launcherNotes(changelog, '0.3.0');
-	assert.match(notes, /built and signed by CI/);
+test('every released version has launcher update notes from the Jouzu changelog', () => {
+	const notes = launcherNotes(changelog, '0.2.0');
+	assert.match(notes, /Add the Windows launcher/);
 	// A section ends at the next version heading, so notes never leak another release's text.
-	assert.doesNotMatch(notes, /## 0\.2\.0/);
-	assert.doesNotMatch(notes, /Jouzu application payload/);
+	assert.doesNotMatch(notes, /^## /m);
 });
 
 test('a missing or empty section is refused instead of shipping an empty note', () => {
 	assert.throws(() => launcherNotes(changelog, '9.9.9'), /Missing changelog section/);
-	assert.throws(() => launcherNotes('# Launcher changelog\n\n## 1.0.0\n\n## 0.9.0\n', '1.0.0'), /Empty changelog section/);
-	assert.throws(() => launcherNotes(changelog, 'v0.3.0'), /Invalid launcher version/);
+	assert.throws(() => launcherNotes('# Changelog\n\n## 1.0.0 - 2026-10-16\n\n## 0.9.0 - 2026-10-01\n', '1.0.0'), /Missing changelog section/);
+	assert.throws(() => launcherNotes(changelog, 'v0.2.0'), /Invalid release version/);
 });

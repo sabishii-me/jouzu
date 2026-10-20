@@ -144,7 +144,8 @@ test("a producer whose descriptor changes after retirement is admitted once", as
 	assert.equal(f.bodies.length, 2);
 });
 
-const until = async (predicate, label, timeoutMs = 5000) => {
+// Guards against a missing event, not a speed check: a loaded runner can exceed 5 s.
+const until = async (predicate, label, timeoutMs = 30_000) => {
 	const deadline = Date.now() + timeoutMs;
 	while (Date.now() < deadline) {
 		if (predicate()) return;

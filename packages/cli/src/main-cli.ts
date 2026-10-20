@@ -52,6 +52,7 @@ import {
 import { configurePiProcess, type ProfileSelection, resolveProfileSelection } from "./runtime.js";
 import { createRuntimeDiagnostics } from "./runtime-diagnostics.js";
 import { withJouzuOutput } from "./runtime-output.js";
+import { createScrollbackSessionObserver } from "./scrollback-session.js";
 import { sessionActivity } from "./session-activity.js";
 import { createSessionLabelsExtension } from "./session-labels.js";
 import { createShisaExtension } from "./shisa-link/extension.js";
@@ -302,11 +303,13 @@ export async function runMainCli(args: string[]): Promise<void> {
 		presentation,
 		{ createJouzuModelPicker },
 		{ createJouzuHelpExtension },
+		{ createScrollbackExtension },
 		{ createSessionUiExtension, WorkDashboardController, selectWork },
 	] = await Promise.all([
 		import("./presentation.js"),
 		import("./model-picker.js"),
 		import("./help.js"),
+		import("./scrollback.js"),
 		import("./session-ui/index.js"),
 	]);
 	presentation.clearInteractiveStartup(parsed.args);
@@ -482,11 +485,12 @@ export async function runMainCli(args: string[]): Promise<void> {
 						console.error(`Jouzu flow control: ${error instanceof Error ? error.message : String(error)}`),
 				})
 			: undefined;
+	const scrollbackSession = createScrollbackSessionObserver();
 	const startPi = () =>
 		pi.main(piArgs, {
 			sessionInfoFooter: runtimeDiagnostics.summary,
 			contentPolicyFactory: nativeTextguard.createPolicy,
-			...(flow ? { flowIngressFactory: flow.flowIngressFactory } : {}),
+			flowIngressFactory: async (context) => scrollbackSession.wrap(await flow?.flowIngressFactory(context)),
 			extensionFactories: [
 				...classicHostBuiltinOverrides(),
 				createDirectToolPolicyExtension(),
@@ -510,6 +514,7 @@ export async function runMainCli(args: string[]): Promise<void> {
 				createAstraCompatibilityExtension(),
 				voice,
 				help,
+				createScrollbackExtension({ isShellBusy: scrollbackSession.isShellBusy }),
 				releaseDiagnostics,
 			],
 		});

@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { assembledSession, installedProducerExtensions } from "./fixtures/flow-assembly.mjs";
 
-test("continuous tools cross native byte and record quotas after compaction without waiting for idle", {
+test("continuous tools cross native byte and record quotas after compaction without waiting for idle @endurance", {
 	timeout: 120000,
 }, async (t) => {
 	const turns = 1120;

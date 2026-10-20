@@ -696,7 +696,7 @@ test("submission history migration validates bodies and publishes indexes atomic
 	);
 });
 
-test("submission indexes outlive the archive count quota without routine history reads", async (t) => {
+test("submission indexes outlive the archive count quota without routine history reads @endurance", async (t) => {
 	const root = await rootFor(t);
 	const owner = FlowOwnership.acquire(root, scope);
 	const repo = new MemorySessionRepo();
@@ -757,7 +757,7 @@ test("submission indexes outlive the archive count quota without routine history
 	assert.equal((await store.snapshot()).length, 16385);
 });
 
-test("submission indexes outlive the archived byte quota without legacy validation", async (t) => {
+test("submission indexes outlive the archived byte quota without legacy validation @endurance", async (t) => {
 	const root = await rootFor(t);
 	const owner = FlowOwnership.acquire(root, scope);
 	const repo = new MemorySessionRepo();

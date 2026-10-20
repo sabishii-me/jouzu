@@ -58,6 +58,14 @@ Review all generated manifest and lock changes before qualification. Run focused
 
 ## Update log
 
+### Pi 1.3.0 — qualified locally
+
+- **Tag and npm `gitHead`:** `v1.3.0` at `71023aec1546d6d677a65669c5665c0927ce0dd0`.
+- **Disposition:** The pin adopted in `632a9d9` remains qualified. Rechecked on 2026-10-19 with ten registered deviations, including the terminal-clipboard deviation added in `7f99277`. `upstream/pi.lock.json` records their exact paths and digests.
+- **Compatibility:** Jouzu uses the classic agent host and built-in MCP client with deferred tool discovery. See [MCP servers](tools.md#mcp-servers) for configuration and project trust. Flow reset clears matching runtime state as well as durable receipts; goal compaction retains listed follow-up requirements.
+- **Checks:** Online npm integrity/tag verification reports Pi 1.3.0 as latest. The full local release gate passes with 2,886 CLI tests passed, two opt-in skips, and no failures; packed install, synthetic update/restart/rollback, and Python artifact checks pass. A fresh source-only installation and build also pass. These results do not qualify native Windows/macOS or live providers.
+- **Dependency advisory scope:** The reviewed source lock reports advisories for WebAIO's nested MCP SDK and `proxy-addr`. The prepared release bundle removes that SDK subtree, and the passing package check rejects it in the tarball. This does not establish a clean source dependency audit.
+
 ### Pi 1.0.0 — qualified locally
 
 - **Tag and npm `gitHead`:** `v1.0.0` at `a13d35a742c6ef8462812a28fbe1d8c8b7431c32`.

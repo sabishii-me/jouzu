@@ -77,24 +77,21 @@ export function isBuiltinApiProvider(api) {
         options?.onMessageConverted ? (source, transformed) => sources.set(transformed, source) : undefined);`,
 		);
 		change(
-			"model.compat?.supportsMidConvoEffort === true ? model.provider : undefined, nativeToolChanges);",
-			"model.compat?.supportsMidConvoEffort === true ? model.provider : undefined, nativeToolChanges, (source, output) => { if (sources.has(source)) options?.onMessageConverted?.(sources.get(source), output); });",
+			"const converted = convertMessages(conversationMessages, isOAuthToken, cacheControl, compat.allowEmptySignature, effortMessages ? model.provider : undefined, nativeToolChanges ? convertToolDefinitions : undefined);",
+			"const converted = convertMessages(conversationMessages, isOAuthToken, cacheControl, compat.allowEmptySignature, effortMessages ? model.provider : undefined, nativeToolChanges ? convertToolDefinitions : undefined, (source, output) => { if (sources.has(source)) options?.onMessageConverted?.(sources.get(source), output); });",
 		);
 		change(
-			"managedProvider, nativeToolChanges = false) {",
-			"managedProvider, nativeToolChanges = false, onMessageConverted) {",
+			"tool changes are not native. */\nconvertToolDefinitions) {",
+			"tool changes are not native. */\nconvertToolDefinitions, onMessageConverted) {",
+		);
+		change("        const msg = transformedMessages[i];", "        const msg = transformedMessages[i];");
+		change(
+			'                params.push({\n                    role: "user",\n                    content: filteredBlocks,\n                });',
+			'                params.push({\n                    role: "user",\n                    content: filteredBlocks,\n                });\n                onMessageConverted?.(msg, params[params.length - 1]);',
 		);
 		change(
-			"        const msg = transformedMessages[i];",
-			"        const msg = transformedMessages[i];\n        const rowCount = params.length;",
-		);
-		change(
-			'        }\n        else if (msg.role === "assistant") {',
-			'            if (params.length > rowCount) onMessageConverted?.(msg, params[params.length - 1]);\n        }\n        else if (msg.role === "assistant") {',
-		);
-		change(
-			"                toolResults.push(convertToolResult(transformedMessages[j]));",
-			"                toolResults.push(convertToolResult(transformedMessages[j]));\n                onMessageConverted?.(transformedMessages[j], toolResults[toolResults.length - 1]);",
+			"                toolResults.push(convertToolResult(toolMsg, split?.content));",
+			"                toolResults.push(convertToolResult(toolMsg, split?.content));\n                onMessageConverted?.(toolMsg, toolResults[toolResults.length - 1]);",
 		);
 	} else if (path === "dist/api/google-generative-ai.js" || path === "dist/api/google-vertex.js") {
 		change("convertMessages(model, context);", "convertMessages(model, context, options?.onMessageConverted);");
@@ -148,12 +145,12 @@ export function isBuiltinApiProvider(api) {
 			"                result.push({ role: ConversationRole.USER, content });\n                if (sources.has(m)) onMessageConverted?.(sources.get(m), result[result.length - 1]);",
 		);
 		change(
-			"                // Look ahead for consecutive toolResult messages",
-			"                if (sources.has(m)) onMessageConverted?.(sources.get(m), toolResults[toolResults.length - 1]);\n                // Look ahead for consecutive toolResult messages",
+			"                    if (split) {",
+			"                    if (sources.has(toolMsg)) onMessageConverted?.(sources.get(toolMsg), toolResults[toolResults.length - 1]);\n                    if (split) {",
 		);
 		change(
-			"                    j++;",
-			"                    if (sources.has(nextMsg)) onMessageConverted?.(sources.get(nextMsg), toolResults[toolResults.length - 1]);\n                    j++;",
+			"                result.push({ role: ConversationRole.USER, content: [...toolResults, ...errorImages] });",
+			"                result.push({ role: ConversationRole.USER, content: [...toolResults, ...errorImages] });",
 		);
 	} else if (path === "dist/api/pi-messages.js") {
 		change(

@@ -67,11 +67,18 @@ export async function applyBackgroundFlow(packageRoot, checkOnly = false) {
 }
 export async function applyInstalledBackgroundFlow(checkOnly = false) {
 	const roots = new Set(
-		await Promise.all(
-			["node_modules", "packages/cli/node_modules"].map((path) =>
-				realpath(join(root, path, "@vanillagreen/pi-background-tasks")),
-			),
-		),
+		(
+			await Promise.all(
+				["node_modules", "packages/cli/node_modules"].map(async (path) => {
+					try {
+						return await realpath(join(root, path, "@vanillagreen/pi-background-tasks"));
+					} catch (error) {
+						if (error.code === "ENOENT") return undefined;
+						throw error;
+					}
+				}),
+			)
+		).filter(Boolean),
 	);
 	for (const packageRoot of roots) await applyBackgroundFlow(packageRoot, checkOnly);
 }

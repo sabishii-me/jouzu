@@ -67,9 +67,9 @@ export class PiNativeRequests {
 	private prepared?: { modelHash: string; capture?: NativeSourceCapture; projections?: NativeProjectionCapture };
 	private active = 0;
 	private closed = false;
-	/** The settled turn whose provider failure was already reported, so a later event cannot repeat it. */
-	private reportedFailure?: AssistantMessage;
-	private readonly unsubscribeSettled?: () => void;
+	/** Latest response in this run, even if host recovery removes it from projected history. */
+	private lastAssistant?: AssistantMessage;
+	private readonly unsubscribeTurn: () => void;
 	private guardedStream?: AgentSession["agent"]["streamFunction"];
 	private guardTransport = false;
 	private sealed = false;
@@ -125,7 +125,7 @@ export class PiNativeRequests {
 		if (attached.has(session)) throw new FlowLedgerError("identity", "Pi session already has native request receipts.");
 		attached.add(session);
 		this.enabled = flowEnabled ?? (() => true);
-		this.unsubscribeSettled = session.subscribe((event) => this.observeSettled(event));
+		this.unsubscribeTurn = session.subscribe((event) => this.observeTurn(event));
 		if (identifySources) {
 			const transform = session.agent.transformContext;
 			this.hooks.set(session.agent, "transformContext", async (messages, signal) => {
@@ -800,28 +800,19 @@ export class PiNativeRequests {
 			throw new FlowLedgerError("stale", "Native request attachment is closed or replaced.");
 	}
 	/**
-	 * Report a provider failure once the host has finished with the turn.
-	 *
-	 * The request path sees one outcome per attempt, including attempts the host retries, so it
-	 * cannot tell a recovered transient failure from a stopped turn. The settled event is the first
-	 * point where the host has stopped retrying and compacting, and the transcript then holds the
-	 * turn's final response: an error there is a turn nothing will resume on its own. The failing
-	 * message is the identity, so the same stop cannot be reported twice, and a later successful
-	 * turn replaces it.
+	 * Wait for host recovery to finish before pausing. Retry and overflow recovery can remove failed
+	 * responses from projected history, so capture message events rather than searching that history.
+	 * A recovery response replaces the failed response; settlement consumes it once, including while
+	 * flow is disabled. A new run cannot inherit an error from an earlier run or restored history.
 	 */
-	private observeSettled(event: AgentSessionEvent): void {
-		if (event.type !== "agent_settled" || this.closed) return;
-		if (this.session.sessionId !== this.store.scope.sessionId) return;
-		const messages = this.session.agent.state.messages;
-		let last: AssistantMessage | undefined;
-		for (let index = messages.length - 1; index >= 0; index--) {
-			const message = messages[index];
-			if (message.role !== "assistant") continue;
-			last = message;
-			break;
-		}
-		if (last?.stopReason !== "error" || last === this.reportedFailure) return;
-		this.reportedFailure = last;
+	private observeTurn(event: AgentSessionEvent): void {
+		if (this.closed || this.session.sessionId !== this.store.scope.sessionId) return;
+		if (event.type === "agent_start") this.lastAssistant = undefined;
+		if (event.type === "message_end" && event.message.role === "assistant") this.lastAssistant = event.message;
+		if (event.type !== "agent_settled") return;
+		const last = this.lastAssistant;
+		this.lastAssistant = undefined;
+		if (!this.enabled() || event.aborted || last?.stopReason !== "error") return;
 		this.turn?.providerFailed?.(last.errorMessage ?? "");
 	}
 	async close(): Promise<void> {
@@ -835,7 +826,8 @@ export class PiNativeRequests {
 		this.projectionWaitTokens = undefined;
 		this.references = undefined;
 		this.closed = true;
-		this.unsubscribeSettled?.();
+		this.lastAssistant = undefined;
+		this.unsubscribeTurn();
 		this.hooks.close();
 		attached.delete(this.session);
 	}

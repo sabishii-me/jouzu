@@ -1,6 +1,6 @@
 # Jouzu
 
-Jouzu is Shisa AI's terminal coding agent, built on [Pi coding agent](https://pi.dev/) 1.0.0.
+Jouzu is Shisa AI's terminal coding agent, built on [Pi coding agent](https://pi.dev/) 1.3.0.
 
 - **Goals, loops, and scheduled work.** Track tasks, work toward a goal, run measured improvement loops, and schedule prompts.
 - **Background jobs.** Run shell jobs while you keep working; completions arrive as batched summaries.
@@ -12,7 +12,7 @@ Jouzu is Shisa AI's terminal coding agent, built on [Pi coding agent](https://pi
 - **Voice dictation.** Speak into the prompt with Shisa realtime transcription.
 - **Model picker.** Search providers and models, keep favorites, and save per-project defaults. Sign into [Shisa AI's API service](https://platform.shisa.ai/) for the latest open coding models.
 
-Jouzu v0.1.x is **alpha** software. Expect frequent updates and changes.
+Jouzu is **alpha** software. Expect frequent updates and changes.
 
 ## Requirements
 
@@ -54,6 +54,7 @@ The first launch asks whether to enable the Japanese profile and offers to conne
 | `/textguard` | Review flagged content |
 | `/status` | Show session, model, and context usage |
 | `/bug` | Draft a bug report |
+| `/scrollback` | Export the conversation to terminal scrollback for search and selection |
 | `Ctrl+/` or `/hotkeys` | Help and shortcuts |
 
 ## Profiles
@@ -124,7 +125,7 @@ Building also requires Go (for [textguard-go](https://github.com/shisa-ai/textgu
 | [Shisa AI account](https://github.com/shisa-ai/jouzu/blob/main/docs/shisa.md) | Sign-in, sign-out, credentials |
 | [Model catalogs](https://github.com/shisa-ai/jouzu/blob/main/docs/catalogs.md) | Catalog sources, refresh, publishing a catalog |
 | [Flow control](https://github.com/shisa-ai/jouzu/blob/main/docs/flow-control.md) | `/flow` commands, pausing and resuming automatic work |
-| [Built-in tools](https://github.com/shisa-ai/jouzu/blob/main/docs/tools.md) | Tools, goals and loops, compaction |
+| [Built-in tools](https://github.com/shisa-ai/jouzu/blob/main/docs/tools.md) | Tools, MCP servers, goals and loops, compaction |
 | [Web tools](https://github.com/shisa-ai/jouzu/blob/main/docs/web.md) | Fetch and browser tools, limits, browser settings |
 | [Agents and runs](https://github.com/shisa-ai/jouzu/blob/main/docs/subagents.md) | Child agents and roles |
 | [TextGuard](https://github.com/shisa-ai/jouzu/blob/main/docs/textguard.md) | Content scanning and approvals |

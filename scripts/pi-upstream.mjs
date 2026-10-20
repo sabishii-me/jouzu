@@ -16,17 +16,15 @@ const tuiPackageName = "@earendil-works/pi-tui";
 const serverPackageName = "@earendil-works/pi-server";
 const chordPackageName = "@earendil-works/chord";
 const alignedRuntimePackageNames = [
-	chordPackageName,
 	"@earendil-works/pi-agent-core",
 	"@earendil-works/pi-ai",
 	"@earendil-works/pi-codemode",
 	packageName,
 	"@earendil-works/pi-mcp",
-	"@earendil-works/pi-protocol",
-	serverPackageName,
 	"@earendil-works/pi-telemetry",
 	tuiPackageName,
 ];
+const serverDependencyPackageNames = [chordPackageName, "@earendil-works/pi-protocol"];
 const developmentRuntimePackageNames = [
 	"@earendil-works/pi-agent-core",
 	"@earendil-works/pi-ai",
@@ -39,7 +37,6 @@ const directRuntimePackageNames = [
 	"@earendil-works/pi-codemode",
 	packageName,
 	"@earendil-works/pi-mcp",
-	serverPackageName,
 	"@earendil-works/pi-telemetry",
 	tuiPackageName,
 ];
@@ -91,12 +88,12 @@ function registryMetadata(spec) {
 		},
 	);
 	const parsed = JSON.parse(output);
-	if (!parsed.version || !parsed.gitHead || !parsed["dist.integrity"] || !parsed["dist.tarball"]) {
+	if (!parsed.version || !parsed["dist.integrity"] || !parsed["dist.tarball"]) {
 		fail(`npm metadata for ${spec} is incomplete`);
 	}
 	return {
 		version: parsed.version,
-		gitHead: parsed.gitHead,
+		gitHead: typeof parsed.gitHead === "string" ? parsed.gitHead : null,
 		integrity: parsed["dist.integrity"],
 		tarball: parsed["dist.tarball"],
 		dependencies: parsed.dependencies ?? {},
@@ -113,8 +110,29 @@ function registryVersion(spec) {
 	return version;
 }
 
-function dependencyRangeTargetsVersion(range, version) {
-	return range === version || range === `^${version}` || range === `~${version}`;
+function dependencyRangeSupportsVersion(range, version) {
+	// Pins use complete stable versions: exact, caret, or tilde. Reject other syntax
+	// rather than guessing at npm's meaning for a partial or compound range.
+	const component = "(0|[1-9]\\d*)";
+	const stable = `${component}\\.${component}\\.${component}`;
+	const requested = new RegExp(`^(\\^|~)?${stable}$`).exec(range ?? "");
+	const selected = new RegExp(`^${stable}$`).exec(version ?? "");
+	if (!requested || !selected) return false;
+	const lower = requested.slice(2).map(BigInt);
+	const target = selected.slice(1).map(BigInt);
+	const compare = (a, b) => {
+		for (let index = 0; index < 3; index++) {
+			if (a[index] < b[index]) return -1;
+			if (a[index] > b[index]) return 1;
+		}
+		return 0;
+	};
+	if (!requested[1]) return compare(target, lower) === 0;
+	const upper = [...lower];
+	const pivot = requested[1] === "~" ? 1 : lower[0] > 0n ? 0 : lower[1] > 0n ? 1 : 2;
+	upper[pivot]++;
+	for (let index = pivot + 1; index < 3; index++) upper[index] = 0n;
+	return compare(target, lower) >= 0 && compare(target, upper) < 0;
 }
 
 function upstreamTagCommit(tag) {
@@ -166,15 +184,18 @@ function verifyTagContainsPackageSource(tag, tagCommit, sourceCommit) {
 
 function packageLockRecords() {
 	const packageLock = readJson(packageLockPath);
-	const node = packageLock.packages?.[`node_modules/${packageName}`];
-	const tui = packageLock.packages?.[`node_modules/${tuiPackageName}`];
-	const server = packageLock.packages?.[`node_modules/${serverPackageName}`];
-	const esbuild = packageLock.packages?.[`node_modules/${esbuildPackageName}`];
-	const typebox = packageLock.packages?.[`node_modules/${typeboxPackageName}`];
+	const packageRecord = (name) =>
+		packageLock.packages?.[`node_modules/${name}`] ?? packageLock.packages?.[`packages/cli/node_modules/${name}`];
+	const node = packageRecord(packageName);
+	const tui = packageRecord(tuiPackageName);
+	const server = packageRecord(serverPackageName);
+	const esbuild = packageRecord(esbuildPackageName);
+	const typebox = packageRecord(typeboxPackageName);
 	const cli = packageLock.packages?.["packages/cli"];
 	const sessionUi = packageLock.packages?.["packages/session-ui"];
-	const alignedRuntime = Object.fromEntries(
-		alignedRuntimePackageNames.map((name) => [name, packageLock.packages?.[`node_modules/${name}`]]),
+	const alignedRuntime = Object.fromEntries(alignedRuntimePackageNames.map((name) => [name, packageRecord(name)]));
+	const serverDependencies = Object.fromEntries(
+		serverDependencyPackageNames.map((name) => [name, packageRecord(name)]),
 	);
 	if (!node) fail(`${packageName} is missing from package-lock.json`);
 	if (!tui) fail(`${tuiPackageName} is missing from package-lock.json`);
@@ -186,7 +207,10 @@ function packageLockRecords() {
 	for (const [name, record] of Object.entries(alignedRuntime)) {
 		if (!record) fail(`${name} is missing from package-lock.json`);
 	}
-	return { node, tui, server, esbuild, typebox, cli, sessionUi, alignedRuntime };
+	for (const [name, record] of Object.entries(serverDependencies)) {
+		if (!record) fail(`${name} is missing from package-lock.json`);
+	}
+	return { node, tui, server, esbuild, typebox, cli, sessionUi, alignedRuntime, serverDependencies };
 }
 
 function validateLock({ online }) {
@@ -270,16 +294,26 @@ function validateLock({ online }) {
 	if (packageLock.server.version !== serverRecord.version) {
 		fail(`package-lock Pi server version does not match ${serverRecord.version}`);
 	}
+	for (const name of serverDependencyPackageNames) {
+		if (
+			!dependencyRangeSupportsVersion(
+				packageLock.server.dependencies?.[name],
+				packageLock.serverDependencies[name].version,
+			)
+		) {
+			fail(`Pi server does not target the pinned ${name}`);
+		}
+	}
 	if (packageLock.esbuild.version !== esbuildVersion) {
 		fail(`package-lock esbuild version does not match ${esbuildVersion}`);
 	}
 	if (packageLock.typebox.version !== typeboxVersion) {
 		fail(`package-lock typebox version does not match ${typeboxVersion}`);
 	}
-	if (!dependencyRangeTargetsVersion(packageLock.node.dependencies?.[tuiPackageName], tuiVersion)) {
+	if (!dependencyRangeSupportsVersion(packageLock.node.dependencies?.[tuiPackageName], tuiVersion)) {
 		fail(`Pi package does not target the pinned Pi TUI ${tuiVersion}`);
 	}
-	if (!dependencyRangeTargetsVersion(packageLock.node.dependencies?.[typeboxPackageName], typeboxVersion)) {
+	if (!dependencyRangeSupportsVersion(packageLock.node.dependencies?.[typeboxPackageName], typeboxVersion)) {
 		fail(`Pi package does not target the pinned typebox ${typeboxVersion}`);
 	}
 	if (packageLock.node.integrity !== packageRecord.integrity) {
@@ -294,9 +328,12 @@ function validateLock({ online }) {
 	if (online) {
 		const metadata = registryMetadata(`${packageName}@${packageRecord.version}`);
 		if (metadata.version !== packageRecord.version) fail("npm version does not match lock");
-		if (metadata.gitHead !== lock.commit) fail(`npm gitHead ${metadata.gitHead} does not match ${lock.commit}`);
+		if (metadata.gitHead && metadata.gitHead !== lock.commit)
+			fail(`npm gitHead ${metadata.gitHead} does not match ${lock.commit}`);
+		if (!metadata.gitHead && lock.commit !== lock.tagCommit)
+			fail("npm package source is missing gitHead and lock commit is not the release tag");
 		if (metadata.integrity !== packageRecord.integrity) fail("npm integrity does not match lock");
-		if (!dependencyRangeTargetsVersion(metadata.dependencies[tuiPackageName], tuiVersion)) {
+		if (!dependencyRangeSupportsVersion(metadata.dependencies[tuiPackageName], tuiVersion)) {
 			fail(`npm Pi package does not target Pi TUI ${tuiVersion}`);
 		}
 		if (registryVersion(`${tuiPackageName}@${tuiVersion}`) !== tuiVersion) fail("npm Pi TUI version is unavailable");
@@ -308,13 +345,13 @@ function validateLock({ online }) {
 		}
 		const serverMetadata = registryMetadata(`${serverPackageName}@${serverRecord.version}`);
 		if (serverMetadata.version !== serverRecord.version) fail("npm Pi server version does not match lock");
-		if (serverMetadata.gitHead !== lock.commit)
-			fail(`npm Pi server gitHead ${serverMetadata.gitHead} does not match ${lock.commit}`);
 		if (serverMetadata.integrity !== serverRecord.integrity) fail("npm Pi server integrity does not match lock");
+		const serverTagCommit = upstreamTagCommit(`v${serverRecord.version}`);
 		const tagCommit = upstreamTagCommit(lock.tag);
 		if (tagCommit !== lock.tagCommit) fail(`upstream ${lock.tag} is ${tagCommit}, expected ${lock.tagCommit}`);
 		verifyTagContainsPackageSource(lock.tag, tagCommit, lock.commit);
-		verifyTagContainsPackageSource(lock.tag, tagCommit, serverMetadata.gitHead);
+		if (serverMetadata.gitHead)
+			verifyTagContainsPackageSource(`v${serverRecord.version}`, serverTagCommit, serverMetadata.gitHead);
 	}
 
 	console.log(
@@ -364,30 +401,28 @@ function update(version) {
 	const spec = version ? `${packageName}@${version}` : `${packageName}@latest`;
 	const metadata = registryMetadata(spec);
 	const tuiVersion = registryVersion(`${tuiPackageName}@${metadata.version}`);
-	const serverMetadata = registryMetadata(`${serverPackageName}@${metadata.version}`);
-	const chordMetadata = registryMetadata(`${chordPackageName}@${metadata.version}`);
-	if (serverMetadata.version !== metadata.version || chordMetadata.version !== metadata.version) {
-		fail(`Pi runtime packages do not share version ${metadata.version}`);
+	const serverVersion = registryVersion(`${serverPackageName}@latest`);
+	const serverMetadata = registryMetadata(`${serverPackageName}@${serverVersion}`);
+	const serverChordRange = serverMetadata.dependencies[chordPackageName];
+	if (!dependencyRangeSupportsVersion(serverChordRange, registryVersion(`${chordPackageName}@latest`))) {
+		fail(`${serverPackageName}@${serverMetadata.version} does not target the latest ${chordPackageName}`);
 	}
-	const esbuildVersion = chordMetadata.dependencies[esbuildPackageName];
+	const esbuildVersion = readJson(cliPackagePath).dependencies?.[esbuildPackageName];
 	if (typeof esbuildVersion !== "string" || !VERSION_RE.test(esbuildVersion)) {
-		fail(`${chordPackageName}@${chordMetadata.version} does not use an exact ${esbuildPackageName} version`);
+		fail(`Jouzu must already pin an exact ${esbuildPackageName} version`);
 	}
 	const typeboxVersion = metadata.dependencies[typeboxPackageName];
 	if (typeof typeboxVersion !== "string" || !VERSION_RE.test(typeboxVersion)) {
 		fail(`${packageName}@${metadata.version} does not use an exact ${typeboxPackageName} version`);
 	}
-	const esbuildMetadata = registryMetadata(`${esbuildPackageName}@${esbuildVersion}`);
-	if (!dependencyRangeTargetsVersion(metadata.dependencies[tuiPackageName], tuiVersion)) {
+	if (!dependencyRangeSupportsVersion(metadata.dependencies[tuiPackageName], tuiVersion)) {
 		fail(`${packageName}@${metadata.version} does not target ${tuiPackageName}@${tuiVersion}`);
-	}
-	if (!dependencyRangeTargetsVersion(metadata.dependencies[chordPackageName], chordMetadata.version)) {
-		fail(`${packageName}@${metadata.version} does not target ${chordPackageName}@${chordMetadata.version}`);
 	}
 	const tag = `v${metadata.version}`;
 	const tagCommit = upstreamTagCommit(tag);
+	metadata.gitHead ??= tagCommit;
+	serverMetadata.gitHead ??= upstreamTagCommit(`v${serverMetadata.version}`);
 	verifyTagContainsPackageSource(tag, tagCommit, metadata.gitHead);
-	verifyTagContainsPackageSource(tag, tagCommit, serverMetadata.gitHead);
 	metadata.tagCommit = tagCommit;
 
 	for (const name of developmentRuntimePackageNames) {
@@ -396,8 +431,9 @@ function update(version) {
 	for (const name of directRuntimePackageNames) {
 		pinManifestDependency(cliPackagePath, "dependencies", name, metadata.version);
 	}
-	pinManifestDependency(cliPackagePath, "dependencies", esbuildPackageName, esbuildMetadata.version);
+	pinManifestDependency(cliPackagePath, "dependencies", esbuildPackageName, esbuildVersion);
 	pinManifestDependency(cliPackagePath, "dependencies", typeboxPackageName, typeboxVersion);
+	pinManifestDependency(cliPackagePath, "dependencies", serverPackageName, serverMetadata.version);
 	setBundledDependency(cliPackagePath, serverPackageName, false);
 	setBundledDependency(cliPackagePath, "@earendil-works/pi-agent-core", true);
 	setBundledDependency(cliPackagePath, "@earendil-works/pi-ai", true);

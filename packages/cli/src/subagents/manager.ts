@@ -452,11 +452,10 @@ export class SubagentManager {
 			const { entries, ...context } = structuredClone(launch.context);
 			run.context = context;
 			if (context.parentLookup || context.mode !== "fresh") {
-				const snapshot =
-					[
-						JSON.stringify({ type: "session", version: 3, id: context.parentSessionId, cwd: run.cwd }),
-						...entries.map((entry) => JSON.stringify(entry)),
-					].join("\n") + "\n";
+				const snapshot = `${[
+					JSON.stringify({ type: "session", version: 3, id: context.parentSessionId, cwd: run.cwd }),
+					...entries.map((entry) => JSON.stringify(entry)),
+				].join("\n")}\n`;
 				if (Buffer.byteLength(snapshot) > 32_000_000)
 					throw new Error(
 						"Context: parent snapshot exceeds 32 MB. Use parentContext: false with fresh context or a focused splice.",

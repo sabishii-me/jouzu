@@ -199,7 +199,7 @@ test("parent lookup reads only the saved snapshot and pages with trace cursors",
 	try {
 		const snapshot = captureChildContext({}, false, "p", branch);
 		const path = join(root, "parent.jsonl");
-		writeFileSync(path, snapshot.entries.map(JSON.stringify).join("\n") + "\n");
+		writeFileSync(path, `${snapshot.entries.map(JSON.stringify).join("\n")}\n`);
 		const tool = parentContextTool(path);
 		const page = JSON.parse((await tool.execute("id", { limit: 1 })).content[0].text);
 		assert.equal(page.records[0].entryId, "u");

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { nativeProjectionDelivered, nativeSourceDelivered } from "../dist/flow-control/native-inclusion.js";
 import { assembledSession, installedProducerExtensions } from "./fixtures/flow-assembly.mjs";
-import { campaignScript, liveWait } from "./fixtures/flow-campaign.mjs";
+import { campaignScript } from "./fixtures/flow-campaign.mjs";
 
 const hash = "a".repeat(64);
 /** One retained source at `index`, with the model status Pi recorded for it. */
@@ -81,7 +81,11 @@ test("the two layers agree on every request a real campaign produces", async (t)
 		script: campaignScript({ command: "sleep 0.3 && echo swept", goal: "Compare inclusion layers" }),
 	});
 	await f.session.prompt("start the sweep and wait");
-	await liveWait(f.ingress, "the campaign leaves one live wait");
+	// The dependency sleeps only 0.3s, so on a loaded host it can finish before this check.
+	// The test needs the campaign to have declared its wait, not to observe it still live.
+	const waits = await f.ingress.branch().attachment.waits.snapshot();
+	assert.equal(waits.length, 1, "the campaign declares one wait");
+	assert.ok(["waiting", "resolved"].includes(waits[0].state), `the wait is live or resolved, not ${waits[0].state}`);
 	// Idle maintenance retires superseded requests within about a second, so accumulate each one as
 	// it appears rather than snapshotting once at the end and finding it already retired.
 	const seen = new Map();

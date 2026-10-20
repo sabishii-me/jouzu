@@ -16,9 +16,25 @@ on:
         required: true
         type: string
 
+      qualified-source:
+        description: Original tested source commit when only publication tooling changed
+        required: false
+        default: ''
+        type: string
+      candidate-from-release:
+        description: Restore the preserved candidate from the version release
+        required: false
+        default: false
+        type: boolean
+      candidate-sha256:
+        description: Expected SHA-256 of the preserved candidate
+        required: false
+        default: ''
+        type: string
       windows-evidence:
-        description: Native Windows qualification JSON for the exact candidate
-        required: true
+        description: Native Windows qualification JSON when available; installer qualification may follow npm publication
+        required: false
+        default: ''
         type: string
 
 permissions: {}
@@ -54,12 +70,25 @@ jobs:
           git fetch --no-tags origin main:refs/remotes/origin/main
           git merge-base --is-ancestor HEAD refs/remotes/origin/main
           node -e 'const p=require("./packages/cli/package.json"); if (`v${p.version}` !== process.env.RELEASE_REF) process.exit(1)'
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        if: ${{ !inputs.candidate-from-release }}
         with:
           name: jouzu-candidate
           path: dist/ci-artifacts
           github-token: ${{ github.token }}
           run-id: ${{ inputs.ci-run-id }}
+      - name: Restore the preserved candidate
+        if: ${{ inputs.candidate-from-release }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_REF: ${{ inputs.ref }}
+          CANDIDATE_SHA256: ${{ inputs.candidate-sha256 }}
+        run: |
+          [[ "$CANDIDATE_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          mkdir -p dist/ci-artifacts
+          gh release download "$RELEASE_REF" --repo "$GITHUB_REPOSITORY" --dir dist/ci-artifacts --pattern "jouzu-${RELEASE_REF#v}.tgz" --pattern release-manifest.json --pattern SHA256SUMS
+          mv "dist/ci-artifacts/jouzu-${RELEASE_REF#v}.tgz" dist/ci-artifacts/candidate.tgz
+          echo "$CANDIDATE_SHA256  dist/ci-artifacts/candidate.tgz" | sha256sum --check
       - name: Read qualification evidence
         env:
           GH_TOKEN: ${{ github.token }}
@@ -67,16 +96,24 @@ jobs:
           CI_RUN_ATTEMPT: ${{ inputs.ci-run-attempt }}
           WINDOWS_QUALIFICATION_JSON: ${{ inputs.windows-evidence }}
         run: |
-          node -e 'const fs=require("node:fs"); const e=JSON.parse(process.env.WINDOWS_QUALIFICATION_JSON); fs.writeFileSync("dist/ci-artifacts/windows-qualification.json", JSON.stringify(e))'
+          if [[ -n "$WINDOWS_QUALIFICATION_JSON" ]]; then
+            node -e 'const fs=require("node:fs"); const e=JSON.parse(process.env.WINDOWS_QUALIFICATION_JSON); fs.writeFileSync("dist/ci-artifacts/windows-qualification.json", JSON.stringify(e))'
+          fi
           [[ "$CI_RUN_ID" =~ ^[1-9][0-9]*$ ]]
           [[ "$CI_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CI_RUN_ID/attempts/$CI_RUN_ATTEMPT" > dist/ci-artifacts/ci-run.json
           gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$CI_RUN_ID/attempts/$CI_RUN_ATTEMPT/jobs?per_page=100" | jq '[.[].jobs[]]' > dist/ci-artifacts/ci-jobs.json
-          node -e 'const m=require("./dist/ci-artifacts/release-manifest.json"); if(m.qualification.runId!==process.env.CI_RUN_ID || String(m.qualification.runAttempt)!==process.env.CI_RUN_ATTEMPT) process.exit(1)'
+          ARTIFACT_ATTEMPT=$(node -p 'require("./dist/ci-artifacts/release-manifest.json").qualification.runAttempt')
+          [[ "$ARTIFACT_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$CI_RUN_ID/attempts/$ARTIFACT_ATTEMPT/jobs?per_page=100" | jq '[.[].jobs[]]' > dist/ci-artifacts/artifact-jobs.json
+          node --input-type=module -e 'import{readFileSync}from"node:fs";import{qualificationManifest}from"./scripts/release-publication-source.mjs";const d="dist/ci-artifacts/";const load=n=>JSON.parse(readFileSync(d+n));qualificationManifest(load("release-manifest.json"),load("ci-run.json"),load("ci-jobs.json"),load("artifact-jobs.json"));'
         timeout-minutes: 2
       - run: npm install --global npm@11.16.0 --ignore-scripts
         timeout-minutes: 3
       - run: node scripts/publish-npm.mjs dist/ci-artifacts
+        env:
+          QUALIFIED_SOURCE_COMMIT: ${{ inputs.qualified-source }}
+          CANDIDATE_SHA256: ${{ inputs.candidate-sha256 }}
         timeout-minutes: 5
   windows-update:
     # A published version must never exist without its signed Windows update artifact.
@@ -84,6 +121,29 @@ jobs:
     uses: ./.github/workflows/launcher-recipe.yml
     permissions:
       contents: write
+    # A called workflow does not inherit secrets. The key lives in the launcher-publish
+    # environment that the called job declares, and a secret can be passed by name even
+    # when it only exists in that environment, so name it here.
+    secrets:
+      JOUZU_RECIPE_PRIVATE_KEY: ${{ secrets.JOUZU_RECIPE_PRIVATE_KEY }}
     with:
       jouzu_version: ${{ inputs.ref }}
       publish: true
+  windows-launcher:
+    # Build, sign and publish the Windows installer once the recipe exists, so every release ends
+    # with a downloadable installer on its own release page. The runtime comes from the recipe job
+    # in this run, which `needs:` already required. The job waits for `finish` to create the release
+    # before it uploads, because the release carries the tagged notes that `finish` owns.
+    needs: windows-update
+    uses: ./.github/workflows/launcher-runtime.yml
+    permissions:
+      contents: write
+      actions: read
+      id-token: write
+    # A called workflow does not inherit secrets; name the launcher signing key here.
+    secrets:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+    with:
+      jouzu_version: ${{ inputs.ref }}
+      publish: true
+      runtime_run_id: ${{ github.run_id }}

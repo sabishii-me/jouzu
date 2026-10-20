@@ -187,7 +187,7 @@ test("the byte limit evicts oldest project histories before writing UTF-8 state"
 		assert.ok(Buffer.byteLength(JSON.stringify(state)) < MODEL_PICKER_STATE_MAX_BYTES);
 		assert.ok(Buffer.byteLength(JSON.stringify(state, null, 2)) > MODEL_PICKER_STATE_MAX_BYTES);
 		const path = writeState(paths, state);
-		const saved = new ModelPickerStore(paths).setFilter("all");
+		const saved = new ModelPickerStore(paths).clearRecents("project", "unused-project");
 		const keys = Object.keys(saved.recents.projects);
 		assert.ok(keys.length < count);
 		assert.equal(saved.recents.projects["project-0000"], undefined);
@@ -214,7 +214,7 @@ test("explicit preferences are not evicted when they alone exceed the serialized
 		assert.ok(Buffer.byteLength(original) < MODEL_PICKER_STATE_MAX_BYTES);
 		assert.ok(Buffer.byteLength(JSON.stringify(state, null, 2)) > MODEL_PICKER_STATE_MAX_BYTES);
 		const path = writeState(paths, state);
-		assert.throws(() => new ModelPickerStore(paths).setFilter("all"), /preferences exceed/);
+		assert.throws(() => new ModelPickerStore(paths).clearRecents("project", "unused-project"), /preferences exceed/);
 		assert.equal(readFileSync(path, "utf8"), original);
 		assert.deepEqual(readdirSync(paths.stateDir), ["model-picker.json"]);
 	} finally {
@@ -229,7 +229,7 @@ test("oversized existing state is never read, quarantined, or replaced by a muta
 		truncateSync(path, MODEL_PICKER_STATE_MAX_BYTES + 1);
 		for (const recover of [true, false])
 			assert.throws(() => loadModelPickerState(paths, { recover }), /exceeds 16 MiB/);
-		assert.throws(() => new ModelPickerStore(paths).setFilter("all"), /exceeds 16 MiB/);
+		assert.throws(() => new ModelPickerStore(paths).clearRecents("project", "unused-project"), /exceeds 16 MiB/);
 		assert.equal(statSync(path).size, MODEL_PICKER_STATE_MAX_BYTES + 1);
 		assert.deepEqual(readdirSync(paths.stateDir), ["model-picker.json"]);
 	} finally {
@@ -437,20 +437,6 @@ test("thinking preferences remain distinct across providers and catalog offering
 	}
 });
 
-test("the last picker filter persists without changing model preferences", () => {
-	const { root, paths } = context();
-	try {
-		const store = new ModelPickerStore(paths);
-		store.setFilter("favorite", new Date("2026-08-23T00:00:00.000Z"));
-		assert.equal(store.load().state.filter, "favorite");
-		assert.deepEqual(store.load().state.favorites, []);
-		assert.deepEqual(store.load().state.defaults.projects, {});
-		assert.throws(() => store.setFilter("retired"), ModelPickerStateError);
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
-});
-
 test("state mutations reject model references with terminal controls", () => {
 	const { root, paths } = context();
 	try {
@@ -503,31 +489,34 @@ test("schema 1, 2, and 3 state migrate with legacy model references", () => {
 	}
 });
 
-test("an unknown saved filter falls back to Recent without discarding picker state", () => {
+test("a list view saved by an earlier version is ignored and dropped on the next save", () => {
 	const { root, paths } = context();
 	try {
 		mkdirSync(paths.stateDir, { recursive: true });
+		const path = join(paths.stateDir, "model-picker.json");
 		writeFileSync(
-			join(paths.stateDir, "model-picker.json"),
+			path,
 			`${JSON.stringify({
 				schemaVersion: 4,
-				filter: "retired",
+				filter: "favorite",
 				favorites: [{ provider: "p", modelId: "m", addedAt: "2026-08-23T00:00:00.000Z" }],
 				defaults: { projects: {} },
 				recents: { global: [], projects: {} },
 			})}\n`,
 		);
-		const state = new ModelPickerStore(paths).load().state;
-		assert.equal(state.filter, "recent");
+		const store = new ModelPickerStore(paths);
+		const state = store.load().state;
+		assert.equal("filter" in state, false);
 		assert.deepEqual(
 			state.favorites.map(({ provider, modelId }) => ({ provider, modelId })),
 			[{ provider: "p", modelId: "m" }],
 		);
+		store.clearRecents("all");
+		assert.equal("filter" in JSON.parse(readFileSync(path, "utf8")), false);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
 });
-
 test("unreadable state is quarantined while symlink state fails closed", { skip: process.platform === "win32" }, () => {
 	const { root, paths } = context();
 	try {

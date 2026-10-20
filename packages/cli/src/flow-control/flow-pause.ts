@@ -19,10 +19,8 @@ export const admissionPause = (code: string): string => `${ADMISSION_PREFIX}${co
 export const isAdmissionPause = (reason: string): boolean => reason.startsWith(ADMISSION_PREFIX);
 
 /**
- * A provider request ended the turn with no host retry left.
- *
- * The provider's own message is the only diagnosis available: the flow layer cannot repair a
- * rejection, so it holds automated work rather than repeating a request that cannot succeed.
+ * A provider request ended the turn after host recovery stopped. Hold automated work until the
+ * user chooses to retry, and include the provider's bounded, redacted message in the pause reason.
  */
 export const providerPause = (detail: string): string =>
 	detail ? `${PROVIDER_PREFIX} (${flowDiagnosticText(detail)})` : PROVIDER_PREFIX;

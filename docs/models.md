@@ -7,8 +7,8 @@ Open the Models view with `/model` or `Ctrl+L`. Your prompt draft is kept.
 | Key | Action |
 | --- | --- |
 | Type, or `/` | Search provider/model IDs and display names |
-| `Esc` | Leave search with the query kept; press again to close |
-| `←` / `→` | Switch between Recent, Favorite, and All |
+| `↑` / `↓` | Move through the list. While searching, this leaves the search field and keeps the query. |
+| `Esc` | Clear the search and return to the model you were on before searching. With no search, leave the search field, then close. |
 | `Tab` / `Shift+Tab` | Switch Palette section: Models, Workflow, Settings |
 | `Enter` | Select the model and save it as this project's default |
 | `Ctrl+F` | Toggle favorite (also while searching) |
@@ -16,8 +16,21 @@ Open the Models view with `/model` or `Ctrl+L`. Your prompt draft is kept.
 
 - `Ctrl+P` outside the Palette cycles your favorites within the current model scope.
 - The header shows the number of matching models and the total you can select.
-- The first launch opens Recent. Later launches reopen the last view you used.
-- To rebind `Ctrl+F` or `Ctrl+Shift+R`, see [Keybindings](keybindings.md).
+- To rebind `Ctrl+F` or `Ctrl+Shift+R`, see [Keybindings](keybindings.md). If you bind an action to a printable key, press `↑` or `↓` to move into the search results before using it; the query stays in place.
+
+## Model list
+
+With an empty search, the list shows models in this order:
+
+1. The current model (`●`)
+2. Models used earlier in this session, most recent first (`↺`)
+3. Favorites (`★`), in the order you added them
+4. Models that sent a request recently, this project's first
+5. Every other model, alphabetically by name
+
+Typing ranks the whole list by how well each model matches and moves the cursor to the best match. Models that match equally keep the order above. Clearing the search, with `Esc` or by deleting the text, returns the cursor to where it was before you started typing.
+
+Each row shows the model name, its provider, and its context window. `◆` marks this project's default. The line above the list shows the selected model's exact provider/model ID and catalog. When two catalogs offer the same provider/model ID, the Provider column also names the catalog. Narrow terminals hide the Context column first, then Provider.
 
 ## Which model a new session uses
 
@@ -41,9 +54,9 @@ Jouzu uses the first of these that applies:
 
 ## Recents, favorites, and saved state
 
-- A model enters Recent after it sends its first request.
+- A model joins the recently used models after it sends its first request.
 - Clearing recents keeps your thinking-level choices.
-- Project defaults, favorites, recents, thinking levels, the last-used model, and the last view are stored in local Jouzu state. They contain no prompts, tool results, credentials, or raw project paths.
+- Project defaults, favorites, recents, thinking levels, and the last-used model are stored in local Jouzu state. They contain no prompts, tool results, credentials, or raw project paths.
 
 ## Switching to a model with a smaller context window
 

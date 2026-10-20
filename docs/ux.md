@@ -97,7 +97,7 @@ Apply these rules before assigning a key:
 | `TERM=dumb` | No interactive key events are available. Report the limitation rather than rendering an unusable view. |
 | Narrow or short terminal | The Palette falls back from floating to in-place replacement below 58 columns or 16 rows. Both presentations offer the same actions and the same cancel result. |
 | Minimum width | Views render every required label in full at 48 columns. Reduce value width or change layout instead of clipping a label. Below 12 columns a view may render its title alone. |
-| tmux or GNU Screen | Jouzu suppresses terminal inline-image detection, then chooses floating or replacement presentation from terminal dimensions. tmux modified keys need the extended-key settings in the collision map; test GNU Screen delivery on the active stack. |
+| tmux or GNU Screen | Jouzu chooses floating or replacement presentation from terminal dimensions. tmux modified keys need the extended-key settings in the collision map; test GNU Screen delivery on the active stack. |
 | Windows | Windows Terminal or another UTF-8-capable terminal is required. See [`windows.md`](windows.md). |
 
 Color, cursor shape, and cursor position are never the only indication of selection, state, or failure.

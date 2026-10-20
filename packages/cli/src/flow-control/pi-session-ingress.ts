@@ -127,9 +127,7 @@ export class PiSessionFlowIngress implements Ingress {
 					aborted: () => {
 						if (this.pauseAutomated(INTERRUPTED_PAUSE)) this.options.onAutomatedPause?.();
 					},
-					// A provider failure the host has stopped retrying leaves automated work with no path
-					// forward: the flow layer has no provider recovery policy, so the turn it drove cannot be
-					// resumed by driving it again. Holding it here is what turns a silent stop into a report.
+					// Host recovery has ended. Hold further automatic turns until the user intervenes.
 					providerFailed: (detail) => {
 						if (this.pauseAutomated(providerPause(detail))) this.options.onAutomatedPause?.();
 					},
@@ -673,9 +671,26 @@ export class PiSessionFlowIngress implements Ingress {
 	resolveUncertainAttempt(id: string, resolution: "retry" | "discard") {
 		return this.repairNative((service) => service.resolveUncertainAttempt(id, resolution));
 	}
+	clearFlow() {
+		return this.manage(async (service) => {
+			const result = await service.clearFlow();
+			this.automatedPauseReason = undefined;
+			return result;
+		});
+	}
 	resetFlow() {
 		return this.manage(async (service) => {
-			const result = await service.resetFlow();
+			const branch = service.branch();
+			const result = await service.resetFlow(() => {
+				for (const [id, pending] of this.pending) {
+					if (pending.branch !== branch) continue;
+					this.pending.delete(id);
+					this.retainedUserInput.delete(id);
+				}
+				for (const [id, context] of this.waitContexts)
+					if (context.branch === branch) this.waitContexts.delete(id);
+				this.replayIds?.clear();
+			});
 			this.automatedPauseReason = undefined;
 			return result;
 		});
@@ -904,7 +919,7 @@ export class PiSessionFlowIngress implements Ingress {
 				localAboutCommand ||
 				(localFlowCommand &&
 					(branch.host.gate().recoveryBlocked ||
-						/^\/flow(?:\s+(?:details(?:\s+[1-9]\d{0,5})?|runtime|reset|clear))?$/.test(
+						/^\/flow(?:\s+(?:details(?:\s+[1-9]\d{0,5})?|runtime|reset(?:\s+confirm)?|clear))?$/.test(
 							(captured.args[0] as string).trim(),
 						)))
 			) {

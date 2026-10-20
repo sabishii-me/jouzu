@@ -168,7 +168,7 @@ export function transform(path, source) {
 			"getFollowUpMessages: async () => this.followUpQueue.drain(this.signal),",
 		);
 	} else if (path === "dist/agent-loop.js") {
-		text = 'import { getCurrentSystemPrompt } from "@earendil-works/pi-ai";\n' + text;
+		text = `import { getCurrentSystemPrompt } from "@earendil-works/pi-ai";\n${text}`;
 		change(
 			"    const llmContext = normalizeContext({ messages: llmMessages });",
 			"    const llmContext = normalizeContext({ messages: config.flowCheckpoints ? structuredClone(llmMessages) : llmMessages });",

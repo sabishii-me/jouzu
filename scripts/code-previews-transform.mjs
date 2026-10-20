@@ -29,6 +29,7 @@ export function transform(path, source) {
 	if (path !== "src/paths/resolve.ts") throw new Error(`Unknown patch path ${path}`);
 	// The write tool resolves mutation paths exactly: no Unicode-space aliasing and no
 	// filesystem-based alias selection. Only @ stripping and ~ expansion remain.
+	if (source.includes(EXACT_BLOCK)) return source;
 	if (source.includes(FALLBACK_TAIL)) {
 		const migrated = replace(source, `import { existsSync } from "node:fs";\n`, "");
 		return replace(migrated, FALLBACK_TAIL, EXACT_TAIL);

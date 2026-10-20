@@ -441,7 +441,11 @@ export class PiNativeDispatch {
 		return structuredClone([...this.held.values()]);
 	}
 	reset(): void {
+		this.assertActive();
+		if (this.active || this.contextWrites.size)
+			throw new FlowLedgerError("busy", "Native reset requires drained dispatch.");
 		this.session.clearQueue();
+		for (const pending of this.deferred.values()) pending.cancel();
 		this.queued.clear();
 		this.deferred.clear();
 		this.held.clear();

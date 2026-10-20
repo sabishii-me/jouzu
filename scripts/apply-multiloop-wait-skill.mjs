@@ -60,19 +60,26 @@ export async function applyMultiloopWaitSkill(packageRoot, checkOnly = false) {
 		} else {
 			if (
 				checkOnly ||
-				![lock.extension.before, lock.extension.previousAfter, lock.extension.labelsPreviousAfter, lock.extension.continuationPreviousAfter].includes(extensionDigest)
+				![
+					lock.extension.before,
+					lock.extension.previousAfter,
+					lock.extension.labelsPreviousAfter,
+					lock.extension.continuationPreviousAfter,
+				].includes(extensionDigest)
 			)
 				throw new Error("Multiloop extension source hash differs.");
 			const changed =
 				extensionDigest === lock.extension.before
 					? transformMultiloopFlow(extension)
 					: driveMultiloopAfterOtherTurns(
-						extensionDigest === lock.extension.continuationPreviousAfter
-						? extension
-						: notifyMultiloopLabels(
-								extensionDigest === lock.extension.previousAfter ? driveMultiloopOnGateChange(extension) : extension,
-						),
-					);
+							extensionDigest === lock.extension.continuationPreviousAfter
+								? extension
+								: notifyMultiloopLabels(
+										extensionDigest === lock.extension.previousAfter
+											? driveMultiloopOnGateChange(extension)
+											: extension,
+									),
+						);
 			if (sha(changed) !== lock.extension.after) throw new Error("Multiloop flow transform differs.");
 			writes.push([join(packageRoot, extensionPath), changed]);
 		}

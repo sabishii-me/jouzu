@@ -20,13 +20,14 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Input } from "./components/ui/input";
 import { getVersion } from "@tauri-apps/api/app";
 import { open, confirm } from "@tauri-apps/plugin-dialog";
-import { Bug, FolderOpen, Search, X, ArrowUpRight, Settings, Languages, KeyRound, SlidersHorizontal, RefreshCw, LoaderCircle, Minus, Plus, SquareTerminal } from "lucide-react";
+import { Bug, FolderOpen, Search, X, ArrowUpRight, Settings, Languages, KeyRound, SlidersHorizontal, RefreshCw, LoaderCircle, Minus, Plus, SquareTerminal, Copy, Check, ArrowUpCircle } from "lucide-react";
 import { Dialog, DialogTrigger, DialogContent, DialogTitle, DialogDescription, DialogClose } from "./components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "./components/ui/tabs";
 import { ScrollArea } from "./components/ui/scroll-area";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "./components/ui/card";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "./components/ui/select";
 import { Button } from "./components/ui/button";
+import { JouzuLoader } from "./components/ui/jouzu-loader";
 import { messages, locales, resolveLocale, type Locale } from "./i18n";
 import { type Workspace } from "./history";
 import { parseDiagnostics, type Diagnostics } from "./diagnostics";
@@ -43,6 +44,9 @@ export function App() {
   useEffect(() => { document.documentElement.lang = locale; localStorage.setItem("jouzu.ui.language", locale); }, [locale]);
   const [state, setState] = useState<LauncherState | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The first status read decides the whole window: the dot loader while it is in flight, the error and a retry if it never lands.
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [statusCopied, setStatusCopied] = useState(false);
   const [operation, setOperation] = useState<"choosing" | "launching" | "preparing" | "saving" | null>(null);
   const [version, setVersion] = useState<string | null>(null);
   const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
@@ -51,6 +55,8 @@ export function App() {
   const updater = useLauncherUpdate(components?.launcherUpdaterConfigured === true);
   const gitBash = useGitBash();
   const [settingsTab,setSettingsTab] = useState("providers");
+  // Where a header jump lands in the System list: the row that has something waiting.
+  const [updateFocus,setUpdateFocus] = useState<number | null>(null);
   // A machine whose console host draws the interface incorrectly is told so, and the fix is one step away.
   const [repair, setRepair] = useState<{ error: string | null } | null>(null);
   const [sort, setSort] = useState(() => localStorage.getItem("jouzu.folder.sort") ?? "added");
@@ -131,6 +137,30 @@ export function App() {
     controlQueue.current = run.catch(() => {});
     return run;
   }
+  async function readStatus() {
+    // The first status read shares the control pipe with every other request, so it waits its turn like they do.
+    const run = controlQueue.current.then(async () => {
+      setStatusError(null);
+      try { setSetup(parseControlState(await invoke<unknown>("control_request", { request: { action: "status" } }))); }
+      catch (error) { setStatusError(String(error)); }
+    });
+    controlQueue.current = run.catch(() => {});
+    return run;
+  }
+  function openUpdatePanel() {
+    // A waiting update is not a question to re-ask: the header opens the System list on the row that has it.
+    setUpdateFocus(jouzuUpdater.version ? 0 : 1);
+    setSettingsTab("system");
+    setSettingsOpen(true);
+  }
+  async function copyStatusError() {
+    if (!statusError) return;
+    try {
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(statusError);
+      else { const area = document.createElement("textarea"); area.value = statusError; area.style.position = "fixed"; area.style.opacity = "0"; document.body.appendChild(area); area.select(); document.execCommand("copy"); area.remove(); }
+      setStatusCopied(true); setTimeout(() => setStatusCopied(false), 2000);
+    } catch (error) { setError(String(error)); }
+  }
   useEffect(() => { if (!notice) return; const timer = setTimeout(() => setNotice(null), 4000); return () => clearTimeout(timer); }, [notice]);
   useEffect(() => { if (settingsOpen && isTauri()) { if (!setup && !busyRef.current) void configure({ action: "status" }); void readEnvironment(); } }, [settingsOpen]);
   const refresh = async () => setState(await invoke<LauncherState>("launcher_state"));
@@ -143,7 +173,7 @@ export function App() {
     if (!isTauri()) return;
     refresh().catch(error => setError(String(error)));
     void refreshDiagnostics();
-    if (!initialStatusRequested.current) { initialStatusRequested.current = true; void configure({action:"status"}); }
+    if (!initialStatusRequested.current) { initialStatusRequested.current = true; void readStatus(); }
     getVersion().then(setVersion).catch(error => setError(String(error)));
     invoke<Components>("component_versions").then(setComponents).catch(error => setError(String(error)));
   }, []);
@@ -210,8 +240,10 @@ export function App() {
     <header data-tauri-drag-region className="flex items-center justify-between border-b border-border py-3">
       <div className="absolute left-0 right-0 top-0 h-3" data-tauri-drag-region />
       <div className="pointer-events-none flex items-center gap-3"><img src={jouzuIcon} alt="" draggable={false} className="size-9" /><h1 className="min-w-16 flex-1 text-lg font-semibold tracking-tight">Jouzu</h1></div>
-      <div className="pointer-events-none flex items-center gap-1 [&>*]:pointer-events-auto"><Button variant="ghost" aria-label={t.openTerminal} title={t.openTerminal} disabled={busy || !state?.ready} onClick={() => void openTerminal()}><SquareTerminal /></Button><Button variant="ghost" aria-label={t.reportTitle} title={t.reportTitle} onClick={() => void openReport()}><Bug /></Button><Dialog open={settingsOpen} onOpenChange={value => { if (!value && device) void invoke("cancel_control"); setSettingsOpen(value); }}>
-        <Button variant="ghost" className="relative" aria-label={t.checkUpdates} title={t.checkUpdates} disabled={updater.busy || jouzuUpdater.busy} onClick={() => {void jouzuUpdater.check();void updater.refresh();}}><RefreshCw className={(updater.busy || jouzuUpdater.busy) ? "animate-spin" : undefined} />{(updater.version || jouzuUpdater.version) && <span className="absolute right-1 top-1 size-2 rounded-full bg-destructive" aria-hidden="true" />}</Button><DialogTrigger asChild><Button variant="ghost" aria-label={t.settings} title={t.settings}><Settings /></Button></DialogTrigger>
+      <div className="pointer-events-none flex items-center gap-1 [&>*]:pointer-events-auto">{(setup || statusError) && <><Button variant="ghost" aria-label={t.openTerminal} title={t.openTerminal} disabled={busy || !state?.ready} onClick={() => void openTerminal()}><SquareTerminal /></Button><Button variant="ghost" aria-label={t.reportTitle} title={t.reportTitle} onClick={() => void openReport()}><Bug /></Button><Dialog open={settingsOpen} onOpenChange={value => { if (!value && device) void invoke("cancel_control"); if (!value) setUpdateFocus(null); setSettingsOpen(value); }}>
+        {updater.version || jouzuUpdater.version
+          ? <Button variant="ghost" className="text-primary hover:text-primary" aria-label={t.updateReady} title={t.updateReady} disabled={updater.busy || jouzuUpdater.busy} onClick={openUpdatePanel}><ArrowUpCircle className={(updater.busy || jouzuUpdater.busy) ? "animate-pulse" : undefined} /></Button>
+          : <Button variant="ghost" aria-label={t.checkUpdates} title={t.checkUpdates} disabled={updater.busy || jouzuUpdater.busy} onClick={() => {void jouzuUpdater.check();void updater.refresh();}}><RefreshCw className={(updater.busy || jouzuUpdater.busy) ? "animate-spin" : undefined} /></Button>}<DialogTrigger asChild><Button variant="ghost" aria-label={t.settings} title={t.settings}><Settings /></Button></DialogTrigger>
         <DialogContent showCloseButton={false} className="flex h-[min(560px,85dvh)] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl border-border p-0 sm:max-w-3xl">
           {error && <p role="alert" className="border-b border-border bg-red-50 px-4 py-2 text-sm text-red-900">{error}</p>}
           <DialogDescription className="sr-only">{t.preferences}</DialogDescription>
@@ -245,7 +277,7 @@ export function App() {
 
                 </TabsContent>
                 <TabsContent value="system" className="m-0 space-y-4">
-                  <UpdatePreview locale={locale} live={{
+                  <UpdatePreview locale={locale} focusIndex={updateFocus} live={{
                     phases:[jouzuUpdater.phase === 'preparing' || jouzuUpdater.phase === 'verifying' || jouzuUpdater.phase === 'activating' || jouzuUpdater.phase === 'staged' ? 'installing' : jouzuUpdater.phase as 'idle'|'checking'|'available'|'current'|'downloading'|'installing'|'complete'|'error', updater.phase],
                     versions:[components?.jouzu ?? t.unavailable, version ?? t.unavailable],
                     targets:[jouzuUpdater.version,updater.version],
@@ -279,7 +311,7 @@ export function App() {
           </Tabs>
           <DialogClose asChild><Button variant="ghost" className="absolute right-2 top-2 px-3" aria-label={t.dismiss}><X /></Button></DialogClose>
         </DialogContent>
-      </Dialog>
+      </Dialog></>}
       {isTauri() && <><Button variant="ghost" aria-label={t.minimize} onClick={() => getCurrentWindow().minimize().catch(error => setError(String(error)))}><Minus /></Button><Button variant="ghost" aria-label={t.closeWindow} onClick={() => getCurrentWindow().close().catch(error => setError(String(error)))}><X /></Button></>}
       </div>
     </header>
@@ -295,7 +327,7 @@ export function App() {
         </DialogContent>
       </Dialog>
     {error && <div role="alert" className="mt-5 flex items-start justify-between gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-900"><div><p className="font-medium">{t.error}</p><details className="mt-2 break-all"><summary className="cursor-pointer">{t.details}</summary><p className="mt-2">{error}</p></details></div><button onClick={() => setError(null)} aria-label={t.dismiss}><X className="size-4" /></button></div>}
-    {!setup ? <LauncherPage title={t.heading} description={t.connecting}><div className="p-6"><Button disabled={busy} onClick={()=>void configure({action:"status"})}>{busy ? t.loading : t.retry}</Button></div></LauncherPage> : showSetup ? <LauncherPage title={setup?.profile ? t.setupConnect : t.setupMake} description={setup?.profile ? t.setupHint : t.setupPreferencesHint} action={!!state?.recent.length && <Button variant="ghost" onClick={()=>setWorkspacePage(true)}>{t.setupWorkspaces}</Button>}>
+    {!setup ? <section aria-label={t.connecting} className="flex min-h-0 flex-1 flex-col items-center justify-center gap-5"><JouzuLoader className="scale-125" /><span role="status" aria-live="polite" className="sr-only">{t.connecting}</span>{statusError && <div className="flex w-full max-w-xl flex-col items-center gap-3"><p className="text-sm text-muted-foreground" role="alert">{t.connectFailed}</p><div className="flex w-full items-center gap-2 rounded-lg border border-border bg-card py-2 pl-3 pr-1"><code className="select-text min-w-0 flex-1 truncate text-xs text-muted-foreground" title={statusError}>{statusError}</code><Button variant="ghost" className="shrink-0" aria-label={t.copy} title={t.copy} onClick={() => void copyStatusError()}>{statusCopied ? <Check className="text-primary" /> : <Copy />}</Button></div><Button onClick={() => void readStatus()}>{t.retry}</Button></div>}</section> : showSetup ? <LauncherPage title={setup?.profile ? t.setupConnect : t.setupMake} description={setup?.profile ? t.setupHint : t.setupPreferencesHint} action={!!state?.recent.length && <Button variant="ghost" onClick={()=>setWorkspacePage(true)}>{t.setupWorkspaces}</Button>}>
       <ScrollArea className="min-h-0 flex-1"><div className="p-5 sm:p-6">
         {!setup?.profile ? <div className="space-y-6 pt-2">
           <div className="space-y-2"><Label>{t.language}</Label><div role="group" aria-label={t.language} className="flex flex-wrap gap-2">{Object.entries(locales).map(([key,label])=><Button key={key} lang={key} className="min-w-28" variant={locale===key ? "default" : "outline"} aria-pressed={locale===key} onClick={()=>setLocale(key as Locale)}>{label}</Button>)}</div><p className="text-sm text-muted-foreground">{t.languageHint}</p></div>

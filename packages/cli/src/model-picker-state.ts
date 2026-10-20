@@ -22,9 +22,6 @@ export const MODEL_PICKER_HISTORY_LIMIT = 8;
 export const MODEL_PICKER_PROJECT_HISTORY_LIMIT = 512;
 export const MODEL_PICKER_STATE_MAX_BYTES = 16 * 1024 * 1024;
 
-export const MODEL_PICKER_FILTERS = ["recent", "favorite", "all"] as const;
-export type ModelPickerFilter = (typeof MODEL_PICKER_FILTERS)[number];
-
 export const MODEL_PICKER_THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 export type ModelPickerThinkingLevel = (typeof MODEL_PICKER_THINKING_LEVELS)[number];
 
@@ -56,7 +53,6 @@ export interface LastModelRecord extends ModelReference {
 
 export interface ModelPickerState {
 	schemaVersion: 4;
-	filter: ModelPickerFilter;
 	favorites: FavoriteRecord[];
 	thinkingLevels: ModelThinkingRecord[];
 	last?: LastModelRecord;
@@ -175,7 +171,6 @@ export function modelReferencesEqual(left: ModelReference | undefined, right: Mo
 export function emptyModelPickerState(): ModelPickerState {
 	return {
 		schemaVersion: MODEL_PICKER_SCHEMA_VERSION,
-		filter: "recent",
 		favorites: [],
 		thinkingLevels: [],
 		defaults: { projects: {} },
@@ -196,10 +191,6 @@ function validIdentifier(value: unknown): value is string {
 
 function validTimestamp(value: unknown): value is string {
 	return typeof value === "string" && Number.isFinite(Date.parse(value));
-}
-
-function validFilter(value: unknown): value is ModelPickerFilter {
-	return MODEL_PICKER_FILTERS.some((filter) => filter === value);
 }
 
 function validThinkingLevel(value: unknown): value is ModelPickerThinkingLevel {
@@ -268,7 +259,6 @@ function parseState(value: unknown): ModelPickerState {
 	if (!value || typeof value !== "object") throw new ModelPickerStateError("state must be an object");
 	const record = value as {
 		schemaVersion?: unknown;
-		filter?: unknown;
 		favorites?: unknown;
 		thinkingLevels?: unknown;
 		last?: unknown;
@@ -338,8 +328,8 @@ function parseState(value: unknown): ModelPickerState {
 	}
 
 	return {
+		// A `filter` field written by earlier versions is ignored and dropped on the next save.
 		schemaVersion: MODEL_PICKER_SCHEMA_VERSION,
-		filter: validFilter(record.filter) ? record.filter : "recent",
 		favorites,
 		thinkingLevels,
 		...(record.last !== undefined ? { last: parseLastModel(record.last) } : {}),
@@ -467,13 +457,6 @@ export class ModelPickerStore {
 		} finally {
 			release();
 		}
-	}
-
-	setFilter(filter: ModelPickerFilter, now: Date = new Date()): ModelPickerState {
-		if (!validFilter(filter)) throw new ModelPickerStateError(`unknown model picker filter: ${String(filter)}`);
-		return this.mutate((state) => {
-			state.filter = filter;
-		}, now);
 	}
 
 	setProjectDefault(reference: ModelReference, projectKey: string, now: Date = new Date()): ModelPickerState {

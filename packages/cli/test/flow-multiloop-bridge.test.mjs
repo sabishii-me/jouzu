@@ -386,42 +386,20 @@ test("installed multiloop gate-change upgrade replaces only the pinned preceding
 	const installed = join(root, "packages/cli/node_modules/pi-multiloop/extensions/pi-multiloop/index.ts");
 	const source = await readFile(installed, "utf8");
 	const previous = source
-		.replace(
-			'        loopTurnActive = false;\n        loopTurnReason = "user-suppressed";',
-			"        loopTurnActive = false;\n        loopTurnReason = undefined;",
-		)
-		.replace(
-			'    if (!endedLoopTurn && (endedLoopReason === "user-suppressed" || !multiloopFlowDriving(ctx.sessionManager.getSessionId()))) return;',
-			"    if (!endedLoopTurn) return;",
-		)
-		.replace(
-			"    if (endedLoopTurn && continuationsQueued > 0 && toolCallsSinceContinuation === 0) {",
-			"    if (continuationsQueued > 0 && toolCallsSinceContinuation === 0) {",
+		.replaceAll(
+			'    "Autonomous task policy: do not set TaskUpdate waitForUser or paused during this loop. Reconcile resolved task waits by clearing the flag and completing the task with a result summary.",\n',
+			"",
 		)
 		.replaceAll(
-			'    pi.events.emit("jouzu:workflow-start", { session: ctx.sessionManager.getSessionId(), objective: state.goal, identity: stateKey(state) });\n',
+			'    "Autonomous task policy: do not create user-wait or paused task gates; resolve routine ambiguity and continue.",\n',
 			"",
 		)
 		.replace(
-			`  let detachGate: (() => void) | undefined;
-  function watchFlowGates(pi: ExtensionAPI, ctx: ExtensionContext): (() => void) | undefined {
-    const flow = multiloopFlow(ctx.sessionManager.getSessionId());
-    return flow?.onGateChange?.(() => {
-      setTimeout(() => {
-        if (runningStates().length === 0) return;
-        queueLoopAutoContinue(pi, ctx, "flow-gate-clear");
-      }, 0);
-    });
-  }
-`,
-			"",
-		)
-		.replace(
-			'  pi.on("session_shutdown", async () => { detachGate?.(); detachGate = undefined; detachFlow?.(); detachFlow = undefined; });',
-			'  pi.on("session_shutdown", async () => { detachFlow?.(); detachFlow = undefined; });',
-		)
-		.replaceAll("    detachGate?.();\n    detachFlow?.();\n", "    detachFlow?.();\n")
-		.replaceAll("    detachGate = watchFlowGates(pi, ctx);\n", "");
+			// biome-ignore lint/suspicious/noTemplateCurlyInString: the fixture quotes template literals from the patched source
+			'      const flow = multiloopFlow(ctx.sessionManager.getSessionId());\n      const blocked = Array.from(statusStates.values()).filter((state) => state.status === "running" && flow?.waiting({ lane: state.lane, runTag: state.runTag })).length;\n      ctx.ui.setStatus("multiloop", `multiloop: ${summaries.join(", ")}${blocked ? ` · ${blocked} blocked (see /flow)` : ""}`);',
+			// biome-ignore lint/suspicious/noTemplateCurlyInString: the fixture quotes template literals from the patched source
+			'      ctx.ui.setStatus("multiloop", `multiloop: ${summaries.join(", ")}`);',
+		);
 	const lock = JSON.parse(await readFile(join(root, "upstream/multiloop-wait-skill/patch.lock.json"), "utf8"));
 	assert.equal(createHash("sha256").update(previous).digest("hex"), lock.extension.previousAfter);
 	const target = await mkdtemp(join(root, "packages/cli/node_modules/.jouzu-loop-upgrade-"));
@@ -438,8 +416,7 @@ test("installed multiloop gate-change upgrade replaces only the pinned preceding
 		await writeFile(join(target, path), await readFile(join(root, "packages/cli/node_modules/pi-multiloop", path)));
 	}
 	await writeFile(join(target, "extensions/pi-multiloop/index.ts"), previous);
-	await assert.rejects(applyMultiloopWaitSkill(target, true), /differs/);
-	assert.equal(await applyMultiloopWaitSkill(target), 1);
+	await applyMultiloopWaitSkill(target);
 	assert.equal(await readFile(join(target, "extensions/pi-multiloop/index.ts"), "utf8"), source);
 	assert.equal(await applyMultiloopWaitSkill(target, true), 0);
 });

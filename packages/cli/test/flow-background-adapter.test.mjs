@@ -732,6 +732,119 @@ test("a result receipt survives the live task being cleared", async (t) => {
 	assert.throws(() => source.setResultReceipt("bg-result:missing", "1", "delivered", true), /unavailable/);
 });
 
+test("an unchanged running task publishes its liveness once per cadence, not once per write", async (t) => {
+	// Persisting task state republishes every task snapshot. A publication is not a reason to check
+	// the process again, or an idle running task would report one identical observation per write.
+	const { createBackgroundFlowSource } = await loadBackground(t);
+	const scope = { sessionId: "cadence", branchId: "branch" };
+	const task = {
+		id: "task",
+		sessionId: scope.sessionId,
+		status: "running",
+		// This test process is the probed pid, so the check is a real and stable liveness result.
+		pid: process.pid,
+		flow: { version: 1, execution: "cadence-execution", scope, work: { id: "work", revision: 1 } },
+		logFile: "/log",
+	};
+	const source = createBackgroundFlowSource(() => [task]);
+	const lease = source.activate(scope, () => ({ id: "work", revision: 1 }));
+	t.after(() => lease.close());
+	const identity = { scope, workId: "work", handle: task.id, execution: task.flow.execution };
+	const observations = [];
+	t.after(lease.subscribe(identity, (evidence) => observations.push(evidence)));
+	let inventory = 0;
+	t.after(source.watchInventory(() => inventory++));
+	const start = 1_700_000_000_000;
+	t.mock.timers.enable({ apis: ["Date"], now: start });
+	source.publish({ ...task });
+	for (let write = 1; write <= 200; write++) {
+		t.mock.timers.tick(100);
+		source.publish({ ...task });
+	}
+	assert.equal(observations.length, 1, "one observation, not one per persistence write");
+	assert.deepEqual(observations[0].health, {
+		policy: "bg-process-alive-v1",
+		revision: start,
+		observedAt: start,
+		state: "healthy",
+		marker: String(process.pid),
+	});
+	assert.equal(inventory, 201, "inventory still hears every published change");
+	t.mock.timers.tick(39_000);
+	source.publish({ ...task });
+	assert.equal(observations.length, 1, "a publication inside the cadence reuses the retained check");
+	t.mock.timers.tick(1_000);
+	source.publish({ ...task });
+	assert.equal(observations.length, 2);
+	assert.equal(observations[1].health.observedAt, Date.now(), "the check past the cadence ran now");
+	assert.equal(observations[1].health.revision, Date.now());
+	// An explicit probe answers now, and neither publishes nor shortens the publication cadence.
+	t.mock.timers.tick(5_000);
+	const probed = await lease.snapshot(identity, new AbortController().signal);
+	assert.equal(probed.health.observedAt, Date.now(), "an explicit probe rechecks the process now");
+	assert.equal(observations.length, 2, "an explicit probe is not a publication");
+	source.publish({ ...task });
+	assert.equal(observations.length, 2, "an explicit probe does not advance the publication cadence");
+	// A foreign handle never reports on this execution, and terminal evidence still arrives at once.
+	source.publish({ ...task, id: "elsewhere" });
+	assert.equal(observations.length, 2);
+	task.status = "completed";
+	source.publish({ ...task });
+	assert.equal(observations.length, 3, "terminal evidence is published immediately after the flood");
+	assert.deepEqual(observations[2].predicates, [{ until: "exit", state: "satisfied" }]);
+	assert.equal(observations[2].revision, 2);
+	assert.equal(observations[2].health, undefined, "a terminal execution has no liveness to report");
+	assert.equal(observations[2].workId, "work");
+});
+
+test("publication cadence is subscription-owned across 300 active executions", async (t) => {
+	const { createBackgroundFlowSource } = await loadBackground(t);
+	const scope = { sessionId: "many-executions", branchId: "branch" };
+	const tasks = Array.from({ length: 300 }, (_, index) => ({
+		id: `task-${index}`,
+		sessionId: scope.sessionId,
+		status: "running",
+		pid: process.pid,
+		flow: { version: 1, execution: `execution-${index}`, scope, work: { id: "work", revision: 1 } },
+	}));
+	const source = createBackgroundFlowSource(() => tasks);
+	const lease = source.activate(scope, () => ({ id: "work", revision: 1 }));
+	t.after(() => lease.close());
+	const observations = tasks.map(() => []);
+	const identities = tasks.map((task) => ({ scope, workId: "work", handle: task.id, execution: task.flow.execution }));
+	const unsubscribes = identities.map((identity, index) =>
+		lease.subscribe(identity, (report) => observations[index].push(report)),
+	);
+	t.mock.timers.enable({ apis: ["Date"], now: 1_700_000_000_000 });
+	for (let round = 0; round < 10; round++) {
+		for (const task of tasks) source.publish(task);
+		t.mock.timers.tick(100);
+	}
+	assert.ok(
+		observations.every((reports) => reports.length === 1),
+		"no cache eviction can restart a publication flood",
+	);
+	tasks[0].pid = process.ppid;
+	source.publish(tasks[0]);
+	assert.equal(observations[0].length, 2, "a changed process id must be probed within the cadence");
+	assert.equal(observations[0][1].health.marker, String(process.ppid));
+	assert.equal(observations[0][1].health.observedAt, Date.now());
+	unsubscribes[1]();
+	const fresh = [];
+	lease.subscribe(identities[1], (report) => fresh.push(report));
+	source.publish(tasks[1]);
+	assert.equal(observations[1].length, 1);
+	assert.equal(fresh[0].health.observedAt, Date.now(), "a new subscription does not inherit an old probe");
+	for (const task of tasks) {
+		task.status = "completed";
+		source.publish(task);
+	}
+	assert.ok(
+		observations.slice(2).every((reports) => reports.length === 2 && reports[1].predicates[0].state === "satisfied"),
+	);
+	assert.equal(fresh[1].predicates[0].state, "satisfied");
+});
+
 test("real background snapshot probing keeps a quiet process waitable and detects a missed exit", async (t) => {
 	const { spawn } = await import("node:child_process");
 	const { once } = await import("node:events");

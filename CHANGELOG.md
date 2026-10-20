@@ -1,17 +1,65 @@
 # Changelog
 
-## 0.1.19 - 2026-10-02
+## Unreleased
+
+### Fixed
+
+- Pause automatic replies after a provider error remains unrecovered, and report the cause. Resume with a new message or `/flow resume`. See [Flow control](docs/flow-control.md).
+- Count prompt-cache refreshes that complete after the next request or a context change replaces their schedule in usage and cost totals. See [Prompt-cache warming](docs/cache-warming.md).
+
+## 0.2.1 - 2026-10-19
+
+### Added
+
+- Add `/scrollback`, which prints the active conversation to the terminal's normal screen for terminal or tmux search and selection, then returns to Jouzu. See [Transcript scrollback](docs/configuration.md#transcript-scrollback).
+- Enable MCP servers with deferred tool discovery and project-trust checks; codemode stays off. See [MCP servers](docs/tools.md#mcp-servers).
+
+### Changed
+
+- Update the pinned Pi runtime to 1.3.0. See the [Pi qualification log](docs/PI-UPDATES.md).
+- Show Models in one ordered list with Name, Provider, and Context columns: the current model, models used earlier in the session, favorites, recent models, then everything else. Typing moves the cursor to the best match. The first `Esc` clears a search and returns to the model selected before searching; `↑`/`↓` move into the results with the query kept.
+- Open the Palette centered in terminals that show inline images. Images are hidden while it is open and return when it closes.
+- Send copied text through tmux to the attached terminal's clipboard. See [Copying inside tmux](docs/configuration.md#copying-inside-tmux).
+- Split flow repair into two commands. `/flow clear` releases a stuck reservation and keeps flow state. `/flow reset confirm` discards all queued messages, flow receipts, and waits; use it only if `/flow clear` does not fix the problem. `/flow reset` alone explains the consequences without changing anything. Running jobs keep running after either command.
+
+### Fixed
+
+- Let prompts and automatic work continue after a flow reset.
+- Keep user instructions, including numbered, bulleted, and non-English ones, in compacted goals, and keep notifications out of them.
+- Prevent valid waits from failing when a health check started before the wait was created.
+- Resume saved sessions whose messages differ only in fields that are not stored.
+- Keep web-extraction parser warnings from writing over the terminal.
+- Let favorite bindings on printable keys act on a searched model, and include provider display names in model search.
+- Build from a source checkout when dependencies are hoisted, and enforce full bounds for pinned dependency ranges.
+- Allow Windows runtime repair from a failed publish run when its runtime-producing job succeeded and its artifact identity is valid.
+
+## 0.2.0 - 2026-10-14
+
+### Added
+
+- Add the Windows launcher with onboarding, a workspace screen, component management, diagnostics, logs, terminal access, Git Bash support, and recovery controls.
+- Add a bundled Windows runtime containing Jouzu, Node, pnpm, PortableGit, and Windows Terminal.
+- Add signed launcher updates and signed Jouzu update recipes with separate verification keys and feeds.
+- Add journal and scalar flow storage with crash recovery and compatibility coverage.
 
 ### Changed
 
 - Upgrade the embedded Pi runtime to 1.0.0 while preserving saved settings, sessions, and background work.
-- Shorten the README and move detailed setup and usage guides into the [documentation index](https://github.com/shisa-ai/jouzu/blob/v0.1.19/docs/README.md).
+- Keep running agents visible in the dashboard and Workflow.
+- Run child writers in parallel by default and expose child concurrency and workspace sharing as settings.
+- Scope agent file searches to relevant project paths.
+- Prioritize Shisa in the CLI login provider menu.
+- Shorten the README and move detailed setup and usage guides into the [documentation index](https://github.com/shisa-ai/jouzu/blob/v0.2.0/docs/README.md).
 
 ### Fixed
 
 - Keep GPT-6 Astra requests compatible with API-key and ChatGPT sign-in authentication, including prompt-cache settings.
 - Prevent rejected tool-result metadata from bypassing TextGuard checks, including calls made through another tool.
 - Recover interrupted flow-journal repairs without losing completed records or blocking session reopening.
+- Resume resolved waits after abandoned input.
+- Keep autonomous loops moving after task waits.
+- Use bundled TypeBox after npm installation failures.
+- Resolve native canvas dependencies in npm installations.
 
 ## 0.1.18 - 2026-09-30
 

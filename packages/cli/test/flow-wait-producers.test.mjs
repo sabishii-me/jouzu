@@ -252,11 +252,141 @@ test("snapshot timeout and attachment close abort inspection and suppress late c
 	assert.deepEqual((await f.attachment.waits.authoritySnapshot()).executions, []);
 });
 
+for (const advancing of [false, true])
+	test(`a blocked observer coalesces ${advancing ? "advancing" : "same-revision"} bursts and delivers terminal evidence`, async (t) => {
+		const report = (revision, state = "pending") => evidence(advancing ? revision : state === "pending" ? 1 : 2, state);
+		const f = await fixture(t),
+			producer = source();
+		const binding = await f.attachment.waitProducers
+			.register(producer, (error) => f.errors.push(error))
+			.bind(identity, 2);
+		await f.attachment.waits.declareOwned("lane", 2, waitRequest(), Date.now(), 100000);
+		const entered = deferred(),
+			proceed = deferred();
+		const observe = f.attachment.waits.observeExecution.bind(f.attachment.waits);
+		let writes = 0;
+		f.attachment.waits.observeExecution = async (...args) => {
+			if (++writes === 1) {
+				entered.resolve();
+				await proceed.promise;
+			}
+			return observe(...args);
+		};
+		const health = (revision, state = "healthy") => ({ policy: "alive", revision, observedAt: revision, state });
+		producer.emit({ ...report(2), health: health(2) });
+		await entered.promise;
+		for (let revision = 3; revision <= 10002; revision++)
+			producer.emit({ ...report(revision), health: health(revision) });
+		producer.emit({ ...report(10003), health: health(10003, "unhealthy") });
+		producer.emit({ ...report(10004), health: health(10004) });
+		producer.emit(report(10005, "satisfied"));
+		proceed.resolve();
+		await binding.flush();
+		assert.deepEqual(f.errors, []);
+		assert.equal(producer.listeners, 1);
+		assert.equal((await f.attachment.waits.snapshot())[0].state, "resolved");
+		assert.equal((await f.attachment.waits.authoritySnapshot()).executions[0].healthEvidence.revision, 10004);
+		assert.equal(writes, 5, "progress is merged but health and terminal transitions are retained");
+	});
+
+test("replayed observations do not write again after the queue drains", async (t) => {
+	const f = await fixture(t),
+		producer = source();
+	const binding = await f.attachment.waitProducers
+		.register(producer, (error) => f.errors.push(error))
+		.bind(identity, 2);
+	const observe = f.attachment.waits.observeExecution.bind(f.attachment.waits);
+	let writes = 0;
+	f.attachment.waits.observeExecution = async (...args) => {
+		writes++;
+		return observe(...args);
+	};
+	for (let index = 0; index < 100; index++) {
+		producer.emit(evidence());
+		await binding.flush();
+	}
+	assert.equal(writes, 0);
+	producer.emit(evidence(2, "satisfied"));
+	await binding.flush();
+	assert.equal(writes, 1);
+	assert.deepEqual(f.errors, []);
+});
+
+test("a burst of 256 distinct health transitions fits the observation queue", async (t) => {
+	const f = await fixture(t),
+		producer = source();
+	const binding = await f.attachment.waitProducers
+		.register(producer, (error) => f.errors.push(error))
+		.bind(identity, 2);
+	const observeHealth = f.attachment.waits.observeExecutionHealth.bind(f.attachment.waits);
+	const states = [];
+	f.attachment.waits.observeExecutionHealth = async (handle, health, now) => {
+		states.push(health.state);
+		return observeHealth(handle, health, now);
+	};
+	for (let index = 0; index < 256; index++)
+		producer.emit({
+			...evidence(),
+			health: { policy: "alive", revision: index, observedAt: index, state: index % 2 ? "healthy" : "unhealthy" },
+		});
+	producer.emit(evidence(2, "satisfied"));
+	await binding.flush();
+	assert.deepEqual(f.errors, []);
+	assert.equal(states.length, 256);
+	assert.deepEqual(states.slice(0, 4), ["unhealthy", "healthy", "unhealthy", "healthy"]);
+	assert.equal((await f.attachment.waits.authoritySnapshot()).executions[0].predicates[0].state, "satisfied");
+});
+
+test("identical observations during snapshot initialization do not exhaust the buffer", async (t) => {
+	const f = await fixture(t),
+		entered = deferred(),
+		proceed = deferred();
+	const producer = source(async () => {
+		entered.resolve();
+		await proceed.promise;
+		return evidence();
+	});
+	const starting = f.attachment.waitProducers.register(producer, (error) => f.errors.push(error)).bind(identity, 2);
+	await entered.promise;
+	for (let index = 0; index < 10000; index++) producer.emit(evidence());
+	producer.emit(evidence(2, "satisfied"));
+	proceed.resolve();
+	const binding = await starting;
+	await binding.flush();
+	assert.deepEqual(f.errors, []);
+	assert.equal((await f.attachment.waits.authoritySnapshot()).executions[0].predicates[0].state, "satisfied");
+});
+
+for (const [name, invalid, code] of [
+	["conflicting revision", { ...evidence(3, "satisfied") }, "identity"],
+	["stale revision", evidence(1), "stale"],
+	[
+		"malformed health",
+		{ ...evidence(3), health: { policy: "alive", revision: -1, observedAt: 1, state: "healthy" } },
+		"schema",
+	],
+]) {
+	test(`coalescing cannot hide ${name}`, async (t) => {
+		const f = await fixture(t),
+			producer = source();
+		const binding = await f.attachment.waitProducers
+			.register(producer, (error) => f.errors.push(error))
+			.bind(identity, 2);
+		producer.emit(evidence(2));
+		producer.emit(evidence(3));
+		producer.emit(invalid);
+		producer.emit(evidence(4));
+		await assert.rejects(binding.flush(), { code });
+		assert.equal(f.errors.length, 1);
+		assert.equal(producer.listeners, 0);
+	});
+}
+
 test("initial notification floods fail at the bounded buffer and leave no persisted execution", async (t) => {
 	const f = await fixture(t),
 		producer = source();
 	producer.subscribe = (_identity, changed) => {
-		for (let index = 0; index < 129; index++) changed(evidence(index + 1));
+		for (let index = 0; index < 1025; index++) changed(evidence(index + 1));
 		return () => {};
 	};
 	await assert.rejects(
@@ -314,7 +444,11 @@ test("active notification floods report a bounded queue failure without unhandle
 	const binding = await f.attachment.waitProducers
 		.register(producer, (error) => f.errors.push(error))
 		.bind(identity, 2);
-	for (let index = 0; index < 129; index++) producer.emit(evidence(index + 2));
+	for (let index = 0; index < 1025; index++)
+		producer.emit({
+			...evidence(index + 2),
+			health: { policy: "alive", revision: index, observedAt: index, state: index % 2 ? "healthy" : "unhealthy" },
+		});
 	await assert.rejects(binding.flush(), { code: "capacity" });
 	assert.equal(f.errors.length, 1);
 	assert.equal(producer.listeners, 0);

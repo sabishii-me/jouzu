@@ -56,4 +56,5 @@ test("registers help shortcuts and renders effective semantic bindings", async (
 	assert.match(rendered, /Ctrl\+\/ or Ctrl\+\?.*Help/);
 	assert.doesNotMatch(rendered, /Ctrl\+L|Ctrl\+P|Esc close/);
 	assert.match(rendered, /\/hotkeys/);
+	assert.match(rendered, /\/scrollback.*Export transcript/);
 });

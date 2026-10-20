@@ -13,8 +13,8 @@ test("reviewed background batching is pinned and installed with recovery modules
 	assert.equal(release.commit, commit);
 	for (const lockPath of ["../package-lock.json", "../../../package-lock.json"]) {
 		const lock = readJson(lockPath);
-		const entry = lock.packages[`node_modules/${name}`];
-		assert.ok(entry.resolved.endsWith(`#${commit}`));
+		const entry = lock.packages[`node_modules/${name}`] ?? lock.packages[`packages/cli/node_modules/${name}`];
+		assert.ok(entry?.resolved?.endsWith(`#${commit}`));
 	}
 	for (const module of ["completion-delivery.ts", "completion-recovery.ts", "completion-message.ts"]) {
 		assert.ok(existsSync(new URL(`../node_modules/${name}/extensions/${module}`, import.meta.url)), module);

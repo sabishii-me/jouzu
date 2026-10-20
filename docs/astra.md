@@ -27,6 +27,15 @@ and continue toward every requested deliverable. Review-only and diagnosis-only
 requests keep their stated boundaries. The instructions prohibit weakening checks
 or silently reducing scope to obtain a passing result.
 
+For assignments with three or more independently verifiable deliverables, the
+instructions ask Astra to create an overall completion checklist covering each
+requested deliverable and verification row before implementation. In Jouzu sessions
+with task tools, Astra uses bounded, coherent task packages selectively. Cascade task
+progress is an execution queue: an `in_progress` task is prompted before pending
+tasks, so holds and dependencies use the corresponding task controls rather than an
+informal status or a `Next` list. Task status does not replace implementation and
+verification evidence.
+
 Follow-up corrections call for a concrete action or dependency wait in the same
 turn, rather than another promise to continue. Running jobs and unfinished
 requirements stay active across follow-up messages. Before a final report, the

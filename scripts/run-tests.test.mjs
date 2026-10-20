@@ -37,6 +37,18 @@ test("runner expands quoted globs, deduplicates files, and retains name filters"
 	assert.match(result.stdout, /# pass 1/);
 });
 
+test("JOUZU_TEST_CONCURRENCY sets test concurrency unless an argument does", (t) => {
+	const { root, path } = fixture(t, "import { test } from 'node:test'; test('pass', () => {});");
+	assert.deepEqual(testInvocation([path], { JOUZU_TEST_CONCURRENCY: "4" }, root).options, ["--test-concurrency=4"]);
+	assert.deepEqual(testInvocation(["--test-concurrency=2", path], { JOUZU_TEST_CONCURRENCY: "4" }, root).options, [
+		"--test-concurrency=2",
+	]);
+	for (const value of ["0", "65", "-1", "1.5", "", "four"])
+		assert.throws(() => testInvocation([path], { JOUZU_TEST_CONCURRENCY: value }, root), /JOUZU_TEST_CONCURRENCY/);
+	const result = run(path, { JOUZU_TEST_CONCURRENCY: "2" });
+	assert.equal(result.status, 0, result.stderr + result.stdout);
+});
+
 test("runner rejects missing selections, unmatched globs, directories, and unsafe overrides", (t) => {
 	const { root, path } = fixture(t, "throw new Error('must not run');");
 	for (const args of [
