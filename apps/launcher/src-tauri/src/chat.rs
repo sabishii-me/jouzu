@@ -112,6 +112,7 @@ struct Session {
 #[derive(Default)]
 pub struct ChatService {
     sessions: Mutex<HashMap<String, Session>>,
+    warm: Mutex<HashMap<String, String>>,
 }
 #[derive(Serialize)]
 pub struct Poll {
@@ -304,6 +305,42 @@ pub fn chat_start(
 ) -> Result<String, String> {
     Err("Embedded chat is currently qualified for Windows only".into())
 }
+#[cfg(not(windows))]
+#[tauri::command]
+pub fn chat_warm(
+    _app: tauri::AppHandle,
+    _window: tauri::WebviewWindow,
+    _state: tauri::State<ChatService>,
+    _path: String,
+) -> Result<(), String> {
+    Err("Embedded chat is currently qualified for Windows only".into())
+}
+#[cfg(windows)]
+#[tauri::command]
+pub fn chat_warm(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    state: tauri::State<ChatService>,
+    path: String,
+) -> Result<(), String> {
+    if window.label() != "main" {
+        return Err("Chat is restricted to the main window".into());
+    }
+    let key = std::fs::canonicalize(&path)
+        .map_err(|_| "Workspace folder is unavailable")?
+        .to_string_lossy()
+        .into_owned();
+    if state.warm.lock().map_err(|_| "Chat state unavailable")?.contains_key(&key) {
+        return Ok(());
+    }
+    let handle = chat_start(app, window, state.clone(), path)?;
+    state
+        .warm
+        .lock()
+        .map_err(|_| "Chat state unavailable")?
+        .insert(key, handle);
+    Ok(())
+}
 #[cfg(windows)]
 #[tauri::command]
 pub fn chat_start(
@@ -314,6 +351,18 @@ pub fn chat_start(
 ) -> Result<String, String> {
     if window.label() != "main" {
         return Err("Chat is restricted to the main window".into());
+    }
+    let warm_key = std::fs::canonicalize(&path)
+        .map_err(|_| "Workspace folder is unavailable")?
+        .to_string_lossy()
+        .into_owned();
+    if let Some(handle) = state
+        .warm
+        .lock()
+        .map_err(|_| "Chat state unavailable")?
+        .remove(&warm_key)
+    {
+        return Ok(handle);
     }
     let mut sessions = state
         .sessions

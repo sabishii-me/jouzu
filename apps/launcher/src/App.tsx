@@ -228,6 +228,21 @@ export function App() {
   useEffect(() => {
     if (activePath) localStorage.setItem("jouzu.chat.workspace", activePath);
   }, [activePath]);
+  const warmed = useRef(new Set<string>());
+  useEffect(() => {
+    if (!activePath || !state) return;
+    // The active path's warm process was just consumed by chat_start; allow it to be
+    // warmed again when the user later switches back to it.
+    warmed.current.delete(activePath);
+    const timer = setTimeout(() => {
+      for (const workspace of state.recent.filter(item => item.path !== activePath).slice(0, 2)) {
+        if (warmed.current.has(workspace.path)) continue;
+        warmed.current.add(workspace.path);
+        void invoke("chat_warm", { path: workspace.path }).catch(() => { warmed.current.delete(workspace.path); });
+      }
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [activePath, state]);
   // A signed-in account supplies models through Jouzu's published catalog. The chat shell
   // asks for a refresh only when the connected runtime has no models, so warm starts do not
   // pay a network round trip. A successful refresh restarts the session with the new catalog.
