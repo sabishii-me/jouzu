@@ -29,7 +29,7 @@ export function FlowPanel({ flow, widgets, statuses, reports = [] }: {
   const summary = active?.subject ?? (tasks.length ? `${completed} of ${tasks.length} tasks` : "Session activity");
   const statusPills = flowStatusEntries(statuses);
   const widgetEntries = flowWidgetEntries(widgets);
-  return <section aria-label="Flow" className="mx-auto mb-3 w-[calc(100%-2rem)] max-w-3xl shrink-0 overflow-hidden rounded-xl border border-border bg-card/95 shadow-sm sm:w-[calc(100%-4rem)]">
+  return <section aria-label="Flow" className={`mx-auto mb-3 w-[calc(100%-2rem)] max-w-3xl shrink-0 overflow-hidden rounded-xl border border-border bg-card/95 shadow-sm sm:w-[calc(100%-4rem)] ${open ? "flex h-56 flex-col" : ""}`}>
     <button type="button" onClick={() => setOpen(value => !value)} aria-expanded={open} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted/40">
       <ListTodo className="size-4 shrink-0 text-muted-foreground" />
       <span className="shrink-0 text-xs font-semibold">Tasks</span>
@@ -39,7 +39,7 @@ export function FlowPanel({ flow, widgets, statuses, reports = [] }: {
       <span className="flex max-w-1/2 shrink-0 gap-1 overflow-hidden">{statusPills.map(([key, text]) => <span key={key} className="truncate rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">{text}</span>)}</span>
       {open ? <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" /> : <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />}
     </button>
-    {open && <div className="max-h-64 overflow-y-auto border-t border-border px-3 py-2">
+    {open && <div className="min-h-0 flex-1 overflow-y-auto border-t border-border px-3 py-2">
       {tasks.length > 0 && <ul className="space-y-1" aria-label="Session tasks">{tasks.map(task => <li key={task.id} className="flex items-start gap-2 rounded-md px-1 py-1 text-xs">
         <TaskIcon status={task.status} />
         <span className="min-w-0 flex-1">

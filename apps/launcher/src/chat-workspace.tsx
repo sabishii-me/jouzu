@@ -64,6 +64,7 @@ export function ChatWorkspace({ path, revision = 0, newSession = true, onNewSess
   const [hero, setHero] = useState(newSession);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [diskReports, setDiskReports] = useState<FlowReportRecord[]>([]);
+  const [reportsSession, setReportsSession] = useState("");
   const [timing, setTiming] = useState<SessionTiming>();
   const [workingStartedAt, setWorkingStartedAt] = useState<number>();
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -144,8 +145,11 @@ export function ChatWorkspace({ path, revision = 0, newSession = true, onNewSess
   useEffect(() => { if (snapshot.connected) void refreshSessions(); }, [snapshot.connected, snapshot.sessionFile]);
   useEffect(() => { if (snapshot.connected) void connection.current?.loadStats(); }, [snapshot.connected, snapshot.sessionFile, snapshot.projection.messages.length, snapshot.projection.running]);
   useEffect(() => {
-    const file = snapshot.sessionFile;
-    if (!file) { setDiskReports([]); setTiming(undefined); return; }
+    // Reports belong to the session the UI is showing, not to the runtime's previous
+    // session file. During a switch those are briefly different.
+    const file = openedSession ?? snapshot.sessionFile;
+    if (!file) { setDiskReports([]); setReportsSession(""); setTiming(undefined); return; }
+    setDiskReports([]); setReportsSession(file);
     let disposed = false;
     void invoke<FlowReportRecord[]>("chat_flow_reports", { sessionPath: file })
       .then(reports => { if (!disposed) setDiskReports(Array.isArray(reports) ? reports : []); })
@@ -154,7 +158,7 @@ export function ChatWorkspace({ path, revision = 0, newSession = true, onNewSess
       .then(value => { if (!disposed && value && typeof value.modelMs === "number") setTiming(value); })
       .catch(() => { if (!disposed) setTiming(undefined); });
     return () => { disposed = true; };
-  }, [snapshot.sessionFile, snapshot.projection.messages.length]);
+  }, [openedSession, snapshot.sessionFile, snapshot.projection.messages.length]);
   async function reply(fields: DialogAnswer) {
     const client = connection.current;
     if (!dialog || !client || !snapshot.transportReady) return;
@@ -210,7 +214,7 @@ export function ChatWorkspace({ path, revision = 0, newSession = true, onNewSess
       setHero(false); onStartSession?.();
       setSwitching(true);
       setOpenedSession(sessionPath);
-      setDiskReports([]); setTiming(undefined);
+      setDiskReports([]); setReportsSession(""); setTiming(undefined);
       setNotification("");
       client.previewSession(cached);
     }
@@ -222,7 +226,7 @@ export function ChatWorkspace({ path, revision = 0, newSession = true, onNewSess
     sessionChange.current = true; setSwitching(true);
     setHero(false); onStartSession?.();
     setOpenedSession(sessionPath);
-    setDiskReports([]); setTiming(undefined);
+    setDiskReports([]); setReportsSession(""); setTiming(undefined);
     if (!cached) {
       client.previewSession([]);
       try {
@@ -373,7 +377,7 @@ export function ChatWorkspace({ path, revision = 0, newSession = true, onNewSess
           <SessionStatsBar stats={snapshot.stats} timing={timing} />
         </div>
       </div> : <>
-        <ChatConversation key={openedSession ?? snapshot.sessionFile ?? path} projection={snapshot.projection} pending={snapshot.pending} startedAt={workingStartedAt} opening={switching} flow={flow} widgets={snapshot.widgets ?? {}} statuses={snapshot.statuses ?? {}} reports={diskReports.length ? diskReports : snapshot.projection.flowReports} />
+        <ChatConversation key={openedSession ?? snapshot.sessionFile ?? path} projection={snapshot.projection} pending={snapshot.pending} startedAt={workingStartedAt} opening={switching} flow={flow} widgets={snapshot.widgets ?? {}} statuses={snapshot.statuses ?? {}} reports={reportsSession && normalizedPath(reportsSession) === normalizedPath(openedSession ?? snapshot.sessionFile ?? "") ? diskReports : []} />
         <Composer connected={snapshot.connected} pending={snapshot.pending || switching} running={snapshot.projection.running} draft={draft} onDraft={setDraft} onSend={() => void send()} onStop={() => void connection.current?.abort()} onCompact={() => void compactConversation()} onExport={() => void exportConversation()} error={snapshot.error} compatibility={snapshot.projection.compatibility} attachments={attachments} onAddImages={files => void addImages(files)} onRemoveImage={id => updateAttachments(attachmentRef.current.filter(item => item.id !== id))} readingImages={readingImages} attachmentError={attachmentError} models={snapshot.models ?? []} model={snapshot.model} onSelectModel={(provider, id) => void connection.current?.selectModel(provider, id)} onRefreshModels={() => void connection.current?.loadModels()} thinkingLevel={snapshot.thinkingLevel} thinkingLevels={snapshot.thinkingLevels ?? []} onThinkingLevel={level => void connection.current?.setThinkingLevel(level)} />
         <SessionStatsBar stats={snapshot.stats} timing={timing} />
       </>}
