@@ -183,13 +183,22 @@ export class ChatConnection {
       // user's saved preference for future new sessions.
       await this.refreshHistory();
       if (command === "new_session") await this.applyPreferredModel();
-    } catch (error) { this.update({ error: String(error) }); throw error; }
-    finally { this.replaying = false; this.update({ pending: false }); }
+    } catch (error) { this.replaying = false; this.update({ error: String(error) }); throw error; }
+    finally {
+      if (command === "new_session") this.replaying = false;
+      this.update({ pending: false });
+    }
   }
   newSession() { return this.changeSession("new_session"); }
   resumeSession(sessionPath: string) { return this.changeSession("switch_session", { sessionPath }); }
+  previewSession(messages: unknown) {
+    this.update({ projection: historyProjection(messages), error: null });
+  }
   async sendOrSteer(message: string, images: readonly ChatImage[], running: boolean) {
     if (this.snapshot.pending) throw new Error("Wait for the current request to be accepted.");
+    // A resumed history can keep replaying entries after switch_session and get_messages.
+    // Stop suppressing once the user writes a new turn; from here events are live.
+    this.replaying = false;
     this.update({ pending: true, error: null });
     try {
       await this.request(running ? "steer" : "prompt", { message, ...(images.length ? { images } : {}) });

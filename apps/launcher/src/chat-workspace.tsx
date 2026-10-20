@@ -199,27 +199,32 @@ export function ChatWorkspace({ path, revision = 0, newSession = true, onNewSess
   }
   async function openSession(sessionPath: string) {
     const client = connection.current;
-    if (!client || working || sessionChange.current) return;
-    if (!snapshot.connected) {
+    if (!client || sessionChange.current || snapshot.projection.running) return;
+    if (!snapshot.connected || snapshot.pending) {
       queuedSession.current = sessionPath;
       setNotification("The workspace is still warming up; the selected session will open when it is ready.");
       return;
     }
     sessionChange.current = true; setSwitching(true);
+    setHero(false); onStartSession?.();
     try {
+      try {
+        const preview = await invoke<unknown[]>("chat_session_messages", { sessionPath });
+        if (connection.current === client) client.previewSession(preview);
+      } catch { /* The runtime's authoritative history still loads below. */ }
       await client.resumeSession(sessionPath);
       const session = sessions.find(item => normalizedPath(item.path) === normalizedPath(sessionPath));
       if (session) localStorage.setItem("jouzu.chat.workspace", session.workspace);
-      setHero(false); onStartSession?.(); void refreshSessions();
+      void refreshSessions();
     } catch (error) { if (connection.current === client) setNotification(String(error).replace(/^Error:\s*/u, "")); }
     finally { sessionChange.current = false; setSwitching(false); }
   }
   useEffect(() => {
-    if (!snapshot.connected || !queuedSession.current || sessionChange.current) return;
+    if (!snapshot.connected || snapshot.pending || snapshot.projection.running || !queuedSession.current || sessionChange.current) return;
     const sessionPath = queuedSession.current;
     queuedSession.current = null;
     void openSession(sessionPath);
-  }, [snapshot.connected]);
+  }, [snapshot.connected, snapshot.pending, snapshot.projection.running]);
   async function compactConversation() {
     const client = connection.current;
     if (!client) return;

@@ -121,6 +121,28 @@ fn read_session_timing(path: &Path) -> SessionTiming {
 }
 
 #[tauri::command]
+pub fn chat_session_messages(session_path: String) -> Result<Vec<Value>, String> {
+    let path = validated_session_path(&session_path)?;
+    Ok(read_session_messages(&path))
+}
+
+fn read_session_messages(path: &Path) -> Vec<Value> {
+    let Ok(file) = File::open(path) else { return Vec::new() };
+    let reader = BufReader::new(file.take(32 * 1024 * 1024));
+    let mut messages = Vec::new();
+    for line in reader.lines() {
+        let Ok(line) = line else { break };
+        let Ok(value) = serde_json::from_str::<Value>(&line) else { continue };
+        if value.get("type").and_then(Value::as_str) == Some("message") {
+            if let Some(message) = value.get("message") {
+                messages.push(message.clone());
+            }
+        }
+    }
+    messages
+}
+
+#[tauri::command]
 pub fn chat_flow_reports(session_path: String) -> Result<Vec<FlowReportRecord>, String> {
     let path = validated_session_path(&session_path)?;
     Ok(read_flow_reports(&path))
@@ -338,6 +360,20 @@ mod tests {
         assert_eq!(timing.output_tokens, 96);
         assert_eq!(timing.model_ms, 987);
         assert_eq!(timing.tool_ms, 27);
+    }
+
+    #[test]
+    fn reads_session_messages_for_an_instant_preview() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("messages.jsonl");
+        let mut file = File::create(&path).unwrap();
+        writeln!(file, "{}", serde_json::json!({"type":"message","message":{"role":"user","content":[{"type":"text","text":"hello"}]}})).unwrap();
+        writeln!(file, "{}", serde_json::json!({"type":"custom_message","customType":"other","content":[]})).unwrap();
+        writeln!(file, "{}", serde_json::json!({"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"hi"}]}})).unwrap();
+        let messages = read_session_messages(&path);
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0]["role"], "user");
+        assert_eq!(messages[1]["role"], "assistant");
     }
 
     #[test]

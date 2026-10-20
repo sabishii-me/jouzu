@@ -45,7 +45,7 @@ export function ChatConversation({ projection, pending = false, startedAt, openi
   const following = useRef(true);
   const [showLatest, setShowLatest] = useState(false);
   const [now, setNow] = useState(() => Date.now());
-  const working = projection.running || pending;
+  const working = projection.running || pending || opening;
   useEffect(() => { if (following.current && scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight; }, [projection]);
   useEffect(() => {
     if (!working) return;
