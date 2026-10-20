@@ -41,6 +41,50 @@ async function openSetup(page:Page, initial:{profile?:string|null;modelReady?:bo
  await page.goto('http://localhost:1420');
 }
 
+// Drives the first status read so the window is caught in its start-up state, before any page exists.
+async function openStartup(page:Page, status:'hang'|'fail') {
+ await page.addInitScript(mode=>{
+  localStorage.setItem('jouzu.ui.language','en');
+  (window as any).isTauri=true;
+  (window as any).__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener:()=>{}};
+  (window as any).__TAURI_INTERNALS__={
+   metadata:{currentWindow:{label:'main'},currentWebview:{label:'main'}},
+   transformCallback:()=>1, unregisterCallback:()=>{},
+   invoke:async (command:string)=>{
+    if(command==='launcher_state')return {ready:true,bash:true,recent:[],platform:'windows'};
+    if(command==='component_versions')return {jouzu:'0.1.18',development:true};
+    if(command==='control_request')return mode==='hang' ? new Promise(()=>{}) : Promise.reject(new Error('Cannot start configuration service'));
+    if(command==='environment_read')return [];
+    if(command==='diagnostics')return {schemaVersion:1,crashes:[],records:[]};
+    if(command.includes('version'))return '0.3.8';
+    return 1;
+   }
+  };
+ },status);
+ await page.goto('http://localhost:1420');
+}
+
+test('the window waits for the first status read without a page', async ({page}) => {
+ await openStartup(page,'hang');
+ await expect(page.locator('.jouzu-loader')).toBeVisible();
+ await expect(page.locator('[data-slot="page-heading"]')).toHaveCount(0);
+ await expect(page.locator('[data-slot="page-body"]')).toHaveCount(0);
+ await expect(page.getByRole('button',{name:'Settings',exact:true})).toHaveCount(0);
+ await expect(page.getByRole('button',{name:'Close launcher'})).toBeVisible();
+});
+
+test('a status read that fails keeps the loader and offers the message and a retry', async ({page}) => {
+ await openStartup(page,'fail');
+ await expect(page.locator('.jouzu-loader')).toBeVisible();
+ await expect(page.getByRole('alert')).toHaveText('The launcher could not be reached.');
+ const code=page.locator('code');
+ await expect(code).toBeVisible();
+ await expect(page.getByRole('button',{name:'Copy',exact:true})).toBeVisible();
+ await expect(page.getByRole('button',{name:'Retry',exact:true})).toBeVisible();
+ // A read that failed keeps the ways to diagnose it reachable.
+ await expect(page.getByRole('button',{name:'Settings',exact:true})).toBeVisible();
+});
+
 test('routing follows usable model availability', async ({page}) => {
  await openSetup(page,{modelReady:false});
  await expect(page.getByRole('heading',{name:'Make Jouzu yours'})).toBeVisible();
