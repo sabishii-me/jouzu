@@ -22,6 +22,7 @@ Flow control coordinates background jobs, goals, loops, and tasks in one session
 | `/flow runtime` | Show startup package paths and hashes |
 
 - Interrupting a reply also pauses automatic work until your next message or `/flow resume`.
+- A reply that still ends with a provider error after retries and context recovery pauses automatic work. The pause includes the provider's message; your next message or `/flow resume` releases it.
 - `/flow clear` repairs a reservation without discarding flow evidence. `/flow reset confirm` is the destructive fallback for when `/flow clear` does not fix the problem: it discards all queued messages and flow delivery state, cancels waits, and leaves underlying jobs running.
 - `retry` may repeat a request the model already answered.
 - Set `JOUZU_FLOW_CONTROL=0` before starting Jouzu to disable flow control for that process.

@@ -4,6 +4,7 @@ import { isDeepStrictEqual } from "node:util";
 import type { AgentSession, CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent";
 import { retiredMemberHash } from "./attempt-retention.js";
 import { type FlowProducer, retainedByReceipt } from "./controller.js";
+import { admissionPause, INTERRUPTED_PAUSE, isAdmissionPause, providerPause } from "./flow-pause.js";
 import type { FlowInputItem } from "./model-input.js";
 import {
 	awaitingNativeInput,
@@ -119,12 +120,16 @@ export class PiSessionFlowIngress implements Ingress {
 							error instanceof FlowLedgerError &&
 							["capacity", "identity", "schema", "stale", "transition"].includes(error.code)
 						) {
-							if (this.pauseAutomated(`flow admission failed (${error.code})`)) this.options.onAutomatedPause?.();
+							if (this.pauseAutomated(admissionPause(error.code))) this.options.onAutomatedPause?.();
 						}
 					},
 					// An interrupt is not observable directly, so an aborted turn stands for it.
 					aborted: () => {
-						if (this.pauseAutomated("a turn was interrupted")) this.options.onAutomatedPause?.();
+						if (this.pauseAutomated(INTERRUPTED_PAUSE)) this.options.onAutomatedPause?.();
+					},
+					// Host recovery has ended. Hold further automatic turns until the user intervenes.
+					providerFailed: (detail) => {
+						if (this.pauseAutomated(providerPause(detail))) this.options.onAutomatedPause?.();
 					},
 				},
 				decorateNativeContext: async (messages, sources, signal) => {
@@ -694,7 +699,7 @@ export class PiSessionFlowIngress implements Ingress {
 	private repairNative<T>(action: (service: PiFlowSessionService) => Promise<T>): Promise<T> {
 		return this.manage(async (service) => {
 			const result = await action(service);
-			if (this.automatedPauseReason?.startsWith("flow admission failed (")) this.resumeAutomated();
+			if (this.automatedPauseReason && isAdmissionPause(this.automatedPauseReason)) this.resumeAutomated();
 			return result;
 		});
 	}

@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { type AssistantMessage, getCurrentSystemPrompt, type Message } from "@earendil-works/pi-ai";
-import type { AgentSession } from "@earendil-works/pi-coding-agent";
+import type { AgentSession, AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import { cacheWarmAdmission } from "./cache-warm-admission.js";
 import { flowDiagnosticText } from "./diagnostic-text.js";
 import {
@@ -67,6 +67,9 @@ export class PiNativeRequests {
 	private prepared?: { modelHash: string; capture?: NativeSourceCapture; projections?: NativeProjectionCapture };
 	private active = 0;
 	private closed = false;
+	/** Latest response in this run, even if host recovery removes it from projected history. */
+	private lastAssistant?: AssistantMessage;
+	private readonly unsubscribeTurn: () => void;
 	private guardedStream?: AgentSession["agent"]["streamFunction"];
 	private guardTransport = false;
 	private sealed = false;
@@ -100,7 +103,11 @@ export class PiNativeRequests {
 		 * route reports here. Maintenance work such as compaction aborts for its own reasons and
 		 * already gates the session while it runs, so it is left out deliberately.
 		 */
-		private readonly turn?: { aborted(): void; failed?(error: unknown): void },
+		private readonly turn?: {
+			aborted(): void;
+			failed?(error: unknown): void;
+			providerFailed?(detail: string): void;
+		},
 		reconcileSources?: () => Promise<unknown>,
 		/**
 		 * Flow control is on. While it is off, receipts are still recorded but nothing is enforced or
@@ -118,6 +125,7 @@ export class PiNativeRequests {
 		if (attached.has(session)) throw new FlowLedgerError("identity", "Pi session already has native request receipts.");
 		attached.add(session);
 		this.enabled = flowEnabled ?? (() => true);
+		this.unsubscribeTurn = session.subscribe((event) => this.observeTurn(event));
 		if (identifySources) {
 			const transform = session.agent.transformContext;
 			this.hooks.set(session.agent, "transformContext", async (messages, signal) => {
@@ -791,6 +799,22 @@ export class PiNativeRequests {
 		if (this.closed || this.session.sessionId !== this.store.scope.sessionId)
 			throw new FlowLedgerError("stale", "Native request attachment is closed or replaced.");
 	}
+	/**
+	 * Wait for host recovery to finish before pausing. Retry and overflow recovery can remove failed
+	 * responses from projected history, so capture message events rather than searching that history.
+	 * A recovery response replaces the failed response; settlement consumes it once, including while
+	 * flow is disabled. A new run cannot inherit an error from an earlier run or restored history.
+	 */
+	private observeTurn(event: AgentSessionEvent): void {
+		if (this.closed || this.session.sessionId !== this.store.scope.sessionId) return;
+		if (event.type === "agent_start") this.lastAssistant = undefined;
+		if (event.type === "message_end" && event.message.role === "assistant") this.lastAssistant = event.message;
+		if (event.type !== "agent_settled") return;
+		const last = this.lastAssistant;
+		this.lastAssistant = undefined;
+		if (!this.enabled() || event.aborted || last?.stopReason !== "error") return;
+		this.turn?.providerFailed?.(last.errorMessage ?? "");
+	}
 	async close(): Promise<void> {
 		if (this.closed) return;
 		if (this.active) throw new FlowLedgerError("busy", "Native provider execution must settle before close.");
@@ -802,6 +826,8 @@ export class PiNativeRequests {
 		this.projectionWaitTokens = undefined;
 		this.references = undefined;
 		this.closed = true;
+		this.lastAssistant = undefined;
+		this.unsubscribeTurn();
 		this.hooks.close();
 		attached.delete(this.session);
 	}
