@@ -45,6 +45,25 @@ export function flaky(records) {
 	return [...tests.values()].filter((entry) => entry.failures).sort((a, b) => b.failures - a.failures);
 }
 
+// The failing test names and error messages, including multi-line ones, from one run's TAP output.
+export function failureLines(tap) {
+	const lines = [];
+	let block;
+	for (const line of tap.split("\n")) {
+		const indent = line.length - line.trimStart().length;
+		if (block !== undefined && indent > block && line.trim()) lines.push(`  ${line.trim()}`);
+		else {
+			block = undefined;
+			if (/^\s*not ok \d+ - /.test(line)) lines.push(line.trim());
+			else if (/^\s+error: /.test(line)) {
+				lines.push(line.trim());
+				if (/error: [|>]-?$/.test(line)) block = indent;
+			}
+		}
+	}
+	return lines;
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
 	let workers = [];
 	const directory = mkdtempSync(join(tmpdir(), "jouzu-stress-"));
@@ -57,11 +76,15 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
 		for (let run = 1; run <= options.repeat; run++) {
 			const result = spawnSync(process.execPath, [join(root, "scripts/run-tests.mjs"), ...options.runner], {
 				cwd: process.cwd(),
-				stdio: ["ignore", "ignore", "inherit"],
+				stdio: ["ignore", "pipe", "inherit"],
+				encoding: "utf8",
+				maxBuffer: 256 * 1024 * 1024,
 				env: { ...process.env, JOUZU_TEST_TIMINGS_DIR: directory, JOUZU_TEST_TIMINGS_LABEL: `stress-${run}` },
 			});
 			if (result.status !== 0) failedRuns++;
 			console.error(`[stress] run ${run}/${options.repeat}: exit ${result.status}`);
+			// A failed run reports why, so a rare failure is diagnosable without reproducing it again.
+			if (result.status !== 0) for (const line of failureLines(result.stdout ?? "")) console.error(`  ${line}`);
 		}
 		const records = readRecords([directory]);
 		if (!records.some((record) => record.tests.some((entry) => entry.status === "pass" || entry.status === "fail")))

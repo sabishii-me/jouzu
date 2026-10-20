@@ -5,9 +5,23 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { flaky, parseStressArguments } from "./stress-tests.mjs";
+import { failureLines, flaky, parseStressArguments } from "./stress-tests.mjs";
 
 const stress = fileURLToPath(new URL("./stress-tests.mjs", import.meta.url));
+
+test("failure lines keep test names and whole multi-line errors", () => {
+	const tap = [
+		"ok 1 - passes",
+		"not ok 2 - fails",
+		"  ---",
+		"  error: |-",
+		"    first line",
+		"    second line",
+		"  code: 'ERR_TEST_FAILURE'",
+		"  ...",
+	].join("\n");
+	assert.deepEqual(failureLines(tap), ["not ok 2 - fails", "error: |-", "  first line", "  second line"]);
+});
 
 test("stress arguments set repeats and load and pass runner options through", () => {
 	assert.deepEqual(parseStressArguments(["--repeat", "3", "--load", "0", "--test-name-pattern=x", "a.test.mjs"], 8), {
@@ -56,4 +70,6 @@ test("a test that fails only on some runs is reported with its failure count", (
 	assert.equal(result.status, 1, result.stderr);
 	assert.match(result.stdout, /2\/4 failed: .*alternating\.test\.mjs :: alternates/);
 	assert.match(result.stdout, /4 runs under 1 load workers: 2 failed runs, 1 failing tests/);
+	assert.match(result.stderr, /not ok \d+ - alternates/);
+	assert.match(result.stderr, /error: 'even run'/);
 });
