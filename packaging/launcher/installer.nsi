@@ -248,13 +248,6 @@ Function PageReinstall
   nsis_tauri_utils::SemverCompare "${VERSION}" $R0
   Pop $R0
 
-  ; Upgrading installs over the existing launcher. Its old uninstaller can fail
-  ; while the runtime or terminals are running; the preinstall hook stops them
-  ; immediately before replacing files instead.
-  ${If} $R0 = 1
-    Abort
-  ${EndIf}
-
   ; Reinstalling the same version
   ${If} $R0 = 0
     StrCpy $R1 "$(alreadyInstalledLong)"
