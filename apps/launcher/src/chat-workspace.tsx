@@ -35,6 +35,7 @@ export interface ChatWorkspaceProps {
   onSettings: () => void;
 }
 const lastSegment = (path: string) => path.replaceAll("\\", "/").split("/").filter(Boolean).at(-1) ?? path;
+const workspaceLabel = (path: string) => lastSegment(path) === "default-workspace" ? "Default workspace" : lastSegment(path);
 const normalizedPath = (path: string) => path.replaceAll("\\", "/").replace(/\/+$/u, "").toLowerCase();
 function relativeTime(updated: number) {
   const seconds = Math.max(0, Math.round(Date.now() / 1000 - updated));
@@ -198,7 +199,7 @@ export function ChatWorkspace({ path, revision = 0, newSession = true, onNewSess
     } catch { /* Keep the draft and images available after rejection. */ }
   }
   const working = switching || (snapshot.connected && (snapshot.pending || snapshot.projection.running));
-  const name = lastSegment(path);
+  const name = workspaceLabel(path);
   async function startNewSession() {
     onNewSession?.();
     setHero(true);
@@ -280,10 +281,10 @@ export function ChatWorkspace({ path, revision = 0, newSession = true, onNewSess
   }
   const groups = useMemo(() => {
     const map = new Map<string, { id: string; path: string; name: string; sessions: SessionSummary[] }>();
-    for (const workspace of workspaces) map.set(normalizedPath(workspace.path), { id: workspace.id, path: workspace.path, name: lastSegment(workspace.path), sessions: [] });
+    for (const workspace of workspaces) map.set(normalizedPath(workspace.path), { id: workspace.id, path: workspace.path, name: workspaceLabel(workspace.path), sessions: [] });
     for (const session of sessions) {
       const key = normalizedPath(session.workspace);
-      if (!map.has(key)) map.set(key, { id: key, path: session.workspace, name: lastSegment(session.workspace), sessions: [] });
+      if (!map.has(key)) map.set(key, { id: key, path: session.workspace, name: workspaceLabel(session.workspace), sessions: [] });
       map.get(key)!.sessions.push(session);
     }
     let result = [...map.values()];
@@ -307,7 +308,7 @@ export function ChatWorkspace({ path, revision = 0, newSession = true, onNewSess
     </Button>
     {pickerOpen && <div role="menu" aria-label="Choose workspace" className="absolute left-0 top-full z-30 mt-1 w-80 max-w-[calc(100vw-2rem)] rounded-xl border border-border bg-popover p-2 shadow-xl">
       {workspaces.map(workspace => <button key={workspace.id} type="button" role="menuitemradio" aria-checked={workspace.path === path} onClick={() => void switchWorkspace(workspace.path)} className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent">
-        <span className="min-w-0"><span className="block truncate">{lastSegment(workspace.path)}</span><span className="block truncate text-xs text-muted-foreground">{workspace.path}</span></span>
+        <span className="min-w-0"><span className="block truncate">{workspaceLabel(workspace.path)}</span><span className="block truncate text-xs text-muted-foreground">{workspace.path}</span></span>
         {workspace.path === path && <span className="text-xs text-primary">Current</span>}
       </button>)}
       {!workspaces.length && <p className="px-2 py-2 text-sm text-muted-foreground">No workspaces yet.</p>}

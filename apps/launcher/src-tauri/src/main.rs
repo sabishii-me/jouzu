@@ -197,6 +197,20 @@ fn log_event(message: String) -> Result<(), String> {
     Ok(())
 }
 
+fn default_workspace_path() -> Result<std::path::PathBuf, String> {
+    let home = std::env::var_os("USERPROFILE")
+        .or_else(|| std::env::var_os("HOME"))
+        .ok_or("The user profile is unavailable")?;
+    let base = if cfg!(target_os = "windows") {
+        std::path::PathBuf::from(home).join("Documents")
+    } else {
+        std::path::PathBuf::from(home)
+    };
+    let path = base.join("Jouzu").join("default-workspace");
+    std::fs::create_dir_all(&path).map_err(|e| e.to_string())?;
+    Ok(path)
+}
+
 #[tauri::command]
 fn launcher_state(app: tauri::AppHandle) -> Result<LauncherState, String> {
     let history = runtime::managed_root()?.join("recent.json");
@@ -210,12 +224,30 @@ fn launcher_state(app: tauri::AppHandle) -> Result<LauncherState, String> {
     } else {
         vec![]
     };
-    let recent = if history.exists() {
-        serde_json::from_slice(&std::fs::read(history).map_err(|e| e.to_string())?)
+    let mut recent: Vec<Workspace> = if history.exists() {
+        serde_json::from_slice(&std::fs::read(&history).map_err(|e| e.to_string())?)
             .map_err(|e| format!("Cannot read history: {e}"))?
     } else {
         recent
     };
+    recent.retain(|workspace| Path::new(&workspace.path).is_dir());
+    if recent.is_empty() {
+        if let Ok(path) = default_workspace_path() {
+            recent.push(Workspace {
+                id: format!("{}:{}", platform(), path.display()),
+                path: path.display().to_string(),
+                environment: Environment { kind: platform().into() },
+            });
+            if let Ok(data) = runtime::managed_root() {
+                let _ = std::fs::create_dir_all(&data);
+                if let Ok(mut file) = tempfile::NamedTempFile::new_in(&data) {
+                    if serde_json::to_writer(&mut file, &recent).is_ok() {
+                        let _ = file.persist(data.join("recent.json"));
+                    }
+                }
+            }
+        }
+    }
     Ok(LauncherState {
         platform: platform().into(),
         ready: runtime::application_root(&app).is_ok(),
