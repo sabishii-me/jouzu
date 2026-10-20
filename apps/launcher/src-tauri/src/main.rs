@@ -467,7 +467,6 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             chat::chat_start,
-            chat::chat_warm,
             chat::chat_send,
             chat::chat_poll,
             chat::chat_stop,
