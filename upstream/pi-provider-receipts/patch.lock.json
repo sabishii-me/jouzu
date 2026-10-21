@@ -86,6 +86,10 @@
 		"dist/compat.d.ts": {
 			"before": "a019947050719ef61fdca8a8aa6791df61f9706ac16ac58cfe1a150076038aae",
 			"after": "acd6d371511698cd347531e7050259cf04180433d67bee7ffc98ba6eb54de0c0"
+		},
+		"dist/providers/all.js": {
+			"before": "b152eb706e7968debded248f538fda008869e93fea2042ba089fe64793c40340",
+			"after": "294688447e2937d8b36a714c3829548517031f30fe3d8c4925090ee432cbff16"
 		}
 	}
 }

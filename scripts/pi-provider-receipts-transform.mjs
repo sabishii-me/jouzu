@@ -245,6 +245,11 @@ export function isBuiltinApiProvider(api) {
 			"export interface ProviderRequestOptions<TModel = Model<Api>> {",
 			"export interface ProviderRequestOptions<TModel = Model<Api>> {\n    /** Synchronous source mapping from a qualified provider converter, before payload transforms. */\n    onMessageConverted?: (source: Message, output: unknown) => void;",
 		);
+	} else if (path === "dist/providers/all.js") {
+		// Jouzu does not manage AWS credentials, so a Bedrock entry only offers routes
+		// that cannot authenticate. Drop it from the constructed builtin provider list.
+		change('import { amazonBedrockProvider } from "./amazon-bedrock.js";\n', "");
+		change("        amazonBedrockProvider(),\n", "");
 	} else throw new Error(`Unknown provider receipt path: ${path}`);
 	return text.replace(/^\/\/# sourceMappingURL=.*\n?/m, "");
 }
@@ -270,4 +275,5 @@ export const paths = [
 	"dist/api/simple-options.js",
 	"dist/compat.js",
 	"dist/compat.d.ts",
+	"dist/providers/all.js",
 ];
