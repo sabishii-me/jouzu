@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, ChevronDown, Circle, CircleSlash, ListTodo, LoaderCircle } from "lucide-react";
+import { Button } from "../components/ui/button";
 import { ActivityRow } from "./activity-row";
 import { FlowReportSummary } from "./flow-report";
 import { flowStatusEntries, flowWidgetEntries, widgetLabel, type FlowState, type FlowTask } from "./flow-state";
@@ -14,11 +15,12 @@ function TaskIcon({ status }: { status: FlowTask["status"] }) {
 
 /** Session status chip in the header. Its trigger is layout-stable; task/report
  * changes only affect the popover, never the conversation layout. */
-export function FlowMenu({ flow, widgets, statuses, reports = [] }: {
+export function FlowMenu({ flow, widgets, statuses, reports = [], onCommand }: {
   flow: FlowState;
   widgets: Record<string, string[]>;
   statuses: Record<string, string>;
   reports?: readonly FlowReportRecord[];
+  onCommand?: (command: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
@@ -44,10 +46,11 @@ export function FlowMenu({ flow, widgets, statuses, reports = [] }: {
     waiting ? `${waiting} waiting` : "",
     background ? `${background} background` : "",
   ].filter(Boolean).join(" · ") || "Session activity";
+  const live = running > 0 || waiting > 0 || background > 0;
   return <div ref={root} className="relative">
-    <button type="button" onClick={() => setOpen(value => !value)} aria-label="Flow" aria-haspopup="dialog" aria-expanded={open} className="flex h-7 w-40 items-center gap-1.5 rounded-md border border-border px-2 text-xs text-muted-foreground hover:bg-muted/50 sm:w-44">
-      <ListTodo className="size-3.5 shrink-0" aria-hidden="true" />
-      <span className="hidden min-w-0 flex-1 truncate sm:inline">{summary}</span>
+    <button type="button" onClick={() => setOpen(value => !value)} aria-label="Flow" aria-haspopup="dialog" aria-expanded={open} className={`flex h-7 w-40 items-center gap-1.5 rounded-md border px-2 text-xs text-muted-foreground hover:bg-muted/50 sm:w-44 ${live ? "border-primary/40 bg-primary/5" : "border-border"}`}>
+      {live ? <LoaderCircle className="size-3.5 shrink-0 animate-spin text-primary" aria-hidden="true" /> : <ListTodo className="size-3.5 shrink-0" aria-hidden="true" />}
+      <span className="hidden min-w-0 flex-1 truncate sm:inline" aria-live="polite">{summary}</span>
       <span className="flex-1 sm:hidden">{tasks.length ? `${completed}/${tasks.length}` : "Flow"}</span>
       <ChevronDown className={`size-3 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} aria-hidden="true" />
     </button>
@@ -58,6 +61,9 @@ export function FlowMenu({ flow, widgets, statuses, reports = [] }: {
         {tasks.length > 0 && <span className="text-[11px] tabular-nums text-muted-foreground">{completed}/{tasks.length}</span>}
         <span className="min-w-0 flex-1 truncate text-right text-[11px] text-muted-foreground">{summary}</span>
       </div>
+      {onCommand && <div className="flex flex-wrap gap-1 border-b border-border px-2 py-2" aria-label="Flow commands">
+        {[["/flow", "Status"], ["/flow pause", "Pause"], ["/flow resume", "Resume"], ["/flow clear", "Clear"], ["/flow runtime", "Runtime"]].map(([command, label]) => <Button key={command} variant="outline" className="h-6 px-2 text-[10px]" onClick={() => { setOpen(false); onCommand(command); }}>{label}</Button>)}
+      </div>}
       <div className="max-h-[min(24rem,60vh)] overflow-y-auto px-3 py-2">
         {tasks.length > 0 && <ul className="space-y-1" aria-label="Session tasks">{tasks.map(task => <li key={task.id} className="flex items-start gap-2 rounded-md px-1 py-1 text-xs">
           <TaskIcon status={task.status} />

@@ -214,13 +214,16 @@ export function ChatWorkspace({ path, revision = 0, newSession = true, onNewSess
     catch (error) { setNotification(String(error).replace(/^Error:\s*/u, "")); }
     finally { setCommandBusy(false); }
   }
-  async function openMcp() {
+  async function runExtensionCommand(command: string) {
     const client = connection.current;
     if (!client || commandBusy) return;
     setCommandBusy(true);
-    try { await client.runCommand("/mcp"); }
+    try { await client.runCommand(command); }
     catch (error) { setNotification(String(error).replace(/^Error:\s*/u, "")); }
     finally { setCommandBusy(false); }
+  }
+  async function openMcp() {
+    await runExtensionCommand("/mcp");
   }
   async function openSession(sessionPath: string) {
     const client = connection.current;
@@ -380,7 +383,7 @@ export function ChatWorkspace({ path, revision = 0, newSession = true, onNewSess
         <span className="hidden h-7 items-center gap-1.5 rounded-md border border-border px-2 text-xs text-muted-foreground sm:inline-flex">Standard mode</span>
         <Button variant="ghost" className="size-7 shrink-0 p-0" aria-label="Reload session" title="Reload session (extensions, skills, MCP and catalogs)" disabled={commandBusy || !snapshot.sessionFile || snapshot.pending || snapshot.projection.running} onClick={() => void reloadSession()}><RefreshCw className="size-3.5" /></Button>
         <Button variant="ghost" className="size-7 shrink-0 p-0" aria-label="MCP" title="MCP servers and tools" disabled={commandBusy || snapshot.pending || snapshot.projection.running} onClick={() => void openMcp()}><Plug className="size-3.5" /></Button>
-        <FlowMenu key={openedSession ?? snapshot.sessionFile ?? path} flow={flow} widgets={snapshot.widgets ?? {}} statuses={snapshot.statuses ?? {}} reports={reportsSession && normalizedPath(reportsSession) === normalizedPath(openedSession ?? snapshot.sessionFile ?? "") ? diskReports : []} />
+        <FlowMenu key={openedSession ?? snapshot.sessionFile ?? path} flow={flow} widgets={snapshot.widgets ?? {}} statuses={snapshot.statuses ?? {}} reports={reportsSession && normalizedPath(reportsSession) === normalizedPath(openedSession ?? snapshot.sessionFile ?? "") ? diskReports : []} onCommand={command => void runExtensionCommand(command)} />
         <Button variant="ghost" className="h-7 shrink-0 gap-1.5 px-2 text-xs" aria-label="Open in terminal" title="Open this session's workspace in a terminal" onClick={() => onTerminal(path)}><SquareTerminal className="size-3.5" /><span className="hidden sm:inline">Terminal</span></Button>
       </div>}
       {connectionState}
