@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, symlinkSync, w
 import { resolve } from "node:path";
 import { applyInstalledBackgroundFlow } from "./apply-background-flow.mjs";
 import { applyInstalledMultiloopWaitSkill } from "./apply-multiloop-wait-skill.mjs";
-import { applyDefuddleDiagnosticGuard, resolveDefuddleSource } from "./apply-webaio-defuddle-quiet.mjs";
+import { applyInstalledDefuddleDiagnostics } from "./apply-webaio-defuddle-quiet.mjs";
 import { externalizeBundledCanvas } from "./canvas-package-boundary.mjs";
 import {
 	releaseBundleFingerprint,
@@ -13,6 +13,7 @@ import {
 	releaseBundleReceiptPath,
 	writeReleaseBundleReceipt,
 } from "./release-bundle-receipt.mjs";
+import { applyInstalledWebaioDiagnosticBridge } from "./webaio-defuddle-transform.mjs";
 import { assertStandaloneMcpBoundary } from "./webaio-package-boundary.mjs";
 
 const root = resolve(import.meta.dirname, "..");
@@ -73,16 +74,8 @@ async function installReleaseBundle() {
 	);
 	if (webaioBuild.error) throw webaioBuild.error;
 	if (webaioBuild.status !== 0) process.exit(webaioBuild.status ?? 1);
-	const defuddlePath = resolveDefuddleSource(webaioRoot);
-	if (
-		!applyDefuddleDiagnosticGuard(
-			defuddlePath,
-			(path) => readFileSync(path, "utf8"),
-			(path, source) => writeFileSync(path, source),
-		)
-	) {
-		throw new Error("pi-webaio Defuddle diagnostic guard made no changes");
-	}
+	applyInstalledDefuddleDiagnostics(webaioRoot);
+	applyInstalledWebaioDiagnosticBridge(webaioRoot);
 	const webaioPackagePath = resolve(webaioRoot, "package.json");
 	const webaioPackage = JSON.parse(readFileSync(webaioPackagePath, "utf8"));
 	if (webaioPackage.optionalDependencies?.playwright === undefined) {

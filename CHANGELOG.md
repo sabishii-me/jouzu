@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Save Defuddle extraction diagnostics with web-fetch results instead of printing parser warnings over the terminal interface. Expand the tool entry to review them. See [Web tools](docs/web.md#extraction-diagnostics).
 - Pause automatic replies after a provider error remains unrecovered, and report the cause. Resume with a new message or `/flow resume`. See [Flow control](docs/flow-control.md).
 - Count prompt-cache refreshes that complete after the next request or a context change replaces their schedule in usage and cost totals. See [Prompt-cache warming](docs/cache-warming.md).
 

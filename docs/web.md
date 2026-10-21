@@ -7,6 +7,12 @@
 
 Web results pass through [TextGuard](textguard.md) before reaching the model.
 
+## Extraction diagnostics
+
+`web_fetch` and `batch_web_fetch` save Defuddle parser diagnostics with the tool result instead of printing them over the terminal interface. Expand the tool entry to review them. Batch results keep each request's diagnostics separate.
+
+A diagnostic does not necessarily mean the fetch failed: the parser can recover or return fallback content. Diagnostic messages are bounded, with credentials redacted; raw stack traces are not retained.
+
 ## Browser runtime
 
 - The first `tff-fetch_url` or `tff-search_web` call installs Jouzu's pinned Camoufox client from npm into Jouzu state, then downloads the Camoufox browser if needed.
