@@ -15,14 +15,18 @@ function TaskIcon({ status }: { status: FlowTask["status"] }) {
 
 /** Session status chip in the header. Its trigger is layout-stable; task/report
  * changes only affect the popover, never the conversation layout. */
-export function FlowMenu({ flow, widgets, statuses, reports = [], onCommand }: {
+export function FlowMenu({ flow, widgets, statuses, reports = [], onCommand, busy = false }: {
   flow: FlowState;
   widgets: Record<string, string[]>;
   statuses: Record<string, string>;
   reports?: readonly FlowReportRecord[];
   onCommand?: (command: string) => void;
+  busy?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [target, setTarget] = useState("");
+  const [page, setPage] = useState("");
+  const [resetArmed, setResetArmed] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -61,8 +65,22 @@ export function FlowMenu({ flow, widgets, statuses, reports = [], onCommand }: {
         {tasks.length > 0 && <span className="text-[11px] tabular-nums text-muted-foreground">{completed}/{tasks.length}</span>}
         <span className="min-w-0 flex-1 truncate text-right text-[11px] text-muted-foreground">{summary}</span>
       </div>
-      {onCommand && <div className="flex flex-wrap gap-1 border-b border-border px-2 py-2" aria-label="Flow commands">
-        {[["/flow", "Status"], ["/flow pause", "Pause"], ["/flow resume", "Resume"], ["/flow clear", "Clear"], ["/flow runtime", "Runtime"]].map(([command, label]) => <Button key={command} variant="outline" className="h-6 px-2 text-[10px]" onClick={() => { setOpen(false); onCommand(command); }}>{label}</Button>)}
+      {onCommand && <div className="space-y-2 border-b border-border px-2 py-2" aria-label="Flow commands">
+        <div className="flex flex-wrap gap-1">
+          {[["/flow", "Status"], ["/flow pause", "Pause"], ["/flow resume", "Resume"], ["/flow clear", "Clear"], ["/flow runtime", "Runtime"]].map(([command, label]) => <Button key={command} variant="outline" className="h-6 px-2 text-[10px]" disabled={busy} onClick={() => { setOpen(false); onCommand(command); }}>{label}</Button>)}
+        </div>
+        <div className="flex flex-wrap gap-1">
+          <Button variant="outline" className="h-6 px-2 text-[10px]" disabled={busy} onClick={() => { setOpen(false); onCommand("/flow off"); }}>Off</Button>
+          <Button variant="outline" className="h-6 px-2 text-[10px]" disabled={busy} onClick={() => { setOpen(false); onCommand("/flow on"); }}>On</Button>
+          <input aria-label="Flow details page" inputMode="numeric" placeholder="Page" value={page} onChange={event => setPage(event.target.value.replace(/[^\d]/gu, ""))} className="h-6 w-14 rounded border border-border bg-background px-1 text-[10px]" />
+          <Button variant="outline" className="h-6 px-2 text-[10px]" disabled={busy} onClick={() => { setOpen(false); onCommand(`/flow details${page ? ` ${page}` : ""}`); }}>Details</Button>
+        </div>
+        <div className="flex flex-wrap items-center gap-1">
+          <input aria-label="Flow request or token" placeholder="Request / token" value={target} onChange={event => setTarget(event.target.value)} className="h-6 min-w-0 flex-1 rounded border border-border bg-background px-1 text-[10px]" />
+          <Button variant="outline" className="h-6 px-2 text-[10px]" disabled={busy || !target.trim()} onClick={() => { setOpen(false); onCommand(`/flow retry ${target.trim()}`); }}>Retry</Button>
+          <Button variant="outline" className="h-6 px-2 text-[10px]" disabled={busy || !target.trim()} onClick={() => { setOpen(false); onCommand(`/flow cancel ${target.trim()}`); }}>Cancel</Button>
+        </div>
+        <Button variant={resetArmed ? "default" : "outline"} className="h-6 px-2 text-[10px]" disabled={busy} onClick={() => { if (!resetArmed) { setResetArmed(true); return; } setResetArmed(false); setOpen(false); onCommand("/flow reset confirm"); }}>{resetArmed ? "Confirm reset" : "Reset…"}</Button>
       </div>}
       <div className="max-h-[min(24rem,60vh)] overflow-y-auto px-3 py-2">
         {tasks.length > 0 && <ul className="space-y-1" aria-label="Session tasks">{tasks.map(task => <li key={task.id} className="flex items-start gap-2 rounded-md px-1 py-1 text-xs">
