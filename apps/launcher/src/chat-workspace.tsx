@@ -6,7 +6,7 @@ import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import { ChatConversation } from "./chat-conversation";
 import { Composer } from "./composer";
-import { ChatConnection, type ChatSnapshot } from "./chat-connection";
+import { ChatConnection, flowNoticeText, type ChatSnapshot } from "./chat-connection";
 import { readImageAttachment, removeSubmittedImages, validateImageSelection, type ImageAttachment } from "./chat-attachments";
 import { emptyProjection, type FlowReportRecord } from "./chat-projection";
 import { beginDialogResponse, emptyDialogQueue, enqueueDialog, expireDialogs, nextDialogDeadline, removeDialog, type DialogAnswer, type DialogQueue } from "./dialog-queue";
@@ -62,6 +62,7 @@ export function ChatWorkspace({ path, revision = 0, newSession = true, onNewSess
   const dialog = dialogs.items[0] ?? null;
   const [answer, setAnswer] = useState("");
   const [notification, setNotification] = useState("");
+  const [flowNotice, setFlowNotice] = useState("");
   const [sidebar, setSidebar] = useState(true);
   const [hero, setHero] = useState(newSession);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -93,6 +94,7 @@ export function ChatWorkspace({ path, revision = 0, newSession = true, onNewSess
     updateDialogs(emptyDialogQueue());
     setSnapshot({ projection: emptyProjection(), connected: false, pending: false, error: null, models: [], thinkingLevels: [] });
     setDraft(""); updateAttachments([]); setAttachmentError(null);
+    setFlowNotice("");
     const client = new ChatConnection(state => {
       setSnapshot(state);
       if (!state.connected && state.error) updateDialogs(emptyDialogQueue());
@@ -108,7 +110,12 @@ export function ChatWorkspace({ path, revision = 0, newSession = true, onNewSess
         }
         else if (result.status === "invalid") setNotification("An invalid extension request could not be displayed.");
       }
-      else if (request.method === "notify") setNotification(String(request.message ?? ""));
+      else if (request.method === "notify") {
+        const message = String(request.message ?? "");
+        const flow = flowNoticeText(message);
+        if (flow) setFlowNotice(flow);
+        else setNotification(message);
+      }
       else if (request.method === "set_editor_text") setDraft(String(request.text ?? ""));
     });
     connection.current = client;
@@ -383,7 +390,7 @@ export function ChatWorkspace({ path, revision = 0, newSession = true, onNewSess
         <span className="hidden h-7 items-center gap-1.5 rounded-md border border-border px-2 text-xs text-muted-foreground sm:inline-flex">Standard mode</span>
         <Button variant="ghost" className="size-7 shrink-0 p-0" aria-label="Reload session" title="Reload session (extensions, skills, MCP and catalogs)" disabled={commandBusy || !snapshot.sessionFile || snapshot.pending || snapshot.projection.running} onClick={() => void reloadSession()}><RefreshCw className="size-3.5" /></Button>
         <Button variant="ghost" className="size-7 shrink-0 p-0" aria-label="MCP" title="MCP servers and tools" disabled={commandBusy || snapshot.pending || snapshot.projection.running} onClick={() => void openMcp()}><Plug className="size-3.5" /></Button>
-        <FlowMenu key={openedSession ?? snapshot.sessionFile ?? path} flow={flow} widgets={snapshot.widgets ?? {}} statuses={snapshot.statuses ?? {}} reports={reportsSession && normalizedPath(reportsSession) === normalizedPath(openedSession ?? snapshot.sessionFile ?? "") ? diskReports : []} onCommand={command => void runExtensionCommand(command)} busy={commandBusy} />
+        <FlowMenu key={openedSession ?? snapshot.sessionFile ?? path} flow={flow} widgets={snapshot.widgets ?? {}} statuses={snapshot.statuses ?? {}} notice={flowNotice} reports={reportsSession && normalizedPath(reportsSession) === normalizedPath(openedSession ?? snapshot.sessionFile ?? "") ? diskReports : []} onCommand={command => void runExtensionCommand(command)} busy={commandBusy} />
         <Button variant="ghost" className="h-7 shrink-0 gap-1.5 px-2 text-xs" aria-label="Open in terminal" title="Open this session's workspace in a terminal" onClick={() => onTerminal(path)}><SquareTerminal className="size-3.5" /><span className="hidden sm:inline">Terminal</span></Button>
       </div>}
       {connectionState}

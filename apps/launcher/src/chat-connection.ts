@@ -13,6 +13,15 @@ export interface SessionStats {
 }
 export interface SessionTiming { modelMs: number; toolMs: number; turns: number; steps: number; outputTokens: number }
 const MODEL_PREFERENCE_KEY = "jouzu.chat.model";
+/** Flow notices belong in the Flow panel; strip their terminal-command instruction. */
+export function flowNoticeText(message: string): string | undefined {
+  if (!/\/flow\b/iu.test(message)) return undefined;
+  const text = message
+    .replace(/\s*Run \/flow[^.]*\.?/giu, "")
+    .replace(/\s*Inspect with \/flow[^.]*\.?/giu, "")
+    .trim();
+  return text || "Flow needs attention.";
+}
 function readModelPreference(): { provider: string; id: string } | undefined {
   try {
     const value = JSON.parse(localStorage.getItem(MODEL_PREFERENCE_KEY) ?? "null");
@@ -40,6 +49,7 @@ export interface ChatSnapshot {
   modelsLoaded?: boolean;
   widgets?: Record<string, string[]>;
   statuses?: Record<string, string>;
+  flowNotice?: string;
   stats?: SessionStats;
   thinkingLevel?: string;
   thinkingLevels?: string[];

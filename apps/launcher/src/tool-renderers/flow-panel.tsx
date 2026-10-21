@@ -15,11 +15,12 @@ function TaskIcon({ status }: { status: FlowTask["status"] }) {
 
 /** Session status chip in the header. Its trigger is layout-stable; task/report
  * changes only affect the popover, never the conversation layout. */
-export function FlowMenu({ flow, widgets, statuses, reports = [], onCommand, busy = false }: {
+export function FlowMenu({ flow, widgets, statuses, reports = [], notice, onCommand, busy = false }: {
   flow: FlowState;
   widgets: Record<string, string[]>;
   statuses: Record<string, string>;
   reports?: readonly FlowReportRecord[];
+  notice?: string;
   onCommand?: (command: string) => void;
   busy?: boolean;
 }) {
@@ -65,6 +66,7 @@ export function FlowMenu({ flow, widgets, statuses, reports = [], onCommand, bus
         {tasks.length > 0 && <span className="text-[11px] tabular-nums text-muted-foreground">{completed}/{tasks.length}</span>}
         <span className="min-w-0 flex-1 truncate text-right text-[11px] text-muted-foreground">{summary}</span>
       </div>
+      {notice && <p role="status" className="border-b border-border bg-amber-500/10 px-3 py-2 text-[11px] text-amber-700 dark:text-amber-300">{notice}</p>}
       {onCommand && <div className="space-y-2 border-b border-border px-2 py-2" aria-label="Flow commands">
         <div className="flex flex-wrap gap-1">
           {[["/flow", "Status"], ["/flow pause", "Pause"], ["/flow resume", "Resume"], ["/flow clear", "Clear"], ["/flow runtime", "Runtime"]].map(([command, label]) => <Button key={command} variant="outline" className="h-6 px-2 text-[10px]" disabled={busy} onClick={() => { setOpen(false); onCommand(command); }}>{label}</Button>)}

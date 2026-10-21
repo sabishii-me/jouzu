@@ -1,9 +1,16 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
-import { ChatConnection } from "./chat-connection";
+import { ChatConnection, flowNoticeText } from "./chat-connection";
 import { invoke } from "@tauri-apps/api/core";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 afterEach(() => { vi.resetAllMocks(); vi.useRealTimers(); });
 describe("desktop RPC connection", () => {
+  it("moves Flow notices out of the banner and removes terminal instructions", () => {
+    expect(flowNoticeText("Flow control paused after an interrupt. Automated work resumes on your next message. Run /flow for details."))
+      .toBe("Flow control paused after an interrupt. Automated work resumes on your next message.");
+    expect(flowNoticeText("Flow control is holding your message. Run /flow for the control that releases it."))
+      .toBe("Flow control is holding your message.");
+    expect(flowNoticeText("A normal extension notice.")).toBeUndefined();
+  });
   it("keeps the chosen model when the user starts a new session", async () => {
     const client = new ChatConnection(() => {}, () => {});
     client.snapshot = { ...client.snapshot, connected: true };
