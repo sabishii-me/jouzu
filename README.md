@@ -12,7 +12,7 @@ Jouzu is Shisa AI's terminal coding agent, built on [Pi coding agent](https://pi
 - **Voice dictation.** Speak into the prompt with Shisa realtime transcription.
 - **Model picker.** Search providers and models, keep favorites, and save per-project defaults. Sign into [Shisa AI's API service](https://platform.shisa.ai/) for the latest open coding models.
 
-Jouzu is **alpha** software. Expect frequent updates and changes.
+Jouzu is **beta** software. Expect frequent updates and changes.
 
 ## Requirements
 
