@@ -23,14 +23,26 @@ describe("desktop RPC connection", () => {
     expect(request).toHaveBeenLastCalledWith("set_model", { provider: "catalog", modelId: "chosen" });
     expect(client.snapshot.model).toBe("catalog/chosen");
   });
-  it("accepts the released prompt success response without a disposition", async () => {
-    const client = new ChatConnection(() => {}, () => {});
+  it("accepts the released prompt success response without a disposition", async () => {    const client = new ChatConnection(() => {}, () => {});
     client.snapshot = { ...client.snapshot, connected: true };
     const request = vi.spyOn(client, "request").mockResolvedValue(undefined);
     await client.sendOrSteer("hello", [], false);
     expect(request).toHaveBeenCalledWith("prompt", { message: "hello" });
     expect(client.snapshot.error).toBeNull();
     expect(client.snapshot.pending).toBe(false);
+  });
+  it("runs an extension command without adding a user turn", async () => {
+    const client = new ChatConnection(() => {}, () => {});
+    client.snapshot = { ...client.snapshot, connected: true };
+    const request = vi.spyOn(client, "request").mockResolvedValue(undefined);
+    await client.runCommand("/mcp");
+    expect(request).toHaveBeenCalledWith("prompt", { message: "/mcp" });
+    expect(client.snapshot.pending).toBe(false);
+  });
+  it("refuses to reload before the runtime has saved a session", async () => {
+    const client = new ChatConnection(() => {}, () => {});
+    client.snapshot = { ...client.snapshot, connected: true };
+    await expect(client.reloadSession()).rejects.toThrow("no saved session");
   });
   it("loads session counters without treating them as chat failure", async () => {
     const client = new ChatConnection(() => {}, () => {});

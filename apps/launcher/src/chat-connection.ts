@@ -191,6 +191,23 @@ export class ChatConnection {
   }
   newSession() { return this.changeSession("new_session"); }
   resumeSession(sessionPath: string) { return this.changeSession("switch_session", { sessionPath }); }
+  /** Reopen the current session so extensions, skills, MCP servers and catalogs re-bind. */
+  async reloadSession() {
+    const sessionPath = this.snapshot.sessionFile;
+    if (!sessionPath) throw new Error("There is no saved session to reload yet.");
+    if (this.snapshot.pending || this.snapshot.projection.running) throw new Error("Wait for the current turn to settle before reloading.");
+    await this.changeSession("switch_session", { sessionPath });
+    await this.loadModels();
+  }
+  /** Extension commands such as /mcp are executed by the runtime without a user turn. */
+  async runCommand(command: string) {
+    if (!this.snapshot.connected) throw new Error("Chat is not connected.");
+    if (this.snapshot.pending || this.snapshot.projection.running) throw new Error("Wait for the current turn to settle before running a command.");
+    this.update({ pending: true, error: null });
+    try { await this.request("prompt", { message: command }); }
+    catch (error) { this.update({ error: String(error) }); throw error; }
+    finally { this.update({ pending: false }); }
+  }
   previewSession(messages: unknown) {
     this.update({ projection: historyProjection(messages), error: null });
   }
