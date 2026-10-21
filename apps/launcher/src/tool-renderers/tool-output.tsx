@@ -3,6 +3,7 @@ import { Check, Copy } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { ChatMarkdown } from "../chat-markdown";
 import { object, type ToolView } from "../chat-projection";
+import { classifyText, diffRows, prettyJson } from "./tool-format";
 import { record, toolText } from "./types";
 
 const MAX_LINES = 2000;
@@ -52,7 +53,16 @@ function CopyButton({ text }: { text: string }) {
   return <Button variant="ghost" className="h-7 gap-1 px-2 text-[11px]" onClick={async () => { try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1200); } catch { setCopied(false); } }}>{copied ? <Check className="size-3" /> : <Copy className="size-3" />}{copied ? "Copied" : "Copy"}</Button>;
 }
 
-// Button is imported with the other renderer dependencies above.
+function DownloadButton({ text }: { text: string }) {
+  return <Button variant="ghost" className="h-7 px-2 text-[11px]" onClick={() => {
+    const url = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "tool-output.txt";
+    anchor.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }}>Download</Button>;
+}
 
 function truncatedLines(text: string) {
   const lines = text.split("\n");
@@ -103,6 +113,26 @@ function SearchOutput({ text, pattern }: { text: string; pattern?: string }) {
   })}{truncated && <p className="mt-1 text-[10px] text-muted-foreground">Showing first {MAX_LINES} of {total} lines.</p>}</div>;
 }
 
+function DiffOutput({ text }: { text: string }) {
+  const rows = diffRows(text);
+  const { lines, truncated, total } = truncatedLines(rows.map(row => row.text).join("\n"));
+  return <div className="max-h-96 overflow-auto rounded-md border border-border/60 bg-background py-1 font-mono text-[11px] leading-5">
+    {lines.map((line, index) => {
+      const kind = diffRows(line)[0]?.kind ?? "context";
+      const className = kind === "add" ? "bg-green-500/10 text-green-600 dark:text-green-400"
+        : kind === "remove" ? "bg-red-500/10 text-red-600 dark:text-red-400"
+          : kind === "hunk" ? "bg-primary/10 text-primary"
+            : kind === "header" ? "text-muted-foreground" : "";
+      return <div key={index} className={`whitespace-pre-wrap break-words px-2 ${className}`}>{line || " "}</div>;
+    })}
+    {truncated && <p className="px-2 py-1 text-[10px] text-muted-foreground">Showing first {MAX_LINES} of {total} lines.</p>}
+  </div>;
+}
+
+function JsonOutput({ text }: { text: string }) {
+  return <AnsiPre text={prettyJson(text) ?? text} />;
+}
+
 function MarkdownOutput({ text }: { text: string }) {
   const [rendered, setRendered] = useState(true);
   return <div className="rounded-md border border-border/60 bg-background">
@@ -115,15 +145,20 @@ export function ToolOutput({ tool }: { tool: ToolView }) {
   const text = toolText(tool.result);
   const images = imageBlocks(tool.result);
   const path = readPath(tool.args);
+  const kind = classifyText(text);
   if (images.length) return <div className="space-y-2">{images.map((image, index) => <img key={index} src={`data:${image.mime};base64,${image.data}`} alt={image.alt} className="max-h-80 max-w-full rounded-md border border-border object-contain" />)}{text && <AnsiPre text={text} />}</div>;
   if (!text) return <p className="text-xs text-muted-foreground">No text output.</p>;
   return <div className="space-y-1">
-    <div className="flex items-center justify-between gap-2"><span className="text-[10px] uppercase tracking-wide text-muted-foreground">{tool.name === "read" && path ? path : "Output"}</span><CopyButton text={text} /></div>
+    <div className="flex items-center justify-between gap-2"><span className="truncate text-[10px] uppercase tracking-wide text-muted-foreground">{tool.name === "read" && path ? path : "Output"}</span><div className="flex shrink-0"><CopyButton text={text} /><DownloadButton text={text} /></div></div>
     {tool.phase === "error" && <p className="rounded border border-destructive/40 bg-destructive/10 px-2 py-1 text-[11px] text-destructive">Tool failed</p>}
     {tool.name === "bash" ? <AnsiPre text={text} />
       : tool.name === "read" && markdownPath(tool.args) ? <MarkdownOutput text={text} />
-        : tool.name === "read" ? <CodeLines text={text} />
-          : tool.name === "grep" ? <SearchOutput text={text} pattern={typeof record(tool.args)?.pattern === "string" ? record(tool.args)?.pattern as string : undefined} />
-            : <AnsiPre text={text} />}
+        : tool.name === "read" && kind === "json" ? <JsonOutput text={text} />
+          : tool.name === "read" && kind === "diff" ? <DiffOutput text={text} />
+            : tool.name === "read" ? <CodeLines text={text} />
+              : tool.name === "grep" ? <SearchOutput text={text} pattern={typeof record(tool.args)?.pattern === "string" ? record(tool.args)?.pattern as string : undefined} />
+                : kind === "json" ? <JsonOutput text={text} />
+                  : kind === "diff" ? <DiffOutput text={text} />
+                    : <AnsiPre text={text} />}
   </div>;
 }
