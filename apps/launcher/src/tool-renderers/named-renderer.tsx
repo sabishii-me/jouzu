@@ -1,4 +1,5 @@
 import { ActivityRow } from "./activity-row";
+import { ToolOutput } from "./tool-output";
 import { record, toolText, type ToolRendererProps } from "./types";
 
 const named = {
@@ -17,6 +18,6 @@ export function NamedRenderer({ tool }: ToolRendererProps) {
     : tool.name === "schedule_prompt" && typeof args.prompt === "string" ? args.prompt : undefined;
   const text = toolText(tool.result);
   return <ActivityRow title={definition.title} summary={detail || definition.summary} state={tool.phase === "running" ? "running" : tool.phase === "error" ? "error" : "done"} defaultOpen={!!text}>
-    {text && <p className="whitespace-pre-wrap select-text text-muted-foreground">{text}</p>}
+    {text && <ToolOutput tool={tool} />}
   </ActivityRow>;
 }
