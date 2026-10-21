@@ -1,15 +1,31 @@
-import { useState, type ComponentPropsWithoutRef } from "react";
+import { Children, isValidElement, useState, type ComponentPropsWithoutRef, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Button } from "./components/ui/button";
 
+function nodeText(node: ReactNode): string {
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(nodeText).join("");
+  if (isValidElement<{ children?: ReactNode }>(node)) return nodeText(node.props.children);
+  return "";
+}
+
 function Code({ children, ...props }: ComponentPropsWithoutRef<"pre">) {
   const [status, setStatus] = useState("");
-  return <div className="my-3 overflow-hidden rounded-lg border border-border"><div className="flex justify-end border-b border-border bg-muted px-2"><Button variant="ghost" className="h-8 text-xs" onClick={async event => {
-    const text = event.currentTarget.parentElement?.nextElementSibling?.textContent ?? "";
-    try { await navigator.clipboard.writeText(text); setStatus("Copied"); } catch { setStatus("Copy failed"); }
-  }}>{status || "Copy code"}</Button></div><pre {...props} className="overflow-x-auto bg-background p-3 text-xs leading-relaxed">{children}</pre></div>;
+  const code = Children.toArray(children).find(isValidElement) as { props?: { className?: string; children?: ReactNode } } | undefined;
+  const language = /language-([\w-]+)/u.exec(code?.props?.className ?? "")?.[1] ?? "text";
+  const text = nodeText(code?.props?.children ?? children);
+  return <div className="my-3 overflow-hidden rounded-lg border border-border">
+    <div className="flex items-center justify-between border-b border-border bg-muted px-2">
+      <span className="px-1 font-mono text-[10px] uppercase tracking-wide text-muted-foreground">{language}</span>
+      <Button variant="ghost" className="h-8 text-xs" onClick={async () => {
+        try { await navigator.clipboard.writeText(text); setStatus("Copied"); }
+        catch { setStatus("Copy failed"); }
+      }}>{status || "Copy code"}</Button>
+    </div>
+    <pre {...props} className="overflow-x-auto bg-background p-3 text-xs leading-relaxed">{children}</pre>
+  </div>;
 }
 export function ChatMarkdown({ text }: { text: string }) {
   const [error, setError] = useState<string | null>(null);
