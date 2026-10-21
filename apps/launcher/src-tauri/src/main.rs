@@ -2,6 +2,9 @@
 
 #[cfg(windows)]
 mod chat_process;
+#[cfg(unix)]
+#[path = "chat_process_unix.rs"]
+mod chat_process;
 mod chat_transport;
 mod chat;
 mod active_app;

@@ -307,7 +307,7 @@ export function App() {
     <header data-tauri-drag-region className="flex items-center justify-between border-b border-border py-3">
       <div className="absolute left-0 right-0 top-0 h-3" data-tauri-drag-region />
       <div className="pointer-events-none flex items-center gap-3"><img src={jouzuIcon} alt="" draggable={false} className="size-9" /><h1 className="min-w-16 flex-1 text-lg font-semibold tracking-tight">Jouzu</h1></div>
-      <div className="pointer-events-none flex items-center gap-1 [&>*]:pointer-events-auto">{(setup || statusError) && <><Button variant="ghost" aria-label={t.openTerminal} title={t.openTerminal} disabled={busy || !state?.ready} onClick={() => void openTerminal()}><SquareTerminal /></Button><Button variant="ghost" aria-label={t.reportTitle} title={t.reportTitle} onClick={() => void openReport()}><Bug /></Button><Dialog open={settingsOpen} onOpenChange={value => { if (!value && device) void invoke("cancel_control"); if (!value) setUpdateFocus(null); setSettingsOpen(value); }}>
+      <div className="pointer-events-none flex items-center gap-1 [&>*]:pointer-events-auto">{(setup || statusError) && <>{state?.platform === "windows" && <Button variant="ghost" aria-label={t.openTerminal} title={t.openTerminal} disabled={busy || !state?.ready} onClick={() => void openTerminal()}><SquareTerminal /></Button>}<Button variant="ghost" aria-label={t.reportTitle} title={t.reportTitle} onClick={() => void openReport()}><Bug /></Button><Dialog open={settingsOpen} onOpenChange={value => { if (!value && device) void invoke("cancel_control"); if (!value) setUpdateFocus(null); setSettingsOpen(value); }}>
         {updater.version || jouzuUpdater.version
           ? <Button variant="ghost" className="text-primary hover:text-primary" aria-label={t.updateReady} title={t.updateReady} disabled={updater.busy || jouzuUpdater.busy} onClick={openUpdatePanel}><ArrowUpCircle className={(updater.busy || jouzuUpdater.busy) ? "animate-pulse" : undefined} /></Button>
           : <Button variant="ghost" aria-label={t.checkUpdates} title={t.checkUpdates} disabled={updater.busy || jouzuUpdater.busy} onClick={() => {void jouzuUpdater.check();void updater.refresh();}}><RefreshCw className={(updater.busy || jouzuUpdater.busy) ? "animate-spin" : undefined} /></Button>}<DialogTrigger asChild><Button variant="ghost" aria-label={t.settings} title={t.settings}><Settings /></Button></DialogTrigger>
@@ -362,7 +362,7 @@ export function App() {
                     check:()=>{void jouzuUpdater.check();void updater.refresh();},
                     install:index=>{if(index===0)void jouzuUpdater.install();else void updater.install();}
                   }}/>
-                  <div className="rounded-lg border border-border"><GitBashSection locale={locale} api={gitBash} /><TerminalSection locale={locale} /><CommandEntrySection locale={locale} /></div>
+                  {state?.platform === "windows" && <div className="rounded-lg border border-border"><GitBashSection locale={locale} api={gitBash} /><TerminalSection locale={locale} /><CommandEntrySection locale={locale} /></div>}
                   {diagnostics !== null && diagnostics.crashes.length > 0 && <Card className="border-border shadow-none">
                     <CardHeader><CardTitle>{t.crashTitle}</CardTitle><CardDescription>{t.crashHint}</CardDescription></CardHeader>
                     <CardContent className="space-y-3">{diagnostics.crashes.map(record => <div key={record.path} className="space-y-1 rounded-lg border border-border p-3">
@@ -410,7 +410,7 @@ export function App() {
         onSelect={setActivePath}
         onAddFolder={() => void chooseFolder()}
         onRemove={id => { const workspace = state?.recent.find(item => item.id === id); if (workspace) void forget(workspace); }}
-        onTerminal={path => void launchTerminal(path)}
+        onTerminal={state?.platform === "windows" ? path => void launchTerminal(path) : undefined}
         onSettings={() => setSettingsOpen(true)}
       />
     </div>}

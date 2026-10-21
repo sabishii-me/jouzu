@@ -1987,6 +1987,7 @@ dependencies = [
 name = "jouzu-launcher"
 version = "0.2.1"
 dependencies = [
+ "libc",
  "reqwest 0.12.28",
  "semver",
  "serde",

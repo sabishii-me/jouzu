@@ -299,17 +299,6 @@ fn usable_environment_name(name: &std::ffi::OsStr) -> bool {
     let text = name.to_string_lossy();
     !text.is_empty() && !text.contains('=') && !text.contains('\0')
 }
-#[cfg(not(windows))]
-#[tauri::command]
-pub fn chat_start(
-    _app: tauri::AppHandle,
-    _window: tauri::WebviewWindow,
-    _state: tauri::State<ChatService>,
-    _path: String,
-) -> Result<String, String> {
-    Err("Embedded chat is currently qualified for Windows only".into())
-}
-#[cfg(windows)]
 #[tauri::command]
 pub fn chat_start(
     app: tauri::AppHandle,
@@ -761,7 +750,6 @@ mod tests {
         assert!(result.recv().unwrap());
     }
 
-    #[cfg(windows)]
     #[test]
     #[ignore = "requires an authenticated extracted release in JOUZU_CHAT_TEST_RUNTIME"]
     fn released_runtime_native_rpc_and_update_lease() {
@@ -772,11 +760,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path().join("home");
         std::fs::create_dir_all(&home).unwrap();
-        let mut env: Vec<(OsString, OsString)> =
-            ["SystemRoot", "WINDIR", "COMSPEC", "PATHEXT", "PATH"]
-                .into_iter()
-                .filter_map(|key| std::env::var_os(key).map(|value| (key.into(), value)))
-                .collect();
+        #[cfg(windows)]
+        let inherited = ["SystemRoot", "WINDIR", "COMSPEC", "PATHEXT", "PATH"];
+        #[cfg(not(windows))]
+        let inherited = ["PATH", "TMPDIR"];
+        let mut env: Vec<(OsString, OsString)> = inherited
+            .into_iter()
+            .filter_map(|key| std::env::var_os(key).map(|value| (key.into(), value)))
+            .collect();
         for (key, value) in [
             ("JOUZU_HOME", home.clone()),
             ("USERPROFILE", home.clone()),
@@ -785,10 +776,13 @@ mod tests {
             ("APPDATA", home.clone()),
             ("TEMP", dir.path().to_path_buf()),
             ("TMP", dir.path().to_path_buf()),
-            ("JOUZU_LAUNCHER_BASH", root.join("runtime/git/bin/bash.exe")),
         ] {
             env.push((key.into(), value.into_os_string()));
         }
+        #[cfg(windows)]
+        env.push(("JOUZU_LAUNCHER_BASH".into(), root.join("runtime/git/bin/bash.exe").into_os_string()));
+        #[cfg(not(windows))]
+        env.push(("JOUZU_LAUNCHER_BASH".into(), "/bin/bash".into()));
         env.push(("JOUZU_NO_UPDATE".into(), "1".into()));
         let lease = crate::update_lock::lock(dir.path(), false).unwrap();
         let mut process = crate::chat_process::ChatProcess::spawn(

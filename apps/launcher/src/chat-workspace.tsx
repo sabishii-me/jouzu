@@ -31,7 +31,7 @@ export interface ChatWorkspaceProps {
   onSelect: (path: string) => void;
   onAddFolder: () => void;
   onRemove: (id: string) => void;
-  onTerminal: (path: string) => void;
+  onTerminal?: (path: string) => void;
   onSettings: () => void;
 }
 const lastSegment = (path: string) => path.replaceAll("\\", "/").split("/").filter(Boolean).at(-1) ?? path;
@@ -362,7 +362,7 @@ export function ChatWorkspace({ path, revision = 0, newSession = true, onNewSess
         <div className="min-w-0 flex-1 px-1"><h2 className="truncate text-sm font-semibold" title={path}>{name}</h2><p className="truncate text-xs text-muted-foreground" title={path}>{snapshot.model ?? path}</p></div>
         <span className="hidden h-7 items-center gap-1.5 rounded-md border border-border px-2 text-xs text-muted-foreground sm:inline-flex">Standard mode</span>
         <FlowMenu key={openedSession ?? snapshot.sessionFile ?? path} flow={flow} widgets={snapshot.widgets ?? {}} statuses={snapshot.statuses ?? {}} reports={reportsSession && normalizedPath(reportsSession) === normalizedPath(openedSession ?? snapshot.sessionFile ?? "") ? diskReports : []} />
-        <Button variant="ghost" className="h-7 shrink-0 gap-1.5 px-2 text-xs" aria-label="Open in terminal" title="Open this session's workspace in a terminal" onClick={() => onTerminal(path)}><SquareTerminal className="size-3.5" /><span className="hidden sm:inline">Terminal</span></Button>
+        {onTerminal && <Button variant="ghost" className="h-7 shrink-0 gap-1.5 px-2 text-xs" aria-label="Open in terminal" title="Open this session's workspace in a terminal" onClick={() => onTerminal(path)}><SquareTerminal className="size-3.5" /><span className="hidden sm:inline">Terminal</span></Button>}
       </div>}
       {connectionState}
       {notification && <div role="status" className="flex items-center justify-between border-b border-border px-3 py-1.5 text-xs"><span className="min-w-0 truncate">{notification}</span><Button variant="ghost" className="h-7 px-2" onClick={() => setNotification("")}>Dismiss</Button></div>}
