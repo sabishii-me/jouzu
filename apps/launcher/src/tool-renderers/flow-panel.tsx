@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, ChevronDown, Circle, CircleSlash, ListTodo, LoaderCircle } from "lucide-react";
 import { ActivityRow } from "./activity-row";
 import { FlowReportSummary } from "./flow-report";
-import { flowStatusEntries, flowWidgetEntries, hasFlow, widgetLabel, type FlowState, type FlowTask } from "./flow-state";
+import { flowStatusEntries, flowWidgetEntries, widgetLabel, type FlowState, type FlowTask } from "./flow-state";
 import type { FlowReportRecord } from "../chat-projection";
 
 function TaskIcon({ status }: { status: FlowTask["status"] }) {
@@ -30,7 +30,6 @@ export function FlowMenu({ flow, widgets, statuses, reports = [] }: {
     document.addEventListener("keydown", escape);
     return () => { document.removeEventListener("pointerdown", close); document.removeEventListener("keydown", escape); };
   }, [open]);
-  if (!hasFlow(flow) && !reports.length) return null;
   const tasks = flow.tasks.filter(task => task.status !== "deleted");
   const completed = tasks.filter(task => task.status === "completed").length;
   const active = tasks.find(task => task.status === "in_progress");
@@ -77,6 +76,7 @@ export function FlowMenu({ flow, widgets, statuses, reports = [] }: {
           <ul className="space-y-0.5">{lines.slice(0, 12).map((line, index) => <li key={index} className="truncate whitespace-pre text-[11px] text-muted-foreground">{line}</li>)}</ul>
         </div>)}
         {flowStatusEntries(statuses).map(([key, text]) => <p key={key} className="mb-1 text-[11px] text-muted-foreground">{text}</p>)}
+        {!tasks.length && !flow.waits.length && !flow.background.length && !reports.length && !flowWidgetEntries(widgets).length && !flowStatusEntries(statuses).length && <p className="py-2 text-xs text-muted-foreground">No flow activity in this session yet.</p>}
       </div>
     </div>}
   </div>;
