@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ClipboardEvent } from "react";
 import { ChevronDown, Cpu, Download, ImagePlus, Minimize2, Plus, Send, Square, X } from "lucide-react";
 import { IMAGE_ACCEPT, MAX_IMAGES, type ImageAttachment } from "./chat-attachments";
 import type { ChatModel } from "./chat-connection";
@@ -141,13 +141,20 @@ export function Composer({ hero = false, connected, pending, running, draft, onD
   const submit = () => { if (connected && !pending && !readingImages && draft.trim()) onSend(); };
   const compactDisabled = !connected || pending || running;
   const exportDisabled = !connected || pending;
+  const pasteFiles = (event: ClipboardEvent<HTMLTextAreaElement>) => {
+    if (!onAddImages) return;
+    const files = Array.from(event.clipboardData.files);
+    if (!files.length) return;
+    event.preventDefault();
+    onAddImages(files);
+  };
   return <div className={hero ? "px-0 pb-0 pt-0" : "px-3 pb-3 pt-2 sm:px-6"}>
     {error && <p role="alert" className="mx-auto mb-2 max-w-3xl select-text text-sm text-destructive">{error}</p>}
     {!!compatibility.length && <p role="status" className="mx-auto mb-2 max-w-3xl text-xs text-muted-foreground">Some runtime events have no display: {compatibility.join(", ")}</p>}
     <form aria-label="Message composer" className={`mx-auto flex max-w-3xl flex-col gap-2 border border-border bg-card shadow-[0_8px_30px_rgba(0,0,0,0.12)] focus-within:ring-1 focus-within:ring-ring ${hero ? "rounded-3xl p-3" : "rounded-2xl p-2.5"}`} onSubmit={event => { event.preventDefault(); submit(); }}>
       {attachmentError && <p role="alert" className="px-1 text-sm text-destructive">{attachmentError}</p>}
       {!!attachments.length && <ul aria-label="Attached images" className="flex flex-wrap gap-2 px-1">{attachments.map(item => <li key={item.id} className="relative max-w-36 rounded-lg border border-border p-1.5"><img src={`data:${item.image.mimeType};base64,${item.image.data}`} alt={`Preview of ${item.name}`} className="h-16 w-24 object-contain" /><div className="flex items-center gap-1"><p className="min-w-0 flex-1 truncate text-xs" title={item.name}>{item.name}</p><Button type="button" variant="ghost" className="size-6 p-0" aria-label={`Remove ${item.name}`} onClick={() => onRemoveImage?.(item.id)}><X className="size-3" /></Button></div></li>)}</ul>}
-      <textarea aria-label="Message Jouzu" placeholder="Message Jouzu…" value={draft} onChange={event => onDraft(event.target.value)} rows={3} className="max-h-60 min-h-16 w-full resize-y bg-transparent px-1 text-sm outline-none" onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); submit(); } }} />
+      <textarea aria-label="Message Jouzu" placeholder="Message Jouzu…" value={draft} onChange={event => onDraft(event.target.value)} rows={3} className="max-h-60 min-h-16 w-full resize-y bg-transparent px-1 text-sm outline-none" onPaste={pasteFiles} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); submit(); } }} />
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-1">
           {onAddImages && <><input ref={imageInput} type="file" accept={IMAGE_ACCEPT} multiple className="hidden" aria-label="Choose images" onChange={event => { const files = Array.from(event.currentTarget.files ?? []); event.currentTarget.value = ""; onAddImages(files); }} /></>}
