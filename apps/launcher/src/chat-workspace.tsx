@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUpDown, ChevronDown, ChevronRight, FolderOpen, FolderPlus, MessageSquare, PanelLeft, Plus, Search, Settings, Sparkles, SquareTerminal, X } from "lucide-react";
+import { ArrowUpDown, ChevronDown, ChevronRight, FolderOpen, FolderPlus, MessageSquare, PanelLeft, Plug, Plus, RefreshCw, Search, Settings, Sparkles, SquareTerminal, X } from "lucide-react";
 import { confirm, save } from "@tauri-apps/plugin-dialog";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import { ChatConversation } from "./chat-conversation";
 import { Composer } from "./composer";
-import { ChatConnection, type ChatSnapshot } from "./chat-connection";
+import { ChatConnection, flowNoticeText, type ChatSnapshot } from "./chat-connection";
 import { readImageAttachment, removeSubmittedImages, validateImageSelection, type ImageAttachment } from "./chat-attachments";
 import { emptyProjection, type FlowReportRecord } from "./chat-projection";
 import { beginDialogResponse, emptyDialogQueue, enqueueDialog, expireDialogs, nextDialogDeadline, removeDialog, type DialogAnswer, type DialogQueue } from "./dialog-queue";
@@ -54,6 +55,7 @@ export function ChatWorkspace({ path, revision = 0, newSession = true, onNewSess
   const [readingImages, setReadingImages] = useState(false);
   const readingRef = useRef(false);
   const [switching, setSwitching] = useState(false);
+  const [commandBusy, setCommandBusy] = useState(false);
   const [openedSession, setOpenedSession] = useState<string | null>(null);
   const sessionChange = useRef(false);
   const [dialogs, setDialogs] = useState(emptyDialogQueue);
@@ -61,6 +63,9 @@ export function ChatWorkspace({ path, revision = 0, newSession = true, onNewSess
   const dialog = dialogs.items[0] ?? null;
   const [answer, setAnswer] = useState("");
   const [notification, setNotification] = useState("");
+  const [flowNotice, setFlowNotice] = useState("");
+  const [dropActive, setDropActive] = useState(false);
+  const chatRoot = useRef<HTMLDivElement>(null);
   const [sidebar, setSidebar] = useState(true);
   const [hero, setHero] = useState(newSession);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -92,6 +97,7 @@ export function ChatWorkspace({ path, revision = 0, newSession = true, onNewSess
     updateDialogs(emptyDialogQueue());
     setSnapshot({ projection: emptyProjection(), connected: false, pending: false, error: null, models: [], thinkingLevels: [] });
     setDraft(""); updateAttachments([]); setAttachmentError(null);
+    setFlowNotice("");
     const client = new ChatConnection(state => {
       setSnapshot(state);
       if (!state.connected && state.error) updateDialogs(emptyDialogQueue());
@@ -107,7 +113,12 @@ export function ChatWorkspace({ path, revision = 0, newSession = true, onNewSess
         }
         else if (result.status === "invalid") setNotification("An invalid extension request could not be displayed.");
       }
-      else if (request.method === "notify") setNotification(String(request.message ?? ""));
+      else if (request.method === "notify") {
+        const message = String(request.message ?? "");
+        const flow = flowNoticeText(message);
+        if (flow) setFlowNotice(flow);
+        else setNotification(message);
+      }
       else if (request.method === "set_editor_text") setDraft(String(request.text ?? ""));
     });
     connection.current = client;
@@ -182,6 +193,41 @@ export function ChatWorkspace({ path, revision = 0, newSession = true, onNewSess
     } catch (error) { setAttachmentError(error instanceof Error ? error.message : String(error)); }
     finally { readingRef.current = false; setReadingImages(false); }
   }
+  async function addDropped(paths: string[]) {
+    const images: File[] = [];
+    const files: string[] = [];
+    for (const path of paths) {
+      if (!/\.(?:png|jpe?g|webp|gif)$/iu.test(path)) { files.push(path); continue; }
+      try {
+        const data = await invoke<{ name: string; mimeType: string; data: string }>("read_dropped_image", { path });
+        const binary = atob(data.data);
+        const bytes = new Uint8Array(binary.length);
+        for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+        images.push(new File([bytes], data.name, { type: data.mimeType }));
+      } catch (error) { setAttachmentError(error instanceof Error ? error.message : String(error)); }
+    }
+    if (images.length) await addImages(images);
+    if (files.length) {
+      setDraft(current => `${current}${current.trim() ? "\n\n" : ""}${files.map(path => `File: ${path}`).join("\n")}`);
+      setNotification(`${files.length} file${files.length === 1 ? "" : "s"} added to the message.`);
+    }
+  }
+  useEffect(() => {
+    if (!isTauri()) return;
+    let disposed = false;
+    const subscription = getCurrentWindow().onDragDropEvent(event => {
+      const payload = event.payload;
+      if (payload.type === "leave") { setDropActive(false); return; }
+      const rect = chatRoot.current?.getBoundingClientRect();
+      const x = payload.position.x / window.devicePixelRatio;
+      const y = payload.position.y / window.devicePixelRatio;
+      const inside = !!rect && x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+      setDropActive(inside && payload.type !== "drop");
+      if (payload.type === "drop" && inside) void addDropped(payload.paths);
+    });
+    subscription.then(unlisten => { if (disposed) unlisten(); }).catch(error => setNotification(String(error)));
+    return () => { disposed = true; subscription.then(unlisten => unlisten()).catch(() => {}); };
+  }, [path, revision]);
   async function send() {
     const client = connection.current;
     if (!client || readingRef.current) return;
@@ -204,6 +250,25 @@ export function ChatWorkspace({ path, revision = 0, newSession = true, onNewSess
     onNewSession?.();
     setHero(true);
     setOpenedSession(null);
+  }
+  async function reloadSession() {
+    const client = connection.current;
+    if (!client || commandBusy) return;
+    setCommandBusy(true);
+    try { await client.reloadSession(); setNotification("Session reloaded."); }
+    catch (error) { setNotification(String(error).replace(/^Error:\s*/u, "")); }
+    finally { setCommandBusy(false); }
+  }
+  async function runExtensionCommand(command: string) {
+    const client = connection.current;
+    if (!client || commandBusy) return;
+    setCommandBusy(true);
+    try { await client.runCommand(command); }
+    catch (error) { setNotification(String(error).replace(/^Error:\s*/u, "")); }
+    finally { setCommandBusy(false); }
+  }
+  async function openMcp() {
+    await runExtensionCommand("/mcp");
   }
   async function openSession(sessionPath: string) {
     const client = connection.current;
@@ -319,7 +384,8 @@ export function ChatWorkspace({ path, revision = 0, newSession = true, onNewSess
     <span>{snapshot.error ? "The workspace could not connect." : `Starting ${name}…`}</span>
     {snapshot.error && <><span className="min-w-0 truncate" title={snapshot.error}>{snapshot.error}</span><Button variant="outline" className="ml-auto h-7 px-2" onClick={onRetry}>Retry</Button></>}
   </div>;
-  return <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
+  return <div ref={chatRoot} className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
+    {dropActive && <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center border-2 border-dashed border-primary bg-background/85 text-sm font-medium text-primary">Drop images or files</div>}
     {sidebar && <aside aria-label="Workspaces" className="absolute inset-y-0 left-0 z-20 flex w-72 max-w-[85%] flex-col border-r border-border bg-background shadow-xl md:static md:z-auto md:shadow-none">
       <div className="flex items-center gap-2 px-2 pb-2 pt-3"><Button className="min-w-0 flex-1 justify-start gap-2" onClick={() => void startNewSession()}><Plus className="size-4" />New session</Button><Button variant="ghost" className="size-8 p-0 md:hidden" aria-label="Hide workspaces" onClick={() => setSidebar(false)}><X className="size-4" /></Button></div>
       <div className="space-y-1 px-2 pb-2">
@@ -361,7 +427,9 @@ export function ChatWorkspace({ path, revision = 0, newSession = true, onNewSess
         <Button variant="ghost" className="size-8 shrink-0 p-0" aria-label={sidebar ? "Hide workspaces" : "Show workspaces"} title="Workspaces" aria-expanded={sidebar} onClick={() => setSidebar(value => !value)}><PanelLeft className="size-4" /></Button>
         <div className="min-w-0 flex-1 px-1"><h2 className="truncate text-sm font-semibold" title={path}>{name}</h2><p className="truncate text-xs text-muted-foreground" title={path}>{snapshot.model ?? path}</p></div>
         <span className="hidden h-7 items-center gap-1.5 rounded-md border border-border px-2 text-xs text-muted-foreground sm:inline-flex">Standard mode</span>
-        <FlowMenu key={openedSession ?? snapshot.sessionFile ?? path} flow={flow} widgets={snapshot.widgets ?? {}} statuses={snapshot.statuses ?? {}} reports={reportsSession && normalizedPath(reportsSession) === normalizedPath(openedSession ?? snapshot.sessionFile ?? "") ? diskReports : []} />
+        <Button variant="ghost" className="size-7 shrink-0 p-0" aria-label="Reload session" title="Reload session (extensions, skills, MCP and catalogs)" disabled={commandBusy || !snapshot.sessionFile || snapshot.pending || snapshot.projection.running} onClick={() => void reloadSession()}><RefreshCw className="size-3.5" /></Button>
+        <Button variant="ghost" className="size-7 shrink-0 p-0" aria-label="MCP" title="MCP servers and tools" disabled={commandBusy || snapshot.pending || snapshot.projection.running} onClick={() => void openMcp()}><Plug className="size-3.5" /></Button>
+        <FlowMenu key={openedSession ?? snapshot.sessionFile ?? path} flow={flow} widgets={snapshot.widgets ?? {}} statuses={snapshot.statuses ?? {}} notice={flowNotice} reports={reportsSession && normalizedPath(reportsSession) === normalizedPath(openedSession ?? snapshot.sessionFile ?? "") ? diskReports : []} onCommand={command => void runExtensionCommand(command)} busy={commandBusy} />
         {onTerminal && <Button variant="ghost" className="h-7 shrink-0 gap-1.5 px-2 text-xs" aria-label="Open in terminal" title="Open this session's workspace in a terminal" onClick={() => onTerminal(path)}><SquareTerminal className="size-3.5" /><span className="hidden sm:inline">Terminal</span></Button>}
       </div>}
       {connectionState}

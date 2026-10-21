@@ -1,9 +1,16 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
-import { ChatConnection } from "./chat-connection";
+import { ChatConnection, flowNoticeText } from "./chat-connection";
 import { invoke } from "@tauri-apps/api/core";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 afterEach(() => { vi.resetAllMocks(); vi.useRealTimers(); });
 describe("desktop RPC connection", () => {
+  it("moves Flow notices out of the banner and removes terminal instructions", () => {
+    expect(flowNoticeText("Flow control paused after an interrupt. Automated work resumes on your next message. Run /flow for details."))
+      .toBe("Flow control paused after an interrupt. Automated work resumes on your next message.");
+    expect(flowNoticeText("Flow control is holding your message. Run /flow for the control that releases it."))
+      .toBe("Flow control is holding your message.");
+    expect(flowNoticeText("A normal extension notice.")).toBeUndefined();
+  });
   it("keeps the chosen model when the user starts a new session", async () => {
     const client = new ChatConnection(() => {}, () => {});
     client.snapshot = { ...client.snapshot, connected: true };
@@ -23,14 +30,26 @@ describe("desktop RPC connection", () => {
     expect(request).toHaveBeenLastCalledWith("set_model", { provider: "catalog", modelId: "chosen" });
     expect(client.snapshot.model).toBe("catalog/chosen");
   });
-  it("accepts the released prompt success response without a disposition", async () => {
-    const client = new ChatConnection(() => {}, () => {});
+  it("accepts the released prompt success response without a disposition", async () => {    const client = new ChatConnection(() => {}, () => {});
     client.snapshot = { ...client.snapshot, connected: true };
     const request = vi.spyOn(client, "request").mockResolvedValue(undefined);
     await client.sendOrSteer("hello", [], false);
     expect(request).toHaveBeenCalledWith("prompt", { message: "hello" });
     expect(client.snapshot.error).toBeNull();
     expect(client.snapshot.pending).toBe(false);
+  });
+  it("runs an extension command without adding a user turn", async () => {
+    const client = new ChatConnection(() => {}, () => {});
+    client.snapshot = { ...client.snapshot, connected: true };
+    const request = vi.spyOn(client, "request").mockResolvedValue(undefined);
+    await client.runCommand("/mcp");
+    expect(request).toHaveBeenCalledWith("prompt", { message: "/mcp" });
+    expect(client.snapshot.pending).toBe(false);
+  });
+  it("refuses to reload before the runtime has saved a session", async () => {
+    const client = new ChatConnection(() => {}, () => {});
+    client.snapshot = { ...client.snapshot, connected: true };
+    await expect(client.reloadSession()).rejects.toThrow("no saved session");
   });
   it("loads session counters without treating them as chat failure", async () => {
     const client = new ChatConnection(() => {}, () => {});
