@@ -4,6 +4,7 @@
 mod chat_process;
 mod chat_transport;
 mod chat;
+mod attachments;
 mod active_app;
 mod launcher_script;
 mod terminal;
@@ -502,6 +503,7 @@ fn main() {
             chat::chat_send,
             chat::chat_poll,
             chat::chat_stop,
+            attachments::read_dropped_image,
             sessions::chat_sessions,
             sessions::chat_flow_reports,
             sessions::chat_session_messages,

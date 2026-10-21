@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpDown, ChevronDown, ChevronRight, FolderOpen, FolderPlus, MessageSquare, PanelLeft, Plug, Plus, RefreshCw, Search, Settings, Sparkles, SquareTerminal, X } from "lucide-react";
 import { confirm, save } from "@tauri-apps/plugin-dialog";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import { ChatConversation } from "./chat-conversation";
@@ -63,6 +64,8 @@ export function ChatWorkspace({ path, revision = 0, newSession = true, onNewSess
   const [answer, setAnswer] = useState("");
   const [notification, setNotification] = useState("");
   const [flowNotice, setFlowNotice] = useState("");
+  const [dropActive, setDropActive] = useState(false);
+  const chatRoot = useRef<HTMLDivElement>(null);
   const [sidebar, setSidebar] = useState(true);
   const [hero, setHero] = useState(newSession);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -190,6 +193,41 @@ export function ChatWorkspace({ path, revision = 0, newSession = true, onNewSess
     } catch (error) { setAttachmentError(error instanceof Error ? error.message : String(error)); }
     finally { readingRef.current = false; setReadingImages(false); }
   }
+  async function addDropped(paths: string[]) {
+    const images: File[] = [];
+    const files: string[] = [];
+    for (const path of paths) {
+      if (!/\.(?:png|jpe?g|webp|gif)$/iu.test(path)) { files.push(path); continue; }
+      try {
+        const data = await invoke<{ name: string; mimeType: string; data: string }>("read_dropped_image", { path });
+        const binary = atob(data.data);
+        const bytes = new Uint8Array(binary.length);
+        for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+        images.push(new File([bytes], data.name, { type: data.mimeType }));
+      } catch (error) { setAttachmentError(error instanceof Error ? error.message : String(error)); }
+    }
+    if (images.length) await addImages(images);
+    if (files.length) {
+      setDraft(current => `${current}${current.trim() ? "\n\n" : ""}${files.map(path => `File: ${path}`).join("\n")}`);
+      setNotification(`${files.length} file${files.length === 1 ? "" : "s"} added to the message.`);
+    }
+  }
+  useEffect(() => {
+    if (!isTauri()) return;
+    let disposed = false;
+    const subscription = getCurrentWindow().onDragDropEvent(event => {
+      const payload = event.payload;
+      if (payload.type === "leave") { setDropActive(false); return; }
+      const rect = chatRoot.current?.getBoundingClientRect();
+      const x = payload.position.x / window.devicePixelRatio;
+      const y = payload.position.y / window.devicePixelRatio;
+      const inside = !!rect && x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+      setDropActive(inside && payload.type !== "drop");
+      if (payload.type === "drop" && inside) void addDropped(payload.paths);
+    });
+    subscription.then(unlisten => { if (disposed) unlisten(); }).catch(error => setNotification(String(error)));
+    return () => { disposed = true; subscription.then(unlisten => unlisten()).catch(() => {}); };
+  }, [path, revision]);
   async function send() {
     const client = connection.current;
     if (!client || readingRef.current) return;
@@ -346,7 +384,8 @@ export function ChatWorkspace({ path, revision = 0, newSession = true, onNewSess
     <span>{snapshot.error ? "The workspace could not connect." : `Starting ${name}…`}</span>
     {snapshot.error && <><span className="min-w-0 truncate" title={snapshot.error}>{snapshot.error}</span><Button variant="outline" className="ml-auto h-7 px-2" onClick={onRetry}>Retry</Button></>}
   </div>;
-  return <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
+  return <div ref={chatRoot} className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
+    {dropActive && <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center border-2 border-dashed border-primary bg-background/85 text-sm font-medium text-primary">Drop images or files</div>}
     {sidebar && <aside aria-label="Workspaces" className="absolute inset-y-0 left-0 z-20 flex w-72 max-w-[85%] flex-col border-r border-border bg-background shadow-xl md:static md:z-auto md:shadow-none">
       <div className="flex items-center gap-2 px-2 pb-2 pt-3"><Button className="min-w-0 flex-1 justify-start gap-2" onClick={() => void startNewSession()}><Plus className="size-4" />New session</Button><Button variant="ghost" className="size-8 p-0 md:hidden" aria-label="Hide workspaces" onClick={() => setSidebar(false)}><X className="size-4" /></Button></div>
       <div className="space-y-1 px-2 pb-2">
