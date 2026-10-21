@@ -402,7 +402,7 @@ test("an interrupted dispatch without native evidence exposes a recovery blocker
 		}
 		return recover(...args);
 	});
-	await assert.rejects(next.ingress.resetFlow(), /recovery read failed/);
+	await assert.rejects(next.ingress.clearFlow(), /recovery read failed/);
 	assert.equal(recoveredBranch.host.gate().recoveryBlocked, true);
 	assert.deepEqual(await recoveredBranch.attachment.submissions.snapshot(false), [], "discard frees active capacity");
 	const [discarded] = await recoveredBranch.attachment.submissions.forIds([held.id]);
@@ -410,8 +410,13 @@ test("an interrupted dispatch without native evidence exposes a recovery blocker
 	assert.equal(discarded.dispatch.phase, "started", "discard preserves the unknown execution history");
 	const reset = await next.ingress.resetFlow();
 	assert.equal(reset.recoveryHeld, false);
+	assert.equal(recoveredBranch.host.gate().recoveryBlocked, false);
 	assert.equal(await next.ingress.recoveryHold(), undefined);
-	assert.equal((await next.ingress.branch().attachment.submissions.forIds([held.id]))[0].status, "cancelled");
+	assert.deepEqual(
+		await next.ingress.branch().attachment.submissions.snapshot(false),
+		[],
+		"destructive reset clears flow submissions",
+	);
 	await next.session.prompt("new authorized work");
 	assert.equal(next.sent.length, 1, "reset releases the safety hold without replaying the interrupted input");
 });

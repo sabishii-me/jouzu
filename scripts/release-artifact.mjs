@@ -11,13 +11,11 @@ export const repository = "shisa-ai/jouzu";
 export const pinnedNpm = "11.16.0";
 
 export function requiredJobs() {
-	const names = ["release-artifacts", "legacy-linux-static-fetch (22.19.0)", "legacy-linux-static-fetch (24)"];
+	const names = ["release-artifacts", "endurance", "ci-result", "legacy-linux-static-fetch (22.19.0)"];
 	for (const os of ["ubuntu-latest", "macos-latest"]) {
-		for (const node of os === "ubuntu-latest" ? [22] : [22, 24]) names.push(`node (${os}, ${node})`);
+		names.push(`node (${os}, 22)`);
 		names.push(`optional-camoufox (${os})`, `published-upgrade (${os})`);
-		for (const scope of ["local", "npm-exec", "global"]) names.push(`packed-install (${os}, ${scope})`);
-		for (const scope of ["success", "rollback"]) names.push(`automatic-update (${os}, ${scope})`);
-		for (const python of ["3.10", "3.12", "3.13"]) names.push(`python (${os}, ${python})`);
+		names.push(`packed-install (${os}, all)`, `automatic-update (${os}, all)`, `python (${os})`);
 	}
 	return names;
 }
@@ -40,7 +38,11 @@ export function verifyQualification(run, jobs, manifest) {
 	}
 	for (const job of jobs) {
 		assert.equal(job.status, "completed", job.name);
-		assert.equal(job.conclusion, "success", job.name);
+		// The change classifier is skipped on manual runs and passes on pushes it sent to full qualification.
+		assert.ok(
+			job.conclusion === "success" || (job.name === "changes" && job.conclusion === "skipped"),
+			`${job.name}: ${job.conclusion}`,
+		);
 	}
 }
 

@@ -62,7 +62,7 @@ test("CI installs pinned Go in every CLI build job and pins native actions", () 
 	const workflow = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8");
 	const jobs = workflow.split(/^ {2}[a-z][a-z0-9-]*:\s*$/m).slice(1);
 	const builders = jobs.filter((job) => job.includes("run: npm run build"));
-	assert.equal(builders.length, 3);
+	assert.equal(builders.length, 4);
 	for (const job of builders) {
 		const setup = job.indexOf("uses: actions/setup-go@");
 		assert.ok(setup >= 0 && setup < job.indexOf("run: npm run build"));

@@ -211,7 +211,7 @@ test("flow control off keeps navigation working, and /flow on binds the branch i
 	assert.deepEqual(f.errors, []);
 });
 
-test("flow control on restores routing, and reset is off followed by on", async (t) => {
+test("flow control on restores routing, and reset performs full recovery without toggling flow control", async (t) => {
 	const f = await assembledSession(t, { producerExtensions: await installedProducerExtensions() });
 	const notices = capturedNotices(f.session);
 	const synthetic = syntheticProducer();
@@ -248,15 +248,15 @@ test("flow control on restores routing, and reset is off followed by on", async 
 	for (const line of [
 		"off turns flow control off",
 		"on turns flow control back on",
-		"reset turns flow control off and on again",
+		"reset explains the destructive idle reset",
 		"clear releases a stuck reservation",
 	])
 		assert.match(notices.at(-1).text, new RegExp(`/flow ${line}`));
 
-	// Reset is the same pair in one command: it takes the spigot down and back up.
-	await f.session.prompt("/flow reset");
+	// Reset performs the full idle recovery path without taking flow control off.
+	await f.session.prompt("/flow reset confirm");
 	assert.equal(f.ingress.enabled(), true);
-	assert.match(notices.at(-1).text, /Flow control reset/);
+	assert.match(notices.at(-1).text, /Flow reset completed/);
 	assert.deepEqual(f.errors, []);
 });
 

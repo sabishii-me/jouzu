@@ -24,6 +24,12 @@ on:
         description: Publish the signed recipe to the update feed
         type: boolean
         default: true
+    # The caller must pass this explicitly: a called workflow does not inherit secrets.
+    # The workflow_dispatch path does not use this declaration and takes the key from
+    # the launcher-publish environment that the job below declares.
+    secrets:
+      JOUZU_RECIPE_PRIVATE_KEY:
+        required: true
 permissions:
   contents: read
 jobs:
@@ -90,7 +96,7 @@ jobs:
           tar -czf "$env:RUNNER_TEMP/jouzu-runtime.tgz" -C "$env:RUNNER_TEMP/jouzu-runtime" source.json recipe/package.json recipe/pnpm-lock.yaml recipe/artifacts app
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           (Get-FileHash "$env:RUNNER_TEMP/jouzu-runtime.tgz" -Algorithm SHA256).Hash | Out-File "$env:RUNNER_TEMP/jouzu-runtime.sha256" -Encoding ascii
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: windows-published-runtime
           path: |
@@ -98,7 +104,7 @@ jobs:
             ${{ runner.temp }}/jouzu-runtime.sha256
           if-no-files-found: error
           retention-days: 7
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: signed-jouzu-recipe
           path: ${{ runner.temp }}/recipe-assets/*

@@ -15,6 +15,26 @@ on:
         description: Successful recipe or runtime run providing the qualified Jouzu runtime
         type: string
         required: true
+  workflow_call:
+    inputs:
+      jouzu_version:
+        description: Official Jouzu npm version, or the release tag
+        type: string
+        required: true
+      publish:
+        description: Publish the signed release and update feed
+        type: boolean
+        default: false
+      runtime_run_id:
+        description: Recipe run providing the qualified runtime, or the calling run ID to reuse the artifact that run already uploaded
+        type: string
+        required: true
+    # The caller must pass this explicitly: a called workflow does not inherit secrets.
+    # The workflow_dispatch path does not use this declaration and takes the key from
+    # the launcher-publish environment that the sign-publish job declares.
+    secrets:
+      TAURI_SIGNING_PRIVATE_KEY:
+        required: true
 permissions:
   contents: read
   actions: read
@@ -39,6 +59,10 @@ jobs:
           exit "$missing"
   runtime:
     needs: signing-configuration
+    # The signing job runs in its own job, so GITHUB_ENV from here does not reach it; the
+    # normalized version travels as a job output instead.
+    outputs:
+      jouzu_version: ${{ steps.version.outputs.jouzu_version }}
     runs-on: windows-latest
     timeout-minutes: 40
     defaults:
@@ -54,18 +78,37 @@ jobs:
       - name: Install private build package manager
         run: |
           npm install --prefix "$env:RUNNER_TEMP/build-tools" pnpm@10.21.0 --ignore-scripts --no-audit --no-fund
-      - name: Restore qualified runtime
+      - name: Resolve the exact version
+        id: version
+        run: |
+          $version = ($env:JOUZU_VERSION_INPUT -replace '^v','').Trim()
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Invalid Jouzu version: $env:JOUZU_VERSION_INPUT" }
+          "JOUZU_VERSION=$version" | Out-File $env:GITHUB_ENV -Append
+          "jouzu_version=$version" | Out-File $env:GITHUB_OUTPUT -Append
+        env:
+          JOUZU_VERSION_INPUT: ${{ inputs.jouzu_version }}
+      # Validate the completed source run and artifact before download. For npm publish
+      # runs, require the recipe job to succeed even if a later installer job failed.
+      # The calling run uses its own artifact after the recipe dependency succeeds.
+      # Both paths still verify archive integrity and the requested package version.
+      - name: Restore qualified runtime from a completed run
+        if: inputs.runtime_run_id != github.run_id
         env:
           GH_TOKEN: ${{ github.token }}
           RUNTIME_RUN_ID: ${{ inputs.runtime_run_id }}
-          JOUZU_VERSION: ${{ inputs.jouzu_version }}
         run: |
-          if ($env:RUNTIME_RUN_ID -notmatch '^\d+$') { throw 'Invalid runtime run ID' }
-          $run = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:RUNTIME_RUN_ID" | ConvertFrom-Json
-          $sources = @('.github/workflows/launcher-recipe.yml', '.github/workflows/launcher-runtime.yml')
-          if ($LASTEXITCODE -or $run.conclusion -ne 'success' -or $sources -notcontains $run.path) { throw 'Runtime source must be a successful recipe or runtime workflow' }
+          node packaging/launcher/runtime-source.mjs
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           gh run download $env:RUNTIME_RUN_ID --repo $env:GITHUB_REPOSITORY --name windows-published-runtime --dir "$env:RUNNER_TEMP/runtime-input"
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Reuse the runtime this run produced
+        if: inputs.runtime_run_id == github.run_id
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: windows-published-runtime
+          path: ${{ runner.temp }}/runtime-input
+      - name: Verify the restored runtime
+        run: |
           $archive = "$env:RUNNER_TEMP/runtime-input/jouzu-runtime.tgz"
           $expected = (Get-Content "$env:RUNNER_TEMP/runtime-input/jouzu-runtime.sha256" -Raw).Trim()
           if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne $expected) { throw 'Runtime archive integrity mismatch' }
@@ -116,7 +159,7 @@ jobs:
           Copy-Item "$env:RUNNER_TEMP/jouzu-runtime/source.json" "$stage/source.json"
           tar -czf "$env:RUNNER_TEMP/signing-inputs.tgz" -C $stage .
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: launcher-signing-inputs
           path: ${{ runner.temp }}/signing-inputs.tgz
@@ -173,15 +216,15 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       - name: Sign and package CI binaries
-        run: ./packaging/launcher/finalize-windows-bundle.ps1 -InputDirectory "$env:RUNNER_TEMP/signing-inputs"
+        run: ./packaging/launcher/finalize-windows-bundle.ps1 -InputDirectory "$env:RUNNER_TEMP/signing-inputs" -JouzuVersion "${{ needs.runtime.outputs.jouzu_version }}"
       - name: Publish verified update
         if: ${{ inputs.publish }}
         env:
           GH_TOKEN: ${{ github.token }}
-        run: ./packaging/launcher/publish-launcher.ps1 -Directory "$env:RUNNER_TEMP/launcher-release"
+        run: ./packaging/launcher/publish-launcher.ps1 -Directory "$env:RUNNER_TEMP/launcher-release" -JouzuVersion "${{ needs.runtime.outputs.jouzu_version }}"
       - name: Upload signed artifacts
         if: ${{ !inputs.publish }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: launcher-signed
           path: ${{ runner.temp }}/launcher-release/*

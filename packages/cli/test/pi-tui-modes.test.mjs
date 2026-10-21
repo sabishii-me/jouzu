@@ -5,17 +5,14 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { createInteractiveTui } from "../../../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/tui-renderer.js";
-// The renderer imports the pi-tui instance nested under the installed Pi package. Class checks and
-// capability overrides only apply to that instance, so the helpers come from the same copy.
+// The renderer and helpers resolve the shared top-level Pi TUI package in the workspace install.
 import {
 	Container,
 	KeybindingsManager,
 	setCapabilities,
 	stripTerminalSequences,
-	TuiAltScreen,
-	TuiMainScreen,
 	visibleWidth,
-} from "../../../node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/index.js";
+} from "../../../node_modules/@earendil-works/pi-tui/dist/index.js";
 
 import {
 	DEFAULT_PALETTE_OVERLAY_OPTIONS,
@@ -278,7 +275,7 @@ async function exerciseMode(tuiMode) {
 	const terminal = new RecordingTerminal();
 	const tui = createInteractiveTui({ terminal, tuiMode, showHardwareCursor: false, logDirectory: root });
 	try {
-		assert.ok(tuiMode === "fullscreen" ? tui instanceof TuiAltScreen : tui instanceof TuiMainScreen);
+		assert.equal(tui.constructor.name, tuiMode === "fullscreen" ? "TuiAltScreen" : "TuiMainScreen");
 		assert.equal(tui.mode, tuiMode);
 		tui.start();
 		assert.equal(terminal.started, true, "the renderer starts the terminal it was given");

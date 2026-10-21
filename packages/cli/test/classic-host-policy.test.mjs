@@ -154,7 +154,7 @@ for (const guard of ["flow", "content"]) {
 	});
 }
 
-test("classic built-in overrides prevent server instructions and script model requests", async (t) => {
+test("classic overrides keep codemode disabled and replace the MCP factory", async (t) => {
 	let started = 0;
 	const { session, requests } = await createFlowSession(t, {
 		additionalExtensionPaths: ["builtin:mcp", "builtin:codemode"],

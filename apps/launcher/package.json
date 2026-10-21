@@ -1,14 +1,12 @@
 {
   "name": "@shisa-ai/jouzu-launcher",
-  "version": "1.0.0",
+  "version": "0.2.1",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "test": "vitest run",
-    "test:runtime": "node e2e-runtime/rpc-matrix.mjs",
-    "test:ui": "node e2e-runtime/ui-flow.mjs"
+    "test": "vitest run"
   },
   "license": "Apache-2.0",
   "type": "module",
@@ -24,8 +22,6 @@
     "radix-ui": "^1.6.7",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1",
     "tailwind-merge": "^3.7.0"
   },
   "devDependencies": {

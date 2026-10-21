@@ -438,7 +438,7 @@ test("startup claims respect persisted global off, session off, and pane pins", 
 });
 
 test("task data is byte-bounded and redacts absolute paths and common credential prefixes", () => {
-	const task = boundedLabelTask("Read /home/private/file with sk-secret then " + "日本語".repeat(2000));
+	const task = boundedLabelTask(`Read /home/private/file with sk-secret then ${"日本語".repeat(2000)}`);
 	assert.ok(Buffer.byteLength(task) <= 1800);
 	assert.doesNotMatch(task, /home\/private|sk-secret|\ufffd/);
 });

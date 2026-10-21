@@ -158,8 +158,8 @@ export function transform(path, source) {
 		);
 		source = replace(
 			source,
-			"\t\tconst id = `bg-${++taskCounter}`;\n\t\tconst now = Date.now();",
-			"\t\tconst id = `bg-${++taskCounter}`;\n\t\t// Reserve the allocation before the external spawn so a crash cannot reuse the id.\n\t\tpersistSnapshots();\n\t\tconst now = Date.now();",
+			`\t\tconst id = \`bg-\${++taskCounter}\`;\n\t\tconst now = Date.now();`,
+			`\t\tconst id = \`bg-\${++taskCounter}\`;\n\t\t// Reserve the allocation before the external spawn so a crash cannot reuse the id.\n\t\tpersistSnapshots();\n\t\tconst now = Date.now();`,
 		);
 		source = replace(
 			source,
@@ -283,8 +283,8 @@ export function transform(path, source) {
 		);
 		source = replace(
 			source,
-			"return makeToolResult(`${terminalSummary(task)}\\n\\n${formatTaskLog(output, task.logFile, cwd)}`, {",
-			"const result = makeToolResult(`${terminalSummary(task)}\\n\\n${formatTaskLog(output, task.logFile, cwd)}`, {",
+			`return makeToolResult(\`\${terminalSummary(task)}\\n\\n\${formatTaskLog(output, task.logFile, cwd)}\`, {`,
+			`const result = makeToolResult(\`\${terminalSummary(task)}\\n\\n\${formatTaskLog(output, task.logFile, cwd)}\`, {`,
 		);
 		source = replace(
 			source,

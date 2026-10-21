@@ -52,7 +52,7 @@ test("saved session recovers on a disposable copy, clears the hold, and resumes 
 	}
 	await f.session.prompt("continue");
 	assert.equal(f.bodies.length, 1, JSON.stringify(await f.ingress.inspect()));
-	await f.session.prompt("/flow reset");
+	await f.session.prompt("/flow reset confirm");
 	await f.session.prompt("Continue after reset");
 	await f.session.prompt("Continue again");
 	assert.equal(f.bodies.length, 3);

@@ -23,6 +23,13 @@ export function assertExternalWebTransport(files, packageJson, record) {
 	}
 }
 
+export function assertTerminalClipboardBundlePresent(files) {
+	for (const file of ["clipboard.js", "clipboard-tmux.js"]) {
+		const path = `node_modules/@earendil-works/pi-coding-agent/dist/utils/${file}`;
+		if (!files.some((entry) => entry.path === path)) throw new Error(`jouzu tarball is missing ${path}`);
+	}
+}
+
 const packageDirectories = [join("packages", "cli")];
 
 /**
@@ -251,6 +258,7 @@ for (const directory of executedDirectly ? packageDirectories : []) {
 		assertProfileFilesPresent(packed.files, deriveRequiredProfileFiles(join(directory, "profiles")));
 		assertVoiceBundlePresent(packed.files);
 		assertPiNativeHelpersPresent(packed.files);
+		assertTerminalClipboardBundlePresent(packed.files);
 		if (!packed.files.some((file) => file.path === "dist/release-extensions.json")) {
 			throw new Error("jouzu tarball is missing dist/release-extensions.json");
 		}

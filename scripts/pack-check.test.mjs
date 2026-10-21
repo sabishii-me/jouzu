@@ -16,11 +16,20 @@ import {
 	assertNoPrunedDependencyMetadata,
 	assertPiNativeHelpersPresent,
 	assertProfileFilesPresent,
+	assertTerminalClipboardBundlePresent,
 	deriveRequiredLicenseFiles,
 	deriveRequiredProfileFiles,
 	forbiddenPublicContent,
 	publicContentForScan,
 } from "./pack-check.mjs";
+
+test("pack validation requires both the clipboard importer and helper", () => {
+	const files = ["clipboard.js", "clipboard-tmux.js"].map((file) => ({
+		path: `node_modules/@earendil-works/pi-coding-agent/dist/utils/${file}`,
+	}));
+	assert.doesNotThrow(() => assertTerminalClipboardBundlePresent(files));
+	for (const file of files) assert.throws(() => assertTerminalClipboardBundlePresent([file]), /tarball is missing/);
+});
 
 function makeFixtureProfiles() {
 	const dir = mkdtempSync(join(tmpdir(), "pack-check-"));

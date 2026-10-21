@@ -53,7 +53,7 @@ function deferred() {
 	return { promise, resolve };
 }
 
-function fakeContext(mode = "tui") {
+function fakeContext(mode = "tui", tui = { requestRender() {}, terminal: { columns: 100, rows: 30 } }) {
 	const calls = [];
 	const handles = [];
 	let component;
@@ -72,9 +72,7 @@ function fakeContext(mode = "tui") {
 				};
 				handles.push(handle);
 				options?.onHandle?.(handle);
-				component = factory({ requestRender() {}, terminal: { columns: 100, rows: 30 } }, identityTheme, {}, () =>
-					completion.resolve(),
-				);
+				component = factory(tui, identityTheme, {}, () => completion.resolve());
 				calls.push({ factory, options });
 				return completion.promise;
 			},
@@ -103,20 +101,76 @@ function componentFactory(routes) {
 	});
 }
 
-test("presentation selection avoids overlays where terminals render inline images above text", () => {
+test("presentation selection floats over inline images only when it can hide them", () => {
 	assert.equal(selectPalettePresentation({ columns: 120, rows: 30, env: {} }), "floating");
 	assert.equal(selectPalettePresentation({ columns: 50, rows: 30, env: {} }), "replace");
 	assert.equal(selectPalettePresentation({ columns: 120, rows: 12, env: {} }), "replace");
-	assert.equal(selectPalettePresentation({ columns: 120, rows: 30, env: { KITTY_WINDOW_ID: "1" } }), "replace");
-	assert.equal(selectPalettePresentation({ columns: 120, rows: 30, env: { TERM_PROGRAM: "iTerm.app" } }), "replace");
 	assert.equal(
-		selectPalettePresentation({ columns: 120, rows: 30, env: { KITTY_WINDOW_ID: "1", TMUX: "/tmp/tmux" } }),
+		selectPalettePresentation({ columns: 120, rows: 30, env: { KITTY_WINDOW_ID: "1" } }),
+		"floating",
+		"the installed Pi TUI exposes the overlay compositor that image hiding wraps",
+	);
+	assert.equal(selectPalettePresentation({ columns: 120, rows: 30, env: { TERM_PROGRAM: "ghostty" } }), "floating");
+	assert.equal(
+		selectPalettePresentation({ columns: 120, rows: 30, env: { KITTY_WINDOW_ID: "1" }, imageHiding: false }),
+		"replace",
+	);
+	assert.equal(
+		selectPalettePresentation({ columns: 120, rows: 30, env: { TERM_PROGRAM: "iTerm.app" }, imageHiding: false }),
+		"replace",
+	);
+	assert.equal(
+		selectPalettePresentation({
+			columns: 120,
+			rows: 30,
+			env: { KITTY_WINDOW_ID: "1", TMUX: "/tmp/tmux" },
+			imageHiding: false,
+		}),
 		"floating",
 	);
 	assert.equal(
 		selectPalettePresentation({ columns: 40, rows: 10, env: { JOUZU_PALETTE_PRESENTATION: "floating" } }),
 		"floating",
 	);
+});
+
+test("floating Palette blanks inline image lines while open and restores them on close", async () => {
+	const kittyLine = "\u001b_Ga=T,f=100,q=2;AAAA\u001b\\";
+	const itermLine = "\u001b]1337;File=inline=1:AAAA\u0007";
+	let overlayVisible = true;
+	let renders = 0;
+	const tui = {
+		terminal: { columns: 100, rows: 30 },
+		requestRender() {
+			renders += 1;
+		},
+		hasOverlay: () => overlayVisible,
+		compositeOverlays(lines) {
+			return lines;
+		},
+	};
+	const base = ["text", kittyLine, itermLine];
+	const host = new JouzuPaletteSurfaceHost();
+	const surface = fakeContext("tui", tui);
+	const opened = host.open(surface.ctx, { view: "models" }, componentFactory([]), { presentation: "floating" });
+	await Promise.resolve();
+	assert.deepEqual(tui.compositeOverlays(base, 100, 30), ["text", "", ""], "images are hidden under the Palette");
+
+	overlayVisible = false;
+	assert.deepEqual(tui.compositeOverlays(base, 100, 30), base, "a hidden overlay leaves images visible");
+	overlayVisible = true;
+
+	surface.close();
+	assert.equal(await opened, true);
+	assert.deepEqual(tui.compositeOverlays(base, 100, 30), base, "images return once the Palette closes");
+	assert.ok(renders > 0, "closing requests a redraw that restores images");
+
+	const replacement = fakeContext("tui", tui);
+	const replaced = host.open(replacement.ctx, { view: "models" }, componentFactory([]), { presentation: "replace" });
+	await Promise.resolve();
+	assert.deepEqual(tui.compositeOverlays(base, 100, 30), base, "the replacement presentation leaves images alone");
+	replacement.close();
+	await replaced;
 });
 
 test("floating backend routes one active Palette instance and restores focus", async () => {

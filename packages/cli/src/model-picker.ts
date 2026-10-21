@@ -31,8 +31,8 @@ import {
 } from "./model-catalog-sync.js";
 import {
 	buildPickerRows,
+	displayFields,
 	modelContextFit,
-	type PickerFilter,
 	type PickerModel,
 	type PickerRow,
 } from "./model-picker-ranking.js";
@@ -59,7 +59,6 @@ import {
 	type PaletteKeyHint,
 	type PaletteRoute,
 	type PaletteSurfaceOptions,
-	paletteChoice,
 	paletteInnerWidth,
 	renderPaletteDivider,
 	renderPaletteField,
@@ -80,6 +79,7 @@ import {
 	renderTerminalFrameRow,
 	renderTerminalFrameTitle,
 	sanitizeTerminalText,
+	terminalTextWidth,
 } from "./terminal-layout.js";
 import type { TextGuardMode } from "./textguard-policy.js";
 import { WorkflowComponent } from "./workflow.js";
@@ -113,38 +113,49 @@ export interface JouzuModelPickerOptions {
 export interface ModelPickerComponentOptions {
 	context: PaletteComponentContext;
 	initialRoute: PaletteRoute;
-	initialFilter?: PickerFilter;
-	getRows(query: string, filter: PickerFilter): PickerRow[];
+	getRows(query: string): PickerRow[];
 	onSelect(row: PickerRow): Promise<void>;
 	onCompactAndSelect(row: PickerRow): Promise<void>;
 	onToggleFavorite(row: PickerRow): void;
-	onFilterChange?(filter: PickerFilter): void;
 	onRefresh?(signal: AbortSignal): Promise<void>;
 	onRefreshCatalogs?(signal: AbortSignal): Promise<void>;
 	/** Subscribe to catalog reloads; returns the unsubscribe function. */
 	subscribeCatalogsReloaded?(listener: () => void): () => void;
 }
 
-const FILTERS: PickerFilter[] = ["recent", "favorite", "all"];
-const FILTER_LABELS: Record<PickerFilter, string> = { recent: "Recent", favorite: "Favorite", all: "All" };
+/** Selection arrow, current/previous status, favorite, project default, and a gap. */
+const ROW_MARKER_COLUMNS = 6;
+const CONTEXT_COLUMN = 7;
+const COLUMN_GAP = 2;
+const MIN_NAME_COLUMN = 16;
+const MAX_PROVIDER_COLUMN = 24;
 
-const SECTION_LABELS: Record<PickerRow["section"], string> = {
-	current: "Current",
-	previous: "Previous",
-	favorite: "Favorite",
-	project_recent: "Project",
-	global_recent: "Recent",
-	all: "All",
-};
+interface ModelColumns {
+	name: number;
+	/** Zero when the terminal is too narrow for the column. */
+	provider: number;
+	context: number;
+}
 
-function modelDisplay(model: PickerModel): { provider: string; modelId: string; name: string } {
-	return (
-		model.display ?? {
-			provider: sanitizeTerminalText(model.provider),
-			modelId: sanitizeTerminalText(model.modelId),
-			name: sanitizeTerminalText(model.name),
-		}
-	);
+function modelDisplay(model: PickerModel): NonNullable<PickerModel["display"]> {
+	return model.display ?? displayFields(model);
+}
+
+/** Narrow terminals drop Context first, then Provider, so the name stays readable. */
+function modelColumns(providerWidth: number, innerWidth: number): ModelColumns {
+	const available = Math.max(1, innerWidth - ROW_MARKER_COLUMNS);
+	const provider = Math.min(MAX_PROVIDER_COLUMN, Math.max(terminalTextWidth("Provider"), providerWidth));
+	if (available - provider - CONTEXT_COLUMN - 2 * COLUMN_GAP >= MIN_NAME_COLUMN) {
+		return { name: available - provider - CONTEXT_COLUMN - 2 * COLUMN_GAP, provider, context: CONTEXT_COLUMN };
+	}
+	if (available - provider - COLUMN_GAP >= MIN_NAME_COLUMN) {
+		return { name: available - provider - COLUMN_GAP, provider, context: 0 };
+	}
+	return { name: available, provider: 0, context: 0 };
+}
+
+function contextLabel(contextWindow: number | undefined): string {
+	return contextWindow ? compactNumber(contextWindow) : "—";
 }
 
 export function compactContextForModelSwitch(
@@ -187,17 +198,21 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 	private readonly styles: SessionUiStyles;
 	private readonly wordmark: string;
 	private readonly close: () => void;
-	private readonly getRows: (query: string, filter: PickerFilter) => PickerRow[];
+	private readonly getRows: (query: string) => PickerRow[];
 	private readonly onSelect: (row: PickerRow) => Promise<void>;
 	private readonly onCompactAndSelect: (row: PickerRow) => Promise<void>;
 	private readonly onToggleFavorite: (row: PickerRow) => void;
-	private readonly onFilterChange?: (filter: PickerFilter) => void;
 	private readonly searchInput = new Input();
 	private rows: PickerRow[] = [];
-	private filter: PickerFilter;
+	/** Provider/model pairs published by more than one catalog; their Provider cell names the catalog. */
+	private sharedIdentities = new Set<string>();
 	private searchFocused = false;
-	private filterCounts: Record<PickerFilter, number> = { recent: 0, favorite: 0, all: 0 };
+	private totalCount = 0;
 	private selectedIndex = 0;
+	/** Query the current rows were ranked for; editing it moves the cursor. */
+	private appliedQuery = "";
+	/** Cursor position before the current search began; clearing the search returns to it. */
+	private preSearchSelection?: { key?: string; index: number };
 	private busy = false;
 	private compactConfirmation?: { modelKey: string };
 	private message?: { level: "error" | "info"; text: string };
@@ -221,20 +236,18 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 		this.onSelect = options.onSelect;
 		this.onCompactAndSelect = options.onCompactAndSelect;
 		this.onToggleFavorite = options.onToggleFavorite;
-		this.onFilterChange = options.onFilterChange;
 		this.onRefreshCatalogs = options.onRefreshCatalogs;
-		this.filter = options.initialFilter ?? "recent";
 		this.searchInput.setValue(options.initialRoute.query ?? "");
 		// A resumed route restores the query without taking over the cursor.
 		this.searchFocused = Boolean(options.initialRoute.query) && options.initialRoute.resume !== true;
-		this.recomputeFilterCounts();
+		this.recomputeTotal();
 		this.recomputeRows();
 		// A catalog reload that lands while this view is open (startup background
 		// refresh, /reload) updates the registry synchronously; recompute so the
 		// open view shows the new models without requiring a reopen.
 		this.unsubscribeCatalogsReloaded = options.subscribeCatalogsReloaded?.(() => {
 			if (this.disposed) return;
-			this.recomputeFilterCounts();
+			this.recomputeTotal();
 			this.recomputeRows();
 			this.tui.requestRender();
 		});
@@ -261,7 +274,7 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 			this.searchFocused = Boolean(route.query);
 			this.syncSearchFocus();
 		}
-		this.recomputeFilterCounts();
+		this.recomputeTotal();
 		this.recomputeRows();
 		this.tui.requestRender();
 	}
@@ -276,26 +289,63 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 	}
 
 	/**
-	 * Filter counts describe the unfiltered inventory, so they change only when
-	 * picker state does. Recomputing them per keystroke would trigger three extra
-	 * full ranking passes for a result that cannot have changed.
+	 * The total describes the unfiltered inventory, so it changes only when
+	 * picker state does. Recomputing it per keystroke would add a full ranking
+	 * pass for a result that cannot have changed.
 	 */
-	private recomputeFilterCounts(): void {
-		this.filterCounts = {
-			recent: this.getRows("", "recent").length,
-			favorite: this.getRows("", "favorite").length,
-			all: this.getRows("", "all").length,
-		};
+	private recomputeTotal(): void {
+		const rows = this.getRows("");
+		this.totalCount = rows.length;
+		const seen = new Set<string>();
+		this.sharedIdentities = new Set();
+		for (const row of rows) {
+			const identity = `${row.model.provider}\0${row.model.modelId}`;
+			if (seen.has(identity)) this.sharedIdentities.add(identity);
+			seen.add(identity);
+		}
 	}
 
+	/**
+	 * A reload keeps the cursor on the same model. Editing the query moves it to
+	 * the best match, and clearing the query returns it to where it was before
+	 * the search began, so a long list does not leave the user mid-inventory.
+	 */
 	private recomputeRows(): void {
-		const selectedKey = this.rows[this.selectedIndex]
-			? modelReferenceKey(this.rows[this.selectedIndex].model)
-			: undefined;
-		this.rows = this.getRows(this.searchInput.getValue(), this.filter);
-		const retainedIndex = selectedKey ? this.rows.findIndex((row) => modelReferenceKey(row.model) === selectedKey) : -1;
-		this.selectedIndex =
-			retainedIndex >= 0 ? retainedIndex : Math.min(this.selectedIndex, Math.max(0, this.rows.length - 1));
+		const query = this.searchInput.getValue();
+		const current = this.rows[this.selectedIndex];
+		let anchor: { key?: string; index: number } = {
+			key: current ? modelReferenceKey(current.model) : undefined,
+			index: this.selectedIndex,
+		};
+		if (query !== this.appliedQuery) {
+			if (!query) {
+				anchor = this.preSearchSelection ?? { index: 0 };
+				this.preSearchSelection = undefined;
+			} else {
+				if (!this.appliedQuery) this.preSearchSelection = anchor;
+				anchor = { index: 0 };
+			}
+			this.appliedQuery = query;
+		}
+		this.rows = this.getRows(query);
+		const retainedIndex = anchor.key ? this.rows.findIndex((row) => modelReferenceKey(row.model) === anchor.key) : -1;
+		this.selectedIndex = retainedIndex >= 0 ? retainedIndex : Math.min(anchor.index, Math.max(0, this.rows.length - 1));
+	}
+
+	private leaveSearchField(): void {
+		this.searchFocused = false;
+		this.message = undefined;
+		this.syncSearchFocus();
+		this.tui.requestRender();
+	}
+
+	private clearSearch(): void {
+		this.searchInput.setValue("");
+		this.searchFocused = false;
+		this.message = undefined;
+		this.syncSearchFocus();
+		this.recomputeRows();
+		this.tui.requestRender();
 	}
 
 	private async refresh(onRefresh: (signal: AbortSignal) => Promise<void>): Promise<void> {
@@ -335,7 +385,7 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 		try {
 			await operation(controller.signal);
 			if (this.disposed || controller.signal.aborted) return;
-			this.recomputeFilterCounts();
+			this.recomputeTotal();
 			this.recomputeRows();
 			if (messages.successText) this.message = { level: "info", text: messages.successText };
 			this.tui.requestRender();
@@ -359,24 +409,6 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 		this.selectedIndex = Math.max(0, Math.min(this.rows.length - 1, this.selectedIndex + delta));
 		this.compactConfirmation = undefined;
 		this.message = undefined;
-		this.tui.requestRender();
-	}
-
-	private cycleFilter(delta: number): void {
-		const index = FILTERS.indexOf(this.filter);
-		this.filter = FILTERS[(index + delta + FILTERS.length) % FILTERS.length];
-		this.selectedIndex = 0;
-		this.compactConfirmation = undefined;
-		this.message = undefined;
-		try {
-			this.onFilterChange?.(this.filter);
-		} catch (error) {
-			this.message = {
-				level: "error",
-				text: `Filter choice was not saved: ${sanitizeTerminalText(error instanceof Error ? error.message : String(error))}`,
-			};
-		}
-		this.recomputeRows();
 		this.tui.requestRender();
 	}
 
@@ -454,7 +486,7 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 					? `Added ${display.provider}/${display.modelId} to favorites.`
 					: `Removed ${display.provider}/${display.modelId} from favorites.`,
 			};
-			this.recomputeFilterCounts();
+			this.recomputeTotal();
 			this.recomputeRows();
 			this.tui.requestRender();
 		} catch (error) {
@@ -479,11 +511,14 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 				this.compactConfirmation = undefined;
 				this.message = undefined;
 				this.tui.requestRender();
+			} else if (this.searchInput.getValue()) {
+				// Product decision: the first Esc in a non-empty search clears it, from the
+				// search field or the results, and returns the cursor to its pre-search
+				// position. Printable row actions reach a searched row through ↑/↓ instead.
+				// Do not change this order without maintainer approval; see docs/models.md.
+				this.clearSearch();
 			} else if (this.searchFocused) {
-				this.searchFocused = false;
-				this.message = undefined;
-				this.syncSearchFocus();
-				this.tui.requestRender();
+				this.leaveSearchField();
 			} else {
 				this.close();
 			}
@@ -494,20 +529,20 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 			if (this.keybindings.matches(data, "tui.select.confirm")) this.confirmCompaction();
 			return;
 		}
-		if (this.keybindings.matches(data, "tui.select.up")) {
-			this.moveSelection(-1);
-			return;
-		}
-		if (this.keybindings.matches(data, "tui.select.down")) {
-			this.moveSelection(1);
-			return;
-		}
-		if (this.keybindings.matches(data, "tui.select.pageUp")) {
-			this.moveSelection(-8);
-			return;
-		}
-		if (this.keybindings.matches(data, "tui.select.pageDown")) {
-			this.moveSelection(8);
+		const step = this.keybindings.matches(data, "tui.select.up")
+			? -1
+			: this.keybindings.matches(data, "tui.select.down")
+				? 1
+				: this.keybindings.matches(data, "tui.select.pageUp")
+					? -8
+					: this.keybindings.matches(data, "tui.select.pageDown")
+						? 8
+						: 0;
+		if (step) {
+			// Moving through results leaves the search field with the query kept, so
+			// printable row actions apply to the filtered selection.
+			if (this.searchFocused) this.leaveSearchField();
+			this.moveSelection(step);
 			return;
 		}
 		if (!this.searchFocused && matchesKey(data, "home")) {
@@ -516,14 +551,6 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 		}
 		if (!this.searchFocused && matchesKey(data, "end")) {
 			this.moveSelection(Number.MAX_SAFE_INTEGER);
-			return;
-		}
-		if (!this.searchFocused && matchesKey(data, "left")) {
-			this.cycleFilter(-1);
-			return;
-		}
-		if (!this.searchFocused && matchesKey(data, "right")) {
-			this.cycleFilter(1);
 			return;
 		}
 		if (!this.searchFocused && matchesKey(data, "/")) {
@@ -567,25 +594,65 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 		}
 	}
 
-	private rowText(row: PickerRow, selected: boolean): string {
+	private providerCell(row: PickerRow): string {
+		const display = modelDisplay(row.model);
+		const shared = this.sharedIdentities.has(`${row.model.provider}\0${row.model.modelId}`);
+		return shared && row.model.catalogLabel
+			? `${display.providerName} · ${sanitizeTerminalText(row.model.catalogLabel)}`
+			: display.providerName;
+	}
+
+	private headerText(columns: ModelColumns): string {
+		const cells = [padTerminalText("Name", columns.name)];
+		if (columns.provider) cells.push(padTerminalText("Provider", columns.provider));
+		if (columns.context) cells.push(padTerminalText("Context", columns.context, { alignment: "right" }));
+		return this.styles.apply("palette.section", `${" ".repeat(ROW_MARKER_COLUMNS)}${cells.join("  ")}`);
+	}
+
+	private rowText(row: PickerRow, selected: boolean, columns: ModelColumns): string {
 		const marker = selected ? this.styles.apply("palette.marker", "→") : " ";
+		const status =
+			row.section === "current"
+				? this.styles.apply("palette.section.current", "●")
+				: row.section === "previous"
+					? this.styles.apply("palette.section", "↺")
+					: " ";
 		const favorite = row.favorite ? this.styles.apply("palette.favorite", "★") : " ";
 		const projectDefault = row.projectDefault ? this.styles.apply("palette.default", "◆") : " ";
 		const display = modelDisplay(row.model);
-		const identity = `${display.provider}/${display.modelId}`;
-		const availability = row.model.available ? "" : this.styles.apply("palette.unavailable", " unavailable");
-		const fit = row.contextFit === "too-small" ? this.styles.apply("palette.context.small", " context-small") : "";
-		const styledIdentity = this.styles.apply(selected ? "palette.identity.selected" : "palette.identity", identity);
-		const source = row.model.catalogLabel
-			? this.styles.apply("palette.detail", ` · ${sanitizeTerminalText(row.model.catalogLabel)}`)
+		const flag = !row.model.available ? "unavailable" : row.contextFit === "too-small" ? "context-small" : "";
+		const flagText = flag
+			? ` ${this.styles.apply(row.model.available ? "palette.context.small" : "palette.unavailable", flag)}`
 			: "";
-		const text = `${marker} ${favorite}${projectDefault} ${styledIdentity}${source}${availability}${fit}`;
+		const nameWidth = Math.max(1, columns.name - (flag ? flag.length + 1 : 0));
+		const name = this.styles.apply(
+			selected ? "palette.identity.selected" : "palette.identity",
+			fitTerminalText(display.name, nameWidth, "…"),
+		);
+		const cells = [padTerminalText(`${name}${flagText}`, columns.name)];
+		if (columns.provider) {
+			cells.push(
+				this.styles.apply(
+					"palette.detail",
+					padTerminalText(this.providerCell(row), columns.provider, { indicator: "…" }),
+				),
+			);
+		}
+		if (columns.context) {
+			cells.push(
+				this.styles.apply(
+					"palette.detail",
+					padTerminalText(contextLabel(row.model.contextWindow), columns.context, { alignment: "right" }),
+				),
+			);
+		}
+		const text = `${marker} ${status}${favorite}${projectDefault} ${cells.join("  ")}`;
 		return selected ? this.theme.bg("selectedBg", text) : text;
 	}
 
 	render(width: number): string[] {
 		const mode = this.compactConfirmation ? " · Confirm" : this.searchFocused ? " · Search" : "";
-		const title = `${this.wordmark} ${this.theme.bold(this.styles.apply("palette.title", `· Models${mode}`))} ${this.styles.apply("palette.count", `${this.rows.length}/${this.filterCounts.all}`)}`;
+		const title = `${this.wordmark} ${this.theme.bold(this.styles.apply("palette.title", `· Models${mode}`))} ${this.styles.apply("palette.count", `${this.rows.length}/${this.totalCount}`)}`;
 		if (width < 12) return [fitTerminalText(title, Math.max(1, width))];
 		const innerWidth = paletteInnerWidth(width);
 		const terminalRows = Number(this.tui.terminal?.rows ?? 24);
@@ -599,7 +666,6 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 		const border = (value: string) => this.styles.apply("palette.border", value);
 		const frameOptions = { border };
 		const line = (value = "") => renderTerminalFrameRow(value, width, frameOptions);
-		const filterCount = this.filterCounts[this.filter];
 		const control = (label: string, value: string, focused: boolean, meta?: string) =>
 			line(
 				renderPaletteField({
@@ -618,36 +684,31 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 			line(renderPaletteTabs("models", this.theme, this.styles)),
 			renderPaletteDivider(width, this.styles),
 			control(
-				"View",
-				paletteChoice(FILTER_LABELS[this.filter]),
-				false,
-				`${filterCount} model${filterCount === 1 ? "" : "s"}`,
-			),
-			control(
 				"Search",
 				this.searchInput.render(Math.max(1, innerWidth - CONTROL_LABEL_COLUMN - 3))[0] ?? "",
 				this.searchFocused,
 			),
 		];
 		if (selected) {
+			const display = modelDisplay(selected.model);
 			const defaultLabel = selected.projectDefault ? " · project default" : "";
-			const name = this.styles.apply("palette.detail", modelDisplay(selected.model).name);
-			const detail = ` ${name} · context ${compactNumber(selected.model.contextWindow)} · max ${compactNumber(selected.model.maxTokens)}${defaultLabel}`;
+			const source = selected.model.catalogLabel ? ` · ${sanitizeTerminalText(selected.model.catalogLabel)}` : "";
+			const identity = this.styles.apply("palette.detail", `${display.provider}/${display.modelId}`);
+			const detail = ` ${identity}${source} · context ${compactNumber(selected.model.contextWindow)} · max ${compactNumber(selected.model.maxTokens)}${defaultLabel}`;
 			lines.push(line(this.theme.bg("selectedBg", padTerminalText(fitTerminalText(detail, innerWidth), innerWidth))));
 		} else {
 			lines.push(line(this.theme.bg("selectedBg", padTerminalText(" No model selected", innerWidth))));
 		}
 		lines.push(line());
+		const columns = modelColumns(
+			Math.max(0, ...this.rows.map((row) => terminalTextWidth(this.providerCell(row)))),
+			innerWidth,
+		);
 		if (visibleRows.length === 0) lines.push(line(this.styles.apply("palette.empty", "No matching models")));
+		else lines.push(line(this.headerText(columns)));
 		for (let offset = 0; offset < visibleRows.length; offset += 1) {
 			const index = start + offset;
-			const row = visibleRows[offset];
-			const sectionText = padTerminalText(SECTION_LABELS[row.section], 8);
-			const section = this.styles.apply(
-				row.section === "current" ? "palette.section.current" : "palette.section",
-				sectionText,
-			);
-			lines.push(line(`${section}${this.rowText(row, index === this.selectedIndex)}`));
+			lines.push(line(this.rowText(visibleRows[offset], index === this.selectedIndex, columns)));
 		}
 		while (lines.length < rowCapacity + 7) lines.push(line());
 		if (this.message) {
@@ -665,13 +726,21 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 		const favoriteAll = formatEffectiveJouzuKeybinding(this.jouzuKeybindings, "jouzu.model.toggleFavorite");
 		const refreshKey = formatEffectiveJouzuKeybinding(this.jouzuKeybindings, "jouzu.model.refresh");
 		const refreshHints: PaletteKeyHint[] = refreshKey === "Unbound" ? [] : [{ key: refreshKey, label: "refresh" }];
-		// A favorite binding that is not live inside the search field is advertised
-		// as its browse-mode route rather than dropped, so the accelerator stays
-		// discoverable while the user is typing.
+		const hasQuery = Boolean(this.searchInput.getValue());
+		// A favorite binding that is not live in the search field is reached by moving into
+		// the results, which keeps the query and the selected row.
 		const favoriteHints: PaletteKeyHint[] =
-			this.searchFocused && favoriteNow === "Unbound" && favoriteAll !== "Unbound"
-				? [{ key: `${cancel} then ${favoriteAll}`, label: "favorite" }]
-				: [{ key: favoriteNow, label: "favorite" }];
+			this.searchFocused && favoriteNow === "Unbound"
+				? favoriteAll !== "Unbound"
+					? [{ key: `${move} then ${favoriteAll}`, label: "favorite" }]
+					: []
+				: favoriteNow !== "Unbound"
+					? [{ key: favoriteNow, label: "favorite" }]
+					: [];
+		const cancelHint: PaletteKeyHint = {
+			key: cancel,
+			label: hasQuery ? "clear search" : this.searchFocused ? "browse" : "close",
+		};
 		const hints: PaletteKeyHint[] = this.compactConfirmation
 			? [
 					{ key: confirm, label: "compact and switch" },
@@ -685,17 +754,16 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 						{ key: "←→", label: "cursor" },
 						{ key: move, label: "move" },
 						{ key: "Tab", label: "section" },
-						{ key: cancel, label: "browse" },
+						cancelHint,
 					]
 				: [
 						{ key: confirm, label: "select and save for project" },
 						...favoriteHints,
 						...refreshHints,
-						{ key: "←→", label: "View" },
 						{ key: "/", label: "search" },
 						{ key: move, label: "move" },
 						{ key: "Tab", label: "section" },
-						{ key: cancel, label: "close" },
+						cancelHint,
 					];
 		lines.push(...renderPaletteKeyBar(hints, innerWidth, this.theme, this.styles).map(line));
 		lines.push(renderTerminalFrameBorder(width, { ...frameOptions, left: "╰", right: "╯" }));
@@ -802,8 +870,12 @@ export function catalogPickerModel(
 	catalogLabel?: string,
 ): PickerModel {
 	const offering = catalogOffering(catalog, model.provider, model.id);
+	const providerName = offering
+		? catalog?.providers.find((provider) => provider.id === offering.providerId)?.name
+		: undefined;
 	return {
 		...(offering && catalog ? { catalogId: catalog.catalogId, offeringId: offering.id } : {}),
+		...(providerName ? { providerName: sanitizeTerminalText(providerName) } : {}),
 		...(offering && catalogLabel ? { catalogLabel: sanitizeTerminalText(catalogLabel) } : {}),
 		provider: model.provider,
 		modelId: model.id,
@@ -1382,8 +1454,7 @@ export function createJouzuModelPicker(
 							new ModelPickerComponent({
 								context: childContext,
 								initialRoute: childRoute,
-								initialFilter: state.filter,
-								getRows: (query, filter) =>
+								getRows: (query) =>
 									buildPickerRows({
 										models: pickerModels(ctx, catalogs, catalogEnv, paths),
 										state,
@@ -1391,7 +1462,6 @@ export function createJouzuModelPicker(
 										current: modelReference(ctx.model, catalog),
 										previous,
 										query,
-										filter,
 										activeContextTokens: ctx.getContextUsage()?.tokens,
 									}),
 								onSelect: async (row) => {
@@ -1418,9 +1488,6 @@ export function createJouzuModelPicker(
 								},
 								onToggleFavorite: (row) => {
 									state = store.toggleFavorite(row.model);
-								},
-								onFilterChange: (filter) => {
-									state = store.setFilter(filter);
 								},
 								onRefresh: async (signal) => {
 									const api = extensionApi;
@@ -1524,7 +1591,7 @@ export function createJouzuModelPicker(
 			state,
 			projectKey,
 			current,
-			filter: "favorite",
+			favoritesOnly: true,
 			activeContextTokens: ctx.getContextUsage()?.tokens,
 		});
 		if (favoriteRows.length === 0) {

@@ -1,41 +1,49 @@
 {
 	"schemaVersion": 2,
 	"repository": "https://github.com/earendil-works/pi",
-	"tag": "v1.0.0",
-	"tagCommit": "a13d35a742c6ef8462812a28fbe1d8c8b7431c32",
-	"commit": "a13d35a742c6ef8462812a28fbe1d8c8b7431c32",
+	"tag": "v1.3.0",
+	"tagCommit": "71023aec1546d6d677a65669c5665c0927ce0dd0",
+	"commit": "71023aec1546d6d677a65669c5665c0927ce0dd0",
 	"packages": {
 		"@earendil-works/pi-coding-agent": {
-			"version": "1.0.0",
-			"integrity": "sha512-/FtbxoSQU/mEv1QnichJjRjqteqaIaMWxmhB4G367+MwZfX7/DI5B9YAg5lqbN7nztFskBEtUSZ+FlmMBECtMw=="
+			"version": "1.3.0",
+			"integrity": "sha512-V/WoCjA2hQSe3QLWIUB24cTRdtEdeLiIzkDqU5RMXV6VWuD+KGZnzVBMhglwdnQTySkehZsjt8a3g6Jd2g4nnw=="
 		},
 		"@earendil-works/pi-server": {
-			"version": "1.0.0",
-			"integrity": "sha512-OQFRsX0K6WlYxmoiXHxf5ghXmVPU4F3vfnPGkZjViU1GxftPLtWsKb99MNqfDkRcEz9trb8PGL4HVbd1uDEJPQ=="
+			"version": "1.1.0",
+			"integrity": "sha512-L7yMVtBezWHo8KppSPULW89u1Tiu3c5bkU5/LIL25UgsTAZHU0K6U1iD6gJrbHAdTnl1wt6HBhqz7ZkjpzmkWg=="
 		}
 	},
-	"reviewedAt": "2026-10-02",
+	"reviewedAt": "2026-10-16",
 	"compatibilityStatus": "qualified",
 	"deviations": [
 		{
+			"path": "upstream/vcc-goals/patch.lock.json",
+			"sha256": "d8092c252e571ce6cc59b02b2d33c748ffab0892c93f3859d1d7df143446c147"
+		},
+		{
 			"path": "upstream/pi-content-policy/patch.lock.json",
-			"sha256": "7b5b948dad282a0058068079e7e91c3bcebbc0d4162bce71da8a0a1978e3a886"
+			"sha256": "e8edbb65018dd466bc9443264a37640a772f5b3389f457d445c2c59fc5abf39a"
 		},
 		{
 			"path": "upstream/pi-flow-control/patch.lock.json",
-			"sha256": "a8c9801e37055a4d139c3ba20327880fd238d55a83c356996fab2d8c81d06c11"
+			"sha256": "2a42db8a2c493ed7ea468aaf2d4519628af6774c32b784acfc13413b338dabe4"
 		},
 		{
 			"path": "upstream/pi-provider-receipts/patch.lock.json",
-			"sha256": "169bc4432a46a6cd8560046397d5ea504609ffc8c0db205580f7a8627c7ad0fa"
+			"sha256": "b9db797dbc9f8e028946dd5b817bfd2fb786fe34606a1cbe2079fe9037c7c3e4"
+		},
+		{
+			"path": "upstream/pi-terminal-clipboard/patch.lock.json",
+			"sha256": "1024fcb90c68e6594bf27c2630b257ca5160b3d3da63ebbe52ff9362df4eed3b"
 		},
 		{
 			"path": "upstream/pi-path-utils/patch.lock.json",
-			"sha256": "af970840549669b704566dea639685f6a50f8cef8eedb7d865f6d8edb3030abb"
+			"sha256": "a17318d4bd4ce01f42adaa347b4f8332c91e782d53cb5b961a056f8f81e77285"
 		},
 		{
 			"path": "upstream/background-flow/patch.lock.json",
-			"sha256": "854034f1cc79b05484c0a2ee12e5fa25cc2642f6e9c7acd100026dd3e291b465"
+			"sha256": "5900d1952d78e7dfe35f7daebfbb0b57f17bad91b64b602fec97290760e7b0be"
 		},
 		{
 			"path": "upstream/multiloop-wait-skill/patch.lock.json",
@@ -43,7 +51,7 @@
 		},
 		{
 			"path": "upstream/task-flow/patch.lock.json",
-			"sha256": "6ecd413993e10ae69c7e045b593959c651cddd3ea714f8ae279660645bcc2455"
+			"sha256": "66ca8d0d79343ce694173718384853e4257939e455b3bbb040aeb941b3832f27"
 		},
 		{
 			"path": "upstream/code-previews/patch.lock.json",

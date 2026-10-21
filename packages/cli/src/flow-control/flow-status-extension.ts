@@ -1,5 +1,6 @@
 import type { InlineExtension } from "@earendil-works/pi-coding-agent";
 import { renderFlowMessage } from "./flow-message-renderer.js";
+import { COMMAND_PAUSE, INTERRUPTED_PAUSE, isProviderPause, REOPENED_PAUSE } from "./flow-pause.js";
 import { type FlowUnaccountableWork, formatFlowStatus, projectFlowStatus } from "./flow-status.js";
 import { captureFlowStatusContext, flowDisplayText } from "./flow-status-context.js";
 import { nativeHoldHash, nativeHoldPending } from "./native-request-store.js";
@@ -49,8 +50,8 @@ const USAGE = [
 	"/flow pause <work> holds one campaign's automated turns; /flow resume <work> releases it.",
 	"/flow stop <work> retires a campaign and ends its waits. None of these stop a running job.",
 	"/flow resolve <attempt> retry|discard decides an interrupted turn whose outcome is unknown.",
-	"/flow reset turns flow control off and on again: a full reset of what is queued and held.",
-	"/flow clear releases a stuck reservation without stopping jobs or deleting receipts.",
+	"/flow reset explains the destructive idle reset; /flow reset confirm discards all queued messages, flow receipts, and waits. Use it only if /flow clear does not fix the problem.",
+	"/flow clear releases a stuck reservation while preserving receipts, waits, and running jobs.",
 ].join("\n");
 
 /**
@@ -85,18 +86,23 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 	return {
 		name: "jouzu-flow-status",
 		/**
-		 * Report an interrupt's hold once, and only when it is actually holding something. Saying
-		 * nothing when the queue is empty keeps the ordinary interrupt silent, which is almost all of
-		 * them; the message only appears when it explains automated work that has stopped.
+		 * Announce a newly raised pause. Interrupts are reported only when input is held; provider
+		 * failures are always reported so the user knows future automatic turns need intervention.
 		 */
 		async announcePause() {
 			const reason = options.ingress().automatedPause();
 			if (!reason || !announce || !flowOn(options)) return;
+			if (isProviderPause(reason)) {
+				announce(
+					`Flow control paused after ${flowDisplayText(reason, 200)}. Automated work resumes on your next message. Run /flow for details.`,
+				);
+				return;
+			}
 			const inspected = await options.ingress().inspect();
 			const holding = inspected.submissions.some((submission) => submission.admission === "held");
 			if (!holding) return;
 			announce(
-				reason === "a turn was interrupted"
+				reason === INTERRUPTED_PAUSE
 					? "Flow control paused after an interrupt. Automated work resumes on your next message. Run /flow for details."
 					: "Flow control paused after an admission failure. Pending work is held. Run /flow for details, /flow clear to release the hold, or /flow reset to reset delivery.",
 			);
@@ -118,7 +124,7 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 				if (!ctx.hasUI || !flowOn(options)) return;
 				// Kept fresh here as well as on every turn end: a refusal can arrive before the first turn.
 				announce = (text) => ctx.ui.notify(text, "info");
-				if (options.ingress().automatedPause() === "the session was reopened")
+				if (options.ingress().automatedPause() === REOPENED_PAUSE)
 					ctx.ui.notify(
 						"Flow control is paused after reopening this session. Inspect with /flow; resume automation with /flow resume or your next message.",
 						"info",
@@ -141,8 +147,43 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 							notify(options.runtimeReport?.() ?? "Runtime diagnostics are unavailable in this session.");
 							return;
 						}
+						if (verb === "reset") {
+							if ((target && target !== "confirm") || choice || rest.length) {
+								notify(USAGE, "error");
+								return;
+							}
+							if (!target) {
+								notify(
+									"Flow reset discards all queued messages, flow receipts, and waits, and releases native holds. Running jobs keep running. Try /flow clear first; it repairs a stuck reservation without discarding anything. Use reset only if /flow clear does not fix the problem: run /flow reset confirm while the session is idle.",
+								);
+								return;
+							}
+							let result: Awaited<ReturnType<PiSessionFlowIngress["resetFlow"]>>;
+							try {
+								result = await options.ingress().resetFlow();
+							} catch (error) {
+								if (error instanceof FlowLedgerError && error.code === "busy") {
+									notify(
+										"Flow reset needs an idle session. Interrupt the running turn, then run /flow reset confirm again.",
+										"error",
+									);
+									return;
+								}
+								throw error;
+							}
+							if (result.recoveryHeld)
+								notify(
+									"Flow reset released the active reservation, but recovery evidence remains. Run /flow for the remaining decision.",
+									"error",
+								);
+							else
+								notify(
+									"Flow reset completed. Destructive flow state was discarded; jobs continue running. Continue with a new message.",
+								);
+							return;
+						}
 						// Off and on are the only controls that work in both states, so they come first.
-						if (verb === "off" || verb === "on" || verb === "reset") {
+						if (verb === "off" || verb === "on") {
 							if (target || choice || rest.length) {
 								notify(USAGE, "error");
 								return;
@@ -168,12 +209,7 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 								...(off.flushed ? [`${off.flushed} retained send${off.flushed === 1 ? "" : "s"} ran natively`] : []),
 								...(off.waits ? [`${off.waits} wait${off.waits === 1 ? "" : "s"} ended`] : []),
 							];
-							const headline =
-								verb === "off"
-									? "Flow control is off."
-									: verb === "on"
-										? "Flow control is on again."
-										: "Flow control reset.";
+							const headline = verb === "off" ? "Flow control is off." : "Flow control is on again.";
 							const tail =
 								verb === "off"
 									? "Jobs, tasks, and lanes now run and report through their own delivery paths."
@@ -307,9 +343,9 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 								notify(USAGE, "error");
 								return;
 							}
-							let result: Awaited<ReturnType<PiSessionFlowIngress["resetFlow"]>>;
+							let result: Awaited<ReturnType<PiSessionFlowIngress["clearFlow"]>>;
 							try {
-								result = await ingress.resetFlow();
+								result = await ingress.clearFlow();
 							} catch (error) {
 								if (error instanceof FlowLedgerError && error.code === "busy") {
 									notify(
@@ -366,7 +402,7 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 						if ((verb === "pause" || verb === "resume") && !target) {
 							if (verb === "pause") {
 								notify(
-									ingress.pauseAutomated("held from /flow")
+									ingress.pauseAutomated(COMMAND_PAUSE)
 										? "Paused every automated turn in this session. Release it with /flow resume."
 										: `Already paused: ${ingress.automatedPause()}. Release it with /flow resume.`,
 								);

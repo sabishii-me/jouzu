@@ -19,7 +19,7 @@ export function transform(path, source) {
 	};
 	if (path === "dist/core/settings-manager.js") {
 		change(
-			'return mode !== undefined && CACHE_WARMING_MODES.includes(mode) ? mode : "streaming";',
+			"return mode !== undefined && CACHE_WARMING_MODES.includes(mode) ? mode : SETTINGS_DEFAULTS.cacheWarming;",
 			'return mode !== undefined && CACHE_WARMING_MODES.includes(mode) ? mode : "off";',
 		);
 	} else if (path === "dist/core/cache-warmer.js") {
@@ -39,9 +39,35 @@ export function transform(path, source) {
                 ? await run.options.flowCacheWarm(options, send)
                 : await send(options);`,
 		);
+		// The provider bills a completed warm even when the next request replaces the run or the context
+		// changes while it is in flight, so record its usage before validating the run. A cancelled
+		// warmer (abort, disposal, mode off) or a switched session writes nothing.
+		change(
+			`        try {
+            const options = {`,
+			`        const sessionId = this.sessionManager.getSessionId();
+        try {
+            const options = {`,
+		);
+		change(
+			`            if (!this.validateRun(run))
+                return;
+            if (message.stopReason !== "error" && message.stopReason !== "aborted") {
+                const entry = this.sessionManager.appendUsage("cache_warm", message.provider, message.responseModel ?? message.model, message.usage, extensionOverride ? "extension override" : undefined);
+                this.onWarmed?.(entry);
+            }`,
+			`            if (message.stopReason !== "error" &&
+                message.stopReason !== "aborted" &&
+                this.run !== undefined &&
+                this.sessionManager.getSessionId() === sessionId) {
+                const entry = this.sessionManager.appendUsage("cache_warm", message.provider, message.responseModel ?? message.model, message.usage, extensionOverride ? "extension override" : undefined);
+                this.onWarmed?.(entry);
+            }
+            if (!this.validateRun(run))
+                return;`,
+		);
 	} else if (path === "dist/core/model-runtime.js") {
-		text =
-			`import { isBuiltinApiProvider } from "@earendil-works/pi-ai/compat";
+		text = `import { isBuiltinApiProvider } from "@earendil-works/pi-ai/compat";
 function attachPreparedPayloadMetadata(prepared) {
     const onPayload = prepared.options.onPayload;
     if (!onPayload) return;
@@ -61,7 +87,7 @@ function attachPreparedPayloadMetadata(prepared) {
     prepared.model = { ...prepared.model };
     Object.defineProperty(prepared.model, Symbol.for("jouzu.pi.preparedProviderRequest"), { value: request });
 }
-` + text;
+${text}`;
 		change(
 			"    getRegisteredProviderConfig(providerId) {",
 			"    isBuiltinApiProvider(api) {\n        return isBuiltinApiProvider(api);\n    }\n    getRegisteredProviderConfig(providerId) {",
@@ -249,6 +275,16 @@ export function sessionEntryToContextMessages(entry) {`,
 			"export interface MainOptions {\n    sessionInfoFooter?: () => string;\n    flowIngressFactory?: (context: { cwd: string; sessionManager: SessionManager }) => FlowIngress | Promise<FlowIngress>;\n    contentPolicyFactory?: (context: { cwd: string; sessionId: string }) => ContentPolicy | Promise<ContentPolicy>;",
 		);
 	} else if (path === "dist/modes/interactive/interactive-mode.js") {
+		// Terminal clipboard requests cannot confirm delivery, including OSC 52 outside tmux.
+		change(
+			'this.showStatus("Copied selected message to clipboard");',
+			'this.showStatus("Clipboard copy requested for selected message");',
+		);
+		change('this.ui.flash("Copied!");', 'this.ui.flash("Copy requested");');
+		change(
+			'this.showStatus("Copied last agent message to clipboard");',
+			'this.showStatus("Clipboard copy requested for last agent message");',
+		);
 		change(
 			"        return options.sort((a, b) => a.name.localeCompare(b.name));",
 			'        return options.sort((a, b) => Number(b.id === "shisa") - Number(a.id === "shisa") || a.name.localeCompare(b.name));',
@@ -603,22 +639,26 @@ export function sessionEntryToContextMessages(entry) {`,
         return Promise.resolve();`,
 		);
 		change(
-			"    async _runAgentPrompt(messages) {",
+			'        if (trigger.messageType === "custom") {\n            messages.push(trigger.message);\n        }\n        else {',
+			'        if (trigger.messageType === "custom") {\n            messages.push(trigger.message);\n        }\n        else if (trigger.messageType !== "queued") {',
+		);
+		change(
+			"    async _startRun(trigger, onStarted) {",
 			`    async continueQueued() {
         this._flowBinding?.assertActive();
         if (!this.isIdle || this.agent.state.isStreaming || this.isCompacting || this.isRetrying) {
             throw new Error("Queued flow execution requires an idle session.");
         }
         if (!this.agent.hasQueuedMessages()) return false;
-        await this._runAgentPrompt(undefined, true);
+        await this._startRun({ messageType: "queued" });
         return true;
     }
-    async _runAgentPrompt(messages, fromQueue = false) {
+    async _startRun(trigger, onStarted) {
         this._flowBinding?.assertActive();`,
 		);
 		change(
 			"            await this.agent.prompt(messages);",
-			"            if (fromQueue) {\n                if (!(await this.agent.continueQueued())) return;\n            } else await this.agent.prompt(messages);",
+			'            if (trigger.messageType === "queued") {\n                if (!(await this.agent.continueQueued())) return;\n            } else await this.agent.prompt(messages);',
 		);
 		change(
 			`            while (!this._agentRunAbortRequested) {
@@ -873,8 +913,8 @@ export function sessionEntryToContextMessages(entry) {`,
 		);
 		text = `import type { FlowIngress } from "./jouzu-flow-ingress.js";\n${text}`;
 		change(
-			"    private _runAgentPrompt;",
-			"    /** Drain queued input through native retries, compaction, and settlement without appending a prompt. */\n    continueQueued(): Promise<boolean>;\n    private _runAgentPrompt;",
+			"    private _startRun;",
+			"    /** Drain queued input through native retries, compaction, and settlement without appending a prompt. */\n    continueQueued(): Promise<boolean>;\n    private _startRun;",
 		);
 		change("    private _handlePostAgentRun;", "    private _handlePostAgentRun;\n    private _continueAgentRun;");
 		change(

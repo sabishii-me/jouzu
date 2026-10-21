@@ -1,36 +1,46 @@
-param([Parameter(Mandatory=$true)][string]$Directory,[string]$Version)
+param([Parameter(Mandatory=$true)][string]$Directory,[Parameter(Mandatory=$true)][string]$JouzuVersion)
 $ErrorActionPreference = 'Stop'
-if (-not $Version) { $Version = (Get-Content (Join-Path (Resolve-Path "$PSScriptRoot/../..").Path 'apps/launcher/package.json') -Raw | ConvertFrom-Json).version }
-if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid launcher version' }
+if ($JouzuVersion -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid Jouzu version' }
 $repository = $env:GITHUB_REPOSITORY
 if ($repository -notmatch '^[\w.-]+/[\w.-]+$') { throw 'Invalid repository' }
-# The full package serves first install and repair; the launcher-only package is what the
-# in-app updater installs, so the feed must point at the launcher-only artifact.
-$fullSetup = Join-Path $Directory "Jouzu Launcher_${Version}_x64-setup.exe"
-$updateSetup = Join-Path $Directory "Jouzu Launcher_${Version}_x64-update.exe"
+# The Windows artifacts belong on the Jouzu version release, beside the npm package, so the
+# installer sits on the page a user opens for that release.
+$tag = "v$JouzuVersion"
+$assetPrefix = "jouzu-win-x64-v$JouzuVersion"
+$fullSetup = Join-Path $Directory "$assetPrefix-setup.exe"
+$updateSetup = Join-Path $Directory "$assetPrefix-update.exe"
 foreach ($file in @($fullSetup,$updateSetup,"$updateSetup.sig","$Directory/build.json","$Directory/source.json")) {
  if (-not (Test-Path -LiteralPath $file)) { throw "Missing release output: $file" }
 }
-$tag = "launcher-v$Version"
-# Version releases are immutable; only the discovery feed is replaceable.
-& gh release create $tag $fullSetup $updateSetup "$updateSetup.sig" "$Directory/build.json" "$Directory/source.json" --repo $repository --target $env:GITHUB_SHA --title "Jouzu Launcher $Version" --notes 'The x64-setup asset installs the launcher with the runtime; the x64-update asset updates an installed launcher without rewriting the Jouzu payload.'
-if ($LASTEXITCODE) { throw 'Version release creation failed; feed unchanged' }
-# GitHub rewrites spaces in asset names, so the download URL is built from the name the release
-# actually stored; a URL built from the local file name is a 404.
-# `gh --jq` rejects single-quoted string literals in its expression, so the asset names are
-# listed and matched here instead.
+# `finish` creates the release after npm accepts the version, and this job is usually still
+# building at that point, so wait for the release instead of racing it.
+$deadline = (Get-Date).AddMinutes(30)
+while ($true) {
+ & gh release view $tag --repo $repository *> $null
+ if ($LASTEXITCODE -eq 0) { break }
+ if ((Get-Date) -gt $deadline) { throw "Release $tag is missing; run 'scripts/publish-npm-release.sh finish $JouzuVersion RUN_ID' and dispatch this workflow again" }
+ Start-Sleep -Seconds 30
+}
+# These assets are replaceable: they are not the registry-verified package, and a broken installer
+# is repaired by re-running this workflow rather than by publishing another release.
+& gh release upload $tag $fullSetup $updateSetup "$updateSetup.sig" "$Directory/build.json" "$Directory/source.json" --repo $repository --clobber
+if ($LASTEXITCODE) { throw 'Installer upload failed; feed unchanged' }
+# The download URL is built from the name the release stored, not from the local file name.
 $assetNames = & gh release view $tag --repo $repository --json assets --jq '.assets[].name'
 if ($LASTEXITCODE) { throw 'Cannot read the published release' }
-$assetName = @($assetNames) | Where-Object { $_ -like '*-update.exe' } | Select-Object -First 1
+$assetName = @($assetNames) | Where-Object { $_ -eq "$assetPrefix-update.exe" } | Select-Object -First 1
 if (-not $assetName) { throw 'Published update asset not found' }
 $url = "https://github.com/$repository/releases/download/$tag/$assetName"
 $probe = Join-Path $env:RUNNER_TEMP 'published-update.exe'
 Invoke-WebRequest $url -OutFile $probe
 if ((Get-FileHash $probe -Algorithm SHA256).Hash -ne (Get-FileHash $updateSetup -Algorithm SHA256).Hash) { throw 'Published update integrity mismatch; feed unchanged' }
-# The feed note is the released version's changelog section; a release without one is refused.
-$notes = (& node "$PSScriptRoot/launcher-notes.mjs" (Join-Path $PSScriptRoot '../../apps/launcher/CHANGELOG.md') $Version) -join "`n"
-if ($LASTEXITCODE) { throw 'Missing launcher changelog for this version; feed unchanged' }
-$feed = @{version=$Version;notes=$notes;pub_date=[DateTime]::UtcNow.ToString('o');platforms=@{'windows-x86_64'=@{url=$url;signature=(Get-Content "$updateSetup.sig" -Raw).Trim()}}}
+# The feed carries the Jouzu version, which is the launcher's own version, and the release's
+# section of the Jouzu changelog.
+$built = (Get-Content (Join-Path $Directory 'build.json') -Raw | ConvertFrom-Json).launcherVersion
+if ($built -ne $JouzuVersion) { throw "The built launcher is $built, not $JouzuVersion; feed unchanged" }
+$notes = (& node "$PSScriptRoot/launcher-notes.mjs" (Join-Path $PSScriptRoot '../../CHANGELOG.md') $JouzuVersion) -join "`n"
+if ($LASTEXITCODE) { throw 'Missing changelog section for this version; feed unchanged' }
+$feed = @{version=$JouzuVersion;notes=$notes;pub_date=[DateTime]::UtcNow.ToString('o');platforms=@{'windows-x86_64'=@{url=$url;signature=(Get-Content "$updateSetup.sig" -Raw).Trim()}}}
 $feedFile = Join-Path $Directory 'latest.json'
 # The feed is read by a JSON parser on the other side, so it is written without a byte order mark:
 # `Set-Content -Encoding utf8` writes one under Windows PowerShell, and a mark makes the feed undecodable.

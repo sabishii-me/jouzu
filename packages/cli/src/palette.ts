@@ -6,6 +6,8 @@ import {
 	type OverlayHandle,
 	type OverlayOptions,
 	type TUI,
+	TuiAltScreen,
+	TuiMainScreen,
 } from "@earendil-works/pi-tui";
 import { createJouzuKeybindingsManagerFromConfig, type JouzuKeybindingsManager } from "./jouzu-keybindings.js";
 import {
@@ -315,6 +317,8 @@ export interface PaletteSurfaceOptions {
 	env?: NodeJS.ProcessEnv;
 	columns?: number;
 	rows?: number;
+	/** Whether a floating Palette can hide inline images; defaults to checking the Pi TUI. */
+	imageHiding?: boolean;
 }
 
 interface ActivePalette {
@@ -359,11 +363,49 @@ function terminalRendersInlineImages(env: NodeJS.ProcessEnv): boolean {
 	);
 }
 
+// Pi detects inline images by these Kitty and iTerm2 sequence prefixes.
+const INLINE_IMAGE_PREFIXES = ["\x1b_G", "\x1b]1337;File="];
+
+type OverlayCompositor = (lines: string[], termWidth: number, termHeight: number) => string[];
+
+/**
+ * Terminals that show inline images draw them above text, so an image would
+ * cover a floating Palette. Pi's renderers remove and redraw image placements
+ * when an image line changes, so blanking image lines while the Palette is
+ * open hides them and restores them on close. The hook is Pi's protected
+ * overlay compositor; if a Pi upgrade removes it, the Palette falls back to
+ * the replacement presentation on those terminals.
+ */
+function overlayImageHidingAvailable(): boolean {
+	return [TuiAltScreen, TuiMainScreen].every(
+		(type) => typeof (type.prototype as unknown as { compositeOverlays?: unknown }).compositeOverlays === "function",
+	);
+}
+
+const imageHidingCompositors = new WeakSet<object>();
+const imageHidingActive = new WeakSet<object>();
+
+function installOverlayImageHiding(tui: TUI): boolean {
+	if (imageHidingCompositors.has(tui)) return true;
+	const target = tui as unknown as { compositeOverlays?: OverlayCompositor; hasOverlay?: () => boolean };
+	const original = target.compositeOverlays;
+	if (typeof original !== "function" || typeof target.hasOverlay !== "function") return false;
+	target.compositeOverlays = function (this: unknown, lines, termWidth, termHeight) {
+		const hide = imageHidingActive.has(tui) && target.hasOverlay?.() === true;
+		const base = hide
+			? lines.map((line) => (INLINE_IMAGE_PREFIXES.some((prefix) => line.includes(prefix)) ? "" : line))
+			: lines;
+		return original.call(this, base, termWidth, termHeight);
+	};
+	imageHidingCompositors.add(tui);
+	return true;
+}
+
 export function selectPalettePresentation(options: PaletteSurfaceOptions = {}): PalettePresentation {
 	const env = options.env ?? process.env;
 	const explicit = options.presentation ?? envPresentation(env);
 	if (explicit) return explicit;
-	if (terminalRendersInlineImages(env)) return "replace";
+	if (terminalRendersInlineImages(env) && !(options.imageHiding ?? overlayImageHidingAvailable())) return "replace";
 	const columns = options.columns ?? process.stdout.columns ?? 80;
 	const rows = options.rows ?? process.stdout.rows ?? 24;
 	return columns >= 58 && rows >= 16 ? "floating" : "replace";
@@ -413,7 +455,12 @@ export class JouzuPaletteSurfaceHost {
 					}
 				: undefined;
 
+		let hidingTui: TUI | undefined;
 		const promise = ctx.ui.custom<void>((tui, theme, keybindings, done) => {
+			if (presentation === "floating" && installOverlayImageHiding(tui)) {
+				imageHidingActive.add(tui);
+				hidingTui = tui;
+			}
 			component = factory(
 				{
 					tui,
@@ -434,6 +481,11 @@ export class JouzuPaletteSurfaceHost {
 			return true;
 		} finally {
 			if (this.active?.token === token) this.active = undefined;
+			if (hidingTui) {
+				imageHidingActive.delete(hidingTui);
+				// Redraw so hidden images return even if no other render is pending.
+				hidingTui.requestRender();
+			}
 		}
 	}
 }

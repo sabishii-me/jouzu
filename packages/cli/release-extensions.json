@@ -66,8 +66,8 @@
 		{
 			"name": "@lhl/pi-tasks",
 			"version": "0.6.1",
-			"source": "git+https://github.com/lhl/pi-tasks.git#a07c749439b1909a95a974bf6ee8a560f6d2b0d9",
-			"commit": "a07c749439b1909a95a974bf6ee8a560f6d2b0d9",
+			"source": "git+https://github.com/lhl/pi-tasks.git#3626078819db11d90e394d77752577956063b71d",
+			"commit": "3626078819db11d90e394d77752577956063b71d",
 			"repository": "https://github.com/lhl/pi-tasks",
 			"license": "MIT",
 			"licenseEvidence": "LICENSE",
@@ -87,9 +87,9 @@
 		},
 		{
 			"name": "@sting8k/pi-vcc",
-			"version": "0.7.2",
-			"source": "https://registry.npmjs.org/@sting8k/pi-vcc/-/pi-vcc-0.7.2.tgz",
-			"integrity": "sha512-1WcvfW267Ub2ujSaePweq4Rf1Xv7GPpkOHWdgkWx8wOZWZjzJdTGbk9zmCusLGxzDzpHIEcbLXQabv+q9Jn7ng==",
+			"version": "0.10.2",
+			"source": "https://registry.npmjs.org/@sting8k/pi-vcc/-/pi-vcc-0.10.2.tgz",
+			"integrity": "sha512-7vTuOaIRZGRnChb+ZWysYtYKsZgF3KFfiJpufBl03q5KZouKAgGUdiAdfTCOM71mTSEL/gUi2+TBsmy1Y0KxYA==",
 			"repository": "https://github.com/sting8k/pi-vcc",
 			"license": "MIT",
 			"licenseEvidence": "README.md#license",
@@ -98,9 +98,9 @@
 		},
 		{
 			"name": "pi-skill-dollar",
-			"version": "0.2.0",
-			"source": "git+https://github.com/lhl/pi-skill-dollar.git#4bff5734d87c4f4725d81a4ea1d1c1283c22423c",
-			"commit": "4bff5734d87c4f4725d81a4ea1d1c1283c22423c",
+			"version": "0.2.1",
+			"source": "git+https://github.com/lhl/pi-skill-dollar.git#308db930146e1b3f500eadebd0323ab88789336f",
+			"commit": "308db930146e1b3f500eadebd0323ab88789336f",
 			"repository": "https://github.com/lhl/pi-skill-dollar",
 			"license": "MIT",
 			"licenseEvidence": "LICENSE",
@@ -140,12 +140,12 @@
 		},
 		{
 			"name": "@napi-rs/canvas",
-			"version": "0.1.80",
-			"source": "https://registry.npmjs.org/@napi-rs/canvas/-/canvas-0.1.80.tgz",
+			"version": "1.0.11",
+			"source": "https://registry.npmjs.org/@napi-rs/canvas/-/canvas-1.0.11.tgz",
 			"repository": "https://github.com/Brooooooklyn/canvas",
 			"license": "MIT",
 			"licenseEvidence": "LICENSE",
-			"integrity": "sha512-DxuT1ClnIPts1kQx8FBmkk4BQDTfI5kIzywAaMjQSXfNnra5UFU9PwurXrl+Je3bJ6BGsp/zmshVVFbCmyI+ww==",
+			"integrity": "sha512-vt5tog1cr+QKadIddGe+3LrcX0EmjEd0izF717Uwf92mBmgYfq2XRmL2r4bZU40spB69exxhrBn9I91HYEr/7w==",
 			"bundled": false
 		}
 	],

@@ -25,7 +25,7 @@ async function maintain(f) {
 	}
 }
 
-test("150 distinct-input turns retire history, preserve live receipts, and remain usable after reopen", async (t) => {
+test("150 distinct-input turns retire history, preserve live receipts, and remain usable after reopen @endurance", async (t) => {
 	const producerExtensions = await installedProducerExtensions();
 	const f = await assembledSession(t, { persist: true, producerExtensions, script: () => ({ text: "ack" }) });
 	const synthetic = syntheticProducer();
@@ -89,7 +89,7 @@ test("150 distinct-input turns retire history, preserve live receipts, and remai
 	}
 });
 
-test("archived user submissions do not pin request history across compaction", async (t) => {
+test("archived user submissions do not pin request history across compaction @endurance", async (t) => {
 	const producerExtensions = await installedProducerExtensions();
 	const settings = { compaction: { enabled: false, keepRecentTokens: 1 } };
 	const f = await assembledSession(t, {
@@ -140,7 +140,7 @@ test("archived user submissions do not pin request history across compaction", a
 	}
 });
 
-test("result batches cross the manifest quota with transcript references and reopen intact", async (t) => {
+test("result batches cross the manifest quota with transcript references and reopen intact @endurance", async (t) => {
 	const producerExtensions = await installedProducerExtensions();
 	const f = await assembledSession(t, { persist: true, producerExtensions, script: () => ({ text: "ack" }) });
 	let revision = 0;

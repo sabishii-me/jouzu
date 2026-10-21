@@ -2,9 +2,10 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { pinnedNpm, verifyArtifact, verifyQualification, verifyWindowsQualification } from "./release-artifact.mjs";
+import { qualificationManifest, verifyPublicationSource } from "./release-publication-source.mjs";
 
 const [directoryArg, ...flags] = process.argv.slice(2);
 assert.ok(
@@ -15,11 +16,18 @@ const directory = resolve(directoryArg);
 const commit = process.env.GITHUB_SHA;
 const tag = process.env.GITHUB_REF_NAME;
 assert.match(tag || "", /^v\d+\.\d+\.\d+$/);
-const manifest = verifyArtifact(directory, { sourceCommit: commit, version: tag.slice(1) });
+const qualifiedCommit = process.env.QUALIFIED_SOURCE_COMMIT || commit;
+verifyPublicationSource(qualifiedCommit, commit);
+const manifest = verifyArtifact(directory, { sourceCommit: qualifiedCommit, version: tag.slice(1) });
+if (process.env.CANDIDATE_SHA256) assert.equal(manifest.tarball.sha256, process.env.CANDIDATE_SHA256);
 const run = JSON.parse(readFileSync(join(directory, "ci-run.json"), "utf8"));
 const jobs = JSON.parse(readFileSync(join(directory, "ci-jobs.json"), "utf8"));
-verifyQualification(run, jobs, manifest);
-verifyWindowsQualification(JSON.parse(readFileSync(join(directory, "windows-qualification.json"), "utf8")), manifest);
+const artifactJobsPath = join(directory, "artifact-jobs.json");
+const artifactJobs = existsSync(artifactJobsPath) ? JSON.parse(readFileSync(artifactJobsPath, "utf8")) : jobs;
+verifyQualification(run, jobs, qualificationManifest(manifest, run, jobs, artifactJobs));
+if (existsSync(join(directory, "windows-qualification.json"))) {
+	verifyWindowsQualification(JSON.parse(readFileSync(join(directory, "windows-qualification.json"), "utf8")), manifest);
+}
 const npm = (args, capture = false) => {
 	const result = spawnSync("npm", args, {
 		encoding: "utf8",

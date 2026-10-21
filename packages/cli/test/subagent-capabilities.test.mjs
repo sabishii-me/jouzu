@@ -75,7 +75,7 @@ function respond(res, delta, finish = "tool_calls") {
 }
 
 test("real children can read outside cwd, use skills/recall/web/tasks, consult parent context, and retain local tasks on resume", {
-	timeout: 60000,
+	timeout: 120000,
 }, async () => {
 	const root = mkdtempSync(join(tmpdir(), "jouzu-child-capabilities-"));
 	const workspace = join(root, "workspace");
@@ -159,7 +159,8 @@ test("real children can read outside cwd, use skills/recall/web/tasks, consult p
 		undefined,
 		(run) => complete(run),
 	);
-	const role = { ...defaultAgentConfig().roles[1], thinking: "off", timeoutSeconds: 10 };
+	// Bounds a hung child. A loaded 3-CPU runner can spend 9 s starting the child before its first turn.
+	const role = { ...defaultAgentConfig().roles[1], thinking: "off", timeoutSeconds: 45 };
 	const launch = {
 		role,
 		model,

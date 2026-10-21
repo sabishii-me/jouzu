@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-export const canvasVersion = "0.1.80";
+export const canvasVersion = "1.0.11";
 const canvasName = "@napi-rs/canvas";
 
 /** Keep the consumer-selected canvas outside the bundled extension tree. */
@@ -10,7 +10,7 @@ export function externalizeBundledCanvas(packageRoot) {
 	if (manifest.dependencies?.[canvasName] !== canvasVersion) {
 		throw new Error(`jouzu must declare external ${canvasName}@${canvasVersion}`);
 	}
-	function visit(root) {
+	function visit(root, allowLegacyCanvas = false) {
 		const modules = join(root, "node_modules");
 		if (!existsSync(modules)) return;
 		for (const entry of readdirSync(modules, { withFileTypes: true })) {
@@ -28,14 +28,23 @@ export function externalizeBundledCanvas(packageRoot) {
 				if (pkg.name === canvasName || pkg.name?.startsWith(`${canvasName}-`)) {
 					// The CLI's direct installation is needed for development and is not bundled.
 					if (root === packageRoot) continue;
-					if (pkg.version !== canvasVersion) throw new Error(`Unexpected bundled canvas version: ${pkg.version}`);
+					if (pkg.version !== canvasVersion && !(allowLegacyCanvas && pkg.version === "0.1.80")) {
+						throw new Error(`Unexpected bundled canvas version: ${pkg.version}`);
+					}
 					rmSync(path, { recursive: true, force: true });
 				} else {
 					let changed = false;
 					for (const field of ["dependencies", "optionalDependencies"]) {
 						const required = pkg[field]?.[canvasName];
 						if (required === undefined) continue;
-						if (required !== canvasVersion && required !== `^${canvasVersion}`) {
+						if (
+							required !== canvasVersion &&
+							required !== `^${canvasVersion}` &&
+							!(
+								(pkg.name === "pdf-parse" || (allowLegacyCanvas && pkg.name === "pdfjs-dist")) &&
+								(required === "0.1.80" || required === "^0.1.80")
+							)
+						) {
 							throw new Error(`${pkg.name} requires an unexpected canvas version: ${required}`);
 						}
 						// The CLI owns this dependency; leaving even an optional edge makes
@@ -44,7 +53,7 @@ export function externalizeBundledCanvas(packageRoot) {
 						changed = true;
 					}
 					if (changed) writeFileSync(metadata, `${JSON.stringify(pkg, null, 2)}\n`);
-					visit(path);
+					visit(path, allowLegacyCanvas || pkg.name === "pdf-parse" || pkg.name === "pdfjs-dist");
 				}
 			}
 		}

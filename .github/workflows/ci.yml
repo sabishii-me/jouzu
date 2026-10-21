@@ -27,25 +27,74 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}-${{ github.event_name }}
-  cancel-in-progress: true
+  # Pull requests cancel superseded runs. Pushes and dispatches queue per commit, so a later push
+  # never cancels another commit's qualification run.
+  group: ci-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  changes:
+    # Classifies pushes and pull requests into the required tier or full qualification. Manual runs
+    # skip it and run full qualification.
+    if: github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      full: ${{ steps.classify.outputs.full }}
+      endurance: ${{ steps.classify.outputs.endurance }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: classify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+          PULL_REQUEST: ${{ github.event.pull_request.number }}
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+        run: |
+          files="$RUNNER_TEMP/changed-files"
+          : > "$files"
+          if [ "$EVENT" = pull_request ]; then
+            gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PULL_REQUEST/files" --jq '.[].filename' > "$files"
+          elif [[ "$BEFORE" =~ ^0*$ ]] || ! gh api "repos/$GITHUB_REPOSITORY/compare/$BEFORE...$SHA" --jq '.files[].filename' > "$files" || [ "$(wc -l < "$files")" -ge 300 ]; then
+            # A new branch, an unreachable base, or a list at the compare API's 300-file cap has no
+            # complete file list, so the push runs full qualification.
+            LABELS=full-ci
+          fi
+          node scripts/ci-changes.mjs "$files" "$LABELS" >> "$GITHUB_OUTPUT"
+
   node:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.result != 'failure' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(inputs.platform == 'windows' && '["windows-latest"]' || '["ubuntu-latest","macos-latest"]') }}
-        node: [22, 24]
-        exclude:
-          - os: ubuntu-latest
-            node: 24
+        # Pull requests in the required tier run the canonical Ubuntu/Node 22 suite only.
+        os: ${{ fromJSON(inputs.platform == 'windows' && '["windows-latest"]' || (github.event_name != 'workflow_dispatch' && needs.changes.outputs.full != 'true') && '["ubuntu-latest"]' || '["ubuntu-latest","macos-latest"]') }}
+        # Linux and macOS test Node 22, the supported minimum: in about 100 main runs, no failure
+        # appeared on only one Node version except timing flakes. Windows also tests Node 24, the
+        # runtime the Windows launcher bundles.
+        node: ${{ fromJSON(inputs.platform == 'windows' && '[22, 24]' || '[22]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Record test timings
+        shell: bash
+        run: |
+          echo "JOUZU_TEST_TIMINGS_DIR=$RUNNER_TEMP/test-timings" >> "$GITHUB_ENV"
+          echo "JOUZU_TEST_TIMINGS_JOB=node (${{ matrix.os }}, ${{ matrix.node }})" >> "$GITHUB_ENV"
+          # Test benchmark run 39336748771: 4 gave the lowest stable suite median on hosted Ubuntu. On macOS
+          # (3 CPUs) it failed timing-sensitive tests, so macOS and Windows keep Node's default.
+          if [ "$RUNNER_OS" = Linux ]; then echo "JOUZU_TEST_CONCURRENCY=4" >> "$GITHUB_ENV"; fi
       - name: Configure Windows fixture and npm paths
         if: runner.os == 'Windows'
         shell: pwsh
@@ -59,7 +108,7 @@ jobs:
           cache: ${{ runner.os != 'Windows' && 'npm' || '' }}
       - name: Restore Windows npm archives
         if: runner.os == 'Windows' && inputs.npm-cache != 'cold'
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/jouzu-npm-cache/_cacache
           key: windows-npm-${{ hashFiles('package-lock.json', 'packages/cli/package-lock.json', 'packages/cli/camoufox-runtime/package-lock.json') }}-${{ github.job }}-${{ matrix.node }}
@@ -79,20 +128,34 @@ jobs:
         run: ./scripts/windows-ci-defender.ps1 setup
       - run: node scripts/install-source-dependencies.mjs
         timeout-minutes: 20
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.26.1"
-          cache: false
+          cache-dependency-path: upstream/textguard/source/go.sum
       - run: npm run build
         env:
           JOUZU_BUILD_SOURCE_ONLY: "1"
         timeout-minutes: 15
-      - run: npm run check
+      - run: npm run check:static
         timeout-minutes: 10
+      - run: npm run test:runner
+        timeout-minutes: 5
       - run: npm test --workspaces --if-present
         timeout-minutes: 20
         env:
           # 240 s is about twice the slowest test file on CI (~107 s).
+          JOUZU_TEST_TIMEOUT_MS: "240000"
+          JOUZU_TEST_SUITE_TIMEOUT_MS: "900000"
+      - name: Check test duration budgets
+        # The budgets in scripts/test-tiers.json are calibrated on this runner. Pull requests warn.
+        if: matrix.os == 'ubuntu-latest' && matrix.node == 22
+        shell: bash
+        run: npm run test:timings -- budget --tiers scripts/test-tiers.json --where label=jouzu.test ${{ github.event_name == 'pull_request' && '--warn-only' || '' }} "$JOUZU_TEST_TIMINGS_DIR"
+      - if: matrix.os == 'windows-latest' && matrix.node == 24
+        name: Run production-limit endurance tests
+        run: npm run test:endurance --workspace packages/cli
+        timeout-minutes: 20
+        env:
           JOUZU_TEST_TIMEOUT_MS: "240000"
           JOUZU_TEST_SUITE_TIMEOUT_MS: "900000"
       - if: matrix.os == 'windows-latest'
@@ -101,7 +164,7 @@ jobs:
         timeout-minutes: 5
         env:
           JOUZU_TEST_EXTENSION_EARLY_FAILURE: "1"
-      - if: matrix.node == 24
+      - if: matrix.node == 24 || (matrix.os == 'ubuntu-latest' && needs.changes.outputs.full != 'false')
         run: npm run test:extensions:online
         timeout-minutes: 15
         env:
@@ -109,6 +172,14 @@ jobs:
           JOUZU_EXTENSION_NETWORK: "1"
           JOUZU_TEST_TIMEOUT_MS: "600000"
           JOUZU_TEST_SUITE_TIMEOUT_MS: "900000"
+      - name: Save test timings
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-timings-node-${{ matrix.os }}-${{ matrix.node }}
+          path: ${{ runner.temp }}/test-timings
+          if-no-files-found: warn
+          retention-days: 30
       - name: Remove Windows Defender exclusions
         if: always() && (matrix.os == 'windows-latest')
         shell: pwsh
@@ -116,7 +187,7 @@ jobs:
         run: ./scripts/windows-ci-defender.ps1 cleanup
       - name: Save Windows Defender state
         if: always() && (matrix.os == 'windows-latest')
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: windows-defender-node-${{ matrix.node }}
           path: ${{ runner.temp }}/jouzu-defender.json
@@ -124,22 +195,73 @@ jobs:
           retention-days: 7
       - name: Save Windows npm timings
         if: always() && runner.os == 'Windows'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: windows-npm-${{ github.job }}-${{ matrix.node }}
           path: ${{ runner.temp }}/jouzu-npm-logs
           if-no-files-found: warn
           retention-days: 7
 
+  endurance:
+    # Production-limit cases run once per Linux/macOS qualification instead of in every suite, and
+    # in the required tier when a change touches flow control.
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.result != 'failure' && inputs.platform != 'windows' && (github.event_name == 'workflow_dispatch' || needs.changes.outputs.endurance == 'true') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Record test timings
+        shell: bash
+        run: |
+          echo "JOUZU_TEST_TIMINGS_DIR=$RUNNER_TEMP/test-timings" >> "$GITHUB_ENV"
+          echo "JOUZU_TEST_TIMINGS_JOB=endurance" >> "$GITHUB_ENV"
+          # Test benchmark run 39336748771: 4 gave the lowest stable suite median on hosted Ubuntu. On macOS
+          # (3 CPUs) it failed timing-sensitive tests, so macOS and Windows keep Node's default.
+          if [ "$RUNNER_OS" = Linux ]; then echo "JOUZU_TEST_CONCURRENCY=4" >> "$GITHUB_ENV"; fi
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: node scripts/install-source-dependencies.mjs
+        timeout-minutes: 20
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26.1"
+          cache-dependency-path: upstream/textguard/source/go.sum
+      - run: npm run build
+        env:
+          JOUZU_BUILD_SOURCE_ONLY: "1"
+        timeout-minutes: 15
+      - run: npm run test:endurance --workspace packages/cli
+        timeout-minutes: 20
+        env:
+          JOUZU_TEST_TIMEOUT_MS: "240000"
+          JOUZU_TEST_SUITE_TIMEOUT_MS: "900000"
+      - name: Check test duration budgets
+        shell: bash
+        run: npm run test:timings -- budget --tiers scripts/test-tiers.json --where label=jouzu.test_endurance ${{ github.event_name == 'pull_request' && '--warn-only' || '' }} "$JOUZU_TEST_TIMINGS_DIR"
+      - name: Save test timings
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-timings-endurance
+          path: ${{ runner.temp }}/test-timings
+          if-no-files-found: warn
+          retention-days: 30
+
   legacy-linux-static-fetch:
-    if: inputs.platform != 'windows'
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.result != 'failure' && inputs.platform != 'windows' }}
     runs-on: ubuntu-latest
     container: rockylinux:8@sha256:9794037624aaa6212aeada1d28861ef5e0a935adaf93e4ef79837119f2a2d04c
     timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        node: ["22.19.0", "24"]
+        node: ["22.19.0"]
     steps:
       - name: Install Git in the minimal baseline image
         run: dnf install -y -q git
@@ -154,10 +276,10 @@ jobs:
         run: test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.28"
       - run: npm ci --ignore-scripts
         timeout-minutes: 15
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.26.1"
-          cache: false
+          cache-dependency-path: upstream/textguard/source/go.sum
       - run: npm run build
         timeout-minutes: 10
       - name: Load release-owned dependencies without Camoufox
@@ -182,6 +304,9 @@ jobs:
         timeout-minutes: 5
 
   release-artifacts:
+    # Package consumers need this job, so they also run only in full qualification.
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.result != 'failure' && (github.event_name == 'workflow_dispatch' || needs.changes.outputs.full == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
@@ -190,40 +315,29 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24
+          node-version: 22
           cache: npm
       - run: npm ci --ignore-scripts
         timeout-minutes: 20
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.26.1"
-          cache: false
+          cache-dependency-path: upstream/textguard/source/go.sum
       - run: npm run build
         timeout-minutes: 15
-      - run: npm run check
+      - run: npm run check:static
         timeout-minutes: 10
-      - run: npm test --workspaces --if-present
-        timeout-minutes: 20
-        env:
-          # 240 s is about twice the slowest test file on CI (~107 s).
-          JOUZU_TEST_TIMEOUT_MS: "240000"
-          JOUZU_TEST_SUITE_TIMEOUT_MS: "900000"
-      - run: npm run test:extensions:online
-        timeout-minutes: 15
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          JOUZU_EXTENSION_NETWORK: "1"
-          JOUZU_TEST_TIMEOUT_MS: "600000"
-          JOUZU_TEST_SUITE_TIMEOUT_MS: "900000"
       - run: npm run test:release-metadata
         timeout-minutes: 5
+      - run: npm run test:pack-check
+        timeout-minutes: 10
       - run: npm run pack:prepare:ci
         timeout-minutes: 10
       - run: npm run pack:check
         timeout-minutes: 5
         env:
           JOUZU_PACK_METADATA: dist/ci-artifacts/pack-metadata.json
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: jouzu-candidate
           path: |
@@ -234,7 +348,7 @@ jobs:
           compression-level: 0
           if-no-files-found: error
           retention-days: 30
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: jouzu-updater
           path: |
@@ -248,6 +362,7 @@ jobs:
 
   optional-camoufox:
     needs: release-artifacts
+    if: ${{ !cancelled() && needs.release-artifacts.result == 'success' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
@@ -267,10 +382,10 @@ jobs:
           JOUZU_CI_NPM_CACHE: ${{ inputs.npm-cache || 'warm' }}
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24
+          node-version: ${{ runner.os == 'Windows' && '24' || '22' }}
       - name: Restore Windows npm archives
         if: runner.os == 'Windows' && inputs.npm-cache != 'cold'
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/jouzu-npm-cache/_cacache
           key: windows-npm-${{ hashFiles('package-lock.json', 'packages/cli/package-lock.json', 'packages/cli/camoufox-runtime/package-lock.json') }}-${{ github.job }}-${{ 'default' }}
@@ -282,7 +397,7 @@ jobs:
         shell: pwsh
         timeout-minutes: 2
         run: ./scripts/windows-ci-defender.ps1 setup
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: jouzu-candidate
           path: dist/ci-artifacts
@@ -299,7 +414,7 @@ jobs:
         run: ./scripts/windows-ci-defender.ps1 cleanup
       - name: Save Windows Defender state
         if: always() && (matrix.os == 'windows-latest')
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: windows-defender-optional-camoufox
           path: ${{ runner.temp }}/jouzu-defender.json
@@ -307,7 +422,7 @@ jobs:
           retention-days: 7
       - name: Save Windows npm timings
         if: always() && runner.os == 'Windows'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: windows-npm-${{ github.job }}-${{ 'default' }}
           path: ${{ runner.temp }}/jouzu-npm-logs
@@ -316,13 +431,15 @@ jobs:
 
   packed-install:
     needs: release-artifacts
+    if: ${{ !cancelled() && needs.release-artifacts.result == 'success' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
         os: ${{ fromJSON(inputs.platform == 'windows' && '["windows-latest"]' || '["ubuntu-latest","macos-latest"]') }}
-        scope: [local, npm-exec, global]
+        # Linux and macOS run every scope in one job; Windows keeps one job per scope.
+        scope: ${{ fromJSON(inputs.platform == 'windows' && '["local","npm-exec","global"]' || '["all"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -336,10 +453,10 @@ jobs:
           JOUZU_CI_NPM_CACHE: ${{ inputs.npm-cache || 'warm' }}
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24
+          node-version: ${{ runner.os == 'Windows' && '24' || '22' }}
       - name: Restore Windows npm archives
         if: runner.os == 'Windows' && inputs.npm-cache != 'cold'
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/jouzu-npm-cache/_cacache
           key: windows-npm-${{ hashFiles('package-lock.json', 'packages/cli/package-lock.json', 'packages/cli/camoufox-runtime/package-lock.json') }}-${{ github.job }}-${{ matrix.scope }}
@@ -351,14 +468,30 @@ jobs:
         shell: pwsh
         timeout-minutes: 2
         run: ./scripts/windows-ci-defender.ps1 ${{ matrix.scope == 'global' && 'scanned' || 'setup' }}
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: jouzu-candidate
           path: dist/ci-artifacts
-      - run: npm run test:packed
+      - name: Install from the package (local)
+        if: matrix.scope == 'all' || matrix.scope == 'local'
+        run: npm run test:packed
         timeout-minutes: 35
         env:
-          JOUZU_PACKED_SCOPE: ${{ matrix.scope }}
+          JOUZU_PACKED_SCOPE: local
+          JOUZU_PACKED_TARBALL: dist/ci-artifacts/candidate.tgz
+      - name: Install from the package (npm exec)
+        if: ${{ !cancelled() && (matrix.scope == 'all' || matrix.scope == 'npm-exec') }}
+        run: npm run test:packed
+        timeout-minutes: 35
+        env:
+          JOUZU_PACKED_SCOPE: npm-exec
+          JOUZU_PACKED_TARBALL: dist/ci-artifacts/candidate.tgz
+      - name: Install from the package (global)
+        if: ${{ !cancelled() && (matrix.scope == 'all' || matrix.scope == 'global') }}
+        run: npm run test:packed
+        timeout-minutes: 35
+        env:
+          JOUZU_PACKED_SCOPE: global
           JOUZU_PACKED_TARBALL: dist/ci-artifacts/candidate.tgz
       - name: Remove Windows Defender exclusions
         if: always() && (matrix.os == 'windows-latest')
@@ -367,7 +500,7 @@ jobs:
         run: ./scripts/windows-ci-defender.ps1 cleanup
       - name: Save Windows Defender state
         if: always() && (matrix.os == 'windows-latest')
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: windows-defender-packed-install-${{ matrix.scope }}
           path: ${{ runner.temp }}/jouzu-defender.json
@@ -375,7 +508,7 @@ jobs:
           retention-days: 7
       - name: Save Windows npm timings
         if: always() && runner.os == 'Windows'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: windows-npm-${{ github.job }}-${{ matrix.scope }}
           path: ${{ runner.temp }}/jouzu-npm-logs
@@ -384,13 +517,15 @@ jobs:
 
   automatic-update:
     needs: release-artifacts
+    if: ${{ !cancelled() && needs.release-artifacts.result == 'success' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:
         os: ${{ fromJSON(inputs.platform == 'windows' && '["windows-latest"]' || '["ubuntu-latest","macos-latest"]') }}
-        scope: [success, rollback]
+        # Linux and macOS run both scopes in one job; Windows keeps one job per scope.
+        scope: ${{ fromJSON(inputs.platform == 'windows' && '["success","rollback"]' || '["all"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -404,10 +539,10 @@ jobs:
           JOUZU_CI_NPM_CACHE: ${{ inputs.npm-cache || 'warm' }}
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24
+          node-version: ${{ runner.os == 'Windows' && '24' || '22' }}
       - name: Restore Windows npm archives
         if: runner.os == 'Windows' && inputs.npm-cache != 'cold'
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/jouzu-npm-cache/_cacache
           key: windows-npm-${{ hashFiles('package-lock.json', 'packages/cli/package-lock.json', 'packages/cli/camoufox-runtime/package-lock.json') }}-${{ github.job }}-${{ matrix.scope }}
@@ -419,14 +554,26 @@ jobs:
         shell: pwsh
         timeout-minutes: 2
         run: ./scripts/windows-ci-defender.ps1 setup
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: jouzu-updater
           path: dist/ci-artifacts
-      - run: npm run test:auto-update
+      - name: Update to a newer package
+        if: matrix.scope == 'all' || matrix.scope == 'success'
+        run: npm run test:auto-update
         timeout-minutes: 70
         env:
-          JOUZU_UPDATE_SCOPE: ${{ matrix.scope }}
+          JOUZU_UPDATE_SCOPE: success
+          JOUZU_UPDATE_APPLY_TIMEOUT_MS: ${{ matrix.os == 'windows-latest' && '3600000' || '600000' }}
+          JOUZU_UPDATE_CURRENT_TARBALL: dist/ci-artifacts/candidate.tgz
+          JOUZU_UPDATE_NEXT_TARBALL: dist/ci-artifacts/next.tgz
+          JOUZU_UPDATE_BROKEN_TARBALL: dist/ci-artifacts/broken.tgz
+      - name: Roll back a broken update
+        if: ${{ !cancelled() && (matrix.scope == 'all' || matrix.scope == 'rollback') }}
+        run: npm run test:auto-update
+        timeout-minutes: 70
+        env:
+          JOUZU_UPDATE_SCOPE: rollback
           JOUZU_UPDATE_APPLY_TIMEOUT_MS: ${{ matrix.os == 'windows-latest' && '3600000' || '600000' }}
           JOUZU_UPDATE_CURRENT_TARBALL: dist/ci-artifacts/candidate.tgz
           JOUZU_UPDATE_NEXT_TARBALL: dist/ci-artifacts/next.tgz
@@ -438,7 +585,7 @@ jobs:
         run: ./scripts/windows-ci-defender.ps1 cleanup
       - name: Save Windows Defender state
         if: always() && (matrix.os == 'windows-latest')
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: windows-defender-automatic-update-${{ matrix.scope }}
           path: ${{ runner.temp }}/jouzu-defender.json
@@ -446,7 +593,7 @@ jobs:
           retention-days: 7
       - name: Save Windows npm timings
         if: always() && runner.os == 'Windows'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: windows-npm-${{ github.job }}-${{ matrix.scope }}
           path: ${{ runner.temp }}/jouzu-npm-logs
@@ -455,6 +602,7 @@ jobs:
 
   published-upgrade:
     needs: release-artifacts
+    if: ${{ !cancelled() && needs.release-artifacts.result == 'success' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 65
     strategy:
@@ -467,8 +615,8 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+          node-version: ${{ runner.os == 'Windows' && '24' || '22' }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: jouzu-updater
           path: dist/ci-artifacts
@@ -480,7 +628,7 @@ jobs:
         run: npm run test:auto-update
         timeout-minutes: 60
         env:
-          JOUZU_UPDATE_PUBLISHED_VERSION: "0.1.18"
+          JOUZU_UPDATE_PUBLISHED_VERSION: "0.2.0"
           JOUZU_UPDATE_NEXT_TARBALL: dist/ci-artifacts/candidate.tgz
           JOUZU_UPDATE_BROKEN_TARBALL: dist/ci-artifacts/broken.tgz
           JOUZU_UPDATE_APPLY_TIMEOUT_MS: "900000"
@@ -490,7 +638,7 @@ jobs:
         run: ./scripts/windows-ci-defender.ps1 cleanup
       - name: Save Windows Defender state
         if: always() && runner.os == 'Windows'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: windows-defender-published-upgrade
           path: ${{ runner.temp }}/jouzu-defender.json
@@ -498,18 +646,71 @@ jobs:
           retention-days: 30
 
   python:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.result != 'failure' }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     strategy:
+      fail-fast: false
       matrix:
-        os: ${{ fromJSON(inputs.platform == 'windows' && '["windows-latest"]' || '["ubuntu-latest","macos-latest"]') }}
-        python: ["3.10", "3.12", "3.13"]
+        os: ${{ fromJSON(inputs.platform == 'windows' && '["windows-latest"]' || (github.event_name != 'workflow_dispatch' && needs.changes.outputs.full != 'true') && '["ubuntu-latest"]' || '["ubuntu-latest","macos-latest"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4.2.0
-      - run: uv run --project python/jouzu --python ${{ matrix.python }} python -m unittest discover -s python/jouzu/tests -v
-      - if: matrix.os == 'ubuntu-latest' && matrix.python == '3.12'
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - name: Test Python 3.10
+        run: uv run --project python/jouzu --python 3.10 python -m unittest discover -s python/jouzu/tests -v
+      - name: Test Python 3.11
+        if: ${{ !cancelled() }}
+        run: uv run --project python/jouzu --python 3.11 python -m unittest discover -s python/jouzu/tests -v
+      - name: Test Python 3.12
+        if: ${{ !cancelled() }}
+        run: uv run --project python/jouzu --python 3.12 python -m unittest discover -s python/jouzu/tests -v
+      - name: Test Python 3.13
+        if: ${{ !cancelled() }}
+        run: uv run --project python/jouzu --python 3.13 python -m unittest discover -s python/jouzu/tests -v
+      - name: Test Python 3.14
+        if: ${{ !cancelled() }}
+        run: uv run --project python/jouzu --python 3.14 python -m unittest discover -s python/jouzu/tests -v
+      - if: matrix.os == 'ubuntu-latest'
         run: uv build --project python/jouzu --out-dir dist/python
-      - if: matrix.os == 'ubuntu-latest' && matrix.python == '3.12'
+      - if: matrix.os == 'ubuntu-latest'
         run: uvx --from twine twine check dist/python/*
+
+  ci-result:
+    # The one check for branch protection: every job passed, or was skipped by the required tier or
+    # the Windows-only diagnostics.
+    if: always()
+    needs:
+      [
+        changes,
+        node,
+        endurance,
+        legacy-linux-static-fetch,
+        release-artifacts,
+        optional-camoufox,
+        packed-install,
+        automatic-update,
+        published-upgrade,
+        python,
+      ]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every selected job to pass
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+          PARTIAL: ${{ github.event_name != 'workflow_dispatch' || inputs.platform == 'windows' }}
+        run: |
+          node --input-type=module -e '
+            const results = Object.entries(JSON.parse(process.env.RESULTS)).map(([job, value]) => [job, value.result]);
+            const allowed = (job, result) =>
+              result === "success" || (result === "skipped" && (job === "changes" || process.env.PARTIAL === "true"));
+            for (const [job, result] of results) console.log(`${job}: ${result}`);
+            const failed = results.filter(([job, result]) => !allowed(job, result));
+            if (failed.length) {
+              console.error(`Not passed: ${failed.map(([job, result]) => `${job} (${result})`).join(", ")}`);
+              process.exit(1);
+            }
+          '

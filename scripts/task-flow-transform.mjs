@@ -41,8 +41,8 @@ export function transformTaskFlow(source) {
 		'taskId: Type.String({ description: "The ID of the task to update" }),\n      waitForUser: Type.Optional(Type.Boolean({ description: "Hold automatic continuation until user input is available. Clear explicitly after receiving it." })),\n      paused: Type.Optional(Type.Boolean({ description: "Pause automatic task continuation. Set false to resume." })),',
 	);
 	replace(
-		"- If you cannot complete it, leave the task open and explain the blocker.",
-		"- If user input is required, call TaskUpdate with waitForUser true and explain the question. After receiving the answer, clear waitForUser explicitly. For task dependencies, set blockedBy. Call agent_wait for asynchronous execution.",
+		"- If another task blocks this task, use addBlockedBy and leave it open. If this task is no longer relevant, mark it deleted. Otherwise leave it in_progress and explain what remains.",
+		"- If another task blocks this task, call TaskUpdate with addBlockedBy and leave it open. If user input is required, call TaskUpdate with waitForUser true and explain the question; after receiving the answer, clear waitForUser explicitly. If you are intentionally pausing, call TaskUpdate with paused true and clear it when resuming. If the task is no longer relevant, call TaskUpdate with status deleted. Otherwise leave it in_progress and explain what remains. In cascade mode, an in_progress task is prompted again before pending tasks; do not leave it in_progress merely to report a status or write a next-steps list. For asynchronous execution, call agent_wait with the returned dependency.",
 	);
 	replace("seenUpdatedAt: number", "seenUpdatedAt: number | string");
 	replace(

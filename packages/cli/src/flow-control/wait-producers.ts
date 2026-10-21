@@ -2,7 +2,12 @@ import { isDeepStrictEqual } from "node:util";
 import { FlowLedgerError, type FlowScope } from "./receipt-ledger.js";
 import { type FlowAuthorityExecution, requireAttributedWork } from "./wait-authority.js";
 import { type FlowWaitClock, systemWaitClock } from "./wait-deadlines.js";
-import { type FlowHealthEvidence, type FlowHealthPolicy, validateFlowHealthPolicy } from "./wait-health.js";
+import {
+	type FlowHealthEvidence,
+	type FlowHealthPolicy,
+	retainFlowHealthEvidence,
+	validateFlowHealthPolicy,
+} from "./wait-health.js";
 import type { FlowWaitStore } from "./wait-store.js";
 
 export interface FlowExecutionIdentity {
@@ -485,6 +490,8 @@ export class FlowWaitProducerRegistry {
 	}
 }
 
+const MAX_PENDING_OBSERVATIONS = 1024;
+
 class ExecutionBinding {
 	private readonly abort = new AbortController();
 	private unsubscribe?: () => void;
@@ -493,6 +500,9 @@ class ExecutionBinding {
 	private ready = false;
 	private pending = 0;
 	private initialNotifications = 0;
+	private queued?: { evidence: FlowExecutionEvidence };
+	private accepted?: FlowExecutionEvidence;
+	private acceptedHealth?: FlowHealthEvidence;
 	private closed = false;
 	private failure?: unknown;
 	private tail: Promise<void> = Promise.resolve();
@@ -531,8 +541,8 @@ class ExecutionBinding {
 			new Set(evidence.predicates.map((predicate) => predicate.until)).size !== evidence.predicates.length
 		)
 			throw new FlowLedgerError("identity", "Execution observation has foreign or invalid evidence.");
-		// Rebuild rather than pass the producer's object through, so only known fields survive. Health
-		// is validated by the store's own retention rule, which drops anything it cannot accept.
+		// Rebuild rather than pass the producer's object through, so only known fields survive.
+		// Validate health before queue coalescing so a newer report cannot hide malformed evidence.
 		const health = evidence.health
 			? {
 					policy: evidence.health.policy,
@@ -543,6 +553,7 @@ class ExecutionBinding {
 					...(evidence.health.detail === undefined ? {} : { detail: evidence.health.detail }),
 				}
 			: undefined;
+		if (health) retainFlowHealthEvidence(undefined, health);
 		return {
 			...this.identity,
 			scope: { ...this.identity.scope },
@@ -571,19 +582,73 @@ class ExecutionBinding {
 			this.failure = new AggregateError([error, reportError], "Producer observation and error reporting failed.");
 		}
 	}
+	/** Merge only unchanged predicates and health states; transitions keep their own queue slot. */
+	private merge(previous: FlowExecutionEvidence | undefined, next: FlowExecutionEvidence, ready: boolean): boolean {
+		if (
+			!previous ||
+			(ready ? next.revision < previous.revision : next.revision !== previous.revision) ||
+			!isDeepStrictEqual(previous.predicates, next.predicates) ||
+			(previous.health &&
+				next.health &&
+				(previous.health.policy !== next.health.policy || previous.health.state !== next.health.state))
+		)
+			return false;
+		const health = next.health ? retainFlowHealthEvidence(previous.health, next.health) : previous.health;
+		previous.revision = next.revision;
+		if (health) previous.health = health;
+		return true;
+	}
 	private publish = (evidence: FlowExecutionEvidence): void => {
 		if (this.closed || this.failure !== undefined) return;
 		try {
 			const captured = this.check(evidence);
 			if (!this.ready) {
-				if (this.initialNotifications++ >= 128)
-					throw new FlowLedgerError("capacity", "Execution observation buffer is full.");
+				// Until the snapshot arrives, retain distinct revisions for the sorted consistency check.
+				if (this.merge(this.buffer.at(-1), captured, false)) return;
+				if (this.initialNotifications++ >= MAX_PENDING_OBSERVATIONS)
+					throw new FlowLedgerError(
+						"capacity",
+						`Execution observation buffer is full for ${this.namespace}/${this.identity.handle} (${this.identity.execution}).`,
+					);
 				this.buffer.push(captured);
 			} else {
-				if (this.pending >= 128) throw new FlowLedgerError("capacity", "Execution observation queue is full.");
+				// Validate every arrival before merging. Otherwise a later report could hide a stale
+				// revision, conflicting evidence, or an attempt to reopen a terminal predicate.
+				const prior = this.accepted;
+				if (!prior) throw new FlowLedgerError("stale", "Execution subscription has no initial evidence.");
+				if (captured.revision < prior.revision)
+					throw new FlowLedgerError("stale", "Execution observation is older than retained evidence.");
+				if (captured.revision === prior.revision) {
+					if (!isDeepStrictEqual(captured.predicates, prior.predicates))
+						throw new FlowLedgerError("identity", "Execution revision has conflicting evidence.");
+				} else if (
+					captured.predicates.length !== prior.predicates.length ||
+					prior.predicates.some((predicate) => {
+						const next = captured.predicates.find((item) => item.until === predicate.until);
+						return !next || (predicate.state !== "pending" && next.state !== predicate.state);
+					})
+				)
+					throw new FlowLedgerError("transition", "Execution update changed predicates or terminal evidence.");
+				if (captured.health) {
+					this.acceptedHealth = retainFlowHealthEvidence(this.acceptedHealth, captured.health);
+					captured.health = this.acceptedHealth;
+				}
+				if (isDeepStrictEqual(captured, prior)) return;
+				this.accepted = captured;
+				if (this.merge(this.queued?.evidence, captured, true)) return;
+				if (this.pending >= MAX_PENDING_OBSERVATIONS)
+					throw new FlowLedgerError(
+						"capacity",
+						`Execution observation queue is full for ${this.namespace}/${this.identity.handle} (${this.identity.execution}).`,
+					);
+				const queued = { evidence: captured };
+				this.queued = queued;
 				this.pending++;
 				this.tail = this.tail
-					.then(() => this.observe(captured))
+					.then(() => {
+						if (this.queued === queued) this.queued = undefined;
+						return this.observe(queued.evidence);
+					})
 					.catch((error) => this.fail(error))
 					.finally(() => {
 						this.pending--;
@@ -672,6 +737,8 @@ class ExecutionBinding {
 				);
 		} while (this.buffer.length);
 		this.abort.signal.throwIfAborted();
+		this.accepted = initial;
+		this.acceptedHealth = initial.health;
 		this.ready = true;
 	}
 	/** Re-read the producer without blocking event delivery while its snapshot is pending. */
@@ -681,6 +748,7 @@ class ExecutionBinding {
 		active.throwIfAborted();
 		const evidence = this.check(await this.snapshot(structuredClone(this.identity), active));
 		active.throwIfAborted();
+		this.queued = undefined;
 		const report = this.tail.then(async () => {
 			active.throwIfAborted();
 			const current = (await this.store.authoritySnapshot()).executions.find(
@@ -690,6 +758,8 @@ class ExecutionBinding {
 			// An event may have advanced the execution while the snapshot was in flight.
 			if (current && evidence.revision < current.revision) return;
 			await this.observe(evidence);
+			if (!this.accepted || evidence.revision >= this.accepted.revision) this.accepted = evidence;
+			if (evidence.health) this.acceptedHealth = retainFlowHealthEvidence(this.acceptedHealth, evidence.health);
 		});
 		this.tail = report.catch(() => {});
 		await report;

@@ -40,6 +40,7 @@ function fixture(t, { mode = "streaming", tokens = 100_000, decide, result } = {
 		},
 	};
 	const session = {
+		getSessionId: () => "fixture",
 		getBranch: () => [
 			{ type: "message", message: { role: "assistant", usage: { input: tokens, cacheRead: 0, cacheWrite: 0 } } },
 		],
@@ -148,7 +149,7 @@ test("mode off, changed context, and fixed safety windows stop refreshes", async
 	}
 });
 
-test("replacement cancels an in-flight refresh and ignores its late usage", async (t) => {
+test("replacement cancels an in-flight refresh but records a warm the provider completed", async (t) => {
 	const gate = deferred();
 	const f = fixture(t, { result: () => gate.promise });
 	f.warmer.start(f.request, () => true);
@@ -160,8 +161,41 @@ test("replacement cancels an in-flight refresh and ignores its late usage", asyn
 	assert.equal(previousSignal.aborted, true);
 	gate.resolve({ stopReason: "stop", usage: {} });
 	await refreshing;
-	assert.equal(f.entries.length, 0);
+	// The provider served and billed the warm, so its usage counts although the run was replaced.
+	assert.equal(f.entries.length, 1);
+	assert.equal(f.entries[0][0], "cache_warm");
 	assert.equal(f.warmer.status.state, "scheduled");
+});
+
+test("a context change during a refresh records the completed warm and stops", async (t) => {
+	const gate = deferred();
+	const f = fixture(t, { result: () => gate.promise });
+	let current = true;
+	f.warmer.start(f.request, () => current);
+	const refreshing = f.refresh();
+	await Promise.resolve();
+	current = false;
+	gate.resolve({ stopReason: "stop", usage: {} });
+	await refreshing;
+	assert.equal(f.entries.length, 1);
+	assert.equal(f.warmer.run, undefined);
+});
+
+test("a cancelled warmer or a switched session records no late usage", async (t) => {
+	for (const change of ["cancel", "session"]) {
+		const gate = deferred();
+		const f = fixture(t, { result: () => gate.promise });
+		let sessionId = "first";
+		f.warmer.sessionManager.getSessionId = () => sessionId;
+		f.warmer.start(f.request, () => true);
+		const refreshing = f.refresh();
+		await Promise.resolve();
+		if (change === "cancel") f.warmer.cancel();
+		else sessionId = "second";
+		gate.resolve({ stopReason: "stop", usage: {} });
+		await refreshing;
+		assert.equal(f.entries.length, 0, change);
+	}
 });
 
 test("refresh failure does not add usage and can be cancelled", async (t) => {

@@ -25,6 +25,7 @@ export function createJouzuHelpExtension(): InlineExtension {
 								`${theme.fg("accent", "/about")}  Runtime and installed builds`,
 								`${theme.fg("accent", "/workflow")}  Agents and runs`,
 								`${theme.fg("accent", "/subagents")}  Child run dashboard`,
+								`${theme.fg("accent", "/scrollback")}  Export transcript`,
 								"",
 								theme.fg("dim", `${formatEffectiveKeybinding(keybindings, "tui.select.cancel")} close`),
 							].join("\n"),
@@ -46,7 +47,7 @@ export function createJouzuHelpExtension(): InlineExtension {
 					},
 					{
 						overlay: true,
-						overlayOptions: { width: 42, maxHeight: 14, anchor: "center", margin: 1 },
+						overlayOptions: { width: 42, maxHeight: 18, anchor: "center", margin: 1 },
 					},
 				);
 			};

@@ -24,14 +24,34 @@ npm run build
 
 | Command | Scope |
 | --- | --- |
-| `npm run test:runner` | Test-runner deadlines, diagnostics, and command contracts |
+| `npm run test:runner` | Test-runner deadlines, diagnostics, timing records, and command contracts |
 | `npm run test --workspace packages/session-ui` | Session UI |
 | `npm run test --workspace packages/cli` | CLI and session flow control |
+| `npm run test:endurance --workspace packages/cli` | Flow-control cases that cross exact production storage limits |
 | `npm run test:python` | Python package reservation |
 | `npm run test:pack-check` | Package contents and `dev-build.sh` |
 | `npm run test:release-metadata` | Release metadata, smoke phases, and live-smoke event analysis |
 
-`npm run check` adds type checks, Biome, and the Pi patch and content-policy checks. `npm run release:check` runs the full release gate.
+`npm run check` runs `check:types` (TypeScript without output) and `check:static` (Biome, the Pi patch and content-policy checks, and the build-transform checks). `npm run build` already type-checks, so after a build run `npm run check:static`. `npm run release:check` runs the full release gate.
+
+Each gate runs each command once. `scripts/gate-commands.test.mjs` expands `npm run check`, `npm test`, `release:check:candidate`, and every CI job into their commands and fails on a repeat.
+
+### Which gate to run
+
+| Situation | Command |
+| --- | --- |
+| Editing a module | `npm run test:affected`, or `npm run test:node -- <files>` |
+| Before a commit | `npm run check` and `npm run test:affected` |
+| Before pushing product code | `npm run check` and `npm test` |
+| Release candidate, dependency, Pi, or packaging change | `npm run release:check` |
+
+`npm run test:affected` compares the working tree and untracked files with `HEAD` (or `--base REF`) and runs the Node test files that import a changed file, directly or through other sources and test fixtures. Compiled imports under `dist/` map to their `src/` files, and tests that launch the built CLI count as importing it. A changed workflow, manifest, or document selects the tests that name it. Changes to dependencies, build scripts, `upstream/`, or shared script fixtures select every test file. It skips `@endurance` tests unless you pass `--endurance`, and it refuses to run CLI tests against a stale build. Pass paths to select tests for specific files, and run `node scripts/affected-tests.mjs` without `--run` to list the selection.
+
+Hosted CI runs full qualification for release commits and for pushes that change packaging, installation, updates, dependencies, or workflows (see [CI runs](ci.md)), so a local `release:check` is needed only for the release-boundary cases in the table.
+
+### Endurance tests
+
+Tests whose names end in `@endurance` repeat full runtime operations until they cross a production storage limit, such as 1,120 tool turns past the native request quota. The default CLI suite (`npm run test --workspace packages/cli`) skips them; `npm run test:endurance --workspace packages/cli` runs only them. `npm test` runs `test:full`, the whole CLI suite including endurance tests, so they share the suite's parallel workers. Tag a new test `@endurance` only when it must cross an exact production limit, and list its file in the `test:endurance` script. `scripts/gate-commands.test.mjs` fails when the list and the tagged files differ.
 
 ### Bounded Node runs
 
@@ -57,6 +77,7 @@ direct timeout flags are rejected rather than overriding the safeguards.
 | --- | --- | --- |
 | `JOUZU_TEST_TIMEOUT_MS` | `120000` | 1-3600000 milliseconds |
 | `JOUZU_TEST_SUITE_TIMEOUT_MS` | `600000` | 1-3600000 milliseconds |
+| `JOUZU_TEST_CONCURRENCY` | Node default (CPUs minus one) | 1-64 test files at once; `--test-concurrency` overrides it |
 
 Set a larger finite budget only for a measured workload that needs it, and
 record the reason with the validation result. A timeout is a failure, not a
@@ -65,12 +86,43 @@ status 124. Interrupts exit with status 130 or 143. Timeout and interrupt
 handling kills the test process group on POSIX and uses `taskkill /T /F` on
 Windows; independently detached processes may require separate cleanup.
 
+Hosted Linux CI jobs set `JOUZU_TEST_CONCURRENCY=4`; macOS and Windows jobs keep Node's default. In the Test benchmark workflow (three runs each on Node 22), 4 gave the lowest stable CLI suite median: 170 s on Ubuntu (default 3: 166 s median but a 247 s 90th percentile) and 259 s on macOS (default 2: 297 s). Concurrency 8 failed timing-sensitive tests on both runners, and on macOS concurrency 4 failed timing-sensitive tests in one benchmark run and in CI, so macOS stays at the default.
+
 CI's opt-in extension network qualification uses a 600000ms test budget and
 900000ms suite budget to accommodate its declared ten-minute network test; those
 overrides apply only to that step. The `npm test --workspaces` steps use a
 240000ms test budget and a 900000ms suite budget. The test budget is about twice
 the slowest measured CI test file (107 seconds); the whole CLI suite needs about
 280 seconds on CI.
+
+### Test tiers and budgets
+
+Each test belongs to one tier with a duration budget, calibrated on the hosted Ubuntu/Node 22 runner:
+
+| Tier | Warn above | Fail above | Use for |
+| --- | ---: | ---: | --- |
+| `unit` | 1 s | 10 s | Default for every test |
+| `integration` | 5 s | 30 s | Tests that drive a full session, storage, or many turns in process |
+| `child-process` | 15 s | 90 s | Tests that launch the built CLI or real child agents |
+| `endurance` | 60 s | 180 s | Tests tagged `@endurance` that cross exact production limits |
+
+`scripts/test-tiers.json` holds the budgets and assigns `integration` or `child-process` to specific tests by `file :: full test name`. A test name ending in `@endurance` selects that tier. Any other test is `unit`.
+
+```bash
+npm run test:timings -- budget --tiers scripts/test-tiers.json --where label=jouzu.test <timing records>
+```
+
+The budget compares each test's median with its tier. Each CI job contributes one sample, so failure limits leave room for a runner stall (a 0.07-second test once took 4 seconds); warnings report smaller growth. CI checks the Ubuntu/Node 22 CLI suite and the endurance job: a test over its failure budget fails pushes and manual runs and warns on pull requests. A new test that needs more than its tier allows must state the guarantee it adds and be assigned a tier in the manifest; prefer making it faster.
+
+### Timing-sensitive tests
+
+Before committing a test that depends on sleeps, deadlines, process lifetimes, or concurrency, run it repeatedly on an oversubscribed machine:
+
+```bash
+npm run test:stress -- --repeat 10 packages/cli/test/flow-native-inclusion.test.mjs
+```
+
+`test:stress` runs the selected files `--repeat` times (default 10) while `--load` busy workers (default four per CPU) compete for the CPUs, and lists each test that failed in any run with its failure count. Runner options such as `--test-name-pattern` pass through; the command fails if no test ran. A test that waited on a 0.3-second dependency before checking its state failed 8 of 8 runs at this load and passed 8 of 8 after the fix.
 
 Keep the full output while preserving failures in a Bash pipeline:
 
@@ -83,7 +135,37 @@ Do not pipe a running suite through `tail`: that hides progress and may hide
 the failing exit status. Inspect the first failure's diagnostics while the
 suite is running. A focused rerun diagnoses a failure; it does not replace the
 full required gate. Runner regression tests check these package and CI entry
-points as part of `npm run check` and `npm test`.
+points as part of `npm run test:runner` and `npm test`.
+
+### Timing records
+
+Set `JOUZU_TEST_TIMINGS_DIR` to record each test's duration beside the TAP
+output. Every runner invocation writes one JSON Lines file to that directory:
+a run line (label, commit, OS, Node version, CPU count, concurrency, CI job and
+image), one line per finished test (file, full name including parent tests,
+nesting, duration, and status), and an end line (wall time and exit status).
+Runner invocations started by tests do not inherit the variable.
+
+| Environment variable | Default | Purpose |
+| --- | --- | --- |
+| `JOUZU_TEST_TIMINGS_DIR` | unset (no record) | Directory for timing records |
+| `JOUZU_TEST_TIMINGS_LABEL` | npm package and script name, such as `jouzu_cli.test` | Suite label: letters, digits, `.`, `_`, `-` |
+| `JOUZU_TEST_TIMINGS_JOB` | `GITHUB_JOB` | Job name recorded with the run |
+
+```bash
+JOUZU_TEST_TIMINGS_DIR=/tmp/jouzu-timings npm test
+npm run test:timings -- summary --top 20 /tmp/jouzu-timings
+npm run test:timings -- diff --base before/ --head after/ --where node=22
+```
+
+`summary` reports per-suite wall time, the slowest top-level tests and files
+by median across runs, the count of tests over 1 and 10 seconds, and the share
+of time in the slowest 10 and 50 tests. `diff` lists added and removed tests
+and tests whose median changed by at least 1 second and 20%. `--where` limits
+either command to runs with a matching context field, such as `label`,
+`platform`, `node` (major or exact version), or `job`. Add `--json` for
+machine-readable output. CI uploads the records from each test job as
+`test-timings-*` artifacts.
 
 ## Session flow control
 
@@ -261,8 +343,8 @@ In an interactive session, `/flow` shows what flow control is holding and repair
 /flow pause <work> holds a campaign's automated turns; /flow resume <work> releases it.
 /flow stop <work> retires a campaign and ends its waits.
 /flow resolve <attempt> retry|discard decides an interrupted turn whose outcome is unknown.
-/flow off takes flow control out of the circuit; /flow on puts it back; /flow reset is both in order.
-/flow clear releases a stuck reservation without stopping jobs or deleting receipts.
+/flow off takes flow control out of the circuit; /flow on puts it back; /flow reset is the destructive idle fallback.
+/flow clear releases a stuck reservation while preserving receipts, waits, and running jobs.
 ```
 
 `JOUZU_FLOW_CONTROL=0` starts a session with flow control disabled.

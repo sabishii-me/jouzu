@@ -8,7 +8,7 @@ import { readSessionTrace } from "../dist/subagents/trace.js";
 async function fixture(entries, operation) {
 	const root = mkdtempSync(join(tmpdir(), "jouzu-trace-"));
 	const path = join(root, "session.jsonl");
-	const content = [{ type: "session", version: 3, id: "s" }, ...entries].map(JSON.stringify).join("\n") + "\n";
+	const content = `${[{ type: "session", version: 3, id: "s" }, ...entries].map(JSON.stringify).join("\n")}\n`;
 	writeFileSync(path, content);
 	try {
 		await operation(path, content);
@@ -110,13 +110,13 @@ test("trace bounds large outputs, reports partial lines, and rejects malformed c
 		assert.equal(page.records[0].truncated, true);
 		assert.doesNotMatch(JSON.stringify(page), /\ufffd/);
 		const original = readFileSync(path, "utf8");
-		writeFileSync(path, original + '{"type":');
+		writeFileSync(path, `${original}{"type":`);
 		const partial = await readSessionTrace(path);
 		assert.equal(partial.nextOffset, Buffer.byteLength(original));
 		assert.match(partial.notice, /incomplete/);
-		writeFileSync(path, original + JSON.stringify(message("later", { role: "user", content: "Later" })) + "\n");
+		writeFileSync(path, `${original + JSON.stringify(message("later", { role: "user", content: "Later" }))}\n`);
 		assert.equal((await readSessionTrace(path, { offset: partial.nextOffset })).records[0].entryId, "later");
-		writeFileSync(path, original + '{"broken":\n');
+		writeFileSync(path, `${original}{"broken":\n`);
 		await assert.rejects(readSessionTrace(path), /malformed complete JSONL entry at byte/);
 	});
 });
