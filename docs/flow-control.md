@@ -51,6 +51,16 @@ If sending an input was interrupted and its outcome is unknown, inspect the
 session and job state before using `/flow clear`. Clearing releases that hold
 without sending the interrupted input again.
 
+## Request history capacity
+
+Request history records delivery and recovery separately from the model's token
+context. Jouzu archives settled requests when no live input, result, wait, or retry
+depends on them, using both a record count and a byte budget.
+
+If request history fills up, Jouzu holds new requests. `/flow` remains available
+for inspection, and `/flow clear` can release a stuck request while preserving
+receipts, waits, and running jobs. Continue with a new message after clearing it.
+
 ## Branches and resuming
 
 | Action | Result |

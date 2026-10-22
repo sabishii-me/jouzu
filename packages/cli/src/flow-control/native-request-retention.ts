@@ -110,6 +110,7 @@ export function retirableNativeRequests(
 	liveOperations: ReadonlySet<string>,
 	protectedRequestIds: ReadonlySet<string> = new Set(),
 	reconciledSources: ReadonlySet<string> = new Set(),
+	maxBytes = Number.POSITIVE_INFINITY,
 ): string[] {
 	const byId = new Map(records.map((record) => [record.id, record]));
 	const groups: NativeRequest[][] = [];
@@ -157,5 +158,21 @@ export function retirableNativeRequests(
 			.filter((group) => group.every((record) => oldest.has(record.id)))
 			.flatMap((group) => group.map((record) => record.id)),
 	);
+	// A few large observation snapshots can fill the byte budget before the count window.
+	// Apply the same eligibility rules under byte pressure, and keep retry chains indivisible.
+	let remainingBytes =
+		2 +
+		records.reduce(
+			(total, record) => total + (retiring.has(record.id) ? 0 : Buffer.byteLength(JSON.stringify(record)) + 1),
+			0,
+		);
+	for (const group of eligible) {
+		if (remainingBytes <= maxBytes) break;
+		for (const record of group) {
+			if (retiring.has(record.id)) continue;
+			retiring.add(record.id);
+			remainingBytes -= Buffer.byteLength(JSON.stringify(record)) + 1;
+		}
+	}
 	return records.filter((record) => retiring.has(record.id)).map((record) => record.id);
 }

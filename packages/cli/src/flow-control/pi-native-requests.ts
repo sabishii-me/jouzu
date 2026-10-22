@@ -115,6 +115,7 @@ export class PiNativeRequests {
 		 * turning flow control off is the user's way of taking it out of the way.
 		 */
 		flowEnabled?: () => boolean,
+		retireHistory?: () => Promise<unknown>,
 	) {
 		if (!Number.isSafeInteger(maxBytes) || maxBytes < 1)
 			throw new FlowLedgerError("capacity", "Invalid native payload limit.");
@@ -420,6 +421,7 @@ export class PiNativeRequests {
 					// Tool sequences and follow-ups may never expose an idle boundary. Preserve
 					// live evidence while retiring redundant and evidence-empty settled history.
 					if (!store.recoveryBlocked) await store.retireBeforeRequest();
+					if (!store.recoveryBlocked && retireHistory && (await store.historyNeedsRetirement())) await retireHistory();
 					await store.begin(
 						{
 							id: input.requestId,
@@ -491,6 +493,7 @@ export class PiNativeRequests {
 				if (!handedOff) await store.finish(id, "withheld", failure);
 			};
 			try {
+				if (!store.recoveryBlocked && retireHistory && (await store.historyNeedsRetirement())) await retireHistory();
 				await store.begin({
 					id,
 					kind: "maintenance",

@@ -101,6 +101,8 @@ interface Header {
 }
 export const MAX_RETIRED_NATIVE_REQUESTS = 16384;
 const MAX_NATIVE_REQUEST_BYTES = 1024 * 1024;
+const NATIVE_REQUEST_HEADROOM = 64 * 1024;
+const RETAINED_NATIVE_REQUEST_BYTES = MAX_NATIVE_REQUEST_BYTES / 2;
 const sourceIdentity = (source: NativeSourceClaim) => retiredIdentityHash("native-source", nativeSourceKey(source));
 const requestIdentity = (id: string) => retiredIdentityHash("native-request", id);
 const headerAddress = value<Header>("jouzu.flow.native-requests", "v1");
@@ -187,8 +189,9 @@ export class FlowNativeRequestStore {
 		return store;
 	}
 	private validate(records: NativeRequest[]): void {
-		if (records.length > 1024 || Buffer.byteLength(JSON.stringify(records)) > MAX_NATIVE_REQUEST_BYTES)
-			throw new FlowLedgerError("capacity", "Native request retention limit reached.");
+		// Capacity gates admission, not inspection or lifecycle repair. An admitted request must
+		// always be able to record its handoff, outcome, or explicit reset, including on resume.
+		if (records.length > 1024) throw new FlowLedgerError("capacity", "Native request retention limit reached.");
 		for (const [recordIndex, record] of records.entries()) {
 			if (record.failure !== undefined) {
 				validateFailure(record.failure);
@@ -648,6 +651,9 @@ export class FlowNativeRequestStore {
 	retireBeforeRequest(): Promise<number> {
 		return this.retireRedundant(true);
 	}
+	historyNeedsRetirement(): Promise<boolean> {
+		return this.transact((records) => Buffer.byteLength(JSON.stringify(records)) > RETAINED_NATIVE_REQUEST_BYTES);
+	}
 	private retireRedundant(includeEmptyHistory: boolean): Promise<number> {
 		return this.transact((records, retired) => {
 			if (this.requiresRecovery(records) || records.some((record) => record.outcome === undefined && !record.reset))
@@ -685,7 +691,14 @@ export class FlowNativeRequestStore {
 						.map(nativeSourceKey),
 				);
 				const selected = new Set(
-					retirableNativeRequests(records, keep, liveOperations, protectedRequestIds, cancelledReconciled),
+					retirableNativeRequests(
+						records,
+						keep,
+						liveOperations,
+						protectedRequestIds,
+						cancelledReconciled,
+						RETAINED_NATIVE_REQUEST_BYTES,
+					),
 				);
 				if (!selected.size) return 0;
 				assertCurrent();
@@ -884,6 +897,12 @@ export class FlowNativeRequestStore {
 						: {}),
 					...(retry ? { retryOf: retry.id } : {}),
 				});
+				const bytes = Buffer.byteLength(JSON.stringify(records));
+				if (bytes > MAX_NATIVE_REQUEST_BYTES - NATIVE_REQUEST_HEADROOM)
+					throw new FlowLedgerError(
+						"capacity",
+						`Request history is full (${records.length} records, ${bytes} bytes). Run /flow clear, then retry.`,
+					);
 			},
 			{
 				requests: [captured.id],

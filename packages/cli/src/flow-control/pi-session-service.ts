@@ -178,6 +178,7 @@ export class PiFlowSessionService {
 				() => reconcileNativeSources(this.session, attachment, native),
 				// Turning flow control off releases a recovery hold's grip on the session's own sends.
 				() => this.options.flowEnabled?.() !== false,
+				() => this.retireUnreferencedRequests(this.branch()),
 			);
 			this.opening.requests = requests;
 			const workContext = new FlowWorkContext(
@@ -295,37 +296,36 @@ export class PiFlowSessionService {
 				if (this.branch() !== branch) throw new FlowLedgerError("stale", "Request retirement branch changed.");
 				if ((await branch.attachment.ledger.snapshot()).activeAttemptId)
 					throw new FlowLedgerError("busy", "Request retirement requires settled controller work.");
-				// Snapshotting producers reconciles delivery and observation before receipt evidence is removed.
-				const references = await branch.controller.retentionReferences();
-				const superseded = await branch.attachment.nativeRequests.retireSuperseded();
-				// Evidence for input no later request repeats is never superseded, so bound it by age
-				// instead. Operations owning a retained submission are excluded, which keeps every
-				// live submission's request view complete.
-				const live = new Set(
-					(await branch.attachment.submissions.snapshot(false))
-						.map((record) => record.dispatch?.operationId)
-						.filter((id): id is string => !!id),
-				);
-				const liveWaits = new Set((await branch.attachment.waits.snapshot()).map((wait) => wait.token));
-				const protectedRequests = new Set<string>();
-				for (const request of await branch.attachment.nativeRequests.snapshot()) {
-					const messages = (request.projectionCapture?.members ?? []).map((member) => member.message);
-					// Wait references are read from what the decorator recorded when it composed them.
-					if (
-						branch.controller.observationProjections(messages).length ||
-						request.waitTokens?.some((token) => liveWaits.has(token))
-					)
-						protectedRequests.add(request.id);
-				}
-				return (
-					superseded +
-					(await branch.attachment.nativeRequests.retireHistory(undefined, live, protectedRequests, () =>
-						references.assertCurrent(),
-					))
-				);
+				return this.retireUnreferencedRequests(branch);
 			});
 			if (result.kind === "busy") throw new FlowLedgerError("busy", "Request retirement requires an idle session.");
 			return result.value;
+		});
+	}
+
+	/** Also runs at a serialized request checkpoint, where a tool sequence need not be idle. */
+	private async retireUnreferencedRequests(branch: PiFlowBranchResources): Promise<number> {
+		// Reconcile producer observations before removing their successful request evidence.
+		const references = await branch.controller.retentionReferences();
+		const superseded = await branch.attachment.nativeRequests.retireSuperseded();
+		const live = new Set(
+			(await branch.attachment.submissions.snapshot(false))
+				.map((record) => record.dispatch?.operationId)
+				.filter((id): id is string => !!id),
+		);
+		const liveWaits = new Set((await branch.attachment.waits.snapshot()).map((wait) => wait.token));
+		const protectedRequests = new Set<string>();
+		for (const request of await branch.attachment.nativeRequests.snapshot()) {
+			const messages = (request.projectionCapture?.members ?? []).map((member) => member.message);
+			if (
+				branch.controller.observationProjections(messages).length ||
+				request.waitTokens?.some((token) => liveWaits.has(token))
+			)
+				protectedRequests.add(request.id);
+		}
+		return superseded + await branch.attachment.nativeRequests.retireHistory(undefined, live, protectedRequests, () => {
+			if (this.branch() !== branch) throw new FlowLedgerError("stale", "Request retirement branch changed.");
+			references.assertCurrent();
 		});
 	}
 
