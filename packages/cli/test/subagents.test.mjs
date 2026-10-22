@@ -359,13 +359,14 @@ test("real child process completes through the pinned Pi SDK and persists a reco
 	});
 	const manager = new SubagentManager(p, "real-parent", 2, undefined, (run) => completed(run));
 	try {
-		const role = { ...defaultAgentConfig().roles[2], model: "fixture/test", thinking: "off" };
+		const role = { ...defaultAgentConfig().roles[2], model: "same", thinking: "same" };
 		const selectedModel = {
 			...model,
 			provider: "fixture",
 			name: "Fixture",
 			baseUrl: `http://127.0.0.1:${server.address().port}/v1`,
-			reasoning: false,
+			reasoning: true,
+			compat: { supportsReasoningEffort: true },
 			input: ["text"],
 			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 			contextWindow: 32000,
@@ -374,6 +375,7 @@ test("real child process completes through the pinned Pi SDK and persists a reco
 		manager.launch({
 			role,
 			model: selectedModel,
+			thinkingLevel: "low",
 			auth: { apiKey: "fixture-key" },
 			cwd: p.cwd,
 			task: "Report fixture result.",
@@ -384,6 +386,8 @@ test("real child process completes through the pinned Pi SDK and persists a reco
 		assert.ok(result.sessionFile);
 		assert.match(readFileSync(result.sessionFile, "utf8"), /Verified fixture/);
 		assert.equal(requests.length, 1);
+		assert.equal(requests[0].model, selectedModel.id);
+		assert.equal(requests[0].reasoning_effort, "low");
 		assert.ok(requests[0].tools.some((tool) => tool.function.name === "vcc_recall"));
 		assert.ok(requests[0].tools.every((tool) => !["bash", "write", "edit"].includes(tool.function.name)));
 		assert.equal(JSON.stringify(manager.list()).includes("fixture-key"), false);
@@ -393,7 +397,8 @@ test("real child process completes through the pinned Pi SDK and persists a reco
 		const resumed = manager.launch(
 			{
 				role,
-				model: selectedModel,
+				model: { ...selectedModel, id: "resumed-model" },
+				thinkingLevel: "high",
 				auth: { apiKey: "fixture-key" },
 				cwd: p.cwd,
 				task: "Continue from your prior answer.",
@@ -403,6 +408,9 @@ test("real child process completes through the pinned Pi SDK and persists a reco
 		);
 		const followup = await resumedDone;
 		assert.equal(followup.status, "completed", followup.result);
+		assert.equal(requests[1].model, "resumed-model");
+		assert.equal(requests[1].reasoning_effort, "high");
+		assert.equal(followup.thinkingLevel, "high");
 		assert.equal(followup.previousRunId, result.id);
 		assert.equal(followup.childSessionId, result.childSessionId);
 		assert.notEqual(resumed.id, result.id);
@@ -655,4 +663,23 @@ test("the same-model selector follows the session model and stays reachable by p
 	assert.equal(isSameModelSelector("provider/same"), false);
 	assert.equal(isSameModelSelector("samex"), false);
 	assert.equal(resolveAgentModel("test/same", [{ ...model, id: "same" }]).id, "same");
+});
+
+test("fresh child presets inherit model and effort while saved roles retain their choices", () => {
+	const store = new AgentRoleStore(paths());
+	const snapshot = store.load();
+	const children = snapshot.config.roles.filter((role) => role.placement === "child");
+	assert.deepEqual(
+		children.map(({ id, model, thinking }) => ({ id, model, thinking })),
+		[
+			{ id: "coder", model: "same", thinking: "same" },
+			{ id: "reviewer", model: "same", thinking: "same" },
+		],
+	);
+	children[0].model = "fixture/saved-model";
+	children[0].thinking = "low";
+	store.save(snapshot.config, snapshot.revision);
+	const saved = store.load().config.roles.find((role) => role.id === "coder");
+	assert.equal(saved.model, "fixture/saved-model");
+	assert.equal(saved.thinking, "low");
 });

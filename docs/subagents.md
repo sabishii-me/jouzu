@@ -2,7 +2,9 @@
 
 Open `/workflow`, or choose **Workflow** in the Palette. The **Agents** view lists definitions. Select one with `↑`/`↓` and press `Enter` to edit its model, instructions, and execution settings. Use the **View** row's `←`/`→` choice to switch to **Runs**.
 
-Jouzu supplies editable `orchestrator`, `coder`, and `reviewer` presets. Their model selectors are `gpt-6-astra`, `glm-5.3-flash`, and `gpt-6-astra`, respectively. Choose models available through your configured providers before using these definitions. A bare model ID must match exactly one provider; the model picker saves an exact `provider/model` selection. Jouzu reports missing or ambiguous models without substituting another model.
+Fresh installations provide `coder` and `reviewer` child presets with `model: "same"` and `thinking: "same"`. Each launch or resume uses the main session’s selected model and reasoning effort. A running or queued child keeps the settings captured when it was requested. Saved definitions keep your choices.
+
+The editable `orchestrator` preset applies to the main conversation. In Workflow, choose **Same as this session** for a model and **Same as main** for thinking to inherit those settings. An explicit model or effort stays fixed on resume. A bare model ID must match exactly one provider; the model picker also offers exact `provider/model` selections. Jouzu reports missing or ambiguous models without substituting another model.
 
 Workflow and subagent summaries show the provider or catalog's friendly model name. The picker also shows the provider and catalog source; saved selections retain exact identifiers. Expand role or run output to inspect those identifiers.
 
@@ -37,7 +39,7 @@ Definitions are stored in `agents.json` in Jouzu's configuration directory (`jz 
 | Field | Meaning |
 | --- | --- |
 | `id`, `description` | Unique lowercase ID and a display description. |
-| `model`, `thinking` | Exact model selector and Pi thinking setting. |
+| `model`, `thinking` | Model selector and reasoning effort; either accepts `same` to follow the main session on launch and resume. |
 | `instructions` | Inline instructions, up to 32,000 characters. |
 | `placement` | `main`, `child`, or `both`. |
 | `judging` | Fresh review context with read-only built-in tools; requires `child`. |
@@ -74,7 +76,7 @@ Omit unrelated fields. If a strict provider requires every field, use `null` for
 
 Before delegating, the main agent calls `roles` to check live availability and current definitions. It returns `{ "enabled": true, "maxConcurrent": 4, "workspaceWriters": "parallel", "roles": [...] }`, or `enabled: false` with a reason and the configured roles. Definitions can change during a session; choose a role with `child` or `both` placement. Launch checks the current definition and enable setting again.
 
-Only you can change a role's model through Workflow. The tool rejects model overrides, and the agent is instructed not to edit agent configuration to select another model. New launches use the role's configured model; resume keeps the exact model and definition saved with that run. A role configured as `same` uses the main session's model at launch.
+Only you can change a role's model through Workflow. The tool rejects model overrides, and the agent is instructed not to edit agent configuration to select another model. New launches use the current definition; resume uses the definition saved with that run. A saved `same` model or thinking setting follows the main session’s current selection on each launch or resume. Explicit choices remain fixed.
 
 Launch returns immediately with a run ID. Unread terminal summaries arrive in a batch after active work and queued messages finish, including successful completion, limit exhaustion, timeout, cancellation, and crashes. Each batch includes status counts and a bounded sample; omitted results remain available through `list` and `read`. A notification reports completion, not acceptance of the work.
 
@@ -102,7 +104,7 @@ Tool results and completion messages show a themed summary of role, model, statu
 
 Zero token counts are omitted; unknown cost is labelled unknown. Terminal elapsed time includes queue time. Status labels carry the same meaning with color disabled. A completed status records process completion, not acceptance.
 
-**Runs** provides output reading, messaging, Stop, and Resume. Stop requests tool cancellation, then forces process cleanup after a grace period. Files already written remain. Resume starts another run using the original role revision, exact provider/model, workspace, and saved child conversation. Use a new launch for a fresh context or changed definition.
+**Runs** provides output reading, messaging, Stop, and Resume. Stop requests tool cancellation, then forces process cleanup after a grace period. Files already written remain. Resume starts another run using the original role revision, workspace, and saved child conversation. Inherited model and thinking settings are resolved again from the main session; explicit settings stay fixed. Use a new launch for a fresh context or changed definition.
 
 ## Subagent dashboard
 

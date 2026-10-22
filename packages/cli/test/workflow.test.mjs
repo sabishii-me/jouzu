@@ -507,3 +507,28 @@ test("the assignment form defaults to the parent workspace and passes a chosen o
 	assert.match(f.text(120), /Run/);
 	f.view.dispose();
 });
+
+test("Thinking offers same as main and cycles, cancels, and saves without changing the model", () => {
+	const f = fixture();
+	select(f, "coder");
+	enter(f.view);
+	down(f.view, 6);
+	assert.match(f.text(), /Same as main/);
+	f.view.handleInput("\x1b[C");
+	assert.match(f.text(), /Thinking.*off/);
+	cancel(f.view);
+	assert.equal(f.writes, 0);
+	select(f, "coder");
+	enter(f.view);
+	down(f.view, 6);
+	f.view.handleInput("\x1b[D");
+	assert.match(f.text(), /Thinking.*max/);
+	f.view.handleInput("\x1b[C");
+	assert.match(f.text(), /Same as main/);
+	for (const width of [24, 48, 80]) assert.ok(f.view.render(width).every((line) => visibleWidth(line) <= width));
+	down(f.view, 4);
+	enter(f.view);
+	assert.equal(f.writes, 1);
+	assert.equal(f.config.roles.find((role) => role.id === "coder").thinking, "same");
+	assert.equal(f.config.roles.find((role) => role.id === "coder").model, "same");
+});

@@ -61,6 +61,6 @@ repeat completed edits. Run the focused tests, report the result, and stop befor
 adding streaming support. If the provider remains unavailable, report the blocker.
 ```
 
-Use steering for a running child and resume for a terminal run whose saved conversation remains relevant. Resume keeps the saved model and workspace. Start a fresh child only when a separate context or assignment is needed, using the user's configured role. Do not substitute another model to work around errors.
+Use steering for a running child and resume for a terminal run whose saved conversation remains relevant. Resume keeps the saved role and workspace. A role’s `same` model or thinking setting follows the main session’s current selection; explicit settings stay fixed. Start a fresh child only when a separate context or assignment is needed, using the user's configured role. Do not substitute another model to work around errors.
 
 Verify the returned changes and evidence before accepting the result or assigning dependent work. A completed child run is not proof that its acceptance checks passed. These instructions improve handoff clarity; they do not mechanically enforce scope or guarantee model performance.

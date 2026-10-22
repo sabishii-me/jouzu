@@ -1,12 +1,14 @@
 import type { CacheWarmingMode } from "@earendil-works/pi-coding-agent";
 import type { TextGuardMode } from "../textguard-policy.js";
 import type { ChildContext } from "./context.js";
-import type { AgentModel, AgentRole } from "./roles.js";
+import type { AgentModel, AgentRole, AgentThinkingLevel } from "./roles.js";
 
 /** Credentials travel only over the private parent/child pipe, never into run records. */
 export interface WorkerLaunch {
 	role: AgentRole;
 	model: AgentModel;
+	/** Concrete effort resolved from the parent when this run was requested. */
+	thinkingLevel?: AgentThinkingLevel;
 	auth: { apiKey?: string; headers?: Record<string, string>; baseUrl?: string; env?: Record<string, string> };
 	cwd: string;
 	directory: string;

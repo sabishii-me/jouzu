@@ -21,6 +21,17 @@ export const AGENT_TOOLS = ["read", "grep", "find", "ls", "write", "edit", "bash
 export type AgentToolName = (typeof AGENT_TOOLS)[number];
 export const READ_TOOLS: AgentToolName[] = ["read", "grep", "find", "ls"];
 export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+export type AgentThinkingLevel = (typeof THINKING_LEVELS)[number];
+export const ROLE_THINKING_LEVELS = ["same", ...THINKING_LEVELS] as const;
+export function resolveAgentThinking(
+	selector: AgentRole["thinking"],
+	current?: AgentThinkingLevel,
+): AgentThinkingLevel {
+	const level = selector === "same" ? current : selector;
+	if (!level || !THINKING_LEVELS.includes(level))
+		throw new Error("Thinking: select an effort in the main session or choose an explicit effort for this role.");
+	return level;
+}
 export interface AgentRole {
 	id: string;
 	description: string;
@@ -29,7 +40,7 @@ export interface AgentRole {
 	placement: "main" | "child" | "both";
 	judging: boolean;
 	tools: AgentToolName[];
-	thinking: (typeof THINKING_LEVELS)[number];
+	thinking: (typeof ROLE_THINKING_LEVELS)[number];
 	timeoutSeconds: number;
 	maxTurns: number;
 }
@@ -79,7 +90,8 @@ export function defaultAgentConfig(): AgentConfig {
 				...common,
 				id: "coder",
 				description: "Implement and test an assigned change",
-				model: "glm-5.3-flash",
+				model: SAME_MODEL,
+				thinking: "same",
 				placement: "child",
 				judging: false,
 				tools: ["read", "grep", "find", "ls", "write", "edit", "bash"],
@@ -90,7 +102,8 @@ export function defaultAgentConfig(): AgentConfig {
 				...common,
 				id: "reviewer",
 				description: "Challenge a candidate against its requirements",
-				model: "gpt-6-astra",
+				model: SAME_MODEL,
+				thinking: "same",
 				placement: "child",
 				judging: true,
 				tools: [...READ_TOOLS],
@@ -151,7 +164,7 @@ export function parseAgentConfig(value: unknown): AgentConfig {
 		const tools = [...new Set(role.tools)] as AgentToolName[];
 		if (role.judging && tools.some((tool) => !READ_TOOLS.includes(tool)))
 			throw new Error("Validation: reviewing roles may use only read, grep, find, and ls.");
-		if (!THINKING_LEVELS.includes(role.thinking as AgentRole["thinking"]))
+		if (!ROLE_THINKING_LEVELS.includes(role.thinking as AgentRole["thinking"]))
 			throw new Error("Validation: invalid thinking level.");
 		return {
 			id,

@@ -24,9 +24,9 @@ import {
 	CONCURRENCY_BOUNDS,
 	defaultAgentConfig,
 	READ_TOOLS,
+	ROLE_THINKING_LEVELS,
 	type RoleSnapshot,
 	SAME_MODEL,
-	THINKING_LEVELS,
 	type WorkspaceWriterPolicy,
 } from "./subagents/roles.js";
 import {
@@ -232,9 +232,7 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 			role ?? {
 				...defaultAgentConfig().roles[1],
 				id: "new-agent",
-				model: this.service.models()[0]
-					? `${this.service.models()[0].provider}/${this.service.models()[0].id}`
-					: "choose-model",
+				model: SAME_MODEL,
 			},
 		);
 		this.fields.clear();
@@ -471,9 +469,9 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 				{ label: "Child tools", input: this.fields.get("tools") },
 				{
 					label: "Thinking",
-					value: paletteChoice(role.thinking),
+					value: paletteChoice(role.thinking === "same" ? "Same as main" : role.thinking),
 					choice: (delta) => {
-						role.thinking = cycle(THINKING_LEVELS, role.thinking, delta);
+						role.thinking = cycle(ROLE_THINKING_LEVELS, role.thinking, delta);
 					},
 				},
 				{ label: "Timeout (seconds)", input: this.fields.get("timeoutSeconds") },
@@ -920,6 +918,7 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 					lines.push(heading("Run", sanitizeTerminalText(run.status)));
 					lines.push(detail("Agent", sanitizeTerminalText(run.role.id)));
 					lines.push(detail("Model", agentModelDisplay(run.model).label));
+					lines.push(detail("Thinking", run.thinkingLevel ?? run.role.thinking));
 					lines.push(detail("Workspace", sanitizeTerminalText(run.cwd)));
 					if (run.context)
 						lines.push(

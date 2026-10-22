@@ -22,11 +22,14 @@ import type { WorkerCommand, WorkerEvent, WorkerLaunch } from "./protocol.js";
 import { captureReviewCandidate, type ReviewCandidate } from "./review.js";
 import {
 	type AgentRole,
+	type AgentThinkingLevel,
 	DEFAULT_WORKSPACE_WRITERS,
 	digest,
+	isSameModelSelector,
 	parseAgentConfig,
 	parseConcurrency,
 	parseWorkspaceWriters,
+	THINKING_LEVELS,
 	type WorkspaceWriterPolicy,
 } from "./roles.js";
 import { readSessionTrace, type TracePage, type TraceQuery } from "./trace.js";
@@ -41,6 +44,7 @@ export interface AgentRun {
 	role: AgentRole;
 	roleRevision: string;
 	model: { provider: string; id: string; name?: string };
+	thinkingLevel?: AgentThinkingLevel;
 	review?: { candidate: ReviewCandidate; status: "pending" | "unchanged" | "changed" | "unverified" };
 	cwd: string;
 	task: string;
@@ -213,6 +217,7 @@ function ownedJson(path: string): AgentRun {
 		!run.model ||
 		typeof run.model.id !== "string" ||
 		typeof run.model.provider !== "string" ||
+		(run.thinkingLevel !== undefined && !THINKING_LEVELS.includes(run.thinkingLevel)) ||
 		typeof run.cwd !== "string" ||
 		typeof run.createdAt !== "string" ||
 		typeof run.task !== "string" ||
@@ -409,6 +414,7 @@ export class SubagentManager {
 			previousRunId,
 			role: structuredClone(launch.role),
 			roleRevision: digest(launch.role),
+			thinkingLevel: launch.thinkingLevel,
 			model: { provider: launch.model.provider, id: launch.model.id, name: launch.model.name },
 			cwd: realpathSync(launch.cwd),
 			task: launch.task,
@@ -425,10 +431,10 @@ export class SubagentManager {
 			if (
 				previous.cwd !== run.cwd ||
 				previous.roleRevision !== run.roleRevision ||
-				previous.model.id !== run.model.id ||
-				previous.model.provider !== run.model.provider
+				(!isSameModelSelector(previous.role.model) &&
+					(previous.model.id !== run.model.id || previous.model.provider !== run.model.provider))
 			)
-				throw new Error("Resume requires the original workspace, role revision, and model.");
+				throw new Error("Resume requires the original workspace, role revision, and explicitly selected model.");
 			sessionFile = previous.sessionFile;
 			run.context = previous.context;
 			run.parentContextFile = previous.parentContextFile;
