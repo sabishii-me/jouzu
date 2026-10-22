@@ -9,6 +9,13 @@ import { fileURLToPath } from "node:url";
 const fixture = fileURLToPath(new URL("./fixtures/language-runtime-wiring.mjs", import.meta.url));
 const settings = { uiLocale: "en", responseLanguage: "en", artifactPolicy: { commits: "en" } };
 
+function assertRpcStderr(stderr) {
+	// Node 22 emits this runtime warning on import; all other stderr remains an error.
+	const sqliteWarning =
+		/^\(node:\d+\) ExperimentalWarning: SQLite is an experimental feature and might change at any time\r?\n\(Use `node --trace-warnings \.\.\.` to show where the warning was created\)\r?\n/u;
+	assert.equal(stderr.replace(sqliteWarning, ""), "");
+}
+
 function run(t, scenario = {}) {
 	const root = mkdtempSync(join(tmpdir(), "jouzu-language-callers-"));
 	t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -118,13 +125,32 @@ test("a refused first-run save does not apply the unsaved choices", (t) => {
 	assert.ok(Object.values(observed.catalogs).every((locale) => locale === "en"));
 });
 
+test("RPC stderr permits only the exact Node SQLite experimental warning", () => {
+	const warning =
+		"(node:123) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n" +
+		"(Use `node --trace-warnings ...` to show where the warning was created)\n";
+	for (const stderr of ["", warning, warning.replaceAll("\n", "\r\n")]) assertRpcStderr(stderr);
+	for (const stderr of [
+		"unexpected diagnostic\n",
+		`unexpected diagnostic\n${warning}`,
+		`${warning}unexpected diagnostic\n`,
+		warning.replace("SQLite", "Another API"),
+		warning.replace("ExperimentalWarning", "Warning"),
+		warning.split("\n")[0],
+		`${warning}${warning}`,
+		`${warning}\n`,
+	]) {
+		assert.throws(() => assertRpcStderr(stderr), { code: "ERR_ASSERTION" });
+	}
+});
+
 test("RPC startup bypasses first-run interaction and preserves machine stdout", (t) => {
 	const observed = run(t, { machine: true, choice: { uiLocale: "ja", responseLanguage: "ja" } });
 	assert.equal(observed.prompts, 0);
 	assert.equal(observed.settingsAfter, undefined);
 	assert.equal(observed.profileChoiceExists, false);
 	assert.equal(observed.stdout, "");
-	assert.equal(observed.stderr, "");
+	assertRpcStderr(observed.stderr);
 	assert.deepEqual(observed.piArgs.slice(-3), ["--no-extensions", "--mode", "rpc"]);
 });
 

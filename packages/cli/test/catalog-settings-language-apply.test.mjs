@@ -170,7 +170,7 @@ test("a saved-setting change applies to the current session and backs up the pre
 
 	const rendered = component.render(90).join("\n");
 	assert.match(rendered, /Transaction:/u);
-	assert.match(rendered, /Backup:[\s\S]*localization\/environment/u);
+	assert.match(rendered, /Backup:[\s\S]*localization[\\/]environment/u);
 	assert.match(rendered, /English.*config/u);
 
 	const saved = JSON.parse(readFileSync(settingsPath(f.paths), "utf8"));

@@ -191,20 +191,26 @@ test("the task controller extension reads the resolved bundle for its skip notic
 });
 
 test("the flow attachment reads the resolved bundle for its ownership text", async (t) => {
-	const root = await mkdtempSync(join(tmpdir(), "jouzu-flow-locale-attachment-"));
-	t.after(() => rmSync(root, { recursive: true, force: true }));
+	const root = mkdtempSync(join(tmpdir(), "jouzu-flow-locale-attachment-"));
+	let holder;
+	t.after(async () => {
+		await holder?.close();
+		rmSync(root, { recursive: true, force: true });
+	});
 	const scope = { sessionId: "session", branchId: "branch" };
-	const holder = await PiFlowAttachment.open(root, scope, undefined, undefined, ja());
-	t.after(() => holder.close());
+	holder = await PiFlowAttachment.open(root, scope, undefined, undefined, ja());
 	await assert.rejects(
 		() => PiFlowAttachment.open(root, scope, undefined, undefined, ja()),
 		(error) =>
 			error.code === "busy" && /このセッションブランチは既に別のアタッチメントが所有しています。/u.test(error.message),
 	);
-	const englishRoot = await mkdtempSync(join(tmpdir(), "jouzu-flow-locale-attachment-en-"));
-	t.after(() => rmSync(englishRoot, { recursive: true, force: true }));
-	const englishHolder = await PiFlowAttachment.open(englishRoot, scope);
-	t.after(() => englishHolder.close());
+	const englishRoot = mkdtempSync(join(tmpdir(), "jouzu-flow-locale-attachment-en-"));
+	let englishHolder;
+	t.after(async () => {
+		await englishHolder?.close();
+		rmSync(englishRoot, { recursive: true, force: true });
+	});
+	englishHolder = await PiFlowAttachment.open(englishRoot, scope);
 	await assert.rejects(
 		() => PiFlowAttachment.open(englishRoot, scope),
 		(error) => error.code === "busy" && /This session branch is already owned/u.test(error.message),
