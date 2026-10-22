@@ -704,9 +704,10 @@ export async function runMainCli(args: string[]): Promise<void> {
 		onModelCycle: (direction) => modelPicker.cycleFavorite(direction),
 		onScopedModelsCommand: () => modelPicker.handleScopedModelsCommand(),
 	});
-	const [{ TextGuardRuntime }, { createTextGuardReviewExtension }] = await Promise.all([
+	const [{ TextGuardRuntime }, { createTextGuardReviewExtension }, { createTextGuardDesktopExtension }] = await Promise.all([
 		import("./textguard-runtime.js"),
 		import("./textguard-review.js"),
+		import("./textguard-desktop.js"),
 	]);
 	const nativeTextguard = new TextGuardRuntime({
 		cachePath: join(paths.cacheDir, "textguard", "scans.json"),
@@ -758,6 +759,12 @@ export async function runMainCli(args: string[]): Promise<void> {
 					catalog: preRuntime.catalog.bundle,
 					responseLanguageSection: () => languageContract.currentSection(),
 				}),
+				{
+					name: "jouzu-textguard-desktop",
+					factory: createTextGuardDesktopExtension(nativeTextguard, {
+						enabled: process.env.JOUZU_TEXTGUARD_DESKTOP === "1",
+					}),
+				},
 				sessionUi,
 				// Account commands must run before model-availability input checks.
 				createShisaExtension({
