@@ -5,7 +5,7 @@ approve a release or a translation.
 
 Source repository: `shisa-ai/jouzu`.
 
-Candidate: [`97ce062b1b4c20d9c15c8c374a4c07df48e373a9`](https://github.com/shisa-ai/jouzu/tree/97ce062b1b4c20d9c15c8c374a4c07df48e373a9).
+Candidate: [`df12d20bb693d595f6814335d5b53082815342c7`](https://github.com/shisa-ai/jouzu/tree/df12d20bb693d595f6814335d5b53082815342c7).
 All 1,576 Fluent IDs in all four locales are included: `en`, `ja`,
 `zh-Hans`, and `zh-Hant` (6,304 locale entries). Every row
 starts with `unreviewed-in-this-review`.
@@ -61,8 +61,8 @@ Preceding comment blocks are included with each message. All comments (including
 standalone, file-level, and trailing comments) and blank lines are also retained in
 [catalogs.json](catalogs.json). The source index also provides immutable links to complete source files.
 Comments on protected values remain source evidence. Read the
-[shared glossary](https://github.com/shisa-ai/jouzu/blob/97ce062b1b4c20d9c15c8c374a4c07df48e373a9/docs/localization-glossary.md) and
-[protected-value checks](https://github.com/shisa-ai/jouzu/blob/97ce062b1b4c20d9c15c8c374a4c07df48e373a9/packages/cli/test/protected-values.test.mjs)
+[shared glossary](https://github.com/shisa-ai/jouzu/blob/df12d20bb693d595f6814335d5b53082815342c7/docs/localization-glossary.md) and
+[protected-value checks](https://github.com/shisa-ai/jouzu/blob/df12d20bb693d595f6814335d5b53082815342c7/packages/cli/test/protected-values.test.mjs)
 before proposing changes to commands, identifiers, paths, or placeholders.
 
 `same_as_en` flags exact source-value and attribute equality: `ja` 29,
@@ -132,9 +132,9 @@ read the linked complete source file for exact executable syntax. All 53 files
 named by the allowlist are indexed. The allowlist is an ownership/exception
 record, not a Japanese translation table or reviewer approval.
 
-Read the [exact allowlist](https://github.com/shisa-ai/jouzu/blob/97ce062b1b4c20d9c15c8c374a4c07df48e373a9/scripts/direct-strings-allowlist.json),
-[checker and its stated detection limits](https://github.com/shisa-ai/jouzu/blob/97ce062b1b4c20d9c15c8c374a4c07df48e373a9/scripts/check-direct-strings.mjs),
-and [checker tests](https://github.com/shisa-ai/jouzu/blob/97ce062b1b4c20d9c15c8c374a4c07df48e373a9/packages/cli/test/direct-strings.test.mjs).
+Read the [exact allowlist](https://github.com/shisa-ai/jouzu/blob/df12d20bb693d595f6814335d5b53082815342c7/scripts/direct-strings-allowlist.json),
+[checker and its stated detection limits](https://github.com/shisa-ai/jouzu/blob/df12d20bb693d595f6814335d5b53082815342c7/scripts/check-direct-strings.mjs),
+and [checker tests](https://github.com/shisa-ai/jouzu/blob/df12d20bb693d595f6814335d5b53082815342c7/packages/cli/test/direct-strings.test.mjs).
 One allowlist entry can cover multiple locations. This exporter validates the
 165-entry record and indexes its source
 files; it does **not** rerun the TypeScript-based detector or claim that its
@@ -147,8 +147,8 @@ dynamic/error text have separate source and ownership boundaries here.
 
 ## Residual English and ownership
 
-Read the [residual-English guide](https://github.com/shisa-ai/jouzu/blob/97ce062b1b4c20d9c15c8c374a4c07df48e373a9/docs/localization.md) and
-[ownership record](https://github.com/shisa-ai/jouzu/blob/97ce062b1b4c20d9c15c8c374a4c07df48e373a9/packages/cli/src/release-surface-record.ts).
+Read the [residual-English guide](https://github.com/shisa-ai/jouzu/blob/df12d20bb693d595f6814335d5b53082815342c7/docs/localization.md) and
+[ownership record](https://github.com/shisa-ai/jouzu/blob/df12d20bb693d595f6814335d5b53082815342c7/packages/cli/src/release-surface-record.ts).
 Use that commit's guide and source record for its surface counts; these count
 surfaces, not individual strings. This is a bounded ownership record, not a
 complete desktop/installer audit or a new reviewer sign-off. Upstream Pi/extension English, protected identifiers, and service-owned
@@ -180,7 +180,7 @@ can run the exporter from its repository against a clean source checkout:
 
 ```sh
 python3 -m unittest discover -s scripts -p 'test_ja_review_inventory.py' -v
-python3 scripts/ja_review_inventory.py --source /path/to/clean/candidate --repository https://github.com/shisa-ai/jouzu --expected-commit 97ce062b1b4c20d9c15c8c374a4c07df48e373a9 --expected-ids 1576 --source-mode links --output /path/to/new/inventory
+python3 scripts/ja_review_inventory.py --source /path/to/clean/candidate --repository https://github.com/shisa-ai/jouzu --expected-commit df12d20bb693d595f6814335d5b53082815342c7 --expected-ids 1576 --source-mode links --output /path/to/new/inventory
 ```
 
 Add `--check` with the same source, pin, options, and output path to compare the
