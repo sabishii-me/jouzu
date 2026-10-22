@@ -172,7 +172,7 @@ function sseFor(reply) {
 	} else {
 		frames.push({
 			id: "fixture",
-			choices: [{ index: 0, delta: { content: reply?.text ?? "Done" }, finish_reason: "stop" }],
+			choices: [{ index: 0, delta: { content: reply?.text ?? "Done" }, finish_reason: reply?.finishReason ?? "stop" }],
 		});
 	}
 	return `${frames.map((frame) => `data: ${JSON.stringify(frame)}`).join("\n\n")}\n\ndata: [DONE]\n\n`;

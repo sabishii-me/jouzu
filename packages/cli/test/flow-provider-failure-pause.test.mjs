@@ -12,6 +12,46 @@ import { nativeRequests } from "./fixtures/native-requests.mjs";
 
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 const rejection = () => ({ httpStatus: 403, httpBody: { error: { message: "403 terminated" } } });
+const truncated = () => ({ text: "", finishReason: "length" });
+
+for (const recovers of [false, true])
+	test(`a truncated response pauses only if compact-and-retry fails: recovers=${recovers}`, async (t) => {
+		const f = await assembledSession(t, {
+			persist: true,
+			settings: { compaction: { enabled: true, reserveTokens: 512, keepRecentTokens: 1 } },
+			producerExtensions: await installedProducerExtensions(),
+			script: [
+				{ text: "Earlier successful response" },
+				truncated(),
+				{ text: "Summary of earlier work" },
+				{ text: "Summary of the current turn" },
+				recovers ? { text: "Recovered" } : truncated(),
+			],
+		});
+		const notices = capturedNotices(f.session);
+		await f.session.setModel({ ...f.session.model, contextWindow: 262144 });
+		await f.session.prompt("Establish earlier history");
+		await f.session.prompt("Continue the work");
+		await f.session.waitForIdle();
+		assert.equal(
+			f.bodies.length,
+			5,
+			"one truncation, two summaries for the split turn, and one retry after the earlier turn",
+		);
+		assert.equal(f.sessionManager.getEntries().filter((entry) => entry.type === "compaction").length, 1);
+		assert.equal(isProviderPause(f.ingress.automatedPause() ?? ""), !recovers);
+		assert.equal(notices.filter((notice) => notice.text.includes("Flow control paused")).length, recovers ? 0 : 1);
+		if (!recovers) assert.match(f.ingress.automatedPause(), /response was truncated/i);
+
+		const producer = syntheticProducer();
+		const registration = f.ingress.registerProducer(producer.producer);
+		t.after(() => registration.dispose());
+		producer.offer([{ id: "after-truncation-recovery", revision: "1" }]);
+		await registration.changed();
+		await f.session.waitForIdle();
+		assert.equal(f.bodies.length, recovers ? 6 : 5, "only a successful recovery permits automatic continuation");
+		assert.deepEqual(f.errors, []);
+	});
 
 test("a provider failure that ends a turn holds automated work and reports why", async (t) => {
 	const f = await assembledSession(t, {
@@ -207,35 +247,39 @@ for (const initiallyOff of [true, false])
 		assert.deepEqual(f.errors, []);
 	});
 
-for (const resume of ["command", "user"])
-	test(`a provider pause holds later work until resumed by ${resume}`, async (t) => {
-		const f = await assembledSession(t, {
-			producerExtensions: await installedProducerExtensions(),
-			script: (_body, index) => (index === 0 ? rejection() : { text: "Recovered" }),
-		});
-		const notices = capturedNotices(f.session);
-		const producer = syntheticProducer();
-		const registration = f.ingress.registerProducer(producer.producer);
-		t.after(() => registration.dispose());
-		producer.offer([{ id: "failed-work", revision: "1" }]);
-		await registration.changed();
-		await f.session.waitForIdle();
-		assert.ok(isProviderPause(f.ingress.automatedPause() ?? ""));
-		producer.offer([{ id: "later-work", revision: "1" }]);
-		await registration.changed();
-		assert.equal(f.bodies.length, 1, "later work stays held after the failed automatic request");
-		await f.session.prompt("/flow");
-		assert.equal(f.bodies.length, 1, "inspection does not release the pause");
+for (const [failure, reply] of [
+	["error", rejection],
+	["length", truncated],
+])
+	for (const resume of ["command", "user"])
+		test(`a provider ${failure} pause holds later work until resumed by ${resume}`, async (t) => {
+			const f = await assembledSession(t, {
+				producerExtensions: await installedProducerExtensions(),
+				script: (_body, index) => (index === 0 ? reply() : { text: "Recovered" }),
+			});
+			const notices = capturedNotices(f.session);
+			const producer = syntheticProducer();
+			const registration = f.ingress.registerProducer(producer.producer);
+			t.after(() => registration.dispose());
+			producer.offer([{ id: "failed-work", revision: "1" }]);
+			await registration.changed();
+			await f.session.waitForIdle();
+			assert.ok(isProviderPause(f.ingress.automatedPause() ?? ""));
+			producer.offer([{ id: "later-work", revision: "1" }]);
+			await registration.changed();
+			assert.equal(f.bodies.length, 1, "later work stays held after the failed automatic request");
+			await f.session.prompt("/flow");
+			assert.equal(f.bodies.length, 1, "inspection does not release the pause");
 
-		await f.session.prompt(resume === "command" ? "/flow resume" : "Continue after repairing the provider");
-		await registration.changed();
-		await f.session.waitForIdle();
-		assert.equal(f.ingress.automatedPause(), undefined);
-		assert.equal(f.bodies.length, resume === "command" ? 2 : 3);
-		assert.ok(JSON.stringify(f.bodies.at(-1)).includes("work later-work"));
-		assert.equal(notices.filter((notice) => notice.text.includes("Flow control paused")).length, 1);
-		assert.deepEqual(f.errors, []);
-	});
+			await f.session.prompt(resume === "command" ? "/flow resume" : "Continue after repairing the provider");
+			await registration.changed();
+			await f.session.waitForIdle();
+			assert.equal(f.ingress.automatedPause(), undefined);
+			assert.equal(f.bodies.length, resume === "command" ? 2 : 3);
+			assert.ok(JSON.stringify(f.bodies.at(-1)).includes("work later-work"));
+			assert.equal(notices.filter((notice) => notice.text.includes("Flow control paused")).length, 1);
+			assert.deepEqual(f.errors, []);
+		});
 
 test("a provider failure does not replace an explicit pause", async (t) => {
 	const entered = deferred();

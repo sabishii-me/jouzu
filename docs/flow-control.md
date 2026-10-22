@@ -28,7 +28,7 @@ turns. A stuck reservation can prevent the next reply from starting.
 | `/flow runtime` | Show startup package paths and hashes |
 
 - Interrupting a reply also pauses automatic work until your next message or `/flow resume`.
-- A reply that still ends with a provider error after retries and context recovery pauses automatic work. The pause includes the provider's message; your next message or `/flow resume` releases it.
+- A reply that still ends with a provider error or is truncated after retries and context recovery pauses automatic work. The pause explains the failure; your next message or `/flow resume` releases it.
 - `/flow clear` repairs a reservation without discarding flow evidence. If that does not fix the problem, `/flow reset confirm` is the destructive fallback: it discards all queued messages and flow delivery state, cancels waits, and leaves underlying jobs running.
 - `/flow resolve <attempt> retry` may repeat a request the model already answered. It resolves an unknown attempt outcome; `/flow retry <request>` instead authorizes a withheld request.
 - Set `JOUZU_FLOW_CONTROL=0` before starting Jouzu to disable flow control for that process.

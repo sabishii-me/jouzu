@@ -815,8 +815,10 @@ export class PiNativeRequests {
 		if (event.type !== "agent_settled") return;
 		const last = this.lastAssistant;
 		this.lastAssistant = undefined;
-		if (!this.enabled() || event.aborted || last?.stopReason !== "error") return;
-		this.turn?.providerFailed?.(last.errorMessage ?? "");
+		if (!this.enabled() || event.aborted) return;
+		if (last?.stopReason === "error") this.turn?.providerFailed?.(last.errorMessage ?? "");
+		else if (last?.stopReason === "length")
+			this.turn?.providerFailed?.("Response was truncated before completion.");
 	}
 	async close(): Promise<void> {
 		if (this.closed) return;
