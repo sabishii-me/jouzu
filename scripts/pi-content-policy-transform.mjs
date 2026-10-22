@@ -706,6 +706,10 @@ export function sessionEntryToContextMessages(entry) {`,
     async _handlePostAgentRun() {`,
 		);
 		change(
+			'        if (expandPromptTemplates && text.startsWith("/")) {',
+			'        if (expandPromptTemplates && text.startsWith("/") && !this._flowBinding?.commandPreflighted()) {',
+		);
+		change(
 			"            await command.handler(args, ctx);",
 			"            if (this._flowBinding) await this._flowBinding.withCommand(command, () => command.handler(args, ctx));\n            else await command.handler(args, ctx);",
 		);

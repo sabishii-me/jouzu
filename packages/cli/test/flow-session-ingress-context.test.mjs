@@ -900,21 +900,30 @@ test("a command's own send is admitted while automated work is paused", async (t
 				}),
 		],
 	});
+	let invocation;
+	const runCommand = f.ingress.runCommand.bind(f.ingress);
+	t.mock.method(f.ingress, "runCommand", (submission, run) => {
+		invocation = submission;
+		return runCommand(submission, run);
+	});
 	f.ingress.pauseAutomated("Hold automated dispatch");
 	await f.session.prompt("/resume");
-	// The command prompt is still settling, so the send is retained first and dispatched from the
-	// next boundary. Pi records the invocation only for the extension that owns the command, which is
-	// what makes this the user's own instruction arriving through the command.
+	// The command owns no native input. Its send retains the host's invocation identity
+	// only for the extension that owns the command, and still passes through admission.
 	await waitForFlow(async () =>
 		(await f.ingress.branch().attachment.submissions.snapshot(true)).some(
 			(record) => record.submission.api === "sendUserMessage",
 		),
 	);
 	const records = await f.ingress.branch().attachment.submissions.snapshot(true);
-	const invoked = records.find((record) => record.submission.api === "prompt");
+	assert.equal(
+		records.some((record) => record.submission.api === "prompt"),
+		false,
+	);
 	const send = records.find((record) => record.submission.api === "sendUserMessage");
 	assert.equal(send.submission.userCommand.name, "resume");
-	assert.equal(send.submission.userCommand.submissionId, invoked.id);
+	assert.equal(send.submission.userCommand.submissionId, invocation.id);
+	assert.notEqual(send.id, invocation.id);
 	assert.deepEqual(send.holds ?? [], []);
 	// The command's send releases the pause the way typed input does, so the work it resumes keeps
 	// running instead of stalling after one turn.

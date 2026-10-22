@@ -165,6 +165,19 @@ export function transformMultiloopAutonomy(source) {
 	return source;
 }
 
+export function preservePendingMultiloopContinuations(source) {
+	const anchor = `function queueLoopAutoContinue(
+  pi: ExtensionAPI,
+  ctx: ExtensionContext,
+  reason: string
+): void {
+  const flow = multiloopFlowDriving(ctx.sessionManager.getSessionId());
+  if (flow) {
+    for (const state of runningStates()) {
+      const lane = { lane: state.lane, runTag: state.runTag };`;
+	return replace(source, anchor, `${anchor}\n      if (flow.retained?.(lane)) continue;`);
+}
+
 export function transformMultiloopFlow(source) {
 	source = replace(
 		source,
@@ -228,10 +241,12 @@ export function transformMultiloopFlow(source) {
 		"    if (cascadingTasksWillDrive(ctx)) return;",
 		"    if (!multiloopFlow(ctx.sessionManager.getSessionId()) && cascadingTasksWillDrive(ctx)) return;",
 	);
-	return driveMultiloopAfterOtherTurns(
-		notifyMultiloopLabels(
-			driveMultiloopOnGateChange(
-				gateMultiloopFlowDriving(transformMultiloopStatus(transformGoalResume(transformMultiloopLifecycle(source)))),
+	return preservePendingMultiloopContinuations(
+		driveMultiloopAfterOtherTurns(
+			notifyMultiloopLabels(
+				driveMultiloopOnGateChange(
+					gateMultiloopFlowDriving(transformMultiloopStatus(transformGoalResume(transformMultiloopLifecycle(source)))),
+				),
 			),
 		),
 	);

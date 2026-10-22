@@ -88,6 +88,7 @@ export async function fixture(
 				await ingress.attach(session);
 				wrapped = session.agent.streamFunction;
 			},
+			runCommand: (...args) => ingress.runCommand(...args),
 			submit: (...args) => ingress.submit(...args),
 			beforeBranchChange: () => ingress.beforeBranchChange(),
 			branchChanged: () => ingress.branchChanged(),

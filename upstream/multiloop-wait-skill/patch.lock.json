@@ -9,10 +9,11 @@
 	"extension": {
 		"path": "extensions/pi-multiloop/index.ts",
 		"before": "866b6844147290cd4141aa59fd7a96a154984a76ac32590406964481200a76a9",
-		"after": "cb7d6d90332f811bfc58a620080392309e3da6ec7467d5c2b376e41ee8e348d5",
+		"after": "6812bb89c17fac555bdf9229e97841192458282dcd796bba7e695fb59502ab35",
 		"continuationPreviousAfter": "3203fceae5f5a83b99e08e989c18544ef02963f2b1be73cd978480ef4f63b96e",
 		"labelsPreviousAfter": "1a5a52847e9b148b3a15dcd4cf4733e9277209b3c9049d8ca8817eac411988ee",
-		"previousAfter": "e84095312cbf98d2437837c7f48cbf8985906addfb7370ce4e962c83c2aff05f"
+		"previousAfter": "e84095312cbf98d2437837c7f48cbf8985906addfb7370ce4e962c83c2aff05f",
+		"retainedPreviousAfter": "cb7d6d90332f811bfc58a620080392309e3da6ec7467d5c2b376e41ee8e348d5"
 	},
 	"lanes": {
 		"path": "extensions/pi-multiloop/lanes.ts",

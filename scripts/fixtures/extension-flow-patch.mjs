@@ -70,6 +70,7 @@ export function backgroundWidgetPredecessor(source) {
 
 /** Reconstruct each supported partial patch, preserving all fork-owned source bytes. */
 export function multiloopPredecessors(source) {
+	source = replace(source, "      if (flow.retained?.(lane)) continue;\n", "");
 	let previous = replace(
 		source,
 		'    "Autonomous task policy: do not set TaskUpdate waitForUser or paused during this loop. Reconcile resolved task waits by clearing the flag and completing the task with a result summary.",\n',

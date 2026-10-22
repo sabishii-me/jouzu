@@ -31,6 +31,7 @@ export class FlowIngressBinding {
 			handler?.version !== 1 ||
 			typeof handler.submit !== "function" ||
 			(handler.attach !== undefined && typeof handler.attach !== "function") ||
+			(handler.runCommand !== undefined && typeof handler.runCommand !== "function") ||
 			(handler.beforeBranchChange !== undefined && typeof handler.beforeBranchChange !== "function") ||
 			(handler.branchChanged !== undefined && typeof handler.branchChanged !== "function") ||
 			(handler.dispose !== undefined && typeof handler.dispose !== "function")
@@ -81,6 +82,10 @@ export class FlowIngressBinding {
 		return this.#source.run({ origin: { kind: "extension", id }, used: false }, run);
 	}
 
+	commandPreflighted() {
+		return this.#dispatch.getStore()?.commandPreflighted === true;
+	}
+
 	async withCommand(command, run) {
 		const parent = this.#dispatch.getStore()?.submission;
 		if (parent?.api !== "prompt" || parent.origin.kind !== "host") return run();
@@ -90,7 +95,10 @@ export class FlowIngressBinding {
 			value: { id: randomUUID(), name: command.invocationName, submissionId: parent.id },
 		};
 		try {
-			return await this.#command.run(context, run);
+			const invoke = () => this.#command.run(context, run);
+			return await (this.#dispatch.getStore()?.control && this.#handler.runCommand
+				? this.#handler.runCommand(structuredClone(parent), invoke)
+				: invoke());
 		} finally {
 			context.active = false;
 		}
@@ -208,6 +216,20 @@ export class FlowIngressBinding {
 			args: snapshot,
 			...(command?.active && command.owner === origin.id ? { userCommand: { ...command.value } } : {}),
 		};
+		// A direct host command may replace this session. Run Pi's command preflight before
+		// admission owns a native dispatch that disposal would have to join. Nested sends
+		// remain captured; extension-driven commands keep their existing admission policy.
+		const commandPreflighted =
+			api === "prompt" && origin.kind === "host" && (!frame || frame.control) && !this.#session._isEmittingAgentSettled;
+		if (commandPreflighted && (snapshot[1]?.expandPromptTemplates ?? true) && snapshot[0].startsWith("/")) {
+			const handled = await this.#dispatch.run({ submission, control: true }, () =>
+				this.#session._tryExecuteExtensionCommand(snapshot[0]),
+			);
+			if (handled) {
+				notify("handled");
+				return;
+			}
+		}
 		let started = false;
 		let revoked = false;
 		let execution;
@@ -239,8 +261,9 @@ export class FlowIngressBinding {
 			if (preflight) captured[1] = { ...captured[1], preflightResult: notify };
 			this.#dispatches++;
 			try {
-				return await this.#dispatch.run({ submission, forward: api === "sendUserMessage" ? "prompt" : undefined }, () =>
-					native(...captured),
+				return await this.#dispatch.run(
+					{ submission, commandPreflighted, forward: api === "sendUserMessage" ? "prompt" : undefined },
+					() => native(...captured),
 				);
 			} finally {
 				this.#dispatches--;

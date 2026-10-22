@@ -894,6 +894,20 @@ export class PiSessionFlowIngress implements Ingress {
 			.catch(() => {});
 		return operation;
 	}
+	async runCommand(submission: Submission, run: () => Promise<void>): Promise<void> {
+		if (this.suspended) return run();
+		this.branch();
+		this.activeUserInput++;
+		// Control commands retain user priority without owning input or a disposal join.
+		// Inspection commands leave an explicit automation pause in place.
+		if (!/^\/(?:flow|about)(?:\s|$)/.test((submission.args[0] as string).trim())) this.resumeAutomated();
+		try {
+			await run();
+		} finally {
+			this.activeUserInput--;
+			this.requestRelease();
+		}
+	}
 	submit(submission: Submission, dispatch: () => Promise<void>): Promise<void> {
 		// Flow control is off: the host's own dispatch runs, unread and unrecorded.
 		if (this.suspended) return dispatch();

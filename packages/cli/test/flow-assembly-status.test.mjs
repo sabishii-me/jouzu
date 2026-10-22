@@ -208,7 +208,7 @@ test("pausing a campaign holds its turns and resuming releases them", async (t) 
 	assert.deepEqual(f.errors, []);
 });
 
-test("stopping a campaign cancels its waits and refuses a second transition", async (t) => {
+test("stopping a campaign cancels its waits and refuses a second transition", { timeout: 15000 }, async (t) => {
 	const f = await assembledSession(t, {
 		producerExtensions: await installedProducerExtensions(),
 		script: campaignScript({ goal: "Stop it" }),
@@ -216,8 +216,21 @@ test("stopping a campaign cancels its waits and refuses a second transition", as
 	await f.session.prompt("start the sweep and wait");
 	const wait = await liveWait(f.ingress, "the campaign is live");
 
+	const waits = f.ingress.branch().attachment.waits;
+	const retired = new Promise((resolve, reject) => {
+		t.after(
+			waits.onChanged(() => {
+				void waits
+					.snapshot()
+					.then((records) => {
+						if (!records.some((record) => record.token === wait.token)) resolve();
+					})
+					.catch(reject);
+			}, reject),
+		);
+	});
 	await f.session.prompt(`/flow stop ${wait.workId}`);
-	await settle();
+	await retired;
 	// Stopping cancels the work's live waits, and idle maintenance then retires the ended records, so
 	// the observable end state is that no gate remains for it.
 	assert.deepEqual(await f.ingress.branch().attachment.waits.snapshot(), [], "stopping work ends the gate it owns");

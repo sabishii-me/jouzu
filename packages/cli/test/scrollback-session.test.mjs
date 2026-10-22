@@ -41,6 +41,11 @@ test("scrollback wrapper preserves delegate methods, receivers, and dispatch own
 			assert.equal(this, delegate);
 			calls.push(["after", value]);
 		},
+		async runCommand(value, run) {
+			assert.equal(this, delegate);
+			calls.push(["command", value]);
+			await run();
+		},
 		async submit(value) {
 			assert.equal(this, delegate);
 			calls.push(["submit", value]);
@@ -53,6 +58,11 @@ test("scrollback wrapper preserves delegate methods, receivers, and dispatch own
 	await wrapped.attach(session);
 	await wrapped.beforeBranchChange(scope);
 	await wrapped.branchChanged(scope);
+	let commands = 0;
+	await wrapped.runCommand(submission, async () => {
+		commands++;
+	});
+	assert.equal(commands, 1);
 	await wrapped.submit(submission, () => {
 		throw Error("delegate owns dispatch");
 	});
@@ -61,6 +71,7 @@ test("scrollback wrapper preserves delegate methods, receivers, and dispatch own
 		["attach", session],
 		["before", scope],
 		["after", scope],
+		["command", submission],
 		["submit", submission],
 		["dispose"],
 	]);
@@ -69,6 +80,10 @@ test("scrollback wrapper preserves delegate methods, receivers, and dispatch own
 		dispatched++;
 	});
 	assert.equal(dispatched, 1);
+	await observer.wrap().runCommand(submission, async () => {
+		commands++;
+	});
+	assert.equal(commands, 2);
 });
 
 test("host shell activity stays busy through executeBash while the agent is idle", async (t) => {

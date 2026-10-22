@@ -452,6 +452,36 @@ test("installed multiloop drives its lanes again when a flow gate clears", async
 	await f.emit("session_shutdown");
 });
 
+test("automatic goal continuation preserves a pending explicit request", async (t) => {
+	const f = await fixture(t);
+	const intents = [];
+	let retained = false;
+	const detach = f.attachMultiloopFlow("session", {
+		version: 1,
+		submit(intent) {
+			retained = true;
+			intents.push(intent);
+		},
+		waiting: () => false,
+		retained: () => retained,
+		changed() {},
+	});
+	t.after(detach);
+	await f.command("goal", "Finish the requested objective");
+	assert.equal(intents.length, 1);
+	assert.equal(intents[0].reason, "goal-start");
+	await f.emit("agent_end");
+	assert.equal(intents.length, 1, "an unrelated turn must not replace the pending command");
+	retained = false;
+	intents[0].admitted();
+	await f.emit("agent_start");
+	await f.emit("tool_call");
+	await f.emit("agent_end");
+	assert.equal(intents.length, 2, "automatic continuation resumes after the request is consumed");
+	assert.match(intents[1].reason, /^auto-continue:/);
+	assert.match(intents[1].build(), /Finish the requested objective/);
+});
+
 test("installed multiloop gate-change upgrade replaces only the pinned preceding source", async (t) => {
 	const installed = join(packageRoot, "extensions/pi-multiloop/index.ts");
 	const source = await readFile(installed, "utf8");
@@ -473,6 +503,13 @@ test("installed multiloop gate-change upgrade replaces only the pinned preceding
 	}
 	await writeFile(join(target, "extensions/pi-multiloop/index.ts"), previous);
 	await applyMultiloopWaitSkill(target);
+	assert.equal(await readFile(join(target, "extensions/pi-multiloop/index.ts"), "utf8"), source);
+	assert.equal(await applyMultiloopWaitSkill(target, true), 0);
+	const preceding = source.replace("      if (flow.retained?.(lane)) continue;\n", "");
+	assert.equal(sha256(preceding), lock.extension.retainedPreviousAfter);
+	await writeFile(join(target, "extensions/pi-multiloop/index.ts"), preceding);
+	await assert.rejects(applyMultiloopWaitSkill(target, true), /hash differs/);
+	assert.equal(await applyMultiloopWaitSkill(target), 1);
 	assert.equal(await readFile(join(target, "extensions/pi-multiloop/index.ts"), "utf8"), source);
 	assert.equal(await applyMultiloopWaitSkill(target, true), 0);
 });

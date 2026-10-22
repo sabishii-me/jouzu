@@ -27,6 +27,10 @@ export function createScrollbackSessionObserver() {
 				async branchChanged(next) {
 					await delegate?.branchChanged?.(next);
 				},
+				async runCommand(submission, run) {
+					if (delegate?.runCommand) await delegate.runCommand(submission, run);
+					else await run();
+				},
 				async submit(submission, dispatch) {
 					if (delegate) await delegate.submit(submission, dispatch);
 					else await dispatch();

@@ -491,8 +491,13 @@ test("user-command origin belongs only to the registered owner while its handler
 	await session.prompt("/trigger");
 	late.resolve();
 	await tick();
-	const [root, owner, other, later] = held.entries.map(({ input }) => input);
-	assert.equal(owner.userCommand.submissionId, root.id);
+	const [owner, other, later] = held.entries.map(({ input }) => input);
+	assert.deepEqual(
+		held.entries.map(({ input }) => input.args[0]),
+		["owner", "other", "later"],
+	);
+	assert.match(owner.userCommand.submissionId, /^[\da-f-]{36}$/);
+	assert.notEqual(owner.userCommand.submissionId, owner.id);
 	assert.equal(owner.userCommand.name, "trigger");
 	assert.equal(other.userCommand, undefined);
 	assert.equal(later.userCommand, undefined);
@@ -519,6 +524,33 @@ test("an extension invoking a slash command cannot acquire user-command priority
 	assert.equal(held.entries.length, 2);
 	assert.ok(held.entries.every(({ input }) => input.origin.kind === "extension" && input.userCommand === undefined));
 	assert.equal(requests.length, 0);
+});
+
+test("a retained unknown slash prompt cannot become a command during later dispatch", async (t) => {
+	const held = inbox();
+	let api,
+		calls = 0;
+	const { session, requests } = await createFlowSession(t, {
+		ingress: held.handler,
+		extensions: [
+			(extension) => {
+				api = extension;
+			},
+		],
+	});
+	await session.prompt("/late");
+	api.registerCommand("late", {
+		handler: () => {
+			calls++;
+		},
+	});
+	await held.entries[0].dispatch();
+	assert.equal(calls, 0);
+	assert.equal(requests.length, 1);
+	assert.ok(JSON.stringify(requests).includes("/late"));
+	await session.prompt("/late");
+	assert.equal(calls, 1);
+	assert.equal(held.entries.length, 1);
 });
 
 test("disposed attachment rejects retained dispatch while another session remains usable", async (t) => {

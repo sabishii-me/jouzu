@@ -321,17 +321,11 @@ test("clear management refuses a running turn and /flow clear succeeds at idle",
 	assert.match(notices[0].text, /Cleared flow reservation stuck/);
 });
 
-test("completed command user work retires without waiting for a provider receipt", async (t) => {
+test("handled input user work retires without waiting for a provider receipt", async (t) => {
 	const f = await fixture(t, {
-		extensions: [
-			(pi) =>
-				pi.registerCommand("local", {
-					description: "Handle a local command",
-					handler: async () => {},
-				}),
-		],
+		extensions: [(pi) => pi.on("input", () => ({ action: "handled" }))],
 	});
-	await f.session.prompt("/local");
+	await f.session.prompt("Handle this input locally");
 	const branch = f.ingress.branch();
 	const records = await branch.attachment.submissions.snapshot();
 	const work = (await branch.attachment.waits.authoritySnapshot()).work;

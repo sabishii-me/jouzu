@@ -11,6 +11,7 @@ import { hasFlowHandoff } from "./request-retention.js";
 interface Frame {
 	kind: "operation" | "command" | "navigation" | "boundary";
 	active: boolean;
+	nested: number;
 }
 export type PiBoundaryResult<T> = { kind: "busy" } | { kind: "idle"; value: T };
 export type PiSettlement = { kind: "inactive" | "waiting" | "cancelled" | "uncertain" | "settled"; attemptId?: string };
@@ -172,7 +173,17 @@ export class PiHostBoundary {
 	}
 	/** Fence new host writes, abort native execution, and join preflight and idle transactions. */
 	abortAndJoin(): Promise<void> {
-		if (this.frames.getStore()?.active)
+		const frame = this.frames.getStore();
+		// A command runs before native input admission and may replace its own session.
+		// Relinquish only this control frame; independent operations still drain. Nested
+		// sends and maintenance cannot close the callback that is awaiting them.
+		if (frame?.active && frame.kind === "command" && frame.nested === 0 && !this.barrier) {
+			this.stopping = true;
+			frame.active = false;
+			this.active--;
+			this.notifyDrained();
+		}
+		if (frame?.active)
 			return Promise.reject(new FlowLedgerError("busy", "Host shutdown cannot join its own active callback."));
 		this.stopping = true;
 		this.stoppingPromise ??= (async () => {
@@ -197,17 +208,19 @@ export class PiHostBoundary {
 		if (parent?.kind === "boundary")
 			throw new FlowLedgerError("busy", "Idle reconciliation cannot start a host operation.");
 		if (parent?.active) {
+			parent.nested++;
 			this.active++;
 			try {
 				return await run();
 			} finally {
+				parent.nested--;
 				this.active--;
 				this.notifyDrained(true);
 			}
 		}
 		while (this.barrier) await this.barrier;
 		this.assertWritable();
-		const frame: Frame = { kind, active: true };
+		const frame: Frame = { kind, active: true, nested: 0 };
 		this.active++;
 		try {
 			return await this.frames.run(frame, run);
@@ -264,7 +277,7 @@ export class PiHostBoundary {
 		this.barrier = new Promise<void>((resolve) => {
 			release = resolve;
 		});
-		const frame: Frame = { kind: "boundary", active: true };
+		const frame: Frame = { kind: "boundary", active: true, nested: 0 };
 		try {
 			const value = await this.frames.run(frame, run);
 			this.assertActive();

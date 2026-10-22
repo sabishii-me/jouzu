@@ -57,6 +57,7 @@ export async function assembledSession(
 		...(settings ? { settings } : {}),
 		ingress: {
 			version: 1,
+			runCommand: (...args) => ingress.runCommand(...args),
 			attach: (target) => ingress.attach(target),
 			submit: (...args) => ingress.submit(...args),
 			beforeBranchChange: () => ingress.beforeBranchChange(),
@@ -96,6 +97,7 @@ export async function replacedSession(
 		script,
 		ingress: {
 			version: 1,
+			runCommand: (...args) => ingress.runCommand(...args),
 			attach: (target) => ingress.attach(target),
 			submit: (...args) => ingress.submit(...args),
 			beforeBranchChange: () => ingress.beforeBranchChange(),

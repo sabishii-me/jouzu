@@ -6,6 +6,7 @@ import {
 	driveMultiloopAfterOtherTurns,
 	extensionPath,
 	notifyMultiloopLabels,
+	preservePendingMultiloopContinuations,
 	transformMultiloopAutonomy,
 	transformMultiloopFlow,
 } from "./multiloop-flow-transform.mjs";
@@ -56,6 +57,7 @@ export async function applyMultiloopWaitSkill(packageRoot, checkOnly = false) {
 			checkOnly ||
 			![
 				lock.extension.before,
+				lock.extension.retainedPreviousAfter,
 				lock.extension.previousAfter,
 				lock.extension.labelsPreviousAfter,
 				lock.extension.continuationPreviousAfter,
@@ -65,10 +67,12 @@ export async function applyMultiloopWaitSkill(packageRoot, checkOnly = false) {
 		let changed = extension;
 		if (extensionDigest === lock.extension.before) {
 			changed = transformMultiloopFlow(extension);
+		} else if (extensionDigest === lock.extension.retainedPreviousAfter) {
+			changed = preservePendingMultiloopContinuations(extension);
 		} else {
 			if (extensionDigest === lock.extension.labelsPreviousAfter) changed = notifyMultiloopLabels(changed);
 			if (extensionDigest !== lock.extension.previousAfter) changed = driveMultiloopAfterOtherTurns(changed);
-			changed = transformMultiloopAutonomy(changed);
+			changed = preservePendingMultiloopContinuations(transformMultiloopAutonomy(changed));
 		}
 		if (sha(changed) !== lock.extension.after) throw new Error("Multiloop flow transform differs.");
 		writes.push([join(packageRoot, extensionPath), changed]);
