@@ -22,6 +22,7 @@ export function createJouzuHelpExtension(): InlineExtension {
 								`${theme.fg("accent", helpKeys)}  Help`,
 								`${theme.fg("accent", "/hotkeys")}  All shortcuts`,
 								`${theme.fg("accent", "/session")}  Session details`,
+								`${theme.fg("accent", "/fast on|off")}  Fast model requests`,
 								`${theme.fg("accent", "/about")}  Runtime and installed builds`,
 								`${theme.fg("accent", "/workflow")}  Agents and runs`,
 								`${theme.fg("accent", "/subagents")}  Child run dashboard`,

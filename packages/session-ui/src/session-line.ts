@@ -77,12 +77,31 @@ export function renderSessionLine(
 	styles: SessionUiStyles,
 	activity?: SessionUiActivity,
 	glyph?: string,
+	fastMode = false,
 ): string {
 	if (width <= 0) return "";
 	const provider = formatProvider(snapshot.model.providerId);
 	const model = formatModelId(snapshot.model.modelId);
 	const thinking = snapshot.model.thinkingLevel;
-	const modelIdentity = `${model}${thinking && thinking !== "off" ? ` (${sanitizeTerminalText(thinking)})` : ""}`;
+	const qualifiers = [
+		thinking && thinking !== "off" ? sanitizeTerminalText(thinking) : "",
+		fastMode ? "fast" : "",
+	].filter(Boolean);
+	const modelIdentity = `${model}${qualifiers.length ? ` (${qualifiers.join(" · ")})` : ""}`;
+	const fastIdentity = (available: number): string => {
+		const full = `${provider ? `${provider} ` : ""}${modelIdentity}`;
+		if (terminalTextWidth(full) <= available)
+			return `${provider ? `${styles.apply("session.provider", provider)} ` : ""}${styles.apply("session.model", modelIdentity)}`;
+		// Keep the paid processing choice visible before spending space on a long model name.
+		let suffix = ` (${qualifiers.join(" · ")})`;
+		if (terminalTextWidth(suffix) + 2 > available) suffix = " (fast)";
+		if (terminalTextWidth(suffix) + 2 > available)
+			return styles.apply("session.model", fitTerminalText("fast", available));
+		return styles.apply(
+			"session.model",
+			`${fitTerminalText(model, available - terminalTextWidth(suffix), "…")}${suffix}`,
+		);
+	};
 	if (activity?.attentionCount && activity.attentionCount > 0) {
 		const badge = `!${Math.floor(activity.attentionCount)}`;
 		const badgeWidth = terminalTextWidth(badge);
@@ -91,8 +110,9 @@ export function renderSessionLine(
 		const available = width - badgeWidth - 2;
 		if (available <= 0) return padTerminalText(left, width);
 		const fullIdentity = `${provider ? `${provider} ` : ""}${modelIdentity}`;
-		const identity =
-			terminalTextWidth(fullIdentity) <= available
+		const identity = fastMode
+			? fastIdentity(available)
+			: terminalTextWidth(fullIdentity) <= available
 				? `${provider ? `${styles.apply("session.provider", provider)} ` : ""}${styles.apply("session.model", modelIdentity)}`
 				: styles.apply("session.model", fitTerminalText(modelIdentity, available, "…"));
 		const detailWidth = available - terminalTextWidth(identity) - 2;
@@ -108,10 +128,12 @@ export function renderSessionLine(
 		const prefix = `${left}${detail ? (activity.text.trim() ? `  ${detail}` : ` ${detail}`) : ""}`;
 		return `${prefix}${" ".repeat(width - terminalTextWidth(prefix) - terminalTextWidth(identity))}${identity}`;
 	}
-	const right = fitTerminalText(
-		`${provider ? `${styles.apply("session.provider", provider)} ` : ""}${styles.apply("session.model", modelIdentity)}`,
-		width,
-	);
+	const right = fastMode
+		? fastIdentity(width)
+		: fitTerminalText(
+				`${provider ? `${styles.apply("session.provider", provider)} ` : ""}${styles.apply("session.model", modelIdentity)}`,
+				width,
+			);
 	const rightWidth = terminalTextWidth(right);
 	if (rightWidth + 2 >= width) return padTerminalText(right, width, { alignment: "right" });
 	const availableLeft = width - rightWidth - 2;
@@ -165,6 +187,7 @@ export class SessionLineComponent implements Component {
 		private readonly requestRender: () => void,
 		private readonly getActivity: () => SessionUiActivity | undefined = () => undefined,
 		private readonly tickMs: number = SESSION_ACTIVITY_TICK_MS,
+		private readonly getFastMode: () => boolean = () => false,
 	) {
 		this.unsubscribe = controller.subscribe((snapshot) => {
 			this.snapshot = snapshot;
@@ -177,7 +200,9 @@ export class SessionLineComponent implements Component {
 		this.syncAnimation(activity);
 		const glyph = activity ? sessionActivityGlyph(activity, this.frame) : undefined;
 		return [
-			this.snapshot ? renderSessionLine(this.snapshot, this.getHints(), width, this.styles, activity, glyph) : "",
+			this.snapshot
+				? renderSessionLine(this.snapshot, this.getHints(), width, this.styles, activity, glyph, this.getFastMode())
+				: "",
 		];
 	}
 

@@ -40,6 +40,7 @@ test("installs one editor, Session Line, and Status Bar owner and cleans up", as
 		let scopedCommandCalls = 0;
 		const extension = createSessionUiExtension({
 			colorEnabled: false,
+			getFastMode: ({ extensionStatuses }) => extensionStatuses.get("jouzu-fast-mode") === "on",
 			getHints: () => [{ id: "palette", text: "/model choose", priority: 10, role: "muted" }],
 			getActivity: ({ extensionStatuses }) => {
 				const loop = extensionStatuses.get("multiloop");
@@ -133,6 +134,10 @@ test("installs one editor, Session Line, and Status Bar owner and cleans up", as
 			},
 		});
 		assert.equal(terminalTextWidth(footer.render(80)[0]), 80);
+		statuses.set("jouzu-fast-mode", "on");
+		assert.match(lineComponent.render(60)[0], /\(low · fast\)/);
+		statuses.delete("jouzu-fast-mode");
+		assert.doesNotMatch(lineComponent.render(60)[0], /fast/);
 		for (const [state, marker] of [
 			["running", "⠋"],
 			["paused", "○"],

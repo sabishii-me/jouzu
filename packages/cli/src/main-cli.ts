@@ -6,6 +6,7 @@ import { catalogStatus, formatCatalogStatus, validateCatalogFile } from "./catal
 import { classicHostBuiltinOverrides, createDirectToolPolicyExtension } from "./classic-host-policy.js";
 import { DashboardVisibility, loadDashboardPolicy } from "./dashboard-policy.js";
 import { createDoctorReport } from "./doctor.js";
+import { createFastModeExtension, FAST_MODE_STATUS } from "./fast-mode.js";
 import { isInteractivePiStartup, usesMachineReadableStdout } from "./interactive-startup.js";
 import {
 	applyKeybindings,
@@ -430,6 +431,7 @@ export async function runMainCli(args: string[]): Promise<void> {
 					ctx.ui.notify(`Dashboard settings could not be read: ${policy.error}`, "warning");
 			},
 		},
+		getFastMode: ({ extensionStatuses }) => extensionStatuses.get(FAST_MODE_STATUS) === "on",
 		getHints: () => [
 			{
 				id: "palette.shortcuts",
@@ -512,6 +514,7 @@ export async function runMainCli(args: string[]): Promise<void> {
 				modelPicker.extension,
 				modelPicker.workflowExtension,
 				createAstraCompatibilityExtension(),
+				createFastModeExtension(),
 				voice,
 				help,
 				createScrollbackExtension({ isShellBusy: scrollbackSession.isShellBusy }),

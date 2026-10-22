@@ -225,3 +225,24 @@ test("animates only while work moves and the session is idle", async () => {
 	assert.equal(renders, disposed, "dispose stops the timer");
 	controller.dispose();
 });
+
+test("Fast processing appears beside thinking and survives narrow model labels", () => {
+	const value = snapshot();
+	const render = (width, activity, selected = value) =>
+		renderSessionLine(selected, [], width, styles, activity, undefined, true);
+	assert.match(render(80), /Codex gpt-5\.6-sol \(xhigh · fast\)$/);
+	const noThinking = snapshot({ model: { ...value.model, thinkingLevel: "off" } });
+	assert.match(render(80, undefined, noThinking), /gpt-5\.6-sol \(fast\)$/);
+	const long = snapshot({
+		model: { ...value.model, modelId: "とても長いモデル名".repeat(12), providerId: "長い提供者" },
+	});
+	for (const width of [0, 1, 4, 8, 12, 24, 48, 80, 120]) {
+		for (const activity of [undefined, { text: "", active: false, attentionCount: 2 }]) {
+			const line = render(width, activity, long);
+			assert.equal(terminalTextWidth(line), width);
+			if (width >= 12) assert.match(line, /fast/);
+			if (activity && width >= 2) assert.match(line, /^!2/);
+		}
+	}
+	assert.doesNotMatch(renderSessionLine(value, [], 80, styles), /fast/);
+});

@@ -24,6 +24,8 @@ export interface SessionUiExtensionOptions {
 	 * finishing, stays current only while `active` is true.
 	 */
 	getActivity?: (context: SessionUiActivityContext) => SessionUiActivity | undefined;
+	/** Whether the selected model is requesting Fast processing. Read on every render. */
+	getFastMode?: (context: SessionUiActivityContext) => boolean;
 	onModelPicker?: (query?: string) => Promise<boolean>;
 	onModelCycle?: (direction: ModelCycleDirection) => Promise<boolean>;
 	onScopedModelsCommand?: () => Promise<boolean>;
@@ -78,6 +80,8 @@ export function createSessionUiExtension(options: SessionUiExtensionOptions = {}
 					() => options.getHints?.(activeController.getSnapshot()) ?? [],
 					() => requestRender(),
 					() => options.getActivity?.({ extensionStatuses }),
+					undefined,
+					() => options.getFastMode?.({ extensionStatuses }) ?? false,
 				);
 				if (options.dashboard) {
 					const dashboard = options.dashboard;
