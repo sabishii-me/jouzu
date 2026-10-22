@@ -18,13 +18,15 @@ Flow control coordinates background jobs, goals, loops, and tasks in one session
 | `/flow reset` | Explain the destructive reset without changing anything. |
 | `/flow reset confirm` | Destructive idle reset. Discards all queued messages, flow receipts, and waits, and releases native holds. Running jobs keep running. Use it only if `/flow clear` does not fix the problem. |
 | `/flow clear` | Release a stuck reservation while preserving receipts, waits, and running jobs. Run while Jouzu is idle. |
+| `/flow retry <request>` | Authorize one withheld request to be admitted again before sending, using its request ID from `/flow` |
+| `/flow cancel <token>` | Remove one wait's dependency gate. Its job keeps running and its work stays open. Use the wait token from `/flow`. |
 | `/flow resolve <attempt> retry` or `discard` | Settle a model request with an unknown outcome, using the attempt ID shown by `/flow` |
 | `/flow runtime` | Show startup package paths and hashes |
 
 - Interrupting a reply also pauses automatic work until your next message or `/flow resume`.
 - A reply that still ends with a provider error after retries and context recovery pauses automatic work. The pause includes the provider's message; your next message or `/flow resume` releases it.
 - `/flow clear` repairs a reservation without discarding flow evidence. `/flow reset confirm` is the destructive fallback for when `/flow clear` does not fix the problem: it discards all queued messages and flow delivery state, cancels waits, and leaves underlying jobs running.
-- `retry` may repeat a request the model already answered.
+- `/flow resolve <attempt> retry` may repeat a request the model already answered. It resolves an unknown attempt outcome; `/flow retry <request>` instead authorizes a withheld request.
 - Set `JOUZU_FLOW_CONTROL=0` before starting Jouzu to disable flow control for that process.
 
 ## Waiting for jobs

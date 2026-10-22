@@ -16,14 +16,14 @@ Keeps Pi's editor behavior: actions, history, paste, autocomplete, cursor, and i
 - Child agents, tasks, background jobs, and flow alerts appear here. Loops keep their own panels.
 - Each source has a section whose divider shows its counts and route.
 - Each row shows a state marker, kind, elapsed time, and detail.
-- A finished child agent whose result the model has not read gets an attention row and count. Both clear when the model reads the result.
-- Settings switches between compact (up to 12 lines) and expanded (up to 24 lines), both limited by one third of the terminal height and the space above the prompt.
+- A finished child agent whose result the model has not read gets an attention row for up to 30 seconds, subject to available space. The unread-result count persists until the model reads the result.
+- Settings saves compact, expanded, or hidden dashboard display across sessions. Compact (up to 12 lines) and expanded (up to 24 lines) are both limited by one third of the terminal height and the space above the prompt. `/subagents hide` hides the dashboard for this session; `/subagents show` restores the saved setting.
 - `/bg` or `Alt+Shift+H` opens the background-job manager. `/bg watch <task>` opens it on one job.
 
 ## Session Line
 
 - Left side: an animated marker while work runs; a static marker with paused, stopped, or completed counts; a count of results the model has not read.
-- Activity replaces the shortcut hint and the hint returns when nothing is running.
+- Activity replaces the shortcut hint. The hint returns when no activity summary or attention indicator remains; paused and completed loop summaries can still occupy the line.
 - Activity text shortens to fit, and disappears before it would overlap the model name.
 
 ## Status Bar

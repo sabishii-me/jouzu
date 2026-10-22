@@ -28,7 +28,7 @@ Jouzu adds surfaces to Pi rather than replacing Pi's input model. Read this tabl
 | Slash commands, `/hotkeys`, dialogs, autocomplete menus | Pi | Inherited. Jouzu registers commands; it does not intercept a working Pi command to show an unavailable view. |
 | Theme roles and color capability | Pi theme, Jouzu `session-ui/styles.ts` | Jouzu maps its own semantic roles onto Pi's theme and emits no raw escapes from views. |
 | Overlay compositing, placement, z-order, focus capture | Pi | Inherited through one adapter in `palette.ts`. Views never call Pi overlay methods directly. |
-| Keybinding file format and resolution | Pi (`keybindings.json`) | Inherited. Jouzu seeds two defaults once into its isolated agent root and never rewrites an existing file. Jouzu-owned `jouzu.*` actions resolve through a Jouzu registry reading the same file; Pi ignores entries it does not define. |
+| Keybinding file format and resolution | Pi (`keybindings.json`) | Inherited. Jouzu seeds two defaults into its isolated agent root, preserves user-owned entries, and may migrate entries it recorded as its own with a backup. Explicit keybinding commands can also update the file. Jouzu-owned `jouzu.*` actions resolve through a Jouzu registry reading the same file; Pi ignores entries it does not define. |
 | Palette views, model ranking, catalog settings, Session Frame, startup header | Jouzu | Owned outright. |
 | `app.model.select` routing (`Ctrl+L`), `app.model.cycleForward` (`Ctrl+P`) | Pi action, Jouzu handler | Jouzu routes the semantic action to its own view and list. The binding stays Pi's and stays user-configurable. |
 
@@ -36,8 +36,8 @@ Two consequences follow. A new Jouzu action gets a semantic ID and a default bin
 
 ## Key assignment rules
 
-1. **Every action must be reachable without a modified key.** Modified keys are accelerators. `Ctrl`, `Alt`, `Shift`, and `Super` combinations that a legacy terminal cannot encode are unavailable to some users on every platform; see [Encoding and line discipline](key-collisions.md#encoding-and-line-discipline). A recorded decision may accept an accelerator-only action; the current exception is Models favorite (`jouzu.model.toggleFavorite`), recorded in [palette-ux.md](palette-ux.md#key-assignment-rules).
-2. **Check both binding tables before claiming a key.** Pi's `TUI_KEYBINDINGS` and Jouzu's `JOUZU_KEYBINDING_DEFAULTS` are the two tables Jouzu already occupies. A raw `matchesKey` call that shadows an entry in either table is a defect.
+1. **Every action must be reachable without a modified key.** Modified keys are accelerators. `Ctrl`, `Alt`, `Shift`, and `Super` combinations that a legacy terminal cannot encode are unavailable to some users on every platform; see [Encoding and line discipline](key-collisions.md#encoding-and-line-discipline). A recorded decision may accept an accelerator-only action; the current exception is Models favorite (`jouzu.model.toggleFavorite`), recorded in [Palette primary and secondary actions](palette-ux.md#primary-and-secondary-actions).
+2. **Check the complete binding definitions before claiming a key.** Review Pi's `KEYBINDINGS` (TUI actions, application actions, and platform overrides), Jouzu's `JOUZU_KEYBINDING_DEFINITIONS` in `jouzu-keybindings.ts`, and the seeded overrides in `JOUZU_KEYBINDING_DEFAULTS`. Check the effective user bindings for the affected view as well. A raw `matchesKey` call that shadows an action eligible in the same scope is a defect.
 3. **Prefer a semantic action to a raw key.** Use `keybindings.matches(data, "<action>")`. Use `matchesKey` only where Pi defines no action for the interaction, and record why.
 4. **A mode with a live text field has no bare-letter and no bare-`Space` shortcuts.** While a text field holds focus, letters, digits, punctuation, and `Space` belong to it. A mode with no text field may use them. This protects search and IME composition; see [Text, language, and input](#text-language-and-input). A view with type-to-search, where typing focuses the search field, has no usable bare-letter layer even in browse; its browse actions use non-printable unmodified keys only.
 5. **`Tab` belongs to the single visible tab row.** The Palette reserves that row for top-level sections such as Models and Settings. Choices inside a section use `←` and `→`. A surface with no visible tab row does not advertise `Tab` navigation and does not require `Tab` to reach any control.
@@ -86,7 +86,7 @@ Apply these rules before assigning a key:
 - Measure terminal display columns, not JavaScript string length. Every rendered line must fit its width after ANSI removal and grapheme, emoji, and CJK measurement. `packages/cli/src/terminal-layout.ts` and `packages/session-ui/src/layout.ts` supply the primitives. `terminal-layout.ts` re-exports the two Session UI modules that need no Pi agent runtime, so `doctor` and `--help` keep working when that runtime cannot load.
 - Sanitize external text before styling it. Catalog labels, model names, provider IDs, and error text from a remote source pass through `sanitizeTerminalText` first.
 - Never render a credential value. Report whether a named environment variable is set; do not print its contents, and keep it out of configuration, cache, logs, errors, tests, and rendered output.
-- User-visible strings are English in v0.1. Do not add a translation catalog or a language switch before the release that owns localization.
+- Jouzu's terminal interface uses English labels.
 
 ## Non-interactive and degraded modes
 
@@ -115,8 +115,7 @@ Color, cursor shape, and cursor position are never the only indication of select
 | Tally | The closing counts, one marker each, under a rule |
 | Hint | One dim line naming the command that shows more, such as `--json` |
 
-A tally names no release. `doctor` reporting "ready for v0.1" went stale the moment the release
-changed and told a user nothing, so the closing line states counts a reader can act on.
+A tally states actionable counts without a release name.
 
 | Status | Marker | Color |
 | --- | --- | --- |
@@ -149,7 +148,7 @@ A change to an interactive surface must:
 
 1. use semantic actions where Pi defines them, and record why where it does not;
 2. keep every action reachable without a modified key;
-3. check new bindings against `TUI_KEYBINDINGS`, `JOUZU_KEYBINDING_DEFAULTS`, and the [key collision map](key-collisions.md);
+3. check new bindings against Pi's `KEYBINDINGS`, Jouzu's `JOUZU_KEYBINDING_DEFINITIONS` and `JOUZU_KEYBINDING_DEFAULTS`, and the [key collision map](key-collisions.md);
 4. keep every rendered line inside the requested width at 48 columns with mixed-width text;
 5. carry tests for the behavior it changes, including the mode transitions in [`palette-ux.md`](palette-ux.md);
 6. leave no meaning encoded in color alone.

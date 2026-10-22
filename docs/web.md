@@ -1,11 +1,20 @@
 # Web tools
 
+Jouzu includes these tools in both profiles. Ask the assistant to read a URL or
+search for a topic; no MCP server or search API key is required.
+
 | Tool | How it fetches | Setup |
 | --- | --- | --- |
 | `web_fetch`, `batch_web_fetch` | Direct HTTP, returns readable text | None |
 | `tff-fetch_url`, `tff-search_web` | Rendered in the Camoufox browser | Installs on first use |
 
 Web results pass through [TextGuard](textguard.md) before reaching the model.
+
+## Fetch or search
+
+- For a known URL, `web_fetch` extracts readable content without executing JavaScript. `batch_web_fetch` fetches independent URLs concurrently.
+- For pages that need JavaScript rendering or encounter bot protection, `tff-fetch_url` uses Camoufox, a Firefox-based browser. It supports CSS selectors and screenshots. Browser access does not guarantee that a site will allow the request.
+- For discovery, `tff-search_web` searches Google by default and falls back to DuckDuckGo when Google blocks the request or its results cannot be parsed. Set `engine` to `google` or `duckduckgo` to select one explicitly. `max_results` defaults to 10 and accepts 1–50.
 
 ## Extraction diagnostics
 

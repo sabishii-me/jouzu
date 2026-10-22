@@ -293,7 +293,7 @@ This verifies the pinned Pi patch bytes and the Pi lock against the installed pa
 
 ### Live first-candidate smoke
 
-`scripts/live-flow-smoke.mjs` is the only test that measures a real model. It is opt-in and spends provider credit.
+`scripts/live-flow-smoke.mjs` evaluates a real model's wait behavior. It is opt-in and spends provider credit.
 
 ```bash
 JOUZU_LIVE_SMOKE=1 \

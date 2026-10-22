@@ -20,9 +20,9 @@ A model catalog is a list of models that a server publishes for Jouzu. Catalogs 
 
 ## How catalog models combine with `models.json`
 
-- Catalog models override matching `models.json` entries, including routes, credentials, headers, and `modelOverrides`.
-- Gateway catalogs (served at `/v1/jouzu/model-catalog`) connect through the gateway with the source's token. They need no local provider entry.
-- Other catalogs only update metadata on providers you have configured.
+- Authenticated gateway catalog models take precedence over matching `models.json` entries, including routes, credentials, headers, and `modelOverrides`.
+- A gateway catalog must declare `source.type: "authenticated_gateway"`, use bearer authentication, and have a source URL whose path ends with `/v1/jouzu/model-catalog`. It connects through the gateway with the source's token and needs no local provider entry.
+- Other catalogs update metadata on providers you have configured, preserving their local routes, credentials, and headers.
 - Models only in `models.json` keep their configuration. Disabling a catalog shows its overridden local entries again.
 - A saved catalog model keeps its source. If the gateway credential is missing, Jouzu does not fall back to a local connection.
 - Jouzu never rewrites `models.json`.

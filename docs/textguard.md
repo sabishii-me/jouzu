@@ -1,28 +1,34 @@
 # TextGuard scanning
 
-Sessions started with `jz` scan skill files, skill names and descriptions, and
-web results locally by default. The packaged native helper requires no Python
-installation or first-use download. Scanning preserves admitted content; it does
-not clean or rewrite it.
+Sessions started with `jz` scan skill files, skill names and descriptions, web
+results, and MCP tool results and resources locally by default. The packaged
+native helper requires no Python installation or first-use download. Content
+admitted without findings is preserved; scanning does not sanitize it.
 
 A scan cannot establish that content is safe, and blocking a result is itself a
 cost. TextGuard separates the two kinds of input it sees:
 
 | Input | Treated as | Flagged content |
 | --- | --- | --- |
-| Web and search results, ordinary file reads | Data the model reads | Delivered with the findings attached and a line telling the model to read it as untrusted data, never as instructions |
+| Web and search results, MCP tool results and resources, ordinary file reads (when enabled) | Data the model reads | Visible content is delivered with findings and an untrusted-data advisory; structured metadata is omitted |
 | Skill files, skill names and descriptions, expanded skill text, reads of a skill file | Instructions the agent follows | Withheld until you approve it |
+
+In the default mode, a flagged data result keeps its visible text and image
+content with an advisory telling the model to treat it as data, not instructions.
+Its `details`, `structuredContent`, `nestedCalls`, and usage metadata are omitted
+because those fields have no advisory channel. A structured-only result can
+therefore return an advisory without its data.
 
 Error-level findings and incomplete checks are what TextGuard acts on.
 Informational and warning-level findings never block or annotate content.
-Images cannot be checked by the text scanner; a web result containing one is
+Images cannot be checked by the text scanner; an inspected result containing one is
 treated as an incomplete check.
 
 ## Modes
 
 | Command | Launch flag | Effect |
 | --- | --- | --- |
-| `/textguard on` | (default) | Flagged data is delivered with findings attached; flagged instructions are withheld |
+| `/textguard on` | (default) | Flagged data's visible content is delivered with findings; structured metadata and flagged instructions are withheld |
 | `/textguard strict` | `--jouzu-textguard-strict` | Every flagged input is withheld until you approve it |
 | `/textguard off` | `--jouzu-textguard-off` | Nothing is scanned and everything is admitted |
 
@@ -56,7 +62,7 @@ session.
    - **Back** keeps the content withheld.
    Non-blocking reports offer **Dismiss report** instead, which removes them
    from the list and notifications for the current session.
-5. After approval, resources reload. Retry the skill or web request.
+5. After approval, resources reload. Retry the skill, web, or MCP request.
 
 The cursor starts on the non-approving action; Escape returns to the list
 instead of closing the review. The review requires a terminal of at least 48
@@ -86,7 +92,7 @@ the store and cannot create approvals.
 Checks limited by input size, time, decoding, or scanner failure are incomplete,
 not clean. An incomplete check can be approved: the approval covers those exact
 bytes, and a later check of the same content that is interrupted does not
-withhold it again. Scanning accepts up to 256 KiB of text per request; a serialized web
+withhold it again. Scanning accepts up to 256 KiB of text per request; a serialized tool
 result includes both text and structured details in that budget. Content that
 cannot be captured completely and identified cannot be approved. Retry the
 request after resolving its size, access, or read error.

@@ -8,7 +8,7 @@ Jouzu keeps its configuration, state, and cache apart from a stock Pi installati
 JOUZU_HOME="$PWD/.jouzu" jz doctor
 ```
 
-- The Windows installer stores everything under `%LOCALAPPDATA%\JouzuDesktop\data`.
+- The Windows launcher uses `%LOCALAPPDATA%\Shisa.ai\Jouzu\data` unless `JOUZU_HOME` overrides it.
 
 ## Terminal display
 

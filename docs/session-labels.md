@@ -31,7 +31,7 @@ do not change.
 | `/labels` | Show status and all commands without changing settings or starting a request. |
 | `/labels global on` / `/labels global off` | Save the global switch shared with Settings → Auto labels. |
 | `/labels on` | Enable naming with the selected provider/model. |
-| `/labels off` | Cancel pending naming and stop model requests. Keep existing labels. |
+| `/labels off` | Cancel pending naming and stop model requests. Preserve the session name and saved label metadata; release pane ownership and restore the prior pane title if Jouzu still owns it and its title is unchanged. |
 | `/labels pin` | Protect the session name, including when its text has not changed. |
 | `/labels auto` | Allow automatic replacement of the session name. |
 | `/labels pane pin` | Protect the pane title and release Jouzu's claim without restoring a prior title. |

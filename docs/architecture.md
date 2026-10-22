@@ -1,15 +1,18 @@
 # Jouzu architecture
 
-This document maps the Jouzu v0.1 codebase for contributors. It is a living
-overview, not a normative contract; the TypeScript sources and their tests
-remain authoritative.
+This contributor overview maps the Jouzu codebase. The TypeScript sources and
+their tests remain authoritative.
 
 ## Module map and dependency direction
 
 Jouzu publishes one npm package (`jouzu`) from `packages/cli` and keeps its persistent interactive surfaces in the private `packages/session-ui` workspace. The CLI build compiles that workspace first and copies its JavaScript plus third-party notice under `dist/session-ui`; users do not install a second package. The CLI entry point remains `dist/cli.js`, compiled from `packages/cli/src/cli.ts`.
 
 ```text
-cli.ts  (entry: argument routing, profile resolution, launch)
+cli.ts  (bootstrap: argument parsing, self-update, lazy main import)
+  ├─ updater.ts          Jouzu self-update (verify/install/rollback)
+  └─ main-cli.ts         command routing, profile setup, and runtime composition
+
+Runtime modules composed by main-cli.ts:
   ├─ args.ts             argument parsing and usage/help
   ├─ paths.ts            platform path resolution (agent/state/cache roots)
   ├─ metadata.ts         loads bundled Pi lock metadata
@@ -25,7 +28,16 @@ cli.ts  (entry: argument routing, profile resolution, launch)
   ├─ profiles.ts         bundled profile loading
   ├─ profile-manager.ts  profile planning/application (see above)
   ├─ keybindings.ts      durable keybinding defaults
-  ├─ updater.ts          Jouzu self-update (verify/install/rollback)
+  ├─ flow-control/       input admission, automatic work, waits, and result delivery
+  ├─ subagents/          child sessions, role configuration, and run storage
+  ├─ workflow.ts         Agents and Runs views and workflow extension
+  ├─ textguard*.ts       content scanning, admission, approvals, and review
+  ├─ voice/              dictation capture, transcription, and editor integration
+  ├─ shisa-link/         account sign-in, credentials, and onboarding
+  ├─ mcp.ts              Pi MCP client integration and deferred tool discovery
+  ├─ session-labels.ts   automatic session naming
+  ├─ scrollback*.ts      terminal scrollback restoration and session observation
+  ├─ work-dashboard-sources.ts  automatic-work dashboard adapters
   ├─ doctor.ts           diagnostics (read-only), typed report plus text renderer
   ├─ presentation.ts     startup presentation extension
   ├─ palette.ts          floating/replacement Palette surface host
@@ -51,7 +63,8 @@ packages/session-ui
   └─ sources/            bounded Git and optional runtime probes
 ```
 
-`cli.ts` composes the runtime. `args.ts` and `paths.ts` have no internal
+`cli.ts` handles self-update before lazily importing `main-cli.ts`, which
+composes the runtime. `args.ts` and `paths.ts` have no internal
 imports; `state-lock.ts` and `process-lock.ts` depend on `private-fs.ts`.
 `runtime.ts` reads profile state through `profile-manager.ts`; `doctor.ts`
 combines runtime inspection from the Camoufox adapter, model catalog,

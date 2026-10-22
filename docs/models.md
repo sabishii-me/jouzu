@@ -72,6 +72,6 @@ A global ceiling caps every model's usable context window. Set it in Settings / 
 
 - Values: 128K, 192K, 256K, 384K, 512K, 768K, 1M, or off.
 - Compaction, the footer percentage, and the Models view fit check use the smaller of the model's window and the ceiling. Example: a 1M-token model under a 384K ceiling compacts as if its window were 384K.
-- A `models.json` `modelOverrides.contextWindow` value overrides the ceiling.
+- For local provider models, a `models.json` `modelOverrides.contextWindow` value overrides the ceiling. Authenticated gateway catalog models use their catalog windows capped by the ceiling; local provider overrides do not change them.
 - Turning the ceiling off restores the declared windows in the current session.
 - Stored in `context-policy.json` next to `catalogs.json`.

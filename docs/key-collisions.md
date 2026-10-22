@@ -18,7 +18,7 @@ A new default must avoid every **Blocked** and **Prefix** row in the supported h
 
 ## Conflicts in the effective Jouzu and Pi map
 
-The action IDs below come from Pi 0.84.4 plus Jouzu keybinding defaults version 2. Windows and Windows Subsystem for Linux (WSL) use Pi's Windows variants where noted.
+The action IDs and application bindings below were checked against Pi 1.3.0, Jouzu keybinding defaults version 2, and Jouzu's semantic action definitions. Windows and Windows Subsystem for Linux (WSL) use Pi's Windows variants where noted. Terminal and desktop interceptions retain the separately dated evidence under [Evidence and scope](#evidence-and-scope).
 
 | Gesture | Jouzu or Pi action | Higher-layer claim | Status | Remaining route or action |
 | --- | --- | --- | --- | --- |
@@ -27,7 +27,7 @@ The action IDs below come from Pi 0.84.4 plus Jouzu keybinding defaults version 
 | `Ctrl+Shift+P` | `app.model.cycleBackward` outside Windows/WSL | Ghostty and WezTerm open their command palettes. Kitty uses `Ctrl+Shift+P` as the start of a key sequence. | **Blocked** | Open Models with `app.model.select`, or cycle forward with `app.model.cycleForward`. Windows/WSL uses `Alt+P` for this action. |
 | `Ctrl+Shift+F` | `tui.altScreen.search` outside Windows/WSL | Ghostty and Windows Terminal open terminal search; WezTerm starts search; Kitty moves a terminal window. | **Blocked** | Rebind the Pi semantic action. Windows/WSL uses `Ctrl+F`. |
 | `Ctrl+Shift+O` | `app.tree.filter.cycleBackward` | Ghostty creates a split; Kitty passes the selection to another program. | **Blocked** | `Ctrl+O` cycles forward. |
-| `Ctrl+-` | `tui.editor.undo` outside Windows/WSL | Ghostty and WezTerm decrease font size. Windows Terminal also uses `Ctrl+-`, but Pi uses `Ctrl+Z` there. | **Blocked** in Ghostty and WezTerm | Rebind `tui.editor.undo`. |
+| `Ctrl+-` | `tui.editor.undo` outside Windows/WSL | Ghostty and WezTerm decrease font size. Windows Terminal also uses `Ctrl+-`; Pi uses `Ctrl+Z` on Windows and `Alt+Z` in WSL. | **Blocked** in Ghostty and WezTerm | Rebind `tui.editor.undo`. |
 | `Ctrl+Page Up`, `Ctrl+Page Down` | Alternate `tui.editor.pageUp` and `tui.editor.pageDown` bindings | Ghostty and WezTerm change terminal tabs. | **Blocked** | Unmodified `Page Up` and `Page Down` remain active. |
 | `Ctrl+Shift+↑`, `Ctrl+Shift+↓` | `tui.altScreen.previousPrompt` and `tui.altScreen.nextPrompt` outside Windows/WSL | WezTerm changes pane focus; Kitty scrolls terminal history; Windows Terminal scrolls terminal history. | **Blocked** in those terminals | `Ctrl+↑` and `Ctrl+↓` remain Pi alternatives outside Windows/WSL, subject to the macOS reservation above. |
 | `Alt+←`, `Alt+→` | Editor word motion and tree fold/unfold alternatives | Windows Terminal changes pane focus. | **Blocked** in Windows Terminal | `Ctrl+←` and `Ctrl+→` remain alternatives. |
@@ -38,7 +38,7 @@ The action IDs below come from Pi 0.84.4 plus Jouzu keybinding defaults version 
 | `Ctrl+F` | Jouzu `jouzu.model.toggleFavorite` in Models; Pi `tui.editor.cursorRight` alternate | No terminal, desktop, or multiplexer default in the supported host set claims it. Inside the Models search field the Jouzu action wins over Pi's emacs-style cursor-right. | **Conditional** in the Models search field | `→` remains the cursor-right route in the search field. The gesture encodes as a plain control byte, so it needs no enhanced keyboard protocol. |
 | `Ctrl+\` | Jouzu `jouzu.voice.toggle` | The terminal line discipline can raise `SIGQUIT` while signal processing is enabled; Jouzu's raw-mode TUI receives `0x1c` as a keystroke. No desktop, terminal, or multiplexer default in the supported host set claims it. | **Conditional** | `/voice` commands remain the unmodified route. |
 | `Ctrl+Shift+R` | Jouzu `jouzu.model.refresh` in Models | No Pi action, Jouzu action, or terminal default in the supported host set claims the distinct gesture. Basic terminal encoding collapses it to `Ctrl+R` (Pi `app.session.rename`). | **Encoding-dependent** | Catalogs `r` refreshes sources without a modified key; startup and `/reload` refresh automatically. |
-| `Shift+Enter` | Pi `tui.input.newLine` | Basic terminal encoding cannot distinguish it from Enter or a newline. A terminal-side `text:\n` mapping also removes the modifier, and an unrecognized modified Enter can reach the application as a sequence that matches nothing. | **Encoding-dependent** | Pi owns the gesture. Jouzu no longer binds it in Models, which removes the case where a legacy-encoded `Shift+Enter` selected a model instead of toggling favorite. |
+| `Shift+Enter` | Pi `tui.input.newLine` | Basic terminal encoding cannot distinguish it from Enter or a newline. A terminal-side `text:\n` mapping also removes the modifier, and an unrecognized modified Enter can reach the application as a sequence that matches nothing. | **Encoding-dependent** | Pi owns the gesture; Models uses `Enter` to select a model and `Ctrl+F` to toggle favorite. |
 
 These rows are conflicts, not a recommendation to replace one blocked modified key with another. Check the full map before selecting an alternative.
 

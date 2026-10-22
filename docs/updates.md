@@ -48,8 +48,8 @@ Only one update runs at a time. A failed check leaves the current version in pla
 | `JOUZU_UPDATE_POLICY` | Policy for this process. An invalid value acts as `off`. |
 | `JOUZU_UPDATE_INTERVAL_HOURS` | Hours between successful checks |
 
-## Windows installer
+## Windows launcher
 
-- The working-folder screen checks GitHub Releases once per 24 hours.
-- When a newer stable x64 installer exists, it shows a **Download update** link. Run the downloaded installer to upgrade.
-- Desktop launches do not use npm updates.
+- The launcher and the Jouzu application update separately through their own signed feeds; desktop launches do not use npm updates.
+- Checks run at startup, every six hours while the launcher stays open, and when its window regains focus if the last automatically scheduled check was at least 30 minutes ago.
+- In the launcher's **System** view, use **Check for updates** to check manually, **Update Jouzu** to update the application, or **Update and restart** to update the launcher. The launcher update asks for confirmation before restarting.

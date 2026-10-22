@@ -8,7 +8,7 @@
 | `Ctrl+Shift+R` | `jouzu.model.refresh` | Refresh model catalogs and providers, also while searching |
 
 - Rebind any of these by action name in `keybindings.json` in the Jouzu agent directory.
-- `/hotkeys` lists every active shortcut.
+- `/hotkeys` lists Pi shortcuts and registered extension shortcuts. Models' local favorite and refresh actions appear in the Models view's hints.
 - `Tab` keeps Pi's autocomplete and selector behavior.
 
 ## How defaults are written

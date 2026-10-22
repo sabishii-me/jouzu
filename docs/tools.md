@@ -13,6 +13,7 @@ The `core` and `ja` profiles load the same tools.
 | `multiloop_*` | Record approved measured-improvement loops |
 | `subagent` | Run child agents. See [Agents and runs](subagents.md). |
 | `vcc_recall` | Search earlier session history, including compacted entries |
+| `compact_context` | Request compaction after the current run settles |
 
 Also included:
 
@@ -41,6 +42,8 @@ Replace the URL with your server and set `DOCS_TOKEN` in the environment. Local 
 
 Use `/mcp` to inspect connections, sign in, reconnect, or enable and disable servers. Run `/reload` after editing the configuration outside the session.
 
+MCP tool results and resources pass through [TextGuard](textguard.md) by default. Guarded mode annotates flagged visible content and omits structured metadata; strict mode withholds flagged results until approval.
+
 By default, server tools are **deferred**: the assistant uses `tool_search` to find them, then calls the matched tools directly. Set `exposure` to `direct` to declare a server's tools immediately, or `hidden` to make them unreachable. `toolExposure` overrides this per tool. Jouzu also maps saved `codemode` exposure to `deferred` without rewriting your configuration.
 
 ## Goals and loops
@@ -64,6 +67,7 @@ By default, server tools are **deferred**: the assistant uses `tool_search` to f
 
 - Compaction shortens the active transcript. Running work continues.
 - `vcc_recall` retrieves details from the current session, including entries removed from the active transcript. It cannot start compaction.
+- `compact_context` lets the assistant request compaction explicitly. Compaction waits until the current run settles and queued messages have been handled. After successful compaction, the agent continues; a failure reports the problem without automatically continuing.
 
 ## Bundled and added packages
 
