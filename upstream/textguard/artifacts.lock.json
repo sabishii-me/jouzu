@@ -2,38 +2,38 @@
   "schemaVersion": 1,
   "protocol": 1,
   "policy": "default-trimmed-split-bundled-v1",
-  "sourceDigest": "b85ca8375f048a158439bd472de6977d15211e96a6039034f5bde73e5dc406cb",
-  "toolchain": "go1.26.1",
+  "sourceDigest": "7563181a25ba2de436ad7058ecdbd0b4c613eed78919e2e442f39d04b5778191",
+  "toolchain": "go1.27.3",
   "artifacts": {
     "linux-amd64": {
       "filename": "textguard-linux-amd64",
-      "sha256": "83055e02e2070d3f6e5e0e6ed4e219a945e76752fc2b69a1c516cbb02b7ca7d4",
-      "bytes": 3776638
+      "sha256": "9665ea775fb67dc7b62e5e1ee44bab6faf28419976c928562731c7668b0fd882",
+      "bytes": 4243580
     },
     "linux-arm64": {
       "filename": "textguard-linux-arm64",
-      "sha256": "3d0f7467d6d4af0a3c80e1077e8b66b35bced3ea9953c8c5a885a69294f81028",
-      "bytes": 3604606
+      "sha256": "ead5ea4116113c3cd938e94103df94c4229dabeb5ba1794cbba6076df021c119",
+      "bytes": 4063356
     },
     "windows-amd64": {
       "filename": "textguard-windows-amd64.exe",
-      "sha256": "ea46965658c29be603c79b0e919e0dafeae9f2988f21a299a52472672af8c3e2",
-      "bytes": 3918848
+      "sha256": "9d04e5b06920d5b76bda94f6c96d84a1b541177a360200d8a9c6e47c241a76f7",
+      "bytes": 4376064
     },
     "windows-arm64": {
       "filename": "textguard-windows-arm64.exe",
-      "sha256": "12e989e8caa56a75025aea38fb74f7fb73b15ab40bd456f52d916c1779931f88",
-      "bytes": 3659264
+      "sha256": "c660ca1b75297974b4480efbbbb3a99f9b0b34610b55f2a3e5c7c5751b70bfd8",
+      "bytes": 4059136
     },
     "darwin-amd64": {
       "filename": "textguard-darwin-amd64",
-      "sha256": "ec6040e53a4dd9f16a8d06e37e5046f6f079035bb7274ef04e4395bd40ea799c",
-      "bytes": 3837872
+      "sha256": "3c2aea3da6c344ec326b2815020973125c3733e8aa640557743c3b607a3b1c55",
+      "bytes": 4303280
     },
     "darwin-arm64": {
       "filename": "textguard-darwin-arm64",
-      "sha256": "e5dee852fe6cf74aa1be8ca98b537a54d73e9bac3bfde64b2d1f5c79d660c6eb",
-      "bytes": 3661506
+      "sha256": "01fb2f8583cdde9a6992d2aa0eab7c2e334922ac4466a38054040b51afc026cc",
+      "bytes": 4081058
     }
   }
 }

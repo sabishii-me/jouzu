@@ -8,10 +8,10 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 export const repository = "shisa-ai/jouzu";
-export const pinnedNpm = "11.16.0";
+export const pinnedNpm = "11.21.1";
 
 export function requiredJobs() {
-	const names = ["release-artifacts", "endurance", "ci-result", "legacy-linux-static-fetch (22.19.0)"];
+	const names = ["release-artifacts", "endurance", "ci-result", "legacy-linux-static-fetch (22.23.4)"];
 	for (const os of ["ubuntu-latest", "macos-latest"]) {
 		names.push(`node (${os}, 22)`);
 		names.push(`optional-camoufox (${os})`, `published-upgrade (${os})`);

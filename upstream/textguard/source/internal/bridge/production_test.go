@@ -46,6 +46,7 @@ func TestProductionProtocol(t *testing.T) {
 		`{}`, `{"version":1,"id":"a","text":null}`, `{"version":2,"id":"a","text":"x"}`,
 		`{"version":1,"id":"a","text":"x","text":"y"}`,
 		`{"version":1,"id":"a","text":"\ud800"}`,
+		"{\"version\":1,\"id\":\"a\",\"text\":\"\xf3\xcc\x80\"}",
 		`{"version":1,"id":"a","text":"x","yara_bundled":false}`,
 		`{"version":1,"id":"a","text":"x"} {}`,
 		`{"version":1,"id":"\u001b","text":"x"}`,

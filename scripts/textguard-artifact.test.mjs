@@ -66,7 +66,7 @@ test("CI installs pinned Go in every CLI build job and pins native actions", () 
 	for (const job of builders) {
 		const setup = job.indexOf("uses: actions/setup-go@");
 		assert.ok(setup >= 0 && setup < job.indexOf("run: npm run build"));
-		assert.match(job.slice(setup), /go-version: "1\.26\.1"/);
+		assert.ok(job.slice(setup).includes(`go-version: "${expected.toolchain.slice(2)}"`));
 	}
 	const native = readFileSync(join(root, ".github/workflows/textguard-native.yml"), "utf8");
 	for (const action of native.matchAll(/uses: (\S+)/g)) {
@@ -74,6 +74,10 @@ test("CI installs pinned Go in every CLI build job and pins native actions", () 
 	}
 	assert.ok(native.includes('"packages/cli/test/textguard*.test.mjs"'));
 	assert.ok(native.includes("persist-credentials: false"));
+	for (const file of ["textguard-native.yml", "test-benchmark.yml"]) {
+		const contents = readFileSync(join(root, ".github/workflows", file), "utf8");
+		assert.ok(contents.includes(`go-version: "${expected.toolchain.slice(2)}"`), file);
+	}
 });
 
 test("all six packaged executables match the reviewed manifest", () => {
