@@ -1,12 +1,14 @@
 # TextGuard scanning
 
 Sessions started with `jz` scan skill files, skill names and descriptions, web
-results, and MCP tool results and resources locally by default. The packaged
-native helper requires no Python installation or first-use download. Content
-admitted without findings is preserved; scanning does not sanitize it.
+results, and [MCP tool results and resources](tools.md#mcp-servers). Scanning runs
+locally and is on by default. The packaged scanner requires no Python
+installation or first-use download. Content that passes without findings is
+preserved; scanning does not rewrite or sanitize it.
 
-A scan cannot establish that content is safe, and blocking a result is itself a
-cost. TextGuard separates the two kinds of input it sees:
+A scan cannot establish that content is safe. Blocking a result can also prevent
+the model from getting information it needs. TextGuard handles data and
+instructions differently:
 
 | Input | Treated as | Flagged content |
 | --- | --- | --- |
@@ -14,21 +16,24 @@ cost. TextGuard separates the two kinds of input it sees:
 | Skill files, skill names and descriptions, expanded skill text, reads of a skill file | Instructions the agent follows | Withheld until you approve it |
 
 In the default mode, a flagged data result keeps its visible text and image
-content with an advisory telling the model to treat it as data, not instructions.
-Its `details`, `structuredContent`, `nestedCalls`, and usage metadata are omitted
-because those fields have no advisory channel. A structured-only result can
-therefore return an advisory without its data.
+content. An advisory tells the model to treat that content as data, not
+instructions.
 
-Error-level findings and incomplete checks are what TextGuard acts on.
-Informational and warning-level findings never block or annotate content.
-Images cannot be checked by the text scanner; an inspected result containing one is
-treated as an incomplete check.
+Other fields—`details`, `structuredContent`, `nestedCalls`, and usage metadata—are
+omitted because the advisory cannot be attached to them. If a result contains
+only structured fields and no visible content, the model may receive the
+advisory without the data.
+
+TextGuard acts on error-level findings and incomplete checks. Informational and
+warning-level findings never block or annotate content. The text scanner cannot
+check images; an inspected result containing one is treated as an incomplete
+check.
 
 ## Modes
 
 | Command | Launch flag | Effect |
 | --- | --- | --- |
-| `/textguard on` | (default) | Flagged data's visible content is delivered with findings; structured metadata and flagged instructions are withheld |
+| `/textguard on` | (default) | The visible content of flagged data is delivered with findings; structured metadata and flagged instructions are withheld |
 | `/textguard strict` | `--jouzu-textguard-strict` | Every flagged input is withheld until you approve it |
 | `/textguard off` | `--jouzu-textguard-off` | Nothing is scanned and everything is admitted |
 
@@ -46,29 +51,30 @@ session.
 
 ## Review withheld content
 
-1. In an interactive session, run `/textguard` without arguments.
-2. The review list shows what needs a decision: content withheld pending
-   approval, and content that was delivered with error-level findings. Findings
+1. Run `/textguard` without arguments in an interactive session.
+2. Review the list. It shows what needs a decision: content withheld pending
+   approval and content that was delivered with error-level findings. Findings
    that blocked nothing are counted in the footer and listed by
-   `/textguard reports`. Select an item to open its detail view.
-3. The detail view shows the escaped source label, the content's SHA-256
-   fingerprint, severity counts, finding explanations with locations, and the
-   flagged content with controls and invisible characters shown as escapes.
-   Page up and page down scroll the view.
-4. Choose an action:
+   `/textguard reports`.
+3. Select an item to open its detail view.
+4. Inspect the detail view. It shows the escaped source label, the content's
+   SHA-256 fingerprint, severity counts, finding explanations with locations,
+   and the flagged content with controls and invisible characters shown as
+   escapes. Page up and page down scroll the view.
+5. Choose an action:
    - **Allow for this session** admits the content for the current session.
    - **Always allow this exact content** also records a persistent approval
      for the exact bytes, described below.
    - **Back** keeps the content withheld.
    Non-blocking reports offer **Dismiss report** instead, which removes them
    from the list and notifications for the current session.
-5. After approval, resources reload. Retry the skill, web, or MCP request.
+   The cursor starts on the non-approving action; Escape returns to the list
+   instead of closing the review.
+6. After approval, resources reload. Retry the skill, web, or MCP request.
 
-The cursor starts on the non-approving action; Escape returns to the list
-instead of closing the review. The review requires a terminal of at least 48
-columns and 24 rows and uses the normal selection and cancel keys. Print and RPC
-sessions do not grant approvals; their diagnostics direct you to interactive
-review.
+The review requires a terminal of at least 48 columns and 24 rows and uses the
+normal selection and cancel keys. Print and RPC sessions do not grant approvals;
+their diagnostics direct you to interactive review.
 
 Warning and informational reports stay inspectable through `/textguard reports`
 without interrupting the session. Dismissing one removes it from the list and
@@ -84,7 +90,9 @@ a replaced session cannot approve content in its replacement.
 **Always allow this exact content** records a persistent approval keyed by the
 content's SHA-256 digest, the scanner identity, and the policy version. Any
 change to the content, a scanner update, or a policy change requires a new
-decision. Approvals are stored in the Jouzu cache under `textguard/approvals.json`
+decision.
+
+Approvals are stored in the Jouzu cache under `textguard/approvals.json`
 (bounded to 128 records); the file holds no source text, paths, or labels.
 Delete that file to revoke all persistent approvals. Child agents do not share
 the store and cannot create approvals.
@@ -92,10 +100,12 @@ the store and cannot create approvals.
 Checks limited by input size, time, decoding, or scanner failure are incomplete,
 not clean. An incomplete check can be approved: the approval covers those exact
 bytes, and a later check of the same content that is interrupted does not
-withhold it again. Scanning accepts up to 256 KiB of text per request; a serialized tool
-result includes both text and structured details in that budget. Content that
-cannot be captured completely and identified cannot be approved. Retry the
-request after resolving its size, access, or read error.
+withhold it again.
+
+Scanning accepts up to 256 KiB of text per request; a serialized tool result
+includes both text and structured details in that budget. Content that cannot be
+captured completely and identified cannot be approved. Retry the request after
+resolving its size, access, or read error.
 
 ## Ordinary file reads
 
@@ -114,16 +124,19 @@ Jouzu child agents check skill-file reads and expanded skill text in restored
 sessions. Each child has its own scanner and decisions; it does not inherit
 parent approvals, but it does start in the parent session's mode. Child agents
 cannot open approval dialogs, so content that needs approval stays withheld for
-the child. `--jouzu-textguard-files` also checks ordinary reads in
-child agents launched or resumed from that CLI session. Role-based tool
-restrictions still apply.
+the child.
+
+`--jouzu-textguard-files` also checks ordinary reads in child agents launched or
+resumed from that CLI session. Role-based tool restrictions still apply.
 
 ## Limits
 
-The verdict cache holds up to 128 complete results and is bounded to 256 KiB on
-disk. It stores content hashes and scan evidence, not source bodies. Incomplete
-results are not cached as clean verdicts. The persistent approval store holds
-up to 128 content-addressed records in a separate file.
+The scanner caches up to 128 complete results in a file limited to 256 KiB. It
+stores content hashes and scan evidence, not the source content. Incomplete
+results are not cached as clean verdicts.
+
+Persistent approvals are stored separately, with up to 128 records identified
+by content hash.
 
 Scanning is a model-input check, not a sandbox. It does not block files being
 installed, extension code execution, or shell commands. It does not scan arbitrary

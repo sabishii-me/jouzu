@@ -10,7 +10,7 @@ A [Shisa AI](https://platform.shisa.ai/) account provides open coding models, th
 1. Run `/login shisa`, or press `Enter` on the **Shisa AI** row in Settings.
 2. Open the verification URL Jouzu shows and approve in your browser.
 
-Jouzu saves a dedicated API key and device link with private file permissions, then refreshes catalogs and models without a restart.
+Jouzu saves a dedicated API key and device link with private file permissions. It then refreshes catalogs and models without a restart.
 
 ## Settings row
 
@@ -42,7 +42,7 @@ Run `/logout shisa`, select Shisa in `/logout`, or press `D` on the Settings row
 - Jouzu asks Shisa to revoke the key, then removes the local key and device link.
 - Voice recording stops and Shisa catalog models leave the Models view.
 - Other providers keep their credentials.
-- For the rest of the process, Jouzu's Shisa login, catalog, and voice ignore `SHISA_API_KEY`. Unset it before restarting to stay signed out, or run `/login shisa` to reconnect.
+- For the rest of the process, Shisa login, catalog, and voice ignore `SHISA_API_KEY`, even if it remains set. Unset it before restarting to stay signed out, or run `/login shisa` to reconnect.
 
 ## Troubleshooting
 

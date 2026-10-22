@@ -1,6 +1,6 @@
 # Report a Jouzu bug
 
-Report Jouzu problems at [the GitHub issue form](https://github.com/shisa-ai/jouzu/issues/new), including session flow control, terminal behavior, and installation failures.
+Use [the GitHub issue form](https://github.com/shisa-ai/jouzu/issues/new) to report Jouzu problems, including session flow control, terminal behavior, and installation failures.
 
 **GitHub issues are public.** Review the title and body before submitting. Remove credentials, private project information, and unnecessary conversation content from anything you share.
 
@@ -8,7 +8,7 @@ Report Jouzu problems at [the GitHub issue form](https://github.com/shisa-ai/jou
 
 1. Run `/bug`, optionally followed by a short description, such as `/bug automatic work remains held after the job finishes`.
 2. Describe what went wrong, what you expected, what happened instead, and how to reproduce it.
-3. Review and edit the generated report body and issue title. Jouzu fills in the reported details and minimal environment facts: Jouzu/Pi runtime identity, operating system, architecture, and Node or Bun version. Drafting does not call a model or collect a transcript, settings, provider addresses, crash stacks, or tool results.
+3. Review and edit the generated report body and issue title. Jouzu fills in the reported details and minimal environment facts: Jouzu/Pi runtime identity, operating system, architecture, and Node or Bun version. Drafting does not call a model and does not collect a transcript, settings, provider addresses, crash stacks, or tool results.
 4. Review the final draft displayed in the session. The GitHub issue form link is always provided so you can copy the draft and submit it in your browser.
 
 When Jouzu verifies an authenticated GitHub CLI (`gh`) account, it also offers **Submit as <username> using gh**. The confirmation names the account and the public `shisa-ai/jouzu` repository. **No, keep the draft** is selected by default. Jouzu creates an issue only after you select the submission option.

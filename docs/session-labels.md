@@ -4,12 +4,17 @@ Automatic naming is on by default in interactive sessions. Jouzu uses the select
 provider/model for the first naming request and keeps that exact route when you
 switch the main conversation model. `/labels on` enables naming with the selected
 model; `/labels off` disables it. The choice is saved with the session, and a saved
-off choice stays off when you reopen it. Global **Auto labels** in Settings is a
-separate persistent switch, also controlled by `/labels global on|off`. Both the
-global and session switches must be on for naming and startup pane claims.
+off choice stays off when you reopen it.
+
+Global **Auto labels** in Settings is a separate persistent switch, also controlled
+by `/labels global on|off`. Both the global and session switches must be on for
+naming and startup pane claims.
+
 Changing the global switch in Settings applies immediately in that process;
 other running sessions check the saved setting before requests and before applying
-responses. Global settings live in `session-labels.json` under Jouzu's configuration
+responses.
+
+Global settings live in `session-labels.json` under Jouzu's configuration
 directory; malformed settings disable naming and are not overwritten automatically.
 Session choices and pane pins are saved in the session transcript. With session
 persistence disabled, session choices last only for that process; global settings
@@ -31,11 +36,11 @@ do not change.
 | `/labels` | Show status and all commands without changing settings or starting a request. |
 | `/labels global on` / `/labels global off` | Save the global switch shared with Settings → Auto labels. |
 | `/labels on` | Enable naming with the selected provider/model. |
-| `/labels off` | Cancel pending naming and stop model requests. Preserve the session name and saved label metadata; release pane ownership and restore the prior pane title if Jouzu still owns it and its title is unchanged. |
+| `/labels off` | Cancel pending naming and stop model requests. Preserve the session name and saved label metadata. Release pane ownership and restore the prior pane title if Jouzu still owns it and its title is unchanged. |
 | `/labels pin` | Protect the session name, including when its text has not changed. |
 | `/labels auto` | Allow automatic replacement of the session name. |
 | `/labels pane pin` | Protect the pane title and release Jouzu's claim without restoring a prior title. |
-| `/labels pane auto` | Explicitly allow replacing this pane's title. Refuse a claim held by another attachment. |
+| `/labels pane auto` | Explicitly allow replacing this pane's title. Refuses a claim held by another attachment. |
 
 Using `/name` also pins the session name. A pre-existing session name without
 Jouzu ownership metadata is protected. Session and pane ownership are independent.
@@ -47,6 +52,7 @@ objectives, then waits for the first completed assistant run before requesting
 labels. It does not request names at launch without completed task context, during
 tool iterations, or because of background notifications and automatic
 continuations. An interrupted or failed first run does not trigger naming.
+
 Commands expanded into different text may not trigger ordinary task naming; the
 explicit goal and multiloop notifications do not depend on text matching.
 
@@ -55,9 +61,10 @@ and bounded current and previous queries. A local, one-second-bounded
 `git rev-parse --show-toplevel` lookup supplies only the repository's name, not its
 absolute path or file contents. The naming model has no tools or attachments;
 it does not receive full conversation history. Each query excerpt is limited to
-1,800 UTF-8 bytes. Absolute path tokens and common credential prefixes are
-redacted; this is not a general secret detector. Do not include secrets in task
-text.
+1,800 UTF-8 bytes.
+
+Absolute path tokens and common credential prefixes are redacted; this is not a
+general secret detector. Do not include secrets in task text.
 
 For an ambiguous task, the model can defer naming until 1–3 more task turns have
 completed. Jouzu saves that threshold and revisits with the newer query and prior
@@ -74,9 +81,10 @@ Requests use a 100-output-token limit, no automatic retries, and cancellation
 after ten seconds. Only one request runs at a time; newer pending tasks replace
 older pending tasks. Completed labels are reconsidered at most once per five
 minutes for ordinary input. Workflow objectives and due ambiguity revisits bypass
-that interval. Deduplication
-and a 20-request cap persist with the session. Failed or invalid responses keep
-existing names. Model usage returned before session replacement or shutdown is saved in
+that interval. Deduplication and a 20-request cap persist with the session.
+Failed or invalid responses keep existing names.
+
+Model usage returned before session replacement or shutdown is saved in
 `jouzu-session-label-usage` custom session entries, outside the conversation;
 those entries are not included in Pi's standard token/cost totals. Requests can
 incur provider charges, including cancelled requests for which no usage arrives.
@@ -97,11 +105,13 @@ command arguments are optional. This includes titles produced by the Pure fish
 prompt, such as `~/project: jz - jz`. Folder paths reached through a symbolic link
 are recognized when they resolve to Jouzu's launch directory. Jouzu applies the
 saved short label, or uses `jouzu` until the first completed turn produces one.
-Another attachment's ownership token still blocks the claim. Unrecognized titles
-remain protected, including hostnames, other command titles, and names such as
-`jouzu-project`. Use `/labels pane pin` to protect a title that matches an
-automatic pattern; use `/labels pane auto` to explicitly claim another title
-while naming is enabled.
+Another attachment's ownership token still blocks the claim.
+
+Unrecognized titles remain protected, including hostnames, other command titles,
+and names such as `jouzu-project`. Use `/labels pane pin` to protect a title that
+matches an automatic pattern; use `/labels pane auto` to explicitly claim another
+title while naming is enabled.
+
 The adapter uses pane-local `@jouzu-label-owner` and `@jouzu-label-value` options.
 For stock tmux and Byobu status formats, it installs a window-local display rule:
 show the active pane's owned label when the window is automatically named or has

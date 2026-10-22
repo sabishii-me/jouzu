@@ -1,5 +1,8 @@
 # Session interface
 
+The area around the prompt shows your model, conversation usage, and ongoing
+work.
+
 | Surface | Shows |
 | --- | --- |
 | Prompt Frame | Pi's editor with Jouzu borders and a `❯` prompt |
@@ -9,20 +12,39 @@
 
 ## Prompt Frame
 
-Keeps Pi's editor behavior: actions, history, paste, autocomplete, cursor, and input-method (IME) composition.
+The prompt keeps Pi's editor behavior: editing actions, history, paste,
+autocomplete, cursor movement, and input method editor (IME) composition.
 
 ## Work dashboard
 
-- Child agents, tasks, background jobs, and flow alerts appear here. Loops keep their own panels.
-- Each source has a section whose divider shows its counts and route.
+- Child agents, tasks, background jobs, and flow-control alerts appear here. Loops keep their own panels.
+- Work is grouped into sections. Each section's divider shows its counts and the command for opening its details.
 - Each row shows a state marker, kind, elapsed time, and detail.
 - A finished child agent whose result the model has not read gets an attention row for up to 30 seconds, subject to available space. The unread-result count persists until the model reads the result.
-- Settings saves compact, expanded, or hidden dashboard display across sessions. Compact (up to 12 lines) and expanded (up to 24 lines) are both limited by one third of the terminal height and the space above the prompt. `/subagents hide` hides the dashboard for this session; `/subagents show` restores the saved setting.
-- `/bg` or `Alt+Shift+H` opens the background-job manager. `/bg watch <task>` opens it on one job.
+
+### Show or hide the dashboard
+
+In Settings / Catalogs, set **Dashboard** to compact, expanded, or hidden. The
+choice is saved across sessions.
+
+| Display | Maximum height |
+| --- | --- |
+| Compact | 12 lines |
+| Expanded | 24 lines |
+| Hidden | No dashboard |
+
+Both visible modes also fit within one third of the terminal height and the
+space above the prompt.
+
+To hide the dashboard for this session only, use `/subagents hide`.
+`/subagents show` restores the saved setting, which may itself be hidden.
+
+Use `/bg` or `Alt+Shift+H` to open the background-job manager.
+`/bg watch <task>` opens it on one job.
 
 ## Session Line
 
-- Left side: an animated marker while work runs; a static marker with paused, stopped, or completed counts; a count of results the model has not read.
+- The left side shows an animated marker while work runs, a static marker with paused, stopped, or completed counts, and a count of results the model has not read.
 - Activity replaces the shortcut hint. The hint returns when no activity summary or attention indicator remains; paused and completed loop summaries can still occupy the line.
 - Activity text shortens to fit, and disappears before it would overlap the model name.
 

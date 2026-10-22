@@ -17,9 +17,11 @@ The official API adapter removes unsupported sampling and logprob fields after
 Pi's request transforms. API-key requests use `prompt_cache_options.ttl: "30m"`
 for automatic caching; explicit cache disable is preserved. ChatGPT sign-in
 requests omit `prompt_cache_options` and `max_output_tokens`, including values
-added by request transforms. The adapter covers main-session requests and
-auxiliary requests that use the adapted model. Compatibility rules apply only
-to that exact provider, API, model ID, and endpoint.
+added by request transforms.
+
+The adapter covers main-session requests and auxiliary requests that use the
+adapted model. Compatibility rules apply only to that exact provider, API, model
+ID, and endpoint.
 
 ## Task completion guidance
 
@@ -31,12 +33,12 @@ or silently reducing scope to obtain a passing result.
 
 For assignments with three or more independently verifiable deliverables, the
 instructions ask Astra to create an overall completion checklist covering each
-requested deliverable and verification row before implementation. In Jouzu sessions
-with task tools, Astra uses bounded, coherent task packages selectively. Cascade task
-progress is an execution queue: an `in_progress` task is prompted before pending
-tasks, so holds and dependencies use the corresponding task controls rather than an
-informal status or a `Next` list. Task status does not replace implementation and
-verification evidence.
+requested deliverable and verification row before implementation. In Jouzu
+sessions with task tools, Astra uses those tools selectively for bounded,
+coherent work packages. Cascade task progress is an execution queue: an
+`in_progress` task is prompted before pending tasks, so holds and dependencies
+use the corresponding task controls rather than an informal status or a `Next`
+list. Task status does not replace implementation and verification evidence.
 
 Follow-up corrections call for a concrete action or dependency wait in the same
 turn, rather than another promise to continue. Running jobs and unfinished

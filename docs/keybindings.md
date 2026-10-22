@@ -1,13 +1,16 @@
 # Keybindings
 
+Jouzu adds these default shortcuts. The action name is the key to use when
+changing a shortcut in `keybindings.json`.
+
 | Key | Action | Behavior |
 | --- | --- | --- |
 | `Ctrl+Enter` | `app.message.followUp` | Queue the editor text as a follow-up while the agent is working |
 | `Ctrl+Up` | `app.message.dequeue` | Restore queued messages to the editor |
-| `Ctrl+F` | `jouzu.model.toggleFavorite` | Toggle the selected model's favorite, also while searching |
-| `Ctrl+Shift+R` | `jouzu.model.refresh` | Refresh model catalogs and providers, also while searching |
+| `Ctrl+F` | `jouzu.model.toggleFavorite` | In Models, toggle the selected model's favorite, also while searching |
+| `Ctrl+Shift+R` | `jouzu.model.refresh` | In Models, refresh model catalogs and providers, also while searching |
 
-- Rebind any of these by action name in `keybindings.json` in the Jouzu agent directory.
+- Rebind any of these by action name in `keybindings.json` in the Jouzu [agent directory](configuration.md).
 - `/hotkeys` lists Pi shortcuts and registered extension shortcuts. Models' local favorite and refresh actions appear in the Models view's hints.
 - `Tab` keeps Pi's autocomplete and selector behavior.
 
@@ -30,14 +33,18 @@ jz keybindings reset    # remove Jouzu's entries and stop adding them
 
 ## Terminal support
 
+Some shortcuts require your terminal to report modifier keys separately. The
+terminal, desktop, or multiplexer (such as tmux) may also intercept a shortcut
+before it reaches Jouzu.
+
 | Key | Needs |
 | --- | --- |
-| `Ctrl+F` | Nothing; works in every terminal |
+| `Ctrl+F` | No enhanced keyboard reporting |
 | `Ctrl+Enter` | Modified-Enter reporting: Kitty keyboard protocol or `modifyOtherKeys` |
 | `Ctrl+Up` | Modified-arrow reporting |
 | `Ctrl+Shift+R` | Kitty keyboard protocol or `modifyOtherKeys`; otherwise it arrives as `Ctrl+R`. Use `R` in Settings / Catalogs instead. |
 
-- In the Models search field, `Ctrl+F` replaces Pi's cursor-right. Use `→` there.
+- In the Models search field, `Ctrl+F` toggles favorite instead of moving the cursor right. Use `→` to move the cursor.
 - Windows Terminal supports the Kitty keyboard protocol from version 1.25.
 - tmux: set `extended-keys` with `extended-keys-format csi-u`.
 - macOS uses `Control+Up` for Mission Control.

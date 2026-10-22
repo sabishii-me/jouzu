@@ -1,6 +1,6 @@
 # Profiles
 
-A profile is a set of instructions, skills, and prompts that Jouzu installs into its agent directory.
+A profile is a set of instructions, skills, and prompts that Jouzu installs into its agent directory. The agent directory is the configuration root listed in [State and isolation](../README.md#state-and-isolation).
 
 | Profile | Adds |
 | --- | --- |
@@ -11,8 +11,9 @@ Jouzu never picks a response language from branding, locale, terminal settings, 
 
 ## Choose a profile
 
-- The first interactive launch asks whether to enable `ja`. Only a yes selects it; anything else selects `core`. Non-interactive first runs use `core`.
-- Change it at any time:
+The first interactive launch asks whether to enable the `ja` profile. Only a yes selects `ja`; anything else selects `core`. Non-interactive first runs use `core`.
+
+To change the profile, run:
 
 ```bash
 jz profile plan --profile ja     # preview, writes nothing
@@ -20,7 +21,7 @@ jz profile apply --profile ja
 jz profile apply --profile core
 ```
 
-- For one launch: `jz --jouzu-profile ja`, or set `JOUZU_PROFILE=ja`. The profile is applied and saved.
+To select a profile for a launch and save it as the active profile, run `jz --jouzu-profile ja`, or set `JOUZU_PROFILE=ja`.
 
 ## Skills in `core`
 
@@ -31,7 +32,7 @@ jz profile apply --profile core
 | `jouzu-delegation` | Write clear child-agent assignments, follow-ups, acceptance checks, and stopping points |
 | `jouzu-source-check` | Classify claims, find primary evidence and counterevidence, and rate confidence |
 
-- Skill names and descriptions are always in context. The full instructions load when a task matches or you run `/skill:<name>`.
+- Skill names and descriptions are always in the model context. The full instructions load when a task matches or you run `/skill:<name>`.
 - The agent reads a skill once from its listed location and continues without it if the file is unreadable.
 
 ## Default instructions
@@ -56,7 +57,7 @@ A custom system prompt replaces these, and Jouzu does not modify it.
 
 ## Resolve a conflict
 
-A conflict means a target file differs from both the bundled version and the version Jouzu last wrote. Conflicting plans exit with status 3.
+A conflict means a target file differs from both the bundled version and the version Jouzu last wrote. A conflicting `plan` or `apply` exits with status 3.
 
 1. Run `jz profile plan --json` to see the conflicting files.
 2. Inspect each file and keep, move, or delete your changes.

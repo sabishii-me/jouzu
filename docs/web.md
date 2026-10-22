@@ -3,31 +3,45 @@
 Jouzu includes these tools in both profiles. Ask the assistant to read a URL or
 search for a topic; no MCP server or search API key is required.
 
-| Tool | How it fetches | Setup |
+| Tool | Use it to | Setup |
 | --- | --- | --- |
-| `web_fetch`, `batch_web_fetch` | Direct HTTP, returns readable text | None |
-| `tff-fetch_url`, `tff-search_web` | Rendered in the Camoufox browser | Installs on first use |
+| `web_fetch` | Read a known URL without running JavaScript | None |
+| `batch_web_fetch` | Read multiple independent URLs at once | None |
+| `tff-fetch_url` | Read a page in the Camoufox browser, with rendering or screenshots | Browser installs on first use |
+| `tff-search_web` | Find pages with Google or DuckDuckGo | Browser installs on first use |
 
 Web results pass through [TextGuard](textguard.md) before reaching the model.
 
 ## Fetch or search
 
-- For a known URL, `web_fetch` extracts readable content without executing JavaScript. `batch_web_fetch` fetches independent URLs concurrently.
-- For pages that need JavaScript rendering or encounter bot protection, `tff-fetch_url` uses Camoufox, a Firefox-based browser. It supports CSS selectors and screenshots. Browser access does not guarantee that a site will allow the request.
-- For discovery, `tff-search_web` searches Google by default and falls back to DuckDuckGo when Google blocks the request or its results cannot be parsed. Set `engine` to `google` or `duckduckgo` to select one explicitly. `max_results` defaults to 10 and accepts 1–50.
+The assistant can use `tff-fetch_url` when a page needs JavaScript or blocks a
+direct fetch. Camoufox is a Firefox-based browser that supports CSS selectors
+(to return a specific part of the page) and screenshots. Browser access does not
+guarantee that a site will allow the request.
+
+`tff-search_web` searches Google first and falls back to DuckDuckGo when Google
+blocks the request or its results cannot be parsed. Its `engine` option accepts
+`google` or `duckduckgo` to select one explicitly. The `max_results` option
+defaults to 10 and accepts 1–50.
 
 ## Extraction diagnostics
 
-`web_fetch` and `batch_web_fetch` save Defuddle parser diagnostics with the tool result instead of printing them over the terminal interface. Expand the tool entry to review them. Batch results keep each request's diagnostics separate.
+If a page is missing text or looks incomplete, expand the `web_fetch` or
+`batch_web_fetch` tool entry to see messages from Defuddle, the parser that
+extracts readable page content. The messages are saved with the result rather
+than printed over the terminal interface. Batch results keep each request's
+messages separate.
 
-A diagnostic does not necessarily mean the fetch failed: the parser can recover or return fallback content. Diagnostic messages are bounded, with credentials redacted; raw stack traces are not retained.
+A parser message does not necessarily mean the fetch failed: extraction may
+recover or return fallback content. Messages have size limits and redact
+credentials; raw stack traces are not retained.
 
 ## Browser runtime
 
-- The first `tff-fetch_url` or `tff-search_web` call installs Jouzu's pinned Camoufox client from npm into Jouzu state, then downloads the Camoufox browser if needed.
+- The first `tff-fetch_url` or `tff-search_web` call installs the Camoufox client version selected by your Jouzu release from npm into Jouzu's [state directory](configuration.md), then downloads the browser if needed.
 - This needs network access and a writable Jouzu state directory.
 - `jz doctor` reports the runtime as absent, ready, or invalid.
-- The pinned client versions update with Jouzu releases. They are not added to your package settings.
+- The client version changes with Jouzu releases. It is not added to your package settings.
 
 ## Limits
 

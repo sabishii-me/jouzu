@@ -22,7 +22,9 @@ Also included:
 
 ## MCP servers
 
-Jouzu connects to Model Context Protocol (MCP) servers to use their tools and resources. Put user-level servers in `mcp.json` inside your [agent/config directory](../README.md#state-and-isolation), or project servers in `.pi/mcp.json`. Project configuration is read only after you trust the project. Keep credentials and personal servers in the user-level file.
+Jouzu connects to Model Context Protocol (MCP) servers to use their tools and resources. Put user-level servers in `mcp.json` inside your [agent/config directory](../README.md#state-and-isolation), or project servers in `.pi/mcp.json`.
+
+Project configuration is read only after you trust the project. Keep credentials and personal servers in the user-level file.
 
 For example, configure a streamable HTTP server:
 
@@ -38,13 +40,17 @@ For example, configure a streamable HTTP server:
 }
 ```
 
-Replace the URL with your server and set `DOCS_TOKEN` in the environment. Local servers use `command`, `args`, and optional `env` instead of `url` and `headers`; they run with your user permissions, so review their configuration before connecting.
+Replace the URL with your server and set `DOCS_TOKEN` in the environment.
+
+Local servers use `command`, `args`, and optional `env` instead of `url` and `headers`. They run with your user permissions, so review their configuration before connecting.
 
 Use `/mcp` to inspect connections, sign in, reconnect, or enable and disable servers. Run `/reload` after editing the configuration outside the session.
 
-MCP tool results and resources pass through [TextGuard](textguard.md) by default. Guarded mode annotates flagged visible content and omits structured metadata; strict mode withholds flagged results until approval.
+MCP tool results and resources pass through [TextGuard](textguard.md) by default. The default (`/textguard on`) mode annotates flagged visible content and omits structured metadata; strict mode withholds flagged results until approval.
 
-By default, server tools are **deferred**: the assistant uses `tool_search` to find them, then calls the matched tools directly. Set `exposure` to `direct` to declare a server's tools immediately, or `hidden` to make them unreachable. `toolExposure` overrides this per tool. Jouzu also maps saved `codemode` exposure to `deferred` without rewriting your configuration.
+By default, server tools are **deferred**: the assistant uses `tool_search` to find them, then calls the matched tools directly.
+
+Set `exposure` to `direct` to declare a server's tools immediately, or `hidden` to make them unreachable. `toolExposure` overrides this per tool. Jouzu also maps saved `codemode` exposure to `deferred` without rewriting your configuration.
 
 ## Goals and loops
 
@@ -57,7 +63,7 @@ By default, server tools are **deferred**: the assistant uses `tool_search` to f
 | `/multiloop` | Show all loops |
 
 - Without a target, pause and stop act on the attached goal, or the only matching one.
-- Resume picks the only saved goal directly. With several goals, the agent uses the conversation and saved goals to find the one you mean.
+- Resume picks the only saved goal directly. With more than one goal, the agent uses the conversation and saved goals to find the one you mean.
 - Resume prompts the agent immediately when idle, or queues the request while it works.
 - The Session Line shows running, paused, stopped, and completed counts for goals and loops in the session.
 

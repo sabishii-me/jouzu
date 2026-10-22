@@ -6,7 +6,7 @@ jz doctor --json
 jz --version
 ```
 
-`jz doctor` changes nothing and reports:
+`jz doctor` changes nothing. It reports:
 
 - Install and update channel, update policy, and keybinding defaults
 - Pi version and commit
@@ -27,7 +27,7 @@ It exits `1` when it reports a problem.
 | Command | Shows |
 | --- | --- |
 | `/status` | Session, workspace, model, thinking level, context, profile, runtime |
-| `/about` | Running and installed Jouzu builds, Pi version, startup time. If they differ, restart Jouzu. |
+| `/about` | Running and installed Jouzu builds, Pi version, startup time. If the running and installed builds differ, restart Jouzu. |
 | `/flow runtime` | Startup package paths and hashes |
 | `/bug` | Draft a bug report. See [Report a Jouzu bug](bug-reporting.md). |
 

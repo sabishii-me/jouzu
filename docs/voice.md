@@ -4,13 +4,25 @@
 
 ## Setup
 
-Run `/login shisa` in Jouzu, or set `SHISA_API_KEY` in the environment before starting it. The credential must have `shisa/asr-realtime` access; chat or batch transcription access alone is not enough.
+Run `/login shisa` in Jouzu, or set `SHISA_API_KEY` in the environment before
+starting it. The credential must have `shisa/asr-realtime` access; chat or batch
+transcription access alone is not enough.
 
-Voice reads the saved login each time you start recording. `SHISA_API_KEY` takes precedence and uses the public Shisa voice endpoint. A saved login uses the ASR endpoint returned during sign-in. Without either credential, `/voice` reports that a Shisa login or `SHISA_API_KEY` is required and leaves the microphone off.
+Voice reads the saved login each time you start recording. `SHISA_API_KEY` takes
+precedence and uses the public Shisa voice endpoint. A saved login uses the
+speech-recognition (ASR) endpoint returned during sign-in. Without either
+credential, `/voice` reports that a Shisa login or `SHISA_API_KEY` is required and
+leaves the microphone off.
 
 Capture uses the microphone on the machine running Jouzu. Over SSH, that is the remote machine, not your laptop. Allow microphone access for the terminal or Node.js when your operating system asks.
 
 Signing out with `/logout shisa` or the Shisa entry in `/logout` cancels recording and discards its uninserted text. Voice remains disabled in this process until `/login shisa` succeeds, even if `SHISA_API_KEY` is set.
+
+## Dictate a prompt
+
+1. Run `/voice` or press `Ctrl+\` to start recording.
+2. Speak, then run `/voice stop` or press `Ctrl+\` again.
+3. Review the inserted text and press Enter when you want to send it.
 
 ## Commands
 
@@ -28,7 +40,14 @@ Signing out with `/logout shisa` or the Shisa entry in `/logout` cancels recordi
 
 Device and language choices last until the session runtime is replaced or reloaded. Change them before recording. `/voice` requires an interactive terminal; it does not capture audio in print, JSON, or RPC mode.
 
-You can keep editing while recording. On a successful stop, Jouzu pastes the final transcription at the current cursor, adding a newline first when the draft is nonempty. It does not restore an older draft or insert provisional text. Review the result before pressing Enter. If transcription is incomplete, finalized text is inserted with `[garbled]` in place of each unfinished or failed chunk. A startup failure with no transcript leaves the draft unchanged.
+You can keep editing while recording. On a successful stop, Jouzu pastes the
+final transcription at the current cursor, adding a newline first when the draft
+is nonempty. It does not restore an older draft or insert provisional text.
+Review the result before pressing Enter.
+
+If transcription is incomplete, finalized text is inserted with `[garbled]` in
+place of each unfinished or failed chunk. A startup failure with no transcript
+leaves the draft unchanged.
 
 ## Preview and finalization
 
@@ -39,9 +58,23 @@ The preview labels each speech chunk:
 - **Final:** text received in the service's final-result event.
 - **Failed:** finalization failed or the connection ended before the chunk was finalized.
 
-Final results replace the matching chunks using their identifiers and logical audio ranges. Earlier finalized text remains in the transcript while later chunks are processed. The widget shows the last six chunks and reports how many earlier chunks are retained; stop uses the full bounded transcript. Jouzu does not remove repeated words by comparing text across chunks.
+Final results replace the matching chunks using their identifiers and logical
+audio ranges. Earlier finalized text stays in the transcript while later chunks
+are processed. Jouzu does not remove repeated words by comparing text across
+chunks.
 
-Stopping inserts finalized text and `[garbled]` markers directly into the prompt, without a confirmation dialog. Provisional text is replaced by a marker, not treated as final. If the connection fails, Jouzu stops recording and inserts the available finalized text with markers for missing speech; an interrupted tail with no known unfinished chunk gets a trailing marker. Edit the prompt if needed, then press Enter to send.
+The preview shows the last six chunks and counts the earlier chunks still
+retained. Stopping inserts text from the full transcript, within its size limit,
+not only the visible preview.
+
+Stopping inserts finalized text and `[garbled]` markers directly into the prompt,
+without a confirmation dialog. Provisional text is replaced by a marker, not
+treated as final.
+
+If the connection fails, Jouzu stops recording and inserts the available
+finalized text with markers for missing speech. An interrupted ending with no
+known unfinished chunk gets a trailing marker. Edit the prompt if needed, then
+press Enter to send.
 
 ## Shortcut
 
@@ -57,8 +90,8 @@ Bare keys are ignored so they remain available for typing. `/voice cancel` is al
 
 ## Privacy and limits
 
-- Audio is sent only after you start recording, to the saved login’s ASR endpoint or `wss://api.shisa.ai/ws/asr/realtime` when using an environment key. The API key is sent in the authentication header, not in the URL or to the capture helper.
-- Jouzu keeps audio in bounded memory and writes no recording files. Audio already sent to Shisa cannot be recalled by cancelling. Shisa's service policies apply to that data.
+- Audio is sent only after you start recording, to the saved login's ASR endpoint or `wss://api.shisa.ai/ws/asr/realtime` when using an environment key. The API key is sent in the authentication header, not in the URL or to the microphone capture helper.
+- Jouzu limits how much audio it holds in memory and writes no recording files. Audio already sent to Shisa cannot be recalled by cancelling. Shisa's service policies apply to that data.
 - Recording stops after ten minutes and attempts to finalize the transcript. Network connection and microphone startup each time out after ten seconds; final transcription times out after thirty seconds.
 - A slow upload, oversized response, or transcript above the bounded text limit stops recording rather than accumulating audio indefinitely. Available finalized text is inserted with `[garbled]` markers after a failure.
 - Reloading, switching sessions, or exiting releases the microphone and discards uninserted transcription.

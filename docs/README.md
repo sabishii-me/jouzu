@@ -4,35 +4,35 @@ Install and first steps are in the [project README](../README.md).
 
 ## Using Jouzu
 
-| Page | Covers |
+| Page | Read this to |
 | --- | --- |
-| [Models](models.md) | Models view, defaults, thinking levels, context ceiling |
-| [Shisa AI account](shisa.md) | Sign-in, sign-out, credentials |
-| [Model catalogs](catalogs.md) | Catalog sources, refresh, publishing a catalog |
-| [Flow control](flow-control.md) | `/flow` commands, pausing and resuming automatic work |
-| [Built-in tools](tools.md) | Tools, goals and loops, compaction |
-| [Web tools](web.md) | Fetch and browser tools, limits, browser settings |
-| [Agents and runs](subagents.md) | Child agents and roles |
-| [TextGuard](textguard.md) | Content scanning and approvals |
-| [Voice input](voice.md) | Dictation setup and commands |
-| [Session interface](interface.md) | Work dashboard, Session Line, Status Bar |
-| [Session labels](session-labels.md) | Automatic session naming |
-| [Prompt-cache warming](cache-warming.md) | Opt-in cache refresh and its costs |
-| [GPT-6 Astra](astra.md) | Model-specific guidance |
+| [Models](models.md) | Choose a model, save defaults, and set thinking and context limits |
+| [Shisa AI account](shisa.md) | Sign in, sign out, or use an API key |
+| [Model catalogs](catalogs.md) | Add and refresh model sources, or publish your own catalog |
+| [Flow control](flow-control.md) | Inspect, pause, resume, or recover automatic work |
+| [Built-in tools](tools.md) | Use tools, goals, loops, and conversation compaction |
+| [Web tools](web.md) | Read websites, search the web, and troubleshoot browser setup |
+| [Agents and runs](subagents.md) | Configure child agents and manage their work |
+| [TextGuard](textguard.md) | Understand content scanning and review withheld results |
+| [Voice input](voice.md) | Set up a microphone and dictate a prompt |
+| [Session interface](interface.md) | Read the dashboard and status displays |
+| [Session labels](session-labels.md) | Control automatic session and tmux pane names |
+| [Prompt-cache warming](cache-warming.md) | Decide whether to turn on cache refresh and understand its costs |
+| [GPT-6 Astra](astra.md) | Understand model-specific settings and working guidance |
 
 ## Setup and maintenance
 
-| Page | Covers |
+| Page | Read this to |
 | --- | --- |
-| [Profiles](profiles.md) | `core` and `ja`, bundled skills, conflicts |
-| [Keybindings](keybindings.md) | Default keys and terminal support |
-| [Key collision map](key-collisions.md) | Terminal, tmux, and desktop key conflicts |
-| [Configuration](configuration.md) | Locations, Pi import, environment variables |
-| [Updates](updates.md) | Automatic updates and policies |
-| [Diagnostics](diagnostics.md) | `jz doctor`, runtime information, passing arguments to Pi |
-| [Windows](windows.md) | Windows prerequisites |
-| [Report a bug](bug-reporting.md) | `/bug` and startup failures |
-| [Release notes](releases/) | Changes in each version |
+| [Profiles](profiles.md) | Choose `core` or `ja` and manage bundled skills |
+| [Keybindings](keybindings.md) | Change shortcuts and check terminal support |
+| [Key collision map](key-collisions.md) | Find shortcuts intercepted by your terminal, desktop, or tmux |
+| [Configuration](configuration.md) | Find settings and state, import Pi credentials, and set environment variables |
+| [Updates](updates.md) | Update Jouzu or change its automatic update policy |
+| [Diagnostics](diagnostics.md) | Run `jz doctor`, identify your build, and pass arguments to Pi |
+| [Windows](windows.md) | Check installation prerequisites and Windows-specific limits |
+| [Report a bug](bug-reporting.md) | Prepare a `/bug` report or diagnose a startup failure |
+| [Release notes](releases/) | See what changed in each version |
 
 ## Contributing
 

@@ -6,6 +6,10 @@ Flow control coordinates background jobs, goals, loops, and tasks in one session
 - Tasks can wait for your input or for another job before continuing.
 - Ask Jouzu to show, reorder, pause, or continue tasks.
 
+Jouzu keeps **receipts**, records used to track delivery of inputs and results.
+It also reserves one reply at a time so automatic work does not start overlapping
+turns. A stuck reservation can prevent the next reply from starting.
+
 ## Commands
 
 | Command | Effect |
@@ -16,26 +20,36 @@ Flow control coordinates background jobs, goals, loops, and tasks in one session
 | `/flow off` | Turn flow control off for this session. Messages run as ordinary turns; jobs, tasks, and loops send their own notifications. |
 | `/flow on` | Turn flow control back on |
 | `/flow reset` | Explain the destructive reset without changing anything. |
-| `/flow reset confirm` | Destructive idle reset. Discards all queued messages, flow receipts, and waits, and releases native holds. Running jobs keep running. Use it only if `/flow clear` does not fix the problem. |
+| `/flow reset confirm` | Destructive reset, available only while idle. Discards all queued messages, receipts, and waits, and releases holds on model requests. Running jobs keep running. Use it only if `/flow clear` does not fix the problem. |
 | `/flow clear` | Release a stuck reservation while preserving receipts, waits, and running jobs. Run while Jouzu is idle. |
-| `/flow retry <request>` | Authorize one withheld request to be admitted again before sending, using its request ID from `/flow` |
-| `/flow cancel <token>` | Remove one wait's dependency gate. Its job keeps running and its work stays open. Use the wait token from `/flow`. |
+| `/flow retry <request>` | Allow one withheld request to go through the pre-send checks again; use its request ID from `/flow` |
+| `/flow cancel <token>` | Cancel an entire wait, even if it covers multiple dependencies. Underlying jobs keep running and its work stays open. Use the wait token from `/flow`. |
 | `/flow resolve <attempt> retry` or `discard` | Settle a model request with an unknown outcome, using the attempt ID shown by `/flow` |
 | `/flow runtime` | Show startup package paths and hashes |
 
 - Interrupting a reply also pauses automatic work until your next message or `/flow resume`.
 - A reply that still ends with a provider error after retries and context recovery pauses automatic work. The pause includes the provider's message; your next message or `/flow resume` releases it.
-- `/flow clear` repairs a reservation without discarding flow evidence. `/flow reset confirm` is the destructive fallback for when `/flow clear` does not fix the problem: it discards all queued messages and flow delivery state, cancels waits, and leaves underlying jobs running.
+- `/flow clear` repairs a reservation without discarding flow evidence. If that does not fix the problem, `/flow reset confirm` is the destructive fallback: it discards all queued messages and flow delivery state, cancels waits, and leaves underlying jobs running.
 - `/flow resolve <attempt> retry` may repeat a request the model already answered. It resolves an unknown attempt outcome; `/flow retry <request>` instead authorizes a withheld request.
 - Set `JOUZU_FLOW_CONTROL=0` before starting Jouzu to disable flow control for that process.
 
 ## Waiting for jobs
 
-When an `agent_wait` call returns `waiting`, completion, failure, or deadline expiry schedules a response at the next eligible turn. If a reply is in progress, Flow waits for it to finish. Queued user messages run first and can carry the wait outcome in their context. Successful delivery does not schedule the same outcome again.
+When the assistant uses `agent_wait` and the call returns `waiting`, Jouzu waits
+for completion, failure, or the deadline before scheduling a response. If a reply
+is in progress, it finishes first. Queued user messages also run first and can
+include the wait outcome in the model's context. Once the outcome has been
+delivered, it does not trigger another response.
 
 An explicit pause or an unresolved execution outcome still blocks automatic replies. The wait outcome stays pending; use `/flow` to inspect the blocker.
 
-Inputs that can no longer be delivered remain visible as undelivered input, but are not queued and do not block automatic replies. Submit one again only if it is still needed. If dispatch was interrupted and its outcome is unknown, inspect the session and job state before using `/flow clear`. Clearing releases that recovery hold without replaying the interrupted input.
+Inputs that can no longer be delivered remain visible as undelivered input.
+They are not queued and do not block automatic replies. Submit one again only
+if it is still needed.
+
+If sending an input was interrupted and its outcome is unknown, inspect the
+session and job state before using `/flow clear`. Clearing releases that hold
+without sending the interrupted input again.
 
 ## Branches and resuming
 

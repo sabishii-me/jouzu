@@ -14,15 +14,17 @@ The global settings key is `cacheWarming`. Project settings do not override it. 
 
 ## Eligibility and limits
 
-Automatic warming requires a known prompt-cache lifetime, a safely replayable request, and estimated savings that meet the runtime's threshold. A provider supporting streaming does not establish that these conditions hold. Models with zero configured prices do not warm automatically; extensions can override the economic decision.
+Automatic warming requires a known prompt-cache lifetime, a safely replayable request, and estimated savings that meet the runtime's threshold. A provider supporting streaming does not establish that these conditions hold. Models with zero configured prices do not warm automatically; extensions can override that cost-based decision.
 
-The runtime requests one output token and disables provider retries. Provider adapters can raise that limit: the OpenAI Responses adapter uses a minimum of 16 output tokens. The main session's refresh check accepts only a one-token provider payload, so it refuses that Responses replay without sending it. Child workers use the adapter's limit.
+The runtime requests one output token and disables provider retries. Provider adapters can raise that limit: the OpenAI Responses adapter uses a minimum of 16 output tokens. The main session's refresh check accepts only a one-token provider payload, so it refuses that Responses replay without sending it. Child workers use the adapter's raised limit.
 
 The main session checks that the replay matches the admitted request before sending it. Changed or unsupported payloads are refused without failing the conversational turn. Refresh failures are best-effort and can be tried again at a later scheduled interval.
 
-Each captured request has a one-hour warming limit while running. In `idle` mode, the limit is 30 minutes from that request's capture, not 30 minutes after the run settles. A new request starts its own interval. Context changes and session disposal cancel the previous refresh schedule.
+Each captured request has a one-hour warming limit while its agent run is active. In `idle` mode, the limit is 30 minutes from that request's capture, not 30 minutes after the run settles. A new request starts its own interval. Context changes and session disposal cancel the previous refresh schedule.
 
-Successful refresh usage is recorded separately from assistant messages. A refresh that completes after the next request or a context change replaced its schedule still adds its usage. A response arriving after warming was cancelled by an interrupt, session disposal, a session switch, or turning warming off does not add usage. Local usage records therefore do not establish that a provider charged nothing for a cancelled request.
+Successful refresh usage is recorded separately from assistant messages. A refresh that completes after the next request or a context change replaced its schedule still adds its usage. A response arriving after warming was cancelled by an interrupt, session disposal, a session switch, or turning warming off does not add usage.
+
+Local usage records therefore do not establish that a provider charged nothing for a cancelled request.
 
 ## Subagents
 

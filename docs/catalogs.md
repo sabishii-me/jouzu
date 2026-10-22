@@ -5,20 +5,21 @@ A model catalog is a list of models that a server publishes for Jouzu. Catalogs 
 ## Built-in Shisa catalog
 
 - Source ID `shisa-api`, read from `https://api.shisa.ai/v1/jouzu/model-catalog`.
-- Credential order: `SHISA_API_KEY`, a token saved for the catalog, then the `/login shisa` credential. See [Shisa AI account](shisa.md).
+- Jouzu checks credentials in this order: `SHISA_API_KEY`, a token saved for the catalog, then the `/login shisa` credential. See [Shisa AI account](shisa.md).
 - The login credential stays in `agent/auth.json`. It is not copied into the catalog token store or sent to other catalogs.
-- Disable it with `Space` in Settings / Catalogs, its only key. The choice is stored in `catalog-overrides.json`; re-enabling restores the defaults.
+- Disable it with `Space` in Settings / Catalogs; it cannot be edited or removed. The choice is stored in `catalog-overrides.json`; re-enabling restores the defaults.
 - A custom source with the same endpoint and `env:SHISA_API_KEY` credential replaces the built-in one.
 - `shisa-api` is reserved. `jouzu catalog status` reports a custom source that uses it with another endpoint.
 
 ## When catalogs refresh
 
 - On startup, on `/reload`, and with `Ctrl+Shift+R` in the Models view.
-- At startup, a source that already has a catalog refreshes in the background.
-- A source with no catalog yet refreshes before the Models view opens, for up to 8 seconds, showing `Fetching model catalog…`. If it does not answer, startup continues with cached and local models.
+- At startup, a source that already has a catalog refreshes in the background. A source with no catalog yet refreshes before the session starts, for up to 8 seconds, showing `Fetching model catalog…`. If it does not answer, startup continues with cached and local models.
 - Sources without an available credential are skipped and report no error.
 
 ## How catalog models combine with `models.json`
+
+Catalog models can override or extend the models you define in `models.json`. The result depends on the catalog type.
 
 - Authenticated gateway catalog models take precedence over matching `models.json` entries, including routes, credentials, headers, and `modelOverrides`.
 - A gateway catalog must declare `source.type: "authenticated_gateway"`, use bearer authentication, and have a source URL whose path ends with `/v1/jouzu/model-catalog`. It connects through the gateway with the source's token and needs no local provider entry.
@@ -31,8 +32,8 @@ A model catalog is a list of models that a server publishes for Jouzu. Catalogs 
 
 1. Open Settings / Catalogs with `/catalogs`, or press `Tab` in the Palette.
 2. Press `A`.
-3. Enter a label and URL. A host is enough; Jouzu finds the catalog endpoint.
-4. Choose Authentication with `←` / `→`.
+3. Enter a label and URL. A host is enough for the URL; Jouzu finds the catalog endpoint.
+4. Choose the Authentication mode with `←` / `→`.
 5. Press `Enter` to save, or `Esc` to cancel.
 
 - Move between fields with `↑` / `↓`.
@@ -42,7 +43,7 @@ A model catalog is a list of models that a server publishes for Jouzu. Catalogs 
 | --- | --- |
 | None | Nothing |
 | Environment variable | Only the variable name, in `catalogs.json` |
-| Token entered in the form | `catalog-credentials.json`, private permissions, never displayed |
+| Token entered in the form | Stored in `catalog-credentials.json` with private permissions; never displayed |
 
 - An environment variable overrides a saved token.
 - You can save a source before its variable is set. Jouzu warns, skips it, and refreshes once the variable or a token is available.
@@ -89,7 +90,7 @@ jouzu catalog refresh
 jouzu catalog refresh office
 ```
 
-`catalog status` shows each source's `Last error` and reports `degraded` until a refresh succeeds. Recorded errors:
+`catalog status` shows each source's `Last error` and reports `degraded` until a refresh succeeds. Recorded errors include:
 
 - DNS resolution, connection, or timeout
 - Proxy authentication, HTTP 401, 403, or 407
@@ -105,7 +106,7 @@ Refresh behavior:
 
 ## Large changes
 
-Jouzu can hold back a valid but large catalog change instead of applying it. Check `jouzu catalog status`, then accept the exact revision and digest it shows:
+Jouzu can hold back a valid catalog revision that adds or removes many models at once instead of applying it. Check `jouzu catalog status`, then accept the exact revision and digest it shows:
 
 ```bash
 jouzu catalog accept REVISION --digest SHA256 --source SOURCE_ID
@@ -124,10 +125,10 @@ jouzu catalog validate ./catalog.json
 jouzu catalog conformance ./remote-catalog.json --json
 ```
 
-- `conformance` also requires the remote-stream sequence field.
+- `conformance` additionally requires the `sequence` field that remote refreshes use.
 - The JSON Schema is installed at `dist/catalog/model-catalog-v1.schema.json`. Runtime validation also rejects duplicate JSON keys, broken references, credential fields, and invalid account scope.
-- To add a new model, an offering needs input types and context/output token limits. Without them it can only update an existing model. `catalog status` and `jz doctor` report these gaps.
-- Declare `supportedThinkingLevels` for reasoning models. Without it, a model the catalog adds has thinking disabled, and an override keeps the levels Pi already knows. `catalog status` lists offerings that omit it.
+- To add a new model, an offering must declare `text` in `modalities` and set `limits.contextWindow` and `limits.maxOutputTokens`. Without them it can only update an existing model. `catalog status` and `jz doctor` report these gaps.
+- Declare `supportedThinkingLevels` for reasoning models. Without it, a model the catalog adds has thinking disabled, and an offering that overrides a model Pi already knows keeps Pi's levels. `catalog status` lists offerings that omit it.
 - Offerings whose `capabilities` omit `reasoning` are left out of that list, because Jouzu treats them as non-reasoning.
 - Unknown thinking levels, including an unknown `defaultThinkingLevel`, are ignored so the catalog still loads.
 - `jz doctor` reads cached data only. Run `jz catalog refresh` before checking a server change.

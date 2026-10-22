@@ -1,8 +1,10 @@
 # Updates
 
+Jouzu updates differently depending on how it was installed.
+
 ## npm installations
 
-A global npm installation checks npm's `latest` version before an interactive launch.
+A global npm installation checks the `latest` version of the Jouzu package before an interactive launch.
 
 - After a successful check, the next check waits 24 hours. After a failed or offline check, it waits at least one hour.
 - The check contacts your configured npm registry and sends no Jouzu telemetry.
@@ -50,6 +52,12 @@ Only one update runs at a time. A failed check leaves the current version in pla
 
 ## Windows launcher
 
-- The launcher and the Jouzu application update separately through their own signed feeds; desktop launches do not use npm updates.
-- Checks run at startup, every six hours while the launcher stays open, and when its window regains focus if the last automatically scheduled check was at least 30 minutes ago.
-- In the launcher's **System** view, use **Check for updates** to check manually, **Update Jouzu** to update the application, or **Update and restart** to update the launcher. The launcher update asks for confirmation before restarting.
+The launcher and the Jouzu application update separately through their own signed feeds; desktop launches do not use npm updates.
+
+Checks run:
+
+- At startup.
+- Every six hours while the launcher stays open.
+- When the launcher window regains focus, if the last automatically scheduled check was at least 30 minutes ago.
+
+In the launcher's **System** view, use **Check for updates** to check manually, **Update Jouzu** to update the application, or **Update and restart** to update the launcher. The launcher update asks for confirmation before restarting.
