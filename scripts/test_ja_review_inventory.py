@@ -64,6 +64,25 @@ class Tags(HTMLParser):
         self.data.append(data)
 
 
+class SourceDiscoveryTests(unittest.TestCase):
+    def test_generated_review_exports_are_not_rediscovered(self):
+        blobs = {
+            "scripts/direct-strings-allowlist.json": inv.json_bytes([{
+                "file": "src/labels.ts", "kind": "record-value", "text": "Label",
+                "category": "model-facing", "reason": "Model text"}]),
+            "src/labels.ts": 'const label = "日本語";'.encode(),
+            "review/ja-localization/catalogs.json": '"日本語"'.encode(),
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with patch.object(inv, "SOURCE_GROUPS", {}), patch.object(inv, "OPTIONAL_CONTEXT", ()), \
+                 patch.object(inv, "read_source", side_effect=lambda root, path: blobs[path]):
+                selected, evidence = inv.select_sources(
+                    root, sorted(blobs), counts=replace(inv.PIN_COUNTS, allowlist_entries=1))
+            self.assertEqual(list(selected), ["src/labels.ts"])
+            self.assertEqual([item["path"] for item in evidence], ["src/labels.ts"])
+
+
 class FluentTests(unittest.TestCase):
     def test_lossless_comments_multiline_attributes_and_selects(self):
         data = ("### File comments: keep --flag and <path>\r\n\r\n"

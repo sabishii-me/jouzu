@@ -20,7 +20,7 @@ from typing import Mapping
 from urllib.parse import quote
 
 # Repin this commit and PIN_COUNTS together after validating the candidate source.
-PIN = "feba821523b1b04fd20372fa294925cd37c147c2"
+PIN = "97ce062b1b4c20d9c15c8c374a4c07df48e373a9"
 REPOSITORY = "https://github.com/shisa-ai/jouzu"
 DEFAULT_SOURCE_MODE = "links"
 LOCALES = ("en", "ja", "zh-Hans", "zh-Hant")
@@ -521,7 +521,8 @@ def select_sources(root: Path, paths: list[str], provenance: SourcePin = DEFAULT
     for path in paths:
         # Vendored libraries have their own localization/data; inventory their boundary,
         # not their Unicode tables or dependency-owned strings.
-        if path.startswith("upstream/") or (root / path).is_symlink():
+        # Generated review exports are not product sources; do not recursively index them.
+        if path.startswith(("upstream/", "review/ja-localization/")) or (root / path).is_symlink():
             continue
         try:
             text = read_source(root, path).decode("utf-8")
@@ -933,7 +934,8 @@ def build_outputs(root: Path, provenance: SourcePin = DEFAULT_SOURCE, expected_i
     outputs["catalogs.json"] = json_bytes({"messages": rows, "files": catalog["parsed"]})
     outputs["discovery.json"] = json_bytes({
         "tracked_file_count": len(paths), "pattern": DISCOVERY.pattern,
-        "excluded_prefix": "upstream/", "symlinks_followed": False, "matches": discovery,
+        "excluded_prefix": "upstream/", "excluded_generated_prefix": "review/ja-localization/",
+        "symlinks_followed": False, "matches": discovery,
     })
     outputs["sources.html"] = source_html(records, blobs, source_mode)
     outputs["disclosure-review.json"] = json_bytes(disclosure_review(blobs, provenance, source_mode))
