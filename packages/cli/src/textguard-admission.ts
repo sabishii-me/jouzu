@@ -126,9 +126,10 @@ export class TextGuardAdmission {
 							input_sha256: contentDigest,
 							status: result.status,
 							findings: result.findings,
-							finding_count: result.status === "unavailable" ? 0 : result.findingCount,
-							severity_counts: result.status === "unavailable" ? { info: 0, warn: 0, error: 0 } : result.severityCounts,
-							decode_reasons: result.status === "unavailable" ? [] : result.decodeReasons,
+							finding_count: result.findingCount ?? (result.status === "unavailable" ? 0 : undefined),
+							severity_counts:
+								result.severityCounts ?? (result.status === "unavailable" ? { info: 0, warn: 0, error: 0 } : undefined),
+							decode_reasons: result.decodeReasons ?? (result.status === "unavailable" ? [] : undefined),
 							reason: result.reason,
 						}),
 					),

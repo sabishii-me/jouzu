@@ -9,6 +9,18 @@ import { MAX_SCAN_BYTES, type ScanEvidence, type TextScanner, unavailable } from
 const OUTPUT_LIMIT = 64 * 1024;
 const QUEUE_LIMIT = 16;
 const QUEUE_BYTES = 2 * 1024 * 1024;
+// Protocol reason codes emitted by the pinned native decoder, including numeric encoding names.
+const DECODE_REASONS = new Set([
+	"encoding:url_decoded",
+	"encoding:html_entity_decoded",
+	"encoding:rot13_decoded",
+	"encoding:base64_decoded",
+	"encoding:unicode_escape_decoded",
+	"encoding:hex_escape_decoded",
+	"encoding:punycode_decoded",
+	"encoding:decode_bound_hit",
+	"encoding:decode_depth_limited",
+]);
 const sha = (bytes: string | Buffer) => createHash("sha256").update(bytes).digest("hex");
 
 export interface NativeEvidence extends ScanEvidence {
@@ -292,7 +304,7 @@ export function parseNativeEvidence(line: Buffer, id: string, digest: string): N
 			)
 				return unavailable("protocol");
 		}
-		if (!value.decode_reasons.every((r: unknown) => typeof r === "string" && /^encoding:[a-z_]{1,40}$/.test(r)))
+		if (!value.decode_reasons.every((r: unknown) => typeof r === "string" && DECODE_REASONS.has(r)))
 			return unavailable("protocol");
 		if (
 			(value.status === "clear" && value.finding_count !== 0) ||

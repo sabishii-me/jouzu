@@ -35,6 +35,11 @@ test("native replies validate identity, counts, completion, encoding, and bounde
 		{ decode_reasons: ["encoding:decode_bound_hit"] },
 		{ decode_reasons: ["encoding:decode_depth_limited"] },
 		{ decode_reasons: ["\u001b[31m"] },
+		{ decode_reasons: ["encoding:unknown"] },
+		{ decode_reasons: ["encoding:base65_decoded"] },
+		{ decode_reasons: ["encoding:base64_decoded\n"] },
+		{ decode_reasons: [42] },
+		{ decode_reasons: Array(10).fill("encoding:url_decoded") },
 		{ findings: Array(65).fill({}) },
 		{
 			status: "findings",
