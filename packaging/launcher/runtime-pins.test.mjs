@@ -58,3 +58,14 @@ test('only the full installer carries and prepares runtime components', () => {
  assert.match(installer, /\$UpdateMode = 1\s+Goto reinst_done/);
  assert.match(hooks, /-RefuseActiveSessions -InstallRoot/);
 });
+
+test('uninstall removes its PATH entry before deleting the helper', () => {
+ const hooks = read('./installer-hooks.nsh');
+ const before = hooks.match(/!macro NSIS_HOOK_PREUNINSTALL\s+([\s\S]*?)!macroend/)[1];
+ const after = hooks.match(/!macro NSIS_HOOK_POSTUNINSTALL\s+([\s\S]*?)!macroend/)[1];
+ assert.match(before, /!insertmacro JOUZU_STOP_ALL[\s\S]*\$UpdateMode <> 1[\s\S]*command-path\.ps1[^\r\n]*-Action Remove -Write/);
+ assert.doesNotMatch(after, /command-path\.ps1/);
+ const uninstall = read('./installer.nsi').split('Section Uninstall')[1];
+ assert.ok(uninstall.indexOf('!insertmacro NSIS_HOOK_PREUNINSTALL') < uninstall.indexOf('{{#each resources}}'));
+ assert.ok(uninstall.indexOf('{{#each resources}}') < uninstall.indexOf('!insertmacro NSIS_HOOK_POSTUNINSTALL'));
+});

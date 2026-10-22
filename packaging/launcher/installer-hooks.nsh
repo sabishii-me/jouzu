@@ -54,6 +54,14 @@
   ; launcher-only package's keep-sessions behaviour belongs to replacing files during an update,
   ; not to an uninstall that would otherwise delete files from under a running launcher.
   !insertmacro JOUZU_STOP_ALL
+  ${If} $UpdateMode <> 1
+    ; Remove the command directory from PATH while its helper is still installed.
+    IfFileExists "$INSTDIR\runtime\launcher-update\command-path.ps1" 0 jouzu_path_gone
+      nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\runtime\launcher-update\command-path.ps1" -Directory "$LOCALAPPDATA\Shisa.ai\Jouzu\bin" -Action Remove -Write'
+      Pop $0
+      Pop $1
+    jouzu_path_gone:
+  ${EndIf}
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
@@ -92,13 +100,6 @@
 
 !macro NSIS_HOOK_POSTUNINSTALL
   ${If} $UpdateMode <> 1
-    ; The entry leaves the PATH before the commands it names leave the disk, and only the value this
-    ; installation wrote is removed.
-    IfFileExists "$INSTDIR\runtime\launcher-update\command-path.ps1" 0 jouzu_path_gone
-      nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\runtime\launcher-update\command-path.ps1" -Directory "$LOCALAPPDATA\Shisa.ai\Jouzu\bin" -Action Remove -Write'
-      Pop $0
-      Pop $1
-    jouzu_path_gone:
     RmDir /r "\\?\$LOCALAPPDATA\Shisa.ai\Jouzu\bin"
     ; A launcher-only package does not carry the payload file list, so remove it explicitly. An
     ; update keeps the payload: it replaces the launcher, it does not remove the installation.
