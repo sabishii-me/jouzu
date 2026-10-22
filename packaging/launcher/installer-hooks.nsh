@@ -1,4 +1,14 @@
 !define JOUZU_HOOK_DIRECTORY "${__FILEDIR__}"
+Var JouzuPreparationFailures
+
+!macro JOUZU_PREPARE_COMPONENT COMPONENT
+  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\runtime\launcher-update\prepare-component.ps1" -InstallRoot "$INSTDIR" -Component ${COMPONENT}'
+  Pop $0
+  Pop $1
+  ${If} $0 != 0
+    StrCpy $JouzuPreparationFailures "$JouzuPreparationFailures${COMPONENT}: $1$\r$\n"
+  ${EndIf}
+!macroend
 
 !macro JOUZU_LAUNCHER_ONLY_REPLACE
   InitPluginsDir
@@ -67,16 +77,18 @@
 !macro NSIS_HOOK_POSTINSTALL
 !if ${JOUZU_LAUNCHER_ONLY} == 0
   ; Only the full installer prepares components. A launcher-only update must not replace them.
-  ; Preparation failures leave the component available for repair from the System section.
-  IfFileExists "$INSTDIR\runtime\git\PortableGit.exe" 0 jouzu_components_done
-    nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\runtime\launcher-update\git-environment.ps1" -InstallRoot "$INSTDIR" -Prepare'
-    Pop $0
-    Pop $1
-  IfFileExists "$INSTDIR\runtime\terminal\WindowsTerminal.zip" 0 jouzu_components_done
-    nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\runtime\launcher-update\terminal-environment.ps1" -InstallRoot "$INSTDIR" -Prepare'
-    Pop $0
-    Pop $1
-  jouzu_components_done:
+  StrCpy $JouzuPreparationFailures ""
+  !insertmacro JOUZU_PREPARE_COMPONENT git
+  !insertmacro JOUZU_PREPARE_COMPONENT terminal
+  ${If} $JouzuPreparationFailures != ""
+    DetailPrint "$(jouzuPrepareFailed)"
+    ; Installation completes with repair available. Silent callers can detect partial completion.
+    SetErrorLevel 2
+    ${If} $PassiveMode != 1
+      IfSilent +2
+      MessageBox MB_OK|MB_ICONEXCLAMATION "$(jouzuPrepareFailed)"
+    ${EndIf}
+  ${EndIf}
 !endif
   ; The terminal entries are byte copies of the signed console, so no second binary ships. A copy that
   ; could not be refreshed leaves the previous one in place; the System section reports the state.

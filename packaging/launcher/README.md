@@ -146,6 +146,19 @@ Git preparation replaces a working older bundled Git with the verified pinned ve
 launcher-only install does not prepare or replace runtime components. `/UPDATE` refuses to
 replace the full runtime while Jouzu sessions are running.
 
+If Git Bash or Windows Terminal preparation fails, the full installer continues preparing
+the other component and finishes with exit code `2`. Interactive installs show a repair
+notice; silent (`/S`) and passive (`/P`) installs return the code without opening a dialog.
+Open **System** in the launcher to repair the affected component, or retry the full installer.
+A successful installer retry returns `0`.
+
+Preparation reports are saved under `%LOCALAPPDATA%\Shisa.ai\Jouzu\logs` as
+`prepare-git.json` and `prepare-terminal.json`. Each records status, the helper's exit code,
+and up to 4,096 characters of diagnostic output with control characters, common credential
+values and local user paths removed. A failed attempt also writes
+`prepare-git.failure.json` or `prepare-terminal.failure.json`; a successful installer retry
+keeps that failure report. If a report cannot be saved, the installer still reports failure.
+
 The updated staging helper checks the installed Node executable and private pnpm metadata and
 version before running an install. It requires Node 24.22.1 or a newer Node 24 release
 and pnpm 10.34.7. A failing check produces a full-installer repair instruction without

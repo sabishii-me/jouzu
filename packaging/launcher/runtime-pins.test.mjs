@@ -51,8 +51,10 @@ test('only the full installer carries and prepares runtime components', () => {
  const hooks = read('./installer-hooks.nsh');
  const fullOnly = hooks.match(/!macro NSIS_HOOK_POSTINSTALL\s+!if \$\{JOUZU_LAUNCHER_ONLY\} == 0([\s\S]*?)!endif/);
  assert.ok(fullOnly, 'component preparation must be compile-time guarded');
- assert.match(fullOnly[1], /git-environment\.ps1.*-Prepare/);
- assert.match(fullOnly[1], /terminal-environment\.ps1.*-Prepare/);
+ assert.match(fullOnly[1], /!insertmacro JOUZU_PREPARE_COMPONENT git/);
+ assert.match(fullOnly[1], /!insertmacro JOUZU_PREPARE_COMPONENT terminal/);
+ assert.match(fullOnly[1], /SetErrorLevel 2/);
+ assert.match(fullOnly[1], /MessageBox.*jouzuPrepareFailed/);
  // /UPDATE bypasses uninstall, which is what preserves selected app slots and user data.
  const installer = read('./installer.nsi');
  assert.match(installer, /\$UpdateMode = 1\s+Goto reinst_done/);

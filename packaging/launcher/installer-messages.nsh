@@ -22,3 +22,8 @@ LangString jouzuCloseFailed ${LANG_TRADCHINESE} "無法安全關閉 Jouzu。不�
 LangString jouzuDeleteData ${LANG_TRADCHINESE} "是否永久刪除儲存的登入憑證、API Key、設定、對話、工作階段及最近使用的資料夾記錄？$\r$\n$\r$\n位置：$LOCALAPPDATA\Shisa.ai\Jouzu\data（以及 recent.json）。$\r$\n此操作無法復原。請先備份需要保留的資料。$\r$\n$\r$\n不會刪除專案檔案或遠端帳號，也不會刪除獨立 npm CLI 的資料或自訂 JOUZU_HOME 目錄。其他共用這些資料的 Jouzu 啟動器也將無法再使用這些資料。"
 LangString jouzuDeleteFailed ${LANG_TRADCHINESE} "使用者資料尚未完全刪除。程式檔案和解除安裝程式已保留，以便重試。部分資料可能已經刪除。請關閉占用剩餘檔案的應用程式，然後重新執行解除安裝程式。"
 LangString jouzuRemoveFailed ${LANG_TRADCHINESE} "解除安裝未能刪除全部程式檔案。很可能 Jouzu 或它啟動的代理命令仍在執行並占用這些檔案。請關閉 Jouzu 及其視窗中顯示的所有命令，然後重新執行解除安裝程式。"
+
+LangString jouzuPrepareFailed ${LANG_ENGLISH} "Jouzu was installed, but component preparation needs attention. Open System in the launcher to repair Git Bash or Windows Terminal.$\r$\n$\r$\n$JouzuPreparationFailures"
+LangString jouzuPrepareFailed ${LANG_JAPANESE} "Jouzu はインストールされましたが、一部の構成要素の準備が完了していません。ランチャーの「システム」で Git Bash または Windows Terminal を修復してください。$\r$\n$\r$\n$JouzuPreparationFailures"
+LangString jouzuPrepareFailed ${LANG_SIMPCHINESE} "Jouzu 已安装，但部分组件的准备未完成。请在启动器的“系统”中修复 Git Bash 或 Windows Terminal。$\r$\n$\r$\n$JouzuPreparationFailures"
+LangString jouzuPrepareFailed ${LANG_TRADCHINESE} "Jouzu 已安裝，但部分元件尚未準備完成。請在啟動器的「系統」中修復 Git Bash 或 Windows Terminal。$\r$\n$\r$\n$JouzuPreparationFailures"
