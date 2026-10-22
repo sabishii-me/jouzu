@@ -11,7 +11,7 @@ The UI locale does not select a response language. The `responseLanguage` settin
 
 ## Choose a profile
 
-The first interactive launch asks for the interface language and then the response language. Choosing `日本語` for the interface selects the `ja` profile; choosing `English` selects `core`. The Chinese interface choices are unavailable. Skipping the interface choice or running non-interactively writes no language choice and uses `core`.
+The first interactive launch asks for the interface language and then the response language. It uses `core` for either interface language, so the response choice is not overridden by a profile default. The Chinese interface choices are unavailable. Skipping the interface choice or running non-interactively writes no language choice and uses `core`.
 
 To change the profile, run:
 

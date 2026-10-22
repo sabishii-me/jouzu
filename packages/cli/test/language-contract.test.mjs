@@ -3,8 +3,8 @@
  *
  * The tests read the compiled `dist` modules, so `npm run build` must run first.
  * They cover the contract and epoch types and their builders, the
- * response-language section (`auto` adds none, a fixed language adds exactly
- * one), its composition with the existing guidance, the epoch's persistence in
+ * response-language directive (`auto` adds none), independent artifact-language
+ * instructions, their composition with existing guidance, the epoch's persistence in
  * session metadata and its reproduction on resume, the next-turn application of
  * a change, the explicit new epoch on compaction/branching/resume, and the
  * promise that summaries, quotes, tool results, and code are never rewritten.
@@ -134,9 +134,12 @@ test("a stored payload round-trips and an unknown shape is rejected", () => {
 
 // --- T08: the response-language section -------------------------------------
 
-test("auto adds no section and a fixed language adds exactly one small section", () => {
+test("auto retains artifact instructions without fixing the response language", () => {
 	const auto = buildLanguageContract({ responseLanguage: resolvedAuto(), artifactPolicy: defaultPolicy() });
-	assert.equal(buildResponseLanguageSection(auto), undefined);
+	const autoSection = buildResponseLanguageSection(auto);
+	assert.doesNotMatch(autoSection, /Response language:|Write user-facing explanations/u);
+	assert.match(autoSection, /Artifact language policy/u);
+	assert.equal(buildResponseLanguageSection({ ...auto, artifactPolicy: undefined }), undefined);
 
 	const section = buildResponseLanguageSection(contractJa());
 	assert.equal(typeof section, "string");
@@ -147,8 +150,11 @@ test("auto adds no section and a fixed language adds exactly one small section",
 	assert.match(section, /Follow the declared artifact policy and terminology/u);
 	assert.match(section, /Do not translate files or comments unless asked/u);
 	assert.match(section, /report the uncertainty instead of inventing one/u);
-	// One heading and four bullets: exactly one small section.
-	assert.equal(section.split("\n").length, 5);
+	assert.equal((section.match(/Response language:/gu) ?? []).length, 1);
+	assert.equal((section.match(/Artifact language policy/gu) ?? []).length, 1);
+	for (const field of ["comments", "documentation", "commits", "reviews"]) {
+		assert.match(section, new RegExp(`^- ${field}:`, "mu"));
+	}
 });
 
 test("each fixed language names itself in its own section", () => {

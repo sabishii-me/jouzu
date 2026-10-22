@@ -27,6 +27,7 @@ import { DASHBOARD_MODES, loadDashboardPolicy, writeDashboardPolicy } from "./da
 import { formatEffectiveKeybinding, formatEffectiveKeyPair, formatKeyId } from "./keybinding-hints.js";
 import type { LabelPolicyStore } from "./label-policy.js";
 import { isShippedUiLocale, languageSelfName } from "./language-choice.js";
+import type { LanguageContractInput } from "./language-contract.js";
 import {
 	ARTIFACT_LANGUAGES,
 	ARTIFACT_POLICY_FIELDS,
@@ -52,6 +53,7 @@ import {
 } from "./localization-deferral.js";
 import {
 	applyLocalization,
+	type LocalizationApplyResult,
 	type LocalizationField,
 	type LocalizationPlan,
 	type LocalizationRequest,
@@ -133,6 +135,8 @@ interface CatalogSettingsOptions {
 	jouzuVersion?: string;
 	/** The `--jouzu-ui-locale` value, so the Language view can report the `cli` source. */
 	uiLocaleCli?: string;
+	/** Notify the active contract only after response/artifact choices are saved. */
+	onLanguageChanged?: (language: LanguageContractInput) => void;
 	/**
 	 * A snapshot of the work in progress that a language change must not
 	 * disturb. The host supplies the signals it can observe; an absent field
@@ -407,6 +411,7 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 		notices: number;
 	};
 	private readonly uiLocaleCli?: string;
+	private readonly onLanguageChanged?: CatalogSettingsOptions["onLanguageChanged"];
 	private readonly activity?: () => LocalizationActivity;
 	private readonly sessionId: string;
 	private expandedSourceId?: string;
@@ -447,6 +452,7 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 		this.runtime = options.runtime;
 		this.jouzuVersion = options.jouzuVersion;
 		this.uiLocaleCli = options.uiLocaleCli;
+		this.onLanguageChanged = options.onLanguageChanged;
 		this.activity = options.activity;
 		this.sessionId = options.sessionId ?? DEFAULT_LOCALIZATION_SESSION_ID;
 		this.login = options.login ?? loginShisa;
@@ -1175,6 +1181,16 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 		this.tui.requestRender();
 	}
 
+	/** Read the persisted result, not the plan's pre-apply effective values. */
+	private notifyLanguageChange(result: LocalizationApplyResult): void {
+		if (
+			result.changed &&
+			result.plan.actions.some((action) => action.field === "responseLanguage" || action.field === "artifactPolicy")
+		) {
+			this.onLanguageChanged?.(this.languageState());
+		}
+	}
+
 	/** Apply the confirmed change through the operations layer and show the receipt. */
 	private applyLanguageConfirm(): void {
 		const confirm = this.languageConfirm;
@@ -1203,6 +1219,7 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 				env: this.env,
 				catalog: this.catalog,
 			});
+			this.notifyLanguageChange(result);
 			this.languageConfirm = undefined;
 			this.clearLanguagePreviews();
 			this.refreshLanguageCatalog();
@@ -1252,6 +1269,7 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 				env: this.env,
 				catalog: this.catalog,
 			});
+			this.notifyLanguageChange(result);
 			this.languageResetConfirm = false;
 			this.clearLanguagePreviews();
 			this.refreshLanguageCatalog();

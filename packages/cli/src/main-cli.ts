@@ -112,39 +112,24 @@ export async function runMainCli(args: string[]): Promise<void> {
 	// the Jouzu environment variable, and the saved settings file, and never
 	// writes any of them. The resolved value is carried to the doctor context so
 	// the diagnostics issue can render it without re-reading the sources.
-	const localizationConfig = readLocalizationSettings(paths.configDir);
-	const uiLocale = resolveUiLocale({
-		...(parsed.options.uiLocale ? { cli: parsed.options.uiLocale } : {}),
-		...(process.env.JOUZU_UI_LOCALE ? { env: process.env.JOUZU_UI_LOCALE } : {}),
-		config: localizationConfig,
-		os: osLocaleCandidates(process.env),
-	});
-	// Resolve the language contract from the same settings read. The response
-	// language and artifact policy never consult the OS or the UI locale. The
-	// project policy is read only for a repository the runtime reports as
-	// trusted; no runtime trust signal exists yet, so the default is untrusted.
-	const savedSettings = localizationConfig.status === "ok" ? localizationConfig.settings : undefined;
-	const responseLanguage = resolveResponseLanguage({ config: savedSettings?.responseLanguage });
-	const projectPolicy = readProjectArtifactPolicy(process.cwd(), { trusted: false });
-	const artifactPolicy = resolveArtifactPolicy({
-		...(projectPolicy.status === "ok" ? { project: projectPolicy.artifactPolicy } : {}),
-		...(savedSettings?.artifactPolicy ? { config: savedSettings.artifactPolicy } : {}),
-	});
-	// The language contract owns the response-language section and the prompt
-	// epoch. It is created here so the presentation extension reads the section
-	// for the active turn, and it is registered before presentation so a staged
-	// change is committed before the prompt is composed.
-	const languageContract = createLanguageContractExtension({ responseLanguage, artifactPolicy });
-	// Build the pre-runtime context once. Everything below reads this context
-	// instead of resolving the locale again, so `--help`, `--version`, the
-	// argument errors, and the report commands share one catalog decision.
-	const preRuntime = buildPreRuntimeContext({
+	let localizationConfig = readLocalizationSettings(paths.configDir);
+	const resolveStartupUiLocale = () =>
+		resolveUiLocale({
+			...(parsed.options.uiLocale ? { cli: parsed.options.uiLocale } : {}),
+			...(process.env.JOUZU_UI_LOCALE ? { env: process.env.JOUZU_UI_LOCALE } : {}),
+			config: localizationConfig,
+			os: osLocaleCandidates(process.env),
+		});
+	let uiLocale = resolveStartupUiLocale();
+	// Commands share one catalog decision. A successful first-run save below
+	// refreshes it before any session extensions capture the display language.
+	let preRuntime = buildPreRuntimeContext({
 		uiLocale,
 		machineReadable: parsed.kind === "pi" && usesMachineReadableStdout(parsed.args),
 	});
 	// One renderer option object and one message helper for every human output
 	// below, so no command re-resolves the locale or reads `process` again.
-	const renderOptions = { ...preRuntime.display, catalog: preRuntime.catalog.bundle };
+	let renderOptions = { ...preRuntime.display, catalog: preRuntime.catalog.bundle };
 	const text = (id: CatalogMessageId, args?: Readonly<Record<string, string | number>>): string =>
 		catalogText(preRuntime.catalog.bundle, id, args);
 	if (parsed.kind === "help") {
@@ -159,13 +144,6 @@ export async function runMainCli(args: string[]): Promise<void> {
 	const metadata = loadMetadata();
 	const interactiveStartup = parsed.kind === "pi" && isInteractivePiStartup(parsed.args);
 	const executable = process.argv[1] ?? fileURLToPath(import.meta.url);
-	const updater = new JouzuUpdater({
-		paths,
-		currentVersion: metadata.jouzuVersion,
-		executable,
-		report: (message) => console.log(catalogMessageText(preRuntime.catalog.bundle, message)),
-		catalog: preRuntime.catalog.bundle,
-	});
 
 	if (parsed.kind === "catalog") {
 		if (parsed.operation === "status") {
@@ -292,8 +270,14 @@ export async function runMainCli(args: string[]): Promise<void> {
 		if (choice) {
 			try {
 				saveLanguageChoice(paths, choice, preRuntime.catalog.bundle);
+				// Resolve again from the saved file, retaining CLI/environment
+				// precedence rather than treating the choice as an override.
+				localizationConfig = readLocalizationSettings(paths.configDir);
+				uiLocale = resolveStartupUiLocale();
+				preRuntime = buildPreRuntimeContext({ uiLocale, machineReadable: preRuntime.machineReadable });
+				renderOptions = { ...preRuntime.display, catalog: preRuntime.catalog.bundle };
 				profile = {
-					id: choice.uiLocale === "ja" ? "ja" : "core",
+					id: "core",
 					source: "first-run choice",
 					needsFirstRunInput: false,
 				};
@@ -310,6 +294,26 @@ export async function runMainCli(args: string[]): Promise<void> {
 			profile = { id: "core", source: "default", needsFirstRunInput: false };
 		}
 	}
+
+	// First-run choices must be saved before the session captures its language
+	// contract. Neither response language nor artifact policy consults the UI
+	// locale or OS. Without a runtime trust signal, project policy stays unread.
+	const savedSettings = localizationConfig.status === "ok" ? localizationConfig.settings : undefined;
+	const responseLanguage = resolveResponseLanguage({ config: savedSettings?.responseLanguage });
+	const projectPolicy = readProjectArtifactPolicy(process.cwd(), { trusted: false });
+	const artifactPolicy = resolveArtifactPolicy({
+		...(projectPolicy.status === "ok" ? { project: projectPolicy.artifactPolicy } : {}),
+		...(savedSettings?.artifactPolicy ? { config: savedSettings.artifactPolicy } : {}),
+	});
+	// Register before presentation so staged changes commit before prompt composition.
+	const languageContract = createLanguageContractExtension({ responseLanguage, artifactPolicy });
+	const updater = new JouzuUpdater({
+		paths,
+		currentVersion: metadata.jouzuVersion,
+		executable,
+		report: (message) => console.log(catalogMessageText(preRuntime.catalog.bundle, message)),
+		catalog: preRuntime.catalog.bundle,
+	});
 
 	if (parsed.kind === "profile") {
 		const selected = parsed.profile ?? profile.id;
@@ -541,6 +545,8 @@ export async function runMainCli(args: string[]): Promise<void> {
 	const dashboardVisibility = new DashboardVisibility();
 	let dashboardMode = loadDashboardPolicy(paths).mode;
 	const modelPicker = createJouzuModelPicker(paths, {
+		onLanguageChanged: ({ responseLanguage, artifactPolicy }) =>
+			languageContract.applyLanguage(responseLanguage, artifactPolicy),
 		onDashboardChanged: () => {
 			dashboardMode = loadDashboardPolicy(paths).mode;
 			dashboardController.invalidateDisplay();

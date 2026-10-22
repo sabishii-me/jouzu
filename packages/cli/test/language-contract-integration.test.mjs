@@ -178,7 +178,7 @@ test("a saved response language reaches the composed prompt and the persisted ep
 	}
 });
 
-test("an auto response language adds no section end to end", () => {
+test("auto applies artifact instructions without fixing the response language end to end", () => {
 	const root = mkdtempSync(join(tmpdir(), "jouzu-language-integration-auto-"));
 	try {
 		writeSettings(root, { uiLocale: "en" });
@@ -189,13 +189,15 @@ test("an auto response language adds no section end to end", () => {
 		assert.equal(responseLanguage.effective, "auto");
 		const session = wireSession({ responseLanguage, artifactPolicy: resolveArtifactPolicy({}) });
 		session.emit("session_start", { type: "session_start", reason: "startup" });
-		assert.equal(session.languageContract.currentSection(), undefined);
+		const section = session.languageContract.currentSection();
+		assert.match(section, /Artifact language policy/u);
+		assert.doesNotMatch(section, /Response language:/u);
 		const routing = buildCapabilityRoutingGuidance(routingOptions);
 		const composed = session.emit("before_agent_start", {
 			systemPrompt: UPSTREAM_PROMPT,
 			systemPromptOptions: routingOptions,
 		});
-		assert.equal(composed.systemPrompt, brandDefaultSystemPrompt(UPSTREAM_PROMPT, undefined, routing));
+		assert.equal(composed.systemPrompt, brandDefaultSystemPrompt(UPSTREAM_PROMPT, undefined, routing, section));
 		assert.doesNotMatch(composed.systemPrompt, /Response language:/u);
 	} finally {
 		rmSync(root, { recursive: true, force: true });

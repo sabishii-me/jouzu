@@ -1,5 +1,40 @@
 [
 	{
+		"file": "packages/cli/src/language-contract.ts",
+		"kind": "conditional-branch",
+		"text": "Preserve the existing language.",
+		"category": "model-facing",
+		"reason": "Artifact-policy instruction composed into the model's system prompt, not a translated interface label."
+	},
+	{
+		"file": "packages/cli/src/language-contract.ts",
+		"kind": "conditional-branch",
+		"text": "Follow the project's existing language.",
+		"category": "model-facing",
+		"reason": "Artifact-policy instruction composed into the model's system prompt, not a translated interface label."
+	},
+	{
+		"file": "packages/cli/src/language-contract.ts",
+		"kind": "conditional-branch",
+		"text": "Use {…} ({…}).",
+		"category": "model-facing",
+		"reason": "Names a selected artifact language in the model's system prompt; the language tag is preserved."
+	},
+	{
+		"file": "packages/cli/src/subagents/language.ts",
+		"kind": "conditional-branch",
+		"text": "Never translate or rewrite history, summaries, quotes, tool results, or code.",
+		"category": "model-facing",
+		"reason": "Preservation-only role instruction in the child model's system prompt."
+	},
+	{
+		"file": "packages/cli/src/subagents/language.ts",
+		"kind": "conditional-branch",
+		"text": "Preserve history, summaries, quotations, and tool results, including quoted code. Do not translate existing source solely to satisfy a language preference; edit source code when the assignment requires it.",
+		"category": "model-facing",
+		"reason": "Child model instruction distinguishes language preservation from authorized coding work; it is not interface text."
+	},
+	{
 		"file": "packages/cli/src/camoufox-adapter.ts",
 		"kind": "variable-literal",
 		"text": "\nimport { createRequire } from \"node:module\";\nconst require = createRequire({…});\nexport class Impit {\n\tconstructor(...args) {\n\t\tconst { Impit: NativeImpit } = require(\"impit\");\n\t\treturn new NativeImpit(...args);\n\t}\n}\n",

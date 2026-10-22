@@ -11,8 +11,9 @@
  * built. A parent that changes its response language after launch cannot reach a
  * running child: the child keeps the contract it started with.
  *
- * A child never translates history, summaries, quotes, tool results, or code,
- * and never routes its answer through another model to satisfy a language
+ * A child preserves historical and quoted content rather than translating it to
+ * satisfy a language preference. Coding assignments may still edit source files.
+ * A child never routes its answer through another model to satisfy a language
  * request. When it cannot answer reliably in the requested language it reports a
  * limitation instead.
  */
@@ -81,6 +82,7 @@ export function snapshotLanguageContract(contract: LanguageContract): LanguageCo
 		contractId: contract.contractId,
 		taskLanguage: contract.taskLanguage,
 		artifactLanguage: contract.artifactLanguage,
+		...(contract.artifactPolicy ? { artifactPolicy: Object.freeze({ ...contract.artifactPolicy }) } : {}),
 		returnLanguage: contract.returnLanguage,
 		preserveExact: Object.freeze([...contract.preserveExact]),
 	});
@@ -124,7 +126,10 @@ export function buildRoleLanguageSection(contract: LanguageContract): string {
 	);
 	if (preserved.length) lines.push(`Preserve ${preserved.join(", ")} exactly as written; never translate them.`);
 	lines.push(
-		`Never translate or rewrite history, summaries, quotes, tool results, or code. If you cannot return a reliable result in the requested language, report it as a limitation with the tag ${LANGUAGE_LIMITATION_TAG} instead of translating through another model.`,
+		forbidsHistoryRewrite(contract)
+			? "Never translate or rewrite history, summaries, quotes, tool results, or code."
+			: "Preserve history, summaries, quotations, and tool results, including quoted code. Do not translate existing source solely to satisfy a language preference; edit source code when the assignment requires it.",
+		`If you cannot return a reliable result in the requested language, report it as a limitation with the tag ${LANGUAGE_LIMITATION_TAG} instead of translating through another model.`,
 	);
 	return lines.join("\n");
 }

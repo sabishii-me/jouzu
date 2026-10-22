@@ -208,7 +208,7 @@ About shows the running and installed Jouzu builds, Pi version, and process star
 
 Language shows **Display language**, **Response language**, and **Artifact policy**, with their values and resolution sources. Move into the items with `↓`; `←` or `→` cycles the focused item's candidate as a preview. A preview changes only the Settings panel and writes nothing. `Esc` cancels it and restores the effective value; a second `Esc` closes Settings.
 
-`Enter` opens a confirmation for the previewed changes. Use `←` or `→` to choose the session or environment scope, then `Enter` to apply or `Esc` to cancel. Environment scope saves the UI locale for future launches; response and artifact choices remain session-scoped. The panel reports the result of the save.
+`Enter` opens a confirmation for the previewed changes. Use `←` or `→` to choose the session or environment scope, then `Enter` to apply or `Esc` to cancel. Environment scope saves the UI locale for future launches; response and artifact choices remain session-scoped. The panel reports the result of the save. Successfully saved response and artifact choices apply on the next agent turn, without changing a reply already in progress. Display-language preview and refresh affect the Settings panel; restart after an environment-scope save to use the new language throughout the session.
 
 Display-language choices are `auto`, `English`, and `日本語`. Response-language choices also include `简体中文` and `繁體中文`; their presence does not offer Chinese UI catalogs. To set persistent response and artifact preferences, use [Configuration](configuration.md#language).
 

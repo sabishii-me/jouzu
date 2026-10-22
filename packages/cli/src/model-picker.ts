@@ -19,6 +19,7 @@ import {
 } from "./jouzu-keybindings.js";
 import { formatEffectiveKeybinding, formatEffectiveKeyPair } from "./keybinding-hints.js";
 import { createLabelPolicy } from "./label-policy.js";
+import type { LanguageContractInput } from "./language-contract.js";
 import type { CatalogBundle } from "./locale-catalog.js";
 import { createLocalizationActivityTracker } from "./localization-deferral.js";
 import type { CatalogModelOffering, ModelCatalogDocument } from "./model-catalog.js";
@@ -114,6 +115,8 @@ export interface JouzuModelPickerOptions {
 	jouzuVersion?: string;
 	/** The `--jouzu-ui-locale` value, so the Settings Language view reports the `cli` source. */
 	uiLocaleCli?: string;
+	/** Stage successfully saved response/artifact choices for the next turn. */
+	onLanguageChanged?: (language: LanguageContractInput) => void;
 	/** The resolved catalog a Palette view renders its human text from. */
 	catalog?: CatalogBundle;
 }
@@ -1767,6 +1770,7 @@ export function createJouzuModelPicker(
 								onAccountChanged: (change) => refreshShisaAccount(change),
 								...(options.jouzuVersion ? { jouzuVersion: options.jouzuVersion } : {}),
 								...(options.uiLocaleCli ? { uiLocaleCli: options.uiLocaleCli } : {}),
+								...(options.onLanguageChanged ? { onLanguageChanged: options.onLanguageChanged } : {}),
 								activity: () => localizationActivity.snapshot(),
 							}),
 					},

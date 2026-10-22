@@ -285,6 +285,29 @@ test("an unreadable catalog falls back to English", () => {
 	});
 });
 
+test("a missing recorded auxiliary catalog rejects the locale and falls back to English", () => {
+	withCatalogRoot((localesRoot) => {
+		rmSync(join(localesRoot, "ja", "runtime.ftl"));
+		assert.throws(() => loadCatalog("ja", { localesRoot }), /recorded extra catalog file ja\/runtime\.ftl is missing/);
+		const resolution = resolveCatalog("ja", { localesRoot });
+		assert.equal(resolution.effective, "en");
+		assert.equal(resolution.fallback?.reason, CATALOG_RECOVERY_TEXT);
+		assert.equal(
+			resolution.bundle.format("jouzu.cli.flow.resetConfirm"),
+			loadCatalog("en", { localesRoot }).format("jouzu.cli.flow.resetConfirm"),
+		);
+	});
+});
+
+test("missing auxiliary catalogs in both locales use catalog-independent recovery", () => {
+	withCatalogRoot((localesRoot) => {
+		for (const locale of ["en", "ja"]) rmSync(join(localesRoot, locale, "runtime.ftl"));
+		const resolution = resolveCatalog("ja", { localesRoot });
+		assert.equal(resolution.bundle.digest, "unavailable");
+		assert.equal(resolution.bundle.format("jouzu.cli.flow.resetConfirm"), CATALOG_RECOVERY_TEXT);
+	});
+});
+
 test("the catalog-independent recovery text is used when no catalog can be read", () => {
 	withCatalogRoot((localesRoot) => {
 		rmSync(join(localesRoot, "en", "cli.ftl"));

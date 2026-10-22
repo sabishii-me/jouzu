@@ -65,7 +65,7 @@ The UI locale, the response language, and the artifact policy are stored in `loc
 ```
 
 - `uiLocale` accepts `auto`, `en`, `ja`, `zh-Hans`, or `zh-Hant`. The interface offers only English and Japanese; a Chinese locale request falls back to English. `auto` resolves from the locale environment variables and falls back to English when no offered catalog matches.
-- `responseLanguage` sets the language of the agent's user-facing explanations: `auto`, `en`, `ja`, `zh-Hans`, or `zh-Hant`. `auto` adds no language instruction to the prompt.
+- `responseLanguage` sets the language of the agent's user-facing explanations: `auto`, `en`, `ja`, `zh-Hans`, or `zh-Hant`. `auto` adds no fixed conversational-language instruction; the separate artifact policy still applies.
 - `artifactPolicy` sets the language for each artifact kind. Each field takes `preserve`, `project`, `en`, `ja`, `zh-Hans`, or `zh-Hant`. `preserve` keeps existing text; `project` follows the project's existing language.
 
 The UI locale, response language, and artifact policy are separate settings. Changing `uiLocale` does not change `responseLanguage` or `artifactPolicy`, and no language setting selects a model, provider, or region.

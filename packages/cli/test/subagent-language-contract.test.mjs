@@ -94,6 +94,19 @@ test("every default role resolves to its own family's frozen language contract",
 	}
 });
 
+test("a language snapshot retains and freezes a full artifact policy", () => {
+	const contract = buildLanguageContract({
+		responseLanguage: resolveResponseLanguage({ config: "auto" }),
+		artifactPolicy: resolveArtifactPolicy({ config: { commits: "ja", reviews: "en" } }),
+	});
+	const snapshot = snapshotLanguageContract(contract);
+	assert.deepEqual(snapshot, contract);
+	assert.notEqual(snapshot.artifactPolicy, contract.artifactPolicy);
+	assert.ok(Object.isFrozen(snapshot.artifactPolicy));
+	contract.artifactPolicy.commits = "en";
+	assert.equal(snapshot.artifactPolicy.commits, "ja");
+});
+
 test("a role's contract carries only the terms that role needs", () => {
 	const implementation = defaultLanguageContract(byId("coder"));
 	const research = defaultLanguageContract(researcher);
@@ -124,6 +137,12 @@ test("a role's contract carries only the terms that role needs", () => {
 	const implementationSection = buildRoleLanguageSection(implementation);
 	assert.match(implementationSection, /Follow the project's existing language/);
 	assert.match(implementationSection, /Return your result in the parent's response language/);
+	assert.match(implementationSection, /edit source code when the assignment requires it/);
+	assert.doesNotMatch(
+		implementationSection,
+		/Never translate or rewrite history, summaries, quotes, tool results, or code/,
+	);
+	assert.match(implementationSection, /including quoted code/);
 	for (const contract of [research, compactor, monitor]) {
 		const section = buildRoleLanguageSection(contract);
 		assert.doesNotMatch(section, /Write user-facing explanations/);

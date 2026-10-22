@@ -359,6 +359,12 @@ export function loadCatalog(locale: CatalogLocale, options: CatalogLoadOptions =
 	// in the manifest, so a file added without regenerating the lock is refused
 	// rather than merged unverified.
 	const extraFiles = extraCatalogFiles(locale, options.localesRoot);
+	const discovered = new Set(extraFiles.map((name) => `${locale}/${name}`));
+	for (const key of Object.keys(manifest.extra ?? {})) {
+		if (key.startsWith(`${locale}/`) && !discovered.has(key)) {
+			throw new CatalogLoadError(locale, `the recorded extra catalog file ${key} is missing`);
+		}
+	}
 	const extraSources: Array<{ key: string; source: string }> = [];
 	for (const name of extraFiles) {
 		const key = `${locale}/${name}`;

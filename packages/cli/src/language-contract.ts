@@ -5,20 +5,18 @@
  * from the settings file, the session, the CLI, and the built-in defaults. This
  * module turns a resolution into a `LanguageContract` (the content digest plus
  * the task, artifact, return, and preserve-exact terms), composes the small
- * response-language section for a fixed language, and records a `PromptEpoch`
- * when the contract is applied.
+ * response-language section for a fixed language, includes the per-field
+ * artifact policy, and records a `PromptEpoch` when the contract is applied.
  *
- * The response-language section is composed at runtime and is not a profile
- * asset. It is added only for a fixed language: `auto` produces no section, so
- * a session that never chose a language keeps the prompt it had. The section is
- * model-facing prompt text, so it stays English on purpose and names the target
- * language.
+ * The section is composed at runtime, not from a profile asset. `auto` adds no
+ * fixed conversational-language directive; artifact instructions still apply.
+ * Model-facing prompt text stays English and names the selected languages.
  *
  * ## The prompt epoch
  *
  * A `PromptEpoch` records the contract id, when it was applied, which source
- * supplied the language, and the digest of the language prompt asset (the
- * response-language section, or the empty string for `auto`). The epoch is
+ * supplied the language, and the digest of the composed language instructions.
+ * The epoch is
  * stored in the session as a Jouzu-owned custom entry, the same mechanism the
  * session-labels extension already uses (`pi.appendEntry` with a custom type).
  * Pi owns the message, compaction, and session-info entries; this module only
@@ -81,6 +79,8 @@ export interface LanguageContract {
 	readonly contractId: string;
 	readonly taskLanguage: LanguageContractTaskLanguage;
 	readonly artifactLanguage: LanguageContractArtifactLanguage;
+	/** Full main-session policy; absent on legacy and single-language role contracts. */
+	readonly artifactPolicy?: ArtifactPolicy;
 	readonly returnLanguage: LanguageContractReturnLanguage;
 	readonly preserveExact: readonly LanguageContractPreserveExact[];
 }
@@ -93,8 +93,8 @@ export type PromptEpochSource = (typeof PROMPT_EPOCH_SOURCES)[number];
  * The record of one applied language contract.
  *
  * `appliedAt` is an ISO timestamp. `promptDigest` is the digest of the
- * response-language section that was applied (`""` for `auto`, which adds no
- * section), so a reader can tell which prompt asset the segment used.
+ * language prompt asset (or `""` for a legacy contract without instructions),
+ * so a reader can tell which prompt asset the segment used.
  */
 export interface PromptEpoch {
 	readonly id: string;
@@ -138,15 +138,15 @@ export function languageContractId(content: Omit<LanguageContract, "contractId">
 				content.artifactLanguage,
 				content.returnLanguage,
 				[...content.preserveExact],
+				...(content.artifactPolicy ? [ARTIFACT_POLICY_FIELDS.map((field) => content.artifactPolicy?.[field])] : []),
 			]),
 		)
 		.digest("hex");
 }
 
 /**
- * Reduce a per-field artifact policy to the contract's single artifact
- * language. A policy whose fields all agree uses that value; a mixed policy
- * follows the project (`"project"`), which is the built-in default's intent.
+ * Summarize a per-field artifact policy for single-language consumers. The full
+ * policy remains in main-session contracts and their content digests.
  */
 export function artifactLanguageFor(policy: ArtifactPolicy): LanguageContractArtifactLanguage {
 	const values = ARTIFACT_POLICY_FIELDS.map((field) => policy[field]);
@@ -177,32 +177,44 @@ export function buildLanguageContract(input: LanguageContractInput): LanguageCon
 	const content = {
 		taskLanguage,
 		artifactLanguage: artifactLanguageFor(input.artifactPolicy.effective),
+		artifactPolicy: { ...input.artifactPolicy.effective },
 		returnLanguage,
 		preserveExact: [...LANGUAGE_CONTRACT_PRESERVE_EXACT] as LanguageContractPreserveExact[],
 	};
 	return { contractId: languageContractId(content), ...content };
 }
 
-/**
- * The small response-language section for a fixed language, or `undefined` for
- * `auto`.
- *
- * It carries five points of the response-language contract: write user-facing explanations
- * in the chosen language; preserve commands, identifiers, paths, code, quoted
- * text, and source error text; follow the declared artifact policy and
- * terminology; do not translate files or comments unless asked; report
- * uncertainty instead of inventing a translation.
- */
+/** Compose conversational and artifact instructions independently. */
 export function buildResponseLanguageSection(contract: LanguageContract): string | undefined {
-	if (contract.taskLanguage === "preserve") return undefined;
-	const name = RESPONSE_LANGUAGE_NAMES[contract.taskLanguage];
-	return [
-		`Response language: ${name} (${contract.taskLanguage}). Write user-facing explanations in ${name}.`,
-		"- Preserve commands, identifiers, paths, code, quoted text, and source error text exactly as written.",
-		"- Follow the declared artifact policy and terminology.",
-		"- Do not translate files or comments unless asked.",
-		"- If you are unsure of a translation, report the uncertainty instead of inventing one.",
-	].join("\n");
+	const lines: string[] = [];
+	if (contract.taskLanguage !== "preserve") {
+		const name = RESPONSE_LANGUAGE_NAMES[contract.taskLanguage];
+		lines.push(
+			`Response language: ${name} (${contract.taskLanguage}). Write user-facing explanations in ${name}.`,
+			"- Preserve commands, identifiers, paths, code, quoted text, and source error text exactly as written.",
+			"- Follow the declared artifact policy and terminology.",
+			"- Do not translate files or comments unless asked.",
+			"- If you are unsure of a translation, report the uncertainty instead of inventing one.",
+		);
+	}
+	if (contract.artifactPolicy) {
+		lines.push("Artifact language policy (independent of response language):");
+		for (const field of ARTIFACT_POLICY_FIELDS) {
+			const language = contract.artifactPolicy[field];
+			const instruction =
+				language === "preserve"
+					? "Preserve the existing language."
+					: language === "project"
+						? "Follow the project's existing language."
+						: `Use ${RESPONSE_LANGUAGE_NAMES[language]} (${language}).`;
+			lines.push(`- ${field}: ${instruction}`);
+		}
+		lines.push(
+			"Apply these choices to requested work, not as a request to translate existing files or comments.",
+			"Preserve commands, identifiers, paths, code, quoted text, and source error text exactly as written.",
+		);
+	}
+	return lines.length > 0 ? lines.join("\n") : undefined;
 }
 
 /** Digest the language prompt asset (the section, or `""` when none applies). */
@@ -255,10 +267,15 @@ function isContractPreserveExact(value: unknown): value is LanguageContractPrese
 /** Validate a stored contract. An unknown value is never trusted. */
 export function isLanguageContract(value: unknown): value is LanguageContract {
 	if (!isPlainObject(value)) return false;
+	const artifactPolicy = value.artifactPolicy;
 	return (
 		typeof value.contractId === "string" &&
 		isContractTaskLanguage(value.taskLanguage) &&
 		isContractArtifactLanguage(value.artifactLanguage) &&
+		(artifactPolicy === undefined ||
+			(isPlainObject(artifactPolicy) &&
+				Object.keys(artifactPolicy).length === ARTIFACT_POLICY_FIELDS.length &&
+				ARTIFACT_POLICY_FIELDS.every((field) => isContractArtifactLanguage(artifactPolicy[field])))) &&
 		isContractReturnLanguage(value.returnLanguage) &&
 		Array.isArray(value.preserveExact) &&
 		value.preserveExact.every(isContractPreserveExact)
