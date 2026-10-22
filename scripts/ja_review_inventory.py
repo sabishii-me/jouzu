@@ -20,7 +20,7 @@ from typing import Mapping
 from urllib.parse import quote
 
 # Repin this commit and PIN_COUNTS together after validating the candidate source.
-PIN = "df12d20bb693d595f6814335d5b53082815342c7"
+PIN = "2884de8cee8560810cfc29b235cd08c428469659"
 REPOSITORY = "https://github.com/shisa-ai/jouzu"
 DEFAULT_SOURCE_MODE = "links"
 LOCALES = ("en", "ja", "zh-Hans", "zh-Hant")
