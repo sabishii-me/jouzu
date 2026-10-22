@@ -12,7 +12,8 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, toNamespacedPath } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
@@ -100,6 +101,52 @@ test("a held lock excludes another process and release admits it", async (t) => 
 	const lock = acquireProcessLock(path);
 	lock.release();
 	assert.ok(existsSync(path), "the lock file stays in place after release");
+});
+
+test("long lock paths preserve ownership across processes and path aliases", async (t) => {
+	let directory = makeDir(t);
+	while (directory.length < 320) directory = join(directory, "nested-child-flow-storage");
+	const path = join(directory, "owner.sqlite");
+	const alias = toNamespacedPath(path);
+	const child = await holdInChild(t, path);
+	assertBusy(path);
+	assertBusy(alias);
+	child.send("release");
+	const [released] = await once(child, "message");
+	assert.deepEqual(released, { state: "released" });
+	const lock = acquireProcessLock(alias);
+	try {
+		assertBusy(path);
+		assert.equal(statSync(path).size, 0);
+		for (const suffix of ["-wal", "-shm", "-journal"]) assert.equal(existsSync(`${path}${suffix}`), false);
+	} finally {
+		lock.release();
+	}
+});
+
+test("Windows extended paths share the reservation with plain SQLite paths", {
+	skip: process.platform !== "win32",
+}, (t) => {
+	const path = join(makeDir(t), "owner.sqlite");
+	const database = new DatabaseSync(path, { defensive: false });
+	database.exec("PRAGMA journal_mode=OFF; PRAGMA busy_timeout=0; BEGIN IMMEDIATE;");
+	try {
+		assertBusy(toNamespacedPath(path));
+	} finally {
+		database.close();
+	}
+	const lock = acquireProcessLock(toNamespacedPath(path));
+	const contender = new DatabaseSync(path, { defensive: false });
+	try {
+		contender.exec("PRAGMA journal_mode=OFF; PRAGMA busy_timeout=0;");
+		assert.throws(
+			() => contender.exec("BEGIN IMMEDIATE;"),
+			(error) => error.errcode === 5,
+		);
+	} finally {
+		contender.close();
+		lock.release();
+	}
 });
 
 test("a suspended holder keeps ownership past the former stale threshold", { skip: posixOnly }, async (t) => {

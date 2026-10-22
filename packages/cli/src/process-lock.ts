@@ -1,5 +1,5 @@
 import { closeSync, lstatSync, openSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, toNamespacedPath } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { ensurePrivateDirectory } from "./private-fs.js";
 
@@ -52,7 +52,8 @@ export function acquireProcessLock(path: string): ProcessLock {
 		const metadata = lstatSync(path);
 		if (!metadata.isFile() || metadata.isSymbolicLink())
 			throw new ProcessLockError("storage", `A process lock requires a regular file: ${path}`);
-		database = new DatabaseSync(path, { defensive: false });
+		// SQLite needs the Windows extended path prefix to open deeply nested state directories.
+		database = new DatabaseSync(toNamespacedPath(path), { defensive: false });
 		// Newer Node releases enable SQLite defensive mode, which silently refuses
 		// journal_mode=OFF. This private connection executes only the fixed SQL here:
 		// no application writes, schemas, or commits are permitted.
