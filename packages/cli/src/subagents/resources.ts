@@ -18,6 +18,7 @@ import { brandDefaultSystemPrompt, buildCapabilityRoutingGuidance } from "../pre
 import { validatePrivateDirectory, writeFilePrivateAtomic } from "../private-fs.js";
 import { loadBundledProfile } from "../profiles.js";
 import { inspectReleaseExtensions, omitOptionalReleaseExtensionFailures } from "../release-extensions.js";
+import { createResponsesToolSchemaExtension } from "../responses-tool-schema.js";
 import { createToolArgumentExtension } from "../tool-arguments.js";
 import type { WorkerLaunch } from "./protocol.js";
 
@@ -187,6 +188,7 @@ export async function expandedChildResourceLoader(
 		extensionFactories: [
 			createToolArgumentExtension(),
 			...extensionFactories,
+			createResponsesToolSchemaExtension(),
 			{
 				name: "jouzu-child",
 				factory: (pi) => {

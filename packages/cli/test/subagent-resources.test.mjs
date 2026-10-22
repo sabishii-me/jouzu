@@ -192,6 +192,21 @@ test("child resources retain released tools and skills without reopening project
 	]);
 	assert.equal(context.cwd, cwd);
 	assert.equal(loader.contentPolicy, policy);
+	const schemaAdapter = loader
+		.getExtensions()
+		.extensions.find((extension) => extension.path === "<inline:jouzu-responses-tool-schema>");
+	assert.ok(schemaAdapter, "children normalize restored Responses tool declarations");
+	const schema = {
+		type: "object",
+		properties: { delay: { anyOf: [{ type: "integer" }, { type: "null" }], format: "int32" } },
+	};
+	const payload = { tools: [{ type: "function", name: "device", parameters: schema }] };
+	const adapted = await schemaAdapter.handlers.get("before_provider_request")[0](
+		{ payload, request: { model: { api: "openai-responses" } } },
+		context,
+	);
+	assert.equal(adapted.tools[0].parameters.properties.delay.format, undefined);
+	assert.equal(schema.properties.delay.format, "int32");
 	const tools = loader.getExtensions().extensions.flatMap((extension) => [...extension.tools.keys()]);
 	for (const name of [
 		"web_fetch",

@@ -50,6 +50,7 @@ import {
 	withReleaseExtensionArguments,
 	withReleaseExtensionConflictPolicy,
 } from "./release-extensions.js";
+import { createResponsesToolSchemaExtension } from "./responses-tool-schema.js";
 import { configurePiProcess, type ProfileSelection, resolveProfileSelection } from "./runtime.js";
 import { createRuntimeDiagnostics } from "./runtime-diagnostics.js";
 import { withJouzuOutput } from "./runtime-output.js";
@@ -515,6 +516,7 @@ export async function runMainCli(args: string[]): Promise<void> {
 				modelPicker.workflowExtension,
 				createAstraCompatibilityExtension(),
 				createFastModeExtension(),
+				createResponsesToolSchemaExtension(),
 				voice,
 				help,
 				createScrollbackExtension({ isShellBusy: scrollbackSession.isShellBusy }),
