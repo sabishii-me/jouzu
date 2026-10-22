@@ -13,7 +13,7 @@ New-Item -ItemType Directory -Path $Output | Out-Null
 $Output = (Resolve-Path $Output).Path
 $runtime = (Join-Path $Output 'runtime').Replace('\','/')
 New-Item -ItemType Directory -Path "$runtime/git" -Force | Out-Null
-$nodeVersion = '24.19.0'
+$nodeVersion = '24.22.1'
 $archive = "node-v$nodeVersion-win-x64.zip"
 Invoke-WebRequest "https://nodejs.org/dist/v$nodeVersion/SHASUMS256.txt" -OutFile "$Output/node-shasums.txt"
 Invoke-WebRequest "https://nodejs.org/dist/v$nodeVersion/$archive" -OutFile "$Output/$archive"

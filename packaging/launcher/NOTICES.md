@@ -14,4 +14,4 @@ retains the licence and copyright files shipped inside it. Preserve them when re
 The Tauri bundler produces the installers with NSIS: https://nsis.sourceforge.io/.
 
 Versions and digests are pinned in `prepare-windows-bundle.ps1` and `prepare-starter.mjs`: Node
-24.19.0, PortableGit 2.55.0.5, pnpm 10.21.0, Windows Terminal 1.25.2733.0.
+24.22.1, PortableGit 2.55.0.5, pnpm 10.21.0, Windows Terminal 1.25.2733.0.
