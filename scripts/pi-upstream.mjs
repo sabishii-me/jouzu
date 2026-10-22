@@ -194,6 +194,11 @@ function packageLockRecords() {
 	const cli = packageLock.packages?.["packages/cli"];
 	const sessionUi = packageLock.packages?.["packages/session-ui"];
 	const alignedRuntime = Object.fromEntries(alignedRuntimePackageNames.map((name) => [name, packageRecord(name)]));
+	const alignedRuntimeEntries = Object.entries(packageLock.packages ?? {}).filter(([path]) =>
+		alignedRuntimePackageNames.some(
+			(name) => path === `node_modules/${name}` || path.endsWith(`/node_modules/${name}`),
+		),
+	);
 	const serverDependencies = Object.fromEntries(
 		serverDependencyPackageNames.map((name) => [name, packageRecord(name)]),
 	);
@@ -210,7 +215,7 @@ function packageLockRecords() {
 	for (const [name, record] of Object.entries(serverDependencies)) {
 		if (!record) fail(`${name} is missing from package-lock.json`);
 	}
-	return { node, tui, server, esbuild, typebox, cli, sessionUi, alignedRuntime, serverDependencies };
+	return { node, tui, server, esbuild, typebox, cli, sessionUi, alignedRuntimeEntries, serverDependencies };
 }
 
 function validateLock({ online }) {
@@ -241,9 +246,9 @@ function validateLock({ online }) {
 			fail(`package-lock CLI pin for ${name} must match the Pi tuple ${packageRecord.version}`);
 		}
 	}
-	for (const name of alignedRuntimePackageNames) {
-		if (packageLock.alignedRuntime[name].version !== packageRecord.version) {
-			fail(`package-lock version for ${name} must match the Pi tuple ${packageRecord.version}`);
+	for (const [path, record] of packageLock.alignedRuntimeEntries) {
+		if (record.version !== packageRecord.version) {
+			fail(`package-lock version ${record.version} at ${path} must match the Pi version ${packageRecord.version}`);
 		}
 	}
 	const tuiVersion = cliPackageJson.dependencies?.[tuiPackageName];

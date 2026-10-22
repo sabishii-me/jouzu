@@ -2,27 +2,30 @@
 	"schemaVersion": 1,
 	"package": "@vanillagreen/pi-background-tasks",
 	"version": "2.0.0",
-	"commit": "66356512b81d2358b17531fffa791e2f1e51afef",
+	"commit": "1ab9fef053de921ea9d1741bf547cfed47808147",
 	"runtime": "e7ead6229ba83c20924f29fa8d6258631df017c72e2533d11515285b2a12c04d",
 	"previousRuntime": "5b598ab5687b19a6898ab46a6b50f2ec4e5951e6a6caaeba887cb9d8e2222707",
 	"store": "ccac3ac61ebf21e09e6af97a48b9bcf5ba02c696664528c523cd833ba18ec357",
 	"files": {
 		"extensions/background-tasks.ts": {
-			"before": "aa9384de228f2a99910278f14ee74e469f143e470d0af183cf0261b36bc6917d",
-			"after": "354cd1a7e42bc89e262354cf8923f99785b4d980d0f30b4042271f4e045a1855",
-			"previousAfter": "acae94ef8185f38ddab9576bbbb9eea34eb87d87be89b0aef08b6e17f047774d"
+			"before": "e2ebf180ebaff5d627d4bd8658224ded0eebc6f38f008fc75bff567faa37c088",
+			"after": "77d45041e3d30219f02cc11ba7f034aaf1172b3fe5f27dce186fa0b72fe01976",
+			"previousAfter": "f88da4a752a4f5aaf8853955c1e829b5ae0dfd606e7980817360852051e5d67d",
+			"resourcePreviousAfter": "79d9d38c1b72591f05adecf5a1993d97943256ee52b1984c5b3800dab4feac12"
 		},
 		"extensions/snapshot.ts": {
 			"before": "46c74c0c86367bfb65be7e6435fbb8f08abfe8ca43c8ea99eace152da0f3126a",
-			"after": "0d57552db64b91570beeefec904dace0926d40aaaa1aec6e39c61350089b165c"
+			"after": "715095f96316406885cef5fc62cc49bd07aaa896cf203337ffb94747d4dee4ca",
+			"resourcePreviousAfter": "0d57552db64b91570beeefec904dace0926d40aaaa1aec6e39c61350089b165c"
 		},
 		"extensions/types.ts": {
 			"before": "25df2c7e200d17d8339d8568d89b2bcd34f905da185178850d077b509cd0f4a2",
-			"after": "9061d8760e9baaac2470d581f4a0baf8c6294ac540bc37432261c552c11b5de3"
+			"after": "7a30ba69871cfbcf3dda6c0e15e9ff1f6793e63484aa1c19533b82a1af5947a6",
+			"resourcePreviousAfter": "9061d8760e9baaac2470d581f4a0baf8c6294ac540bc37432261c552c11b5de3"
 		},
 		"extensions/wake-events.ts": {
 			"before": "357b62143a798ef3e186d315fe3f29e5cc559082841952d14ec71fdfa040b375",
-			"after": "4845a0955799e5d7e3e03db1f5378f394d02f7e85685a149c19a1b650a1b5d14"
+			"after": "6d641417f738d73f699c0425a8965d05e46573346cd667d83505e78a37601f77"
 		},
 		"extensions/render.ts": {
 			"before": "c244941edde47723fd1491b763188d40c5963f7f03aa5a2228584c3aab13fd89",
@@ -30,7 +33,37 @@
 		},
 		"extensions/registrations.ts": {
 			"before": "8026bba90932683c5b015a54d85cc3b250e69f7a0a3e1b44d077247e76f8d985",
-			"after": "48ccd34a9432718c829f17ec539bb4c472af4d7b091ee5801325abe6e001d6e5"
+			"after": "4755b7925efc1ac8389de17456bca8a49b37a9adc3c8892e429d7acb03ea085b",
+			"resourcePreviousAfter": "48ccd34a9432718c829f17ec539bb4c472af4d7b091ee5801325abe6e001d6e5"
+		},
+		"extensions/widget-visibility.ts": {
+			"before": "4baf45c7e24aba551f1195bd84b11f0629bf857cc9079942af1db349473897dd",
+			"after": "25ae97722f1b506a56550d8331f63c05c3aade158994b42f3dcf5bf075abcf7c"
+		},
+		"extensions/format.ts": {
+			"before": "8e627ffc11a04485291018d8d4081ffe269fdcb900ae8618e789d702f2beb94e",
+			"after": "79fa41ae5eadde325f0c5067fca63512435cbd46a44828fd57762c37b6301b9f"
+		},
+		"extensions/orphan-watcher.ts": {
+			"before": "ec33404a4e7877535ae62beef7bcdba674a9852dce62e6e4606ed9e124b11e8b",
+			"after": "cf65b5301193de149c4ee9850ed6cb838a64770eaaad33e3a0e0346f589e8580"
+		},
+		"extensions/resource-control.ts": {
+			"before": "668c32c15ed9ab1650de2fa3a8c0e8115c6f5fb1877e85de3d2f7107e46d5dc6",
+			"after": "bd3bb17a95c64516ec01b1d57cdbf26cfcdffa56d8f4d64bc9265fe64f7a1d1a"
+		},
+		"extensions/completion-message.ts": {
+			"before": "f48a6d1c5cccd8365a20698aaabb0959c925737a3fe2d33ce67d1757abba4fff",
+			"after": "207d27bc176c2ea7ba83d9d4995215970b295294b3d0ed5b9e5a212a2caa1403"
 		}
-	}
+	},
+	"helpers": {
+		"coalesce.ts": "09211f161790bba81d45477a922ba0ae29a3473607f271e8e280e46f54f0a0e3",
+		"log-writer.ts": "d6dff7c41a698f664aae54160538ab0c6e2bf1181241af79d11a1252b1069ed9",
+		"log-tail.ts": "de9d53052736f5238662dc9cd6e60cdad53588265d47f514b9922fecbf0c795d",
+		"probes.ts": "229f2fa3a1fb56926375386c9d97d89259d60438170637575de405ceb6dd58fc",
+		"output-matcher.ts": "5b3cb7f6e7003485a96e4f358d12d8ca8ffe21614780ee998c296c201b9c392d",
+		"jouzu-resources.ts": "bc04ffde51b5e7c7fc40a203b9037ca99914343e16a60c9dac1a378ade58d670"
+	},
+	"resourceEdits": "c6e13c32fd1b0b769729ee2bfe7c9ef1d48bba10e505e7b2c03b54693911aa2b"
 }

@@ -2,17 +2,17 @@
 	"schemaVersion": 1,
 	"package": "pi-multiloop",
 	"version": "0.4.1",
-	"commit": "becca4ab47bf9953c66d96ecbac16bf2debe6881",
+	"commit": "689cb09350da503a857eebc5f2c1e1edbbd41feb",
 	"path": "skills/multiloop/SKILL.md",
 	"before": "0989e18e3380dde24a550f3d6799aaa5d05c2c8452c5924176307d7063717c64",
 	"after": "ab9a56d45c313109968ccb832937b8bc95143428350dbdd3ca9993d3141593dd",
 	"extension": {
 		"path": "extensions/pi-multiloop/index.ts",
-		"before": "d9a2ab099d61ea77dc2eecff7f7983e501f21de721b9d68e9a8b2dfbe9b85f92",
-		"after": "180968c168aef1302921b354f2e3206509aef6c50b3c0e221a760a7e3502534d",
-		"continuationPreviousAfter": "8fc3b0ffa3ca340017f3a7f99410a7cfa3c1e289bd7cc355c92f5194b6591b11",
-		"labelsPreviousAfter": "fbd47367226dd32e0732e164a2157d9cc99ff299c9a4a40acd704e9ebab45a74",
-		"previousAfter": "955cec0ceb2eb8831b64bc1e8f173d5620ca35278654d9233537b9b6a7df43ab"
+		"before": "866b6844147290cd4141aa59fd7a96a154984a76ac32590406964481200a76a9",
+		"after": "cb7d6d90332f811bfc58a620080392309e3da6ec7467d5c2b376e41ee8e348d5",
+		"continuationPreviousAfter": "3203fceae5f5a83b99e08e989c18544ef02963f2b1be73cd978480ef4f63b96e",
+		"labelsPreviousAfter": "1a5a52847e9b148b3a15dcd4cf4733e9277209b3c9049d8ca8817eac411988ee",
+		"previousAfter": "e84095312cbf98d2437837c7f48cbf8985906addfb7370ce4e962c83c2aff05f"
 	},
 	"lanes": {
 		"path": "extensions/pi-multiloop/lanes.ts",

@@ -1,18 +1,24 @@
-import { claimBackgroundWidget } from "./background-widget-transform.mjs";
+import { resourcePaths, transformBackgroundResources } from "./background-resource-transform.mjs";
+import { claimBackgroundWidget, guardBackgroundWidgetClaims } from "./background-widget-transform.mjs";
 
-export const paths = [
+const flowPaths = [
 	"extensions/background-tasks.ts",
 	"extensions/snapshot.ts",
 	"extensions/types.ts",
 	"extensions/wake-events.ts",
 	"extensions/render.ts",
 	"extensions/registrations.ts",
+	"extensions/widget-visibility.ts",
 ];
+export const paths = [...new Set([...flowPaths, ...resourcePaths])];
+export function transform(path, source) {
+	return transformBackgroundResources(path, transformFlow(path, source));
+}
 function replace(source, from, to) {
 	if (source.split(from).length !== 2) throw new Error("Background flow source anchor changed.");
 	return source.replace(from, to);
 }
-export function transform(path, source) {
+function transformFlow(path, source) {
 	if (path === paths[0]) {
 		source = replace(
 			source,
@@ -302,5 +308,7 @@ export function transform(path, source) {
 			'if (params.action === "log") return taskLogResult(deps, task, _toolCallId, "bg_task");',
 		);
 	}
+	if (path === paths[6]) return guardBackgroundWidgetClaims(source);
+	if (resourcePaths.includes(path)) return source;
 	throw new Error(`Unknown background flow path: ${path}`);
 }

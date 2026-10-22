@@ -15,6 +15,7 @@ import {
 } from "./release-bundle-receipt.mjs";
 import { applyInstalledWebaioDiagnosticBridge } from "./webaio-defuddle-transform.mjs";
 import { assertStandaloneMcpBoundary } from "./webaio-package-boundary.mjs";
+import { applyInstalledWebaioRedirectParsing } from "./webaio-redirect-transform.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const cli = resolve(root, "packages", "cli");
@@ -76,6 +77,7 @@ async function installReleaseBundle() {
 	if (webaioBuild.status !== 0) process.exit(webaioBuild.status ?? 1);
 	applyInstalledDefuddleDiagnostics(webaioRoot);
 	applyInstalledWebaioDiagnosticBridge(webaioRoot);
+	applyInstalledWebaioRedirectParsing(webaioRoot);
 	const webaioPackagePath = resolve(webaioRoot, "package.json");
 	const webaioPackage = JSON.parse(readFileSync(webaioPackagePath, "utf8"));
 	if (webaioPackage.optionalDependencies?.playwright === undefined) {

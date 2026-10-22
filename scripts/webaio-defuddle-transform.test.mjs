@@ -11,6 +11,7 @@ import {
 	transformWebaioDiagnosticCapture,
 	transformWebaioDiagnosticHistory,
 } from "./webaio-defuddle-transform.mjs";
+import { applyInstalledWebaioRedirectParsing, transformWebaioRedirectParsing } from "./webaio-redirect-transform.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const cliModules = join(root, "packages/cli/node_modules");
@@ -18,6 +19,12 @@ const installedWebaio = join(cliModules, "pi-webaio");
 const relativeRelease = "/ME3Tweaks/LegendaryExplorer/releases/tag/6.5.0.6522";
 const html = (canonical, body = "Fixture release notes. ".repeat(100)) =>
 	`<html><head><title>Release notes</title><link rel="canonical" href="${canonical}"></head><body><main><h1>Release notes</h1><p>${body}</p></main></body></html>`;
+
+function htmlResponse(url, body) {
+	const response = new Response(body, { headers: { "Content-Type": "text/html" } });
+	Object.defineProperty(response, "url", { value: url });
+	return response;
+}
 
 function linkChildren(source, target, exclude = []) {
 	mkdirSync(target, { recursive: true });
@@ -61,6 +68,7 @@ async function fixture(t) {
 	writeFileSync(main, readFileSync(main, "utf8").replaceAll("if (false) console.error(", "console.error("));
 	applyInstalledDefuddleDiagnostics(webaio);
 	applyInstalledWebaioDiagnosticBridge(webaio);
+	applyInstalledWebaioRedirectParsing(webaio);
 	const apiPath = join(webaio, "dist/src/webfetch-api.js");
 	const key = "jouzu-defuddle-test-dependencies";
 	writeFileSync(
@@ -74,11 +82,7 @@ async function fixture(t) {
 	const dependencies = {
 		validateUrl: async () => ({ dangerous: false, pinnedIps: ["93.184.216.34"] }),
 		createTransport: async () => ({ close: async () => {} }),
-		request: async (url) =>
-			new Response(pages.get(url) ?? html("https://example.com/"), {
-				status: 200,
-				headers: { "Content-Type": "text/html" },
-			}),
+		request: async (url) => htmlResponse(url, pages.get(url) ?? html("https://example.com/")),
 	};
 	globalThis[Symbol.for(key)] = dependencies;
 	let api;
@@ -111,6 +115,59 @@ test("WebAIO diagnostic transforms are stable and reject changed anchors", () =>
 		assert.equal(transform(result), result);
 		assert.throws(() => transform("export const changed = true;"), /anchor changed/);
 	}
+});
+
+test("WebAIO redirect parsing accepts HTML end tags and preserves destination validation", async (t) => {
+	const f = await fixture(t);
+	const origin = "https://example.com/redirect";
+	const target = "https://other.example/article";
+	for (const closing of ["</script>", "</script >", "</script\n>", '</script ignored="value">', "</script/>"]) {
+		const requested = [];
+		const validated = [];
+		const fetcher = f.api.createStaticWebFetcher({
+			validateUrl: async (url) => {
+				validated.push(url);
+				return { dangerous: false, pinnedIps: ["93.184.216.34"] };
+			},
+			createTransport: async () => ({ close: async () => {} }),
+			request: async (url) => {
+				requested.push(url);
+				return htmlResponse(url, url === origin ? `<script>location = "${target}";${closing}` : "Redirect destination");
+			},
+		});
+		const result = await fetcher(origin, { format: "raw" });
+		assert.equal(result.ok, true, JSON.stringify(result));
+		assert.equal(result.finalUrl, target, closing);
+		assert.deepEqual(requested, [origin, target]);
+		assert.ok(validated.includes(target));
+	}
+	const requests = [];
+	const blocked = f.api.createStaticWebFetcher({
+		validateUrl: async (url) => ({
+			dangerous: url === target,
+			reason: "Blocked fixture destination",
+			pinnedIps: ["93.184.216.34"],
+		}),
+		createTransport: async () => ({ close: async () => {} }),
+		request: async (url) => {
+			requests.push(url);
+			return htmlResponse(url, `<script>location = "${target}";</script >`);
+		},
+	});
+	const result = await blocked(origin, { format: "raw" });
+	assert.equal(result.ok, false);
+	assert.deepEqual(requests, [origin], "a blocked redirect must not reach the transport");
+	f.pages.set(origin, `<script>location = "${target}";</scripted>`);
+	const unchanged = await f.api.fetchPage(origin, { format: "raw" });
+	assert.equal(unchanged.finalUrl, origin);
+});
+
+test("WebAIO redirect transform is idempotent and rejects ambiguous or changed anchors", () => {
+	const source = readFileSync(join(installedWebaio, "dist/src/webfetch-api.js"), "utf8");
+	const corrected = transformWebaioRedirectParsing(source);
+	assert.equal(transformWebaioRedirectParsing(corrected), corrected);
+	assert.throws(() => transformWebaioRedirectParsing("export const changed = true;"), /anchor changed/);
+	assert.throws(() => transformWebaioRedirectParsing(source + source), /anchor changed/);
 });
 
 test("Defuddle diagnostics survive single and concurrent batch tool results without raw console writes", async (t) => {

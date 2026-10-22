@@ -47,6 +47,10 @@ const patches = [
 		files: {
 			...Object.fromEntries(Object.entries(backgroundPatch.files).map(([path, hashes]) => [path, hashes.after])),
 			"extensions/jouzu-flow.ts": backgroundPatch.runtime,
+			"extensions/jouzu-store.ts": backgroundPatch.store,
+			...Object.fromEntries(
+				Object.entries(backgroundPatch.helpers).map(([name, hash]) => [`extensions/${name}`, hash]),
+			),
 		},
 	},
 	{

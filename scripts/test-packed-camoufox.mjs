@@ -124,11 +124,10 @@ async function probe(temp, consumer) {
 			assert.equal(installed.version, version, `${name} differs from the packed first-use lock`);
 		}
 		if (!reuseBrowserRoot) {
-			assert.equal(
-				existsSync(join(runtimePaths.root, "browser", "version.json")),
-				true,
-				"Camoufox browser was not downloaded",
+			const { camoufoxPath } = await import(
+				pathToFileURL(join(runtimePaths.installRoot, "node_modules", "camoufox-js", "dist", "pkgman.js")).href
 			);
+			assert.equal(existsSync(join(camoufoxPath(false), "version.json")), true, "Camoufox browser was not downloaded");
 		}
 		await shutdown();
 		shutdown = undefined;

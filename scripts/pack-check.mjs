@@ -337,9 +337,11 @@ for (const directory of executedDirectly ? packageDirectories : []) {
 			"@the-forge-flow/camoufox-pi",
 			"better-sqlite3",
 			"camoufox-js",
+			"hono",
 			"impit",
 			"playwright",
 			"playwright-core",
+			"proxy-addr",
 			"ua-parser-js",
 		];
 		assertDefaultPackagesAbsent(packed.files, packageJson, forbiddenRuntimePackages);

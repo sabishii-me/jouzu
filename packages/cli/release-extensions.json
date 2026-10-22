@@ -15,8 +15,8 @@
 		{
 			"name": "@vanillagreen/pi-background-tasks",
 			"version": "2.0.0",
-			"source": "git+https://github.com/shisa-ai/kendex.git#66356512b81d2358b17531fffa791e2f1e51afef",
-			"commit": "66356512b81d2358b17531fffa791e2f1e51afef",
+			"source": "git+https://github.com/shisa-ai/kendex.git#1ab9fef053de921ea9d1741bf547cfed47808147",
+			"commit": "1ab9fef053de921ea9d1741bf547cfed47808147",
 			"repository": "https://github.com/shisa-ai/kendex/tree/packages/pi-background-tasks",
 			"license": "MIT",
 			"licenseEvidence": "package.json and THIRD_PARTY_NOTICES.md",
@@ -77,8 +77,8 @@
 		{
 			"name": "pi-multiloop",
 			"version": "0.4.1",
-			"source": "git+https://github.com/lhl/pi-multiloop.git#becca4ab47bf9953c66d96ecbac16bf2debe6881",
-			"commit": "becca4ab47bf9953c66d96ecbac16bf2debe6881",
+			"source": "git+https://github.com/lhl/pi-multiloop.git#689cb09350da503a857eebc5f2c1e1edbbd41feb",
+			"commit": "689cb09350da503a857eebc5f2c1e1edbbd41feb",
 			"repository": "https://github.com/lhl/pi-multiloop",
 			"license": "MIT",
 			"licenseEvidence": "LICENSE",
@@ -99,8 +99,8 @@
 		{
 			"name": "pi-skill-dollar",
 			"version": "0.2.1",
-			"source": "git+https://github.com/lhl/pi-skill-dollar.git#308db930146e1b3f500eadebd0323ab88789336f",
-			"commit": "308db930146e1b3f500eadebd0323ab88789336f",
+			"source": "git+https://github.com/lhl/pi-skill-dollar.git#d4225d96a9121a7d14735758464f18416b603d50",
+			"commit": "d4225d96a9121a7d14735758464f18416b603d50",
 			"repository": "https://github.com/lhl/pi-skill-dollar",
 			"license": "MIT",
 			"licenseEvidence": "LICENSE",
@@ -140,12 +140,12 @@
 		},
 		{
 			"name": "@napi-rs/canvas",
-			"version": "1.0.11",
-			"source": "https://registry.npmjs.org/@napi-rs/canvas/-/canvas-1.0.11.tgz",
+			"version": "1.0.13",
+			"source": "https://registry.npmjs.org/@napi-rs/canvas/-/canvas-1.0.13.tgz",
 			"repository": "https://github.com/Brooooooklyn/canvas",
 			"license": "MIT",
 			"licenseEvidence": "LICENSE",
-			"integrity": "sha512-vt5tog1cr+QKadIddGe+3LrcX0EmjEd0izF717Uwf92mBmgYfq2XRmL2r4bZU40spB69exxhrBn9I91HYEr/7w==",
+			"integrity": "sha512-b87ugZpQ5ViwqVBkjervxpwa0GmJPsKHLBNoZN6GpjWeHzTbDUGryriq+2DYW2XbB+xCqSIINQysC0/I87nPbw==",
 			"bundled": false
 		}
 	],

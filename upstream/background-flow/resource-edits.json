@@ -1,0 +1,188 @@
+{
+	"extensions/format.ts": [
+		{
+			"before": "export function parseOutputMatcher(pattern: string | undefined): ((text: string) => boolean) | null {\n\tconst needle = pattern?.trim();\n\tif (!needle) return null;\n\n\tconst regexMatch = needle.match(/^\\/(.*)\\/([gimsuy]*)$/);\n\tif (regexMatch) {\n\t\ttry {\n\t\t\tconst regex = new RegExp(regexMatch[1], regexMatch[2]);\n\t\t\treturn (text: string) => {\n\t\t\t\tregex.lastIndex = 0;\n\t\t\t\treturn regex.test(text);\n\t\t\t};\n\t\t} catch {\n\t\t\t// Invalid regex falls through to substring matching.\n\t\t}\n\t}\n\n\tconst lower = needle.toLowerCase();\n\treturn (text: string) => text.toLowerCase().includes(lower);\n}\n\n",
+			"after": "export { parseOutputMatcher, OutputMatcherBudgetError } from \"./output-matcher.js\";\n\n"
+		}
+	],
+	"extensions/snapshot.ts": [
+		{
+			"before": "// Default pid-liveness probe. Returns true iff the kernel reports the\n// pid as alive (or EPERM, which means alive-but-foreign). Used as a\n// pre-filter before the more expensive identity probe; the watcher /\n// restore paths use identityProbe directly so PID reuse cannot pass\n// as \"still running\".\nexport function defaultProcessAlive(pid: number): boolean {\n\tif (!Number.isFinite(pid) || pid <= 0) return false;\n\ttry {\n\t\tprocess.kill(pid, 0);\n\t\treturn true;\n\t} catch (error) {\n\t\treturn (error as NodeJS.ErrnoException).code === \"EPERM\";\n\t}\n}\n\n// Read kernel-stable process identity. Linux fast path: /proc/<pid>/stat\n// field 22 (starttime in jiffies since boot) + /proc/<pid>/comm. Other\n// platforms: `ps -o lstart=,comm= -p <pid>` returns an absolute start\n// time string + comm. Returns null when the pid is gone or the probe\n// failed. Used to detect PID reuse: the kernel may recycle a PID for\n// an unrelated process, but the start token cannot collide for the\n// same recycled pid within the same boot.\nexport function defaultReadProcessIdentity(pid: number): ProcessIdentity | null {\n\tif (!Number.isFinite(pid) || pid <= 0) return null;\n\tif (process.platform === \"linux\") {\n\t\ttry {\n\t\t\tconst stat = readFileSync(`/proc/${pid}/stat`, \"utf8\");\n\t\t\tconst lastParen = stat.lastIndexOf(\")\");\n\t\t\tif (lastParen < 0) return null;\n\t\t\t// stat fields after the closing paren of comm are space-separated.\n\t\t\t// starttime is field 22 globally, which is index 22-3=19 inside the\n\t\t\t// post-paren slice (fields 1, 2 (parenthesized comm), 3..N).\n\t\t\tconst after = stat.slice(lastParen + 1).trim().split(/\\s+/);\n\t\t\tconst starttime = after[19];\n\t\t\tif (!starttime) return null;\n\t\t\tconst comm = stat.slice(stat.indexOf(\"(\") + 1, lastParen);\n\t\t\treturn { pid, startToken: starttime, comm };\n\t\t} catch {\n\t\t\t// Fall through to the portable ps path.\n\t\t}\n\t}\n\tconst r = spawnSync(\"ps\", [\"-o\", \"lstart=,comm=\", \"-p\", String(pid)], { encoding: \"utf8\" });\n\tif (r.status !== 0) return null;\n\tconst line = (r.stdout ?? \"\").trim();\n\tif (!line) return null;\n\t// lstart format: \"Day Mon DD HH:MM:SS YYYY\" (5 whitespace-separated tokens),\n\t// then comm. Split on whitespace and reassemble.\n\tconst parts = line.split(/\\s+/);\n\tif (parts.length < 6) return null;\n\treturn { pid, startToken: parts.slice(0, 5).join(\" \"), comm: parts.slice(5).join(\" \") };\n}\n\n// True iff both identities are present and the kernel-stable subset\n// matches. \"Kernel-stable\" means pid + startToken (process start time):\n// these cannot drift while the original process lives. comm is\n// captured and persisted as a diagnostic so `bg_task list` / logs can\n// show what the process was at spawn, but it is NOT part of equality:\n// the common `bash -lc \"sleep 5\"` pattern rotates /proc/<pid>/comm\n// from \"bash\" to \"sleep\" via exec(2) without changing pid or\n// starttime. Gating identity on comm would false-finalize a still-live\n// task (reviewer-error BLOCK, kendex#15 round 5).\n//\n// A snapshot with no identity (the spawn-time probe failed) is treated\n// as a match because there is no pre-recorded token to compare against;\n// PID-only liveness is the documented degraded path.\nexport function identityMatches(\n\trecorded: ProcessIdentity | undefined,\n\tcurrent: ProcessIdentity | null,\n): boolean {\n\tif (!current) return false;\n\tif (!recorded) return true;\n\treturn recorded.pid === current.pid\n\t\t&& recorded.startToken === current.startToken;\n}\n\n",
+			"after": "// Default pid-liveness probe. Returns true iff the kernel reports the\n// pid as alive (or EPERM, which means alive-but-foreign). It cannot tell\n// PID reuse, so the identity read uses it only on a host without `ps`.\nexport function defaultProcessAlive(pid: number): boolean {\n\tif (!Number.isFinite(pid) || pid <= 0) return false;\n\ttry {\n\t\tprocess.kill(pid, 0);\n\t\treturn true;\n\t} catch (error) {\n\t\treturn (error as NodeJS.ErrnoException).code === \"EPERM\";\n\t}\n}\n\n/** What one identity read learned about a pid. */\nexport type IdentityReading =\n\t| { kind: \"identity\"; identity: ProcessIdentity }\n\t/** The pid lives, but this host has no way to read its identity. */\n\t| { kind: \"alive\" }\n\t| { kind: \"gone\" }\n\t| { kind: \"unknown\"; reason: string };\n\nexport type IdentityProbe = (pid: number) => Promise<IdentityReading>;\n\nexport interface IdentityReaderDeps {\n\tplatform?: NodeJS.Platform;\n\treadStat?: (path: string) => Promise<string>;\n\trun?: ProbeRunner;\n\tprocessAlive?: (pid: number) => boolean;\n}\n\n// Read kernel-stable process identity. Linux fast path: /proc/<pid>/stat\n// field 22 (starttime in jiffies since boot) + /proc/<pid>/comm. Other\n// platforms, and a /proc read that fails for another reason: `ps -o\n// lstart=,comm= -p <pid>` returns an absolute start time string + comm, as a\n// time-limited asynchronous probe. This detects PID reuse: the kernel may\n// recycle a PID for an unrelated process, but the start token cannot collide\n// for the same recycled pid within the same boot.\n//\n// `gone`: /proc has no entry, or ps exited non-zero or printed nothing. A\n// host without ps falls back to a signal-0 check. An unsettled ps result, or\n// ps output this cannot parse, answers `unknown`.\nexport async function defaultReadProcessIdentity(pid: number, deps: IdentityReaderDeps = {}): Promise<IdentityReading> {\n\tif (!Number.isFinite(pid) || pid <= 0) return { kind: \"gone\" };\n\tif ((deps.platform ?? process.platform) === \"linux\") {\n\t\ttry {\n\t\t\tconst stat = await (deps.readStat ?? ((path: string) => readFile(path, \"utf8\")))(`/proc/${pid}/stat`);\n\t\t\tconst lastParen = stat.lastIndexOf(\")\");\n\t\t\t// stat fields after the closing paren of comm are space-separated.\n\t\t\t// starttime is field 22 globally, which is index 22-3=19 inside the\n\t\t\t// post-paren slice (fields 1, 2 (parenthesized comm), 3..N).\n\t\t\tconst starttime = lastParen < 0 ? undefined : stat.slice(lastParen + 1).trim().split(/\\s+/)[19];\n\t\t\tif (starttime) {\n\t\t\t\tconst comm = stat.slice(stat.indexOf(\"(\") + 1, lastParen);\n\t\t\t\treturn { kind: \"identity\", identity: { pid, startToken: starttime, comm } };\n\t\t\t}\n\t\t\t// An unparseable stat falls through to the portable ps path.\n\t\t} catch (error) {\n\t\t\tif ((error as NodeJS.ErrnoException).code === \"ENOENT\") return { kind: \"gone\" };\n\t\t\t// Fall through to the portable ps path.\n\t\t}\n\t}\n\tconst result = await (deps.run ?? runProbe)(\"ps\", [\"-o\", \"lstart=,comm=\", \"-p\", String(pid)]);\n\tswitch (result.kind) {\n\t\tcase \"exited\": break;\n\t\tcase \"missing\": return (deps.processAlive ?? defaultProcessAlive)(pid) ? { kind: \"alive\" } : { kind: \"gone\" };\n\t\tcase \"unsettled\": return { kind: \"unknown\", reason: `ps ${result.cause}` };\n\t\tdefault: {\n\t\t\tconst unreachable: never = result;\n\t\t\tthrow new Error(`unknown probe result: ${JSON.stringify(unreachable)}`);\n\t\t}\n\t}\n\tif (result.status === 1) return { kind: \"gone\" };\n\tif (result.status !== 0) return { kind: \"unknown\", reason: `ps exited ${result.status}` };\n\tconst line = result.stdout.trim();\n\tif (!line) return { kind: \"gone\" };\n\t// lstart format: \"Day Mon DD HH:MM:SS YYYY\" (5 whitespace-separated tokens),\n\t// then comm. Split on whitespace and reassemble.\n\tconst parts = line.split(/\\s+/);\n\tif (parts.length < 6) return { kind: \"unknown\", reason: `ps output unparseable: ${line}` };\n\treturn { kind: \"identity\", identity: { pid, startToken: parts.slice(0, 5).join(\" \"), comm: parts.slice(5).join(\" \") } };\n}\n\n// True iff the kernel-stable subset matches. \"Kernel-stable\" means pid +\n// startToken (process start time): these cannot drift while the original\n// process lives. comm is captured and persisted as a diagnostic so\n// `bg_task list` / logs can show what the process was at spawn, but it is NOT\n// part of equality: the common `bash -lc \"sleep 5\"` pattern rotates\n// /proc/<pid>/comm from \"bash\" to \"sleep\" via exec(2) without changing pid or\n// starttime. Gating identity on comm would false-finalize a still-live task.\n//\n// A snapshot with no identity (the spawn-time probe failed) is treated\n// as a match because there is no pre-recorded token to compare against;\n// PID-only liveness is the documented degraded path.\nexport function identityMatches(recorded: ProcessIdentity | undefined, current: ProcessIdentity): boolean {\n\tif (!recorded) return true;\n\treturn recorded.pid === current.pid\n\t\t&& recorded.startToken === current.startToken;\n}\n\nexport type LivenessVerdict = \"alive\" | \"pid-gone\" | \"pid-reused\" | \"unknown\";\n\nexport interface LivenessProbes {\n\tidentityProbe: IdentityProbe;\n\t// For a systemd-run task the transient unit is more authoritative than the\n\t// wrapper pid: true = active, false = known inactive, null = cannot be\n\t// queried, so the pid decides.\n\tunitActiveProbe?: (unitName: string) => Promise<boolean | null>;\n}\n\n/**\n * Decide whether a running task's process still lives. Restore and the orphan\n * watcher both ask this; `unknown` means the probes could not answer, and\n * both callers treat it as alive for this pass.\n */\nexport async function livenessVerdict(\n\ttask: Pick<BackgroundTaskSnapshot, \"pid\" | \"procIdent\" | \"resourceControl\">,\n\tprobes: LivenessProbes,\n): Promise<LivenessVerdict> {\n\tconst unitName = task.resourceControl?.mode === \"systemd-run\" ? task.resourceControl.unitName : undefined;\n\tconst unitActive = unitName && probes.unitActiveProbe ? await probes.unitActiveProbe(unitName) : null;\n\tif (unitActive === true) return \"alive\";\n\tif (unitActive === false) return \"pid-gone\";\n\tconst current = await probes.identityProbe(task.pid);\n\tswitch (current.kind) {\n\t\tcase \"alive\": return \"alive\";\n\t\tcase \"gone\": return \"pid-gone\";\n\t\tcase \"unknown\": return \"unknown\";\n\t\tcase \"identity\": return identityMatches(task.procIdent, current.identity) ? \"alive\" : \"pid-reused\";\n\t\tdefault: {\n\t\t\tconst unreachable: never = current;\n\t\t\tthrow new Error(`unknown identity reading: ${JSON.stringify(unreachable)}`);\n\t\t}\n\t}\n}\n\n"
+		},
+		{
+			"before": "import { readFileSync } from \"node:fs\";",
+			"after": "import { readFile } from \"node:fs/promises\";"
+		},
+		{
+			"before": "import { spawnSync } from \"node:child_process\";",
+			"after": "import { runProbe, type ProbeRunner } from \"./probes.js\";"
+		},
+		{
+			"before": "const probe = options.identityProbe ?? defaultReadProcessIdentity;",
+			"after": "const probe = options.identityProbe;"
+		},
+		{
+			"before": "\t// PID-reuse safe: a non-null identity is required AND must match the\n\t// snapshot's recorded procIdent (when present). A snapshot whose\n\t// spawn-time probe failed degrades to PID-only via identityMatches.\n\tlet pidStillAlive = false;\n\tif (wasRunning && !foreignSession) {\n\t\tconst unitName = snapshot.resourceControl?.mode === \"systemd-run\" ? snapshot.resourceControl.unitName : undefined;\n\t\tconst unitActive = unitName ? options.unitActiveProbe?.(unitName) : null;\n\t\tif (unitActive === true) {\n\t\t\tpidStillAlive = true;\n\t\t} else if (unitActive !== false) {\n\t\t\tconst current = probe(snapshot.pid);\n\t\t\tif (current !== null && identityMatches(snapshot.procIdent, current)) {\n\t\t\t\tpidStillAlive = true;\n\t\t\t}\n\t\t}\n\t}\n",
+			"after": "\t// Rehydration is synchronous; the async orphan watcher reconciles liveness.\n\t// No probe result means uncertainty, so the task remains running.\n\tlet pidStillAlive = wasRunning && !foreignSession;\n\tif (pidStillAlive) {\n\t\tconst unitName = snapshot.resourceControl?.mode === \"systemd-run\" ? snapshot.resourceControl.unitName : undefined;\n\t\tconst unitActive = unitName ? options.unitActiveProbe?.(unitName) : null;\n\t\tif (unitActive === false) pidStillAlive = false;\n\t\telse if (unitActive !== true && probe) {\n\t\t\tconst current = probe(snapshot.pid);\n\t\t\tpidStillAlive = current !== null && identityMatches(snapshot.procIdent, current);\n\t\t}\n\t}\n"
+		},
+		{
+			"before": "\t// Identity probe. Default uses /proc + ps. Return null when the pid\n\t// is gone or the probe failed; the watcher / restore paths then\n\t// treat the task as terminal and replay the missed exit. Return a\n\t// ProcessIdentity when the pid is alive; identityMatches against\n\t// the snapshot's procIdent decides whether the original task is\n\t// still that process or PID reuse hit.",
+			"after": "\t// Optional synchronous identity result supplied by a caller. Null means\n\t// confirmed exit. Without a supplied probe, restore retains running tasks\n\t// until the asynchronous orphan watcher can determine their liveness."
+		},
+		{
+			"before": "\t\tcommand: task.command,",
+			"after": "\t\tlogWarning: task.logWarning,\n\t\tcommand: task.command,"
+		}
+	],
+	"extensions/orphan-watcher.ts": [
+		{
+			"before": "// Liveness watcher for orphan-running tasks rehydrated by\n// restoredTaskFromSnapshot when the recorded child pid is still alive.\n//\n// kendex#15 (reviewer-error BLOCK): the previous fix skipped replay for\n// alive-pid restored tasks but never re-armed the close listener \u2014 when\n// the orphan eventually died, no exit event fired and the silent stall\n// returned. This module polls `kill -0` per orphan; when the pid\n// disappears, it routes through finalizeTaskLifecycle so the same\n// canonical exit wake (and pi-bg-task-exit daemon path) fires that\n// would have fired if Pi had stayed alive.\n//\n// kendex#97 hardening (H2 \u2014 snapshot reconciliation kill): this module\n// is METADATA-ONLY. It MUST NOT call process.kill() / child.kill() on\n// the tracked pid under any reconcile or polling path. The only\n// observation it makes is the identity probe (defaultReadProcessIdentity\n// reads /proc or shells out to `ps`, neither of which signals); the\n// only mutation it makes is finalizeTaskLifecycle, which updates the\n// in-memory + persisted snapshot and emits the canonical exit wake.\n// If a future change adds a real kill here it would resurrect the H2\n// failure mode where a tracked pid + start-time pair flickering across\n// snapshot writes could be proactively terminated.\n//\n// Pure logic; tests inject deterministic `isProcessAlive` + clock.\n\nimport { finalizeTaskLifecycle, type LifecycleHooks } from \"./lifecycle.js\";\nimport { defaultSystemdUnitActive } from \"./resource-control.js\";\nimport { defaultReadProcessIdentity, identityMatches } from \"./snapshot.js\";\nimport type { ManagedTask, ProcessIdentity } from \"./types.js\";\n\nexport interface OrphanWatcherDeps {\n\tgetTasks: () => Iterable<ManagedTask>;\n\thooks: LifecycleHooks;\n\tpollMs?: number;\n\t// PID-reuse-safe identity probe. Returns null when the pid is gone\n\t// (orphan exited cleanly) and a ProcessIdentity when it is alive.\n\t// The watcher compares against task.procIdent so a recycled PID\n\t// hitting an unrelated process is detected as a mismatch and treated\n\t// like the pid is gone (reviewer-error MAJOR, kendex#15 round 4).\n\tidentityProbe?: (pid: number) => ProcessIdentity | null;\n\t// For resource-controlled systemd units, the wrapper pid can be less\n\t// authoritative than the transient unit. true = still running, false =\n\t// known inactive, null = unavailable so the watcher falls back to pid.\n\tunitActiveProbe?: (unitName: string) => boolean | null;\n\tsetIntervalFn?: (cb: () => void, ms: number) => NodeJS.Timeout;\n\tclearIntervalFn?: (handle: NodeJS.Timeout) => void;\n\tonFinalize?: (task: ManagedTask, reason: \"pid-gone\" | \"pid-reused\") => void;\n}\n\nexport interface OrphanWatcher {\n\tcheckOnce(): { finalized: number };\n\tstart(): void;\n\tstop(): void;\n}\n\nexport const DEFAULT_ORPHAN_POLL_MS = 30_000;\n\n// A task is \"orphan-running\" when status=running AND it was restored\n// from a snapshot (child handle is gone) AND its recorded pid is real.\n// This identifies exactly the alive-at-restore branch from\n// restoredTaskFromSnapshot.\nexport function isOrphanRunning(task: ManagedTask): boolean {\n\tif (task.status !== \"running\") return false;\n\tif (task.restored !== true) return false;\n\tif (task.child !== null) return false;\n\tif (!Number.isFinite(task.pid) || task.pid <= 0) return false;\n\treturn true;\n}\n\nexport function createOrphanWatcher(deps: OrphanWatcherDeps): OrphanWatcher {\n\tconst pollMs = deps.pollMs ?? DEFAULT_ORPHAN_POLL_MS;\n\tconst probe = deps.identityProbe ?? defaultReadProcessIdentity;\n\tconst unitProbe = deps.unitActiveProbe ?? defaultSystemdUnitActive;\n\tconst startTimer = deps.setIntervalFn ?? ((cb, ms) => setInterval(cb, ms));\n\tconst stopTimer = deps.clearIntervalFn ?? ((h) => clearInterval(h));\n\tlet timer: NodeJS.Timeout | null = null;\n\n\tfunction checkOnce(): { finalized: number } {\n\t\tlet finalized = 0;\n\t\tfor (const task of deps.getTasks()) {\n\t\t\tif (!isOrphanRunning(task)) continue;\n\t\t\tlet reason: \"pid-gone\" | \"pid-reused\" | null = null;\n\t\t\tconst unitName = task.resourceControl?.mode === \"systemd-run\" ? task.resourceControl.unitName : undefined;\n\t\t\tconst unitActive = unitName ? unitProbe(unitName) : null;\n\t\t\tif (unitActive === true) continue;\n\t\t\tif (unitActive === false) {\n\t\t\t\treason = \"pid-gone\";\n\t\t\t} else {\n\t\t\t\tconst current = probe(task.pid);\n\t\t\t\tif (current === null) {\n\t\t\t\t\treason = \"pid-gone\";\n\t\t\t\t} else if (!identityMatches(task.procIdent, current)) {\n\t\t\t\t\treason = \"pid-reused\";\n\t\t\t\t}\n\t\t\t}\n\t\t\tif (reason === null) continue;\n\t\t\t// PID disappeared or was recycled by an unrelated process. We\n\t\t\t// can't recover the real exit code; the orphan is gone. Use\n\t\t\t// exitCode=null and let finalizeTaskLifecycle classify as\n\t\t\t// 'failed' (no stopReason, non-zero exit). The canonical exit\n\t\t\t// event fires here, and the subscriber/daemon routes the\n\t\t\t// resulting pi-bg-task-exit wake to master.\n\t\t\t//\n\t\t\t// kendex#97: stamp terminationReason so callers can distinguish\n\t\t\t// an orphan-watcher finalize from an explicit extension-stop or\n\t\t\t// reconcile-on-restart.\n\t\t\tfinalizeTaskLifecycle(\n\t\t\t\ttask,\n\t\t\t\tnull,\n\t\t\t\tdeps.hooks,\n\t\t\t\tundefined,\n\t\t\t\treason === \"pid-gone\" ? \"orphaned-pid-gone\" : \"orphaned-pid-reused\",\n\t\t\t);\n\t\t\tdeps.onFinalize?.(task, reason);\n\t\t\tfinalized += 1;\n\t\t}\n\t\treturn { finalized };\n\t}\n\n\tfunction start(): void {\n\t\tif (timer) return;\n\t\ttimer = startTimer(checkOnce, pollMs);\n\t\t// unref so the timer never blocks Pi shutdown.\n\t\t(timer as { unref?: () => void }).unref?.();\n\t}\n\n\tfunction stop(): void {\n\t\tif (!timer) return;\n\t\tstopTimer(timer);\n\t\ttimer = null;\n\t}\n\n\treturn { checkOnce, start, stop };\n}\n",
+			"after": "// Liveness watcher for orphan-running tasks rehydrated by\n// restoredTaskFromSnapshot when the recorded child pid is still alive.\n//\n// This module asks livenessVerdict about each orphan. When the pid\n// disappears or was reused, it routes through finalizeTaskLifecycle so the same\n// canonical exit wake (and pi-bg-task-exit daemon path) fires that\n// would have fired if Pi had stayed alive.\n//\n// A pass runs at most PROBE_CONCURRENCY probes at once, never overlaps the\n// previous pass, and finalizes nothing once stop() has run. An orphan whose\n// verdict is unknown stays running and is asked again on the next pass.\n//\n// This module is METADATA-ONLY. It MUST NOT send a signal with process.kill()\n// or child.kill() to the tracked pid under any reconcile or polling path. The\n// only observation it makes is the identity probe (defaultReadProcessIdentity\n// reads /proc, shells out to `ps`, or on a host without ps calls\n// process.kill(pid, 0), which checks the pid and delivers no signal); the\n// only mutation it makes is finalizeTaskLifecycle, which updates the\n// in-memory + persisted snapshot and emits the canonical exit wake.\n// If a future change adds a real kill here it would resurrect the H2\n// failure mode where a tracked pid + start-time pair flickering across\n// snapshot writes could be proactively terminated.\n//\n// Pure logic; tests inject deterministic probes + timers.\n\nimport { logBackgroundDiagnostic } from \"./diagnostics.js\";\nimport { finalizeTaskLifecycle, type LifecycleHooks } from \"./lifecycle.js\";\nimport { mapWithConcurrency, PROBE_CONCURRENCY } from \"./probes.js\";\nimport { defaultSystemdUnitActive } from \"./resource-control.js\";\nimport { defaultReadProcessIdentity, livenessVerdict, type IdentityProbe } from \"./snapshot.js\";\nimport type { ManagedTask } from \"./types.js\";\n\nexport interface OrphanWatcherDeps {\n\tgetTasks: () => Iterable<ManagedTask>;\n\thooks: LifecycleHooks;\n\tpollMs?: number;\n\t// PID-reuse-safe identity probe; livenessVerdict reads its answer.\n\tidentityProbe?: IdentityProbe;\n\t// Systemd unit liveness probe; livenessVerdict reads its answer.\n\tunitActiveProbe?: (unitName: string) => Promise<boolean | null>;\n\t// The callback returns the pass it started, so a caller can await it.\n\tsetIntervalFn?: (cb: () => Promise<unknown>, ms: number) => NodeJS.Timeout;\n\tclearIntervalFn?: (handle: NodeJS.Timeout) => void;\n\tonFinalize?: (task: ManagedTask, reason: \"pid-gone\" | \"pid-reused\") => void;\n}\n\nexport interface OrphanWatcher {\n\t/** Run one pass, or join the pass already running. */\n\tcheckOnce(): Promise<{ finalized: number }>;\n\tstart(): void;\n\tstop(): void;\n}\n\nexport const DEFAULT_ORPHAN_POLL_MS = 30_000;\n\n// A task is \"orphan-running\" when status=running AND it was restored\n// from a snapshot (child handle is gone) AND its recorded pid is real.\n// This identifies exactly the alive-at-restore branch from\n// restoredTaskFromSnapshot.\nexport function isOrphanRunning(task: ManagedTask): boolean {\n\tif (task.status !== \"running\") return false;\n\tif (task.restored !== true) return false;\n\tif (task.child !== null) return false;\n\tif (!Number.isFinite(task.pid) || task.pid <= 0) return false;\n\treturn true;\n}\n\nexport function createOrphanWatcher(deps: OrphanWatcherDeps): OrphanWatcher {\n\tconst pollMs = deps.pollMs ?? DEFAULT_ORPHAN_POLL_MS;\n\tconst probes = {\n\t\tidentityProbe: deps.identityProbe ?? defaultReadProcessIdentity,\n\t\tunitActiveProbe: deps.unitActiveProbe ?? defaultSystemdUnitActive,\n\t};\n\tconst startTimer = deps.setIntervalFn ?? ((cb, ms) => setInterval(cb, ms));\n\tconst stopTimer = deps.clearIntervalFn ?? ((h) => clearInterval(h));\n\tlet timer: NodeJS.Timeout | null = null;\n\tlet pass: Promise<{ finalized: number }> | null = null;\n\t// stop() bumps the generation, so a pass it interrupts finalizes nothing.\n\tlet generation = 0;\n\n\tasync function runPass(passGeneration: number): Promise<{ finalized: number }> {\n\t\tconst orphans = [...deps.getTasks()].filter(isOrphanRunning);\n\t\tconst verdicts = await mapWithConcurrency(orphans, PROBE_CONCURRENCY, (task) => livenessVerdict(task, probes));\n\t\tlet finalized = 0;\n\t\tfor (const [index, task] of orphans.entries()) {\n\t\t\tconst reason = verdicts[index];\n\t\t\tif (reason === \"unknown\") logBackgroundDiagnostic(\"orphan liveness unknown\", { id: task.id, pid: task.pid });\n\t\t\tif (reason === \"alive\" || reason === \"unknown\") continue;\n\t\t\t// The task may have been stopped, finalized or cleared while the\n\t\t\t// probes ran, or the watcher stopped.\n\t\t\tif (passGeneration !== generation || !isOrphanRunning(task) || ![...deps.getTasks()].includes(task)) continue;\n\t\t\t// PID disappeared or was recycled by an unrelated process. We\n\t\t\t// can't recover the real exit code; the orphan is gone. Use\n\t\t\t// exitCode=null and let finalizeTaskLifecycle classify as\n\t\t\t// 'failed' (no stopReason, non-zero exit). The canonical exit\n\t\t\t// event fires here, and the subscriber/daemon routes the\n\t\t\t// resulting pi-bg-task-exit wake to master.\n\t\t\t//\n\t\t\t// stamp terminationReason so callers can distinguish\n\t\t\t// an orphan-watcher finalize from an explicit extension-stop or\n\t\t\t// reconcile-on-restart.\n\t\t\tfinalizeTaskLifecycle(\n\t\t\t\ttask,\n\t\t\t\tnull,\n\t\t\t\tdeps.hooks,\n\t\t\t\tundefined,\n\t\t\t\treason === \"pid-gone\" ? \"orphaned-pid-gone\" : \"orphaned-pid-reused\",\n\t\t\t);\n\t\t\tdeps.onFinalize?.(task, reason);\n\t\t\tfinalized += 1;\n\t\t}\n\t\treturn { finalized };\n\t}\n\n\tfunction checkOnce(): Promise<{ finalized: number }> {\n\t\tif (pass) return pass;\n\t\tconst current = runPass(generation).finally(() => {\n\t\t\tif (pass === current) pass = null;\n\t\t});\n\t\tpass = current;\n\t\treturn current;\n\t}\n\n\tfunction start(): void {\n\t\tif (timer) return;\n\t\ttimer = startTimer(checkOnce, pollMs);\n\t\t// unref so the timer never blocks Pi shutdown.\n\t\t(timer as { unref?: () => void }).unref?.();\n\t}\n\n\tfunction stop(): void {\n\t\tgeneration += 1;\n\t\tpass = null;\n\t\tif (!timer) return;\n\t\tstopTimer(timer);\n\t\ttimer = null;\n\t}\n\n\treturn { checkOnce, start, stop };\n}\n"
+		}
+	],
+	"extensions/resource-control.ts": [
+		{
+			"before": "export function defaultSystemdUnitActive(unitName: string): boolean | null {\n\tif (!unitName || process.platform !== \"linux\") return null;\n\ttry {\n\t\tconst result = spawnSync(\"systemctl\", [\"--user\", \"is-active\", \"--quiet\", unitName], { stdio: \"ignore\", timeout: 1_000 });\n\t\tif (result.status === 0) return true;\n\t\tif (result.status === 3) return false;\n\t\treturn null;\n\t} catch {\n\t\treturn null;\n\t}\n}\n",
+			"after": "export async function defaultSystemdUnitActive(unitName: string): Promise<boolean | null> {\n if (!unitName || process.platform !== \"linux\") return null;\n const manager = await runProbe(\"systemctl\", [\"--user\", \"show-environment\"]);\n if (manager.kind !== \"exited\" || manager.status !== 0) return null;\n const result = await runProbe(\"systemctl\", [\"--user\", \"is-active\", \"--quiet\", unitName]);\n if (result.kind !== \"exited\") return null;\n return result.status === 0 ? true : result.status === 3 ? false : null;\n}\n"
+		},
+		{
+			"before": "import { spawnSync } from \"node:child_process\";",
+			"after": "import { spawnSync } from \"node:child_process\";\nimport { runProbe } from \"./probes.js\";"
+		}
+	],
+	"extensions/background-tasks.ts": [
+		{
+			"before": "import { appendFileSync, existsSync, readFileSync, writeFileSync } from \"node:fs\";",
+			"after": "import { existsSync, readFileSync, writeFileSync } from \"node:fs\";\nimport { taskLogs } from \"./log-writer.js\";\nimport { createTaskOutputReader } from \"./log-tail.js\";\nimport { finalizeAfterLogFlush } from \"./jouzu-resources.js\";\nimport { OutputMatcherBudgetError } from \"./output-matcher.js\";"
+		},
+		{
+			"before": "\tconst getTaskOutput = (task: ManagedTask, strict = false): string => {\n\t\tif (task.output.length > 0) return task.output;\n\t\tif (!strict && !existsSync(task.logFile)) return \"\";\n\t\ttry {\n\t\t\treturn readFileSync(task.logFile, \"utf8\");\n\t\t} catch (error) {\n\t\t\tif (strict) throw new Error(`Could not read the log for ${task.id}.`, { cause: error });\n\t\t\treturn \"\";\n\t\t}\n\t};\n\n",
+			"after": "\tconst outputReader = createTaskOutputReader((file, error) => logBackgroundDiagnostic(\"task log read failed\", { file, error }), (task) => tasks.get(task.id) === task);\n\tconst getTaskOutput = async (task: ManagedTask, strict = false): Promise<string> => {\n\t\tconst pending = taskLogs.flush(task.logFile);\n\t\tif (pending) await pending;\n\t\treturn outputReader.read(task, settingNumber(\"outputBufferMaxChars\", DEFAULT_OUTPUT_BUFFER_MAX_CHARS, activeCtx?.cwd), strict);\n\t};\n\tconst dashboardTails = new WeakMap<ManagedTask, string>();\n\tconst dashboardReads = new WeakSet<ManagedTask>();\n\tconst dashboardOutput = (task: ManagedTask): string => {\n\t\tif (task.output) return task.output;\n\t\tif (!dashboardReads.has(task)) {\n\t\t\tdashboardReads.add(task);\n\t\t\tvoid getTaskOutput(task).then((text) => { if (tasks.get(task.id) === task) dashboardTails.set(task, text); }).finally(() => dashboardReads.delete(task));\n\t\t}\n\t\treturn dashboardTails.get(task) ?? \"\";\n\t};\n\n"
+		},
+		{
+			"before": "outputTail: (target) => tailText(getTaskOutput(target),",
+			"after": "outputTail: (target) => tailText(target.output,"
+		},
+		{
+			"before": "const output = getTaskOutput(task);",
+			"after": "const output = task.output;"
+		},
+		{
+			"before": "\t\t\tconst patternMatched = task.matcher ? (task.matcher(unseenOutput) || task.matcher(output)) : true;",
+			"after": "\t\t\tlet patternMatched = true;\n\t\t\ttry {\n\t\t\t\tpatternMatched = task.matcher ? (task.matcher(unseenOutput) || task.matcher(output)) : true;\n\t\t\t} catch (error) {\n\t\t\t\tif (!(error instanceof OutputMatcherBudgetError)) throw error;\n\t\t\t\tlogBackgroundDiagnostic(\"notify pattern over budget\", { id: task.id, error: error.message });\n\t\t\t\tactiveCtx?.ui.notify?.(error.message, \"warning\");\n\t\t\t\tpersistScheduledOutputDrop(task, pending, \"notify-pattern-timeout\", { matchedPattern: task.notifyPattern });\n\t\t\t\treturn;\n\t\t\t}"
+		},
+		{
+			"before": "\tconst finalizeTask = (task: ManagedTask, exitCode: number | null, statusOverride?: BackgroundTaskStatus): ManagedTask =>\n\t\tfinalizeTaskLifecycle(task, exitCode, lifecycleHooks, statusOverride);\n\n",
+			"after": "\tconst finalizeTask = (task: ManagedTask, exitCode: number | null, statusOverride?: BackgroundTaskStatus): void => {\n\t\tvoid finalizeAfterLogFlush(task, taskLogs, {\n\t\t\tclearTimers: clearTaskTimers,\n\t\t\tisCurrent: (current) => tasks.get(current.id) === current,\n\t\t\tfinalize: () => { finalizeTaskLifecycle(task, exitCode, lifecycleHooks, statusOverride); },\n\t\t});\n\t};\n\n"
+		},
+		{
+			"before": "\tconst appendLogLine = (task: ManagedTask, text: string) => {\n\t\ttry {\n\t\t\tappendFileSync(task.logFile, text);\n\t\t} catch {\n\t\t\t// Keep in-memory output even if the log file is temporarily unavailable.\n\t\t}\n\t};\n\n",
+			"after": "\tconst appendLogLine = (task: ManagedTask, text: string): Promise<void> | null => taskLogs.append(task.logFile, text);\n\n"
+		},
+		{
+			"before": "\t\tif (task.status !== \"running\") {",
+			"after": "\t\tif (task.closed && task.status === \"running\") return { ok: true, message: `${task.id} has exited; its log is being flushed.` };\n\t\tif (task.status !== \"running\") {"
+		},
+		{
+			"before": "\t\tconst procIdent = spawnedPid > 0 ? (defaultReadProcessIdentity(spawnedPid) ?? undefined) : undefined;",
+			"after": "\t\tconst procIdent = undefined;"
+		},
+		{
+			"before": "\t\tpublishBackgroundTaskStarted(task);",
+			"after": "\t\tpublishBackgroundTaskStarted(task);\n\t\tif (spawnedPid > 0) void defaultReadProcessIdentity(spawnedPid).then((reading) => {\n\t\t\tif (tasks.get(task.id) !== task || task.closed) return;\n\t\t\tif (reading.kind === \"identity\") {\n\t\t\t\ttask.procIdent = reading.identity;\n\t\t\t\trememberSnapshot(task);\n\t\t\t\tpersistSnapshots(\"progress\");\n\t\t\t}\n\t\t});"
+		},
+		{
+			"before": "\t\t\tappendLogLine(task, text);",
+			"after": "\t\t\tconst hold = appendLogLine(task, text);\n\t\t\tif (hold) {\n\t\t\t\tchild.stdout?.pause(); child.stderr?.pause();\n\t\t\t\tvoid hold.then(() => { child.stdout?.resume(); child.stderr?.resume(); });\n\t\t\t}"
+		},
+		{
+			"before": "\t\tgetTask: (id: string) => tasks.get(id) ?? null,\n\t\tgetTaskOutput,",
+			"after": "\t\tgetTask: (id: string) => tasks.get(id) ?? null,\n\t\tgetTaskOutput: dashboardOutput,"
+		},
+		{
+			"before": "\t\tconst restored = restoredTaskFromSnapshot(snapshot, {\n\t\t\tsessionId: activeSessionId ?? undefined,\n\t\t\tunitActiveProbe: defaultSystemdUnitActive,",
+			"after": "\t\tconst restored = restoredTaskFromSnapshot(snapshot, {\n\t\t\tsessionId: activeSessionId ?? undefined,"
+		},
+		{
+			"before": "\t\trestoreSnapshots(ctx);",
+			"after": "\t\torphanWatcher?.stop();\n\t\torphanWatcher = null;\n\t\toutputReader.clear();\n\t\trestoreSnapshots(ctx);"
+		},
+		{
+			"before": "\t\t// Run one synchronous orphan-check before arming the interval so a\n\t\t// task whose pid already died between Pi shutdown and Pi restart\n\t\t// gets its exit wake without waiting one poll cycle.",
+			"after": "\t\t// Reconcile restored tasks asynchronously before the first polling interval."
+		},
+		{
+			"before": "\t\torphanWatcher?.checkOnce();",
+			"after": "\t\tvoid orphanWatcher?.checkOnce();"
+		},
+		{
+			"before": "\t\tfor (const task of tasks.values()) {\n\t\t\tif (task.status === \"running\") {",
+			"after": "\t\tfor (const task of tasks.values()) {\n\t\t\tif (task.status === \"running\" && !task.closed) {"
+		},
+		{
+			"before": "\tpi.on(\"session_shutdown\", () => {",
+			"after": "\tpi.on(\"session_shutdown\", async () => {"
+		},
+		{
+			"before": "\t\tactiveCtx = null;\n\t\twidgetClaims.releaseAll();\n\t});",
+			"after": "\t\tactiveCtx = null;\n\t\twidgetClaims.releaseAll();\n\t\tawait taskLogs.drain();\n\t});"
+		},
+		{
+			"before": "\tDEFAULT_OUTPUT_ALERT_MAX_CHARS,",
+			"after": "\tDEFAULT_OUTPUT_ALERT_MAX_CHARS,\n\tDEFAULT_OUTPUT_BUFFER_MAX_CHARS,"
+		},
+		{
+			"before": "prepareResults: () => { for (const task of tasks.values()) backgroundFlowSource.prepareResult(task); },",
+			"after": "prepareResults: () => { for (const task of tasks.values()) {\n            backgroundFlowSource.prepareResult(task);\n            if (task.logWarning && task.flow?.result) task.flow.result.metadata.warnings = [task.logWarning];\n        } },"
+		}
+	],
+	"extensions/types.ts": [
+		{
+			"before": "\t| \"notify-pattern-no-match\"",
+			"after": "\t| \"notify-pattern-no-match\"\n\t| \"notify-pattern-timeout\""
+		},
+		{
+			"before": "export interface BackgroundTaskSnapshot {",
+			"after": "export interface BackgroundTaskSnapshot {\n\tlogWarning?: string;"
+		}
+	],
+	"extensions/registrations.ts": [
+		{
+			"before": "getTaskOutput: (task: ManagedTask, strict?: boolean) => string;",
+			"after": "getTaskOutput: (task: ManagedTask, strict?: boolean) => Promise<string>;"
+		},
+		{
+			"before": "function taskLogResult(deps: RegistrationDeps, task: ManagedTask, toolCallId: string, toolName: string): AgentToolResult<unknown> {",
+			"after": "async function taskLogResult(deps: RegistrationDeps, task: ManagedTask, toolCallId: string, toolName: string): Promise<AgentToolResult<unknown>> {"
+		},
+		{
+			"before": "const output = deps.getTaskOutput(task, true);",
+			"after": "const output = await deps.getTaskOutput(task, true);"
+		},
+		{
+			"before": "formatTaskLog(deps.getTaskOutput(task), task.logFile, ctx.cwd)",
+			"after": "formatTaskLog(await deps.getTaskOutput(task), task.logFile, ctx.cwd)"
+		}
+	],
+	"extensions/wake-events.ts": [
+		{
+			"before": "\t\tcommand: truncateField(snapshot.command, WAKE_MANIFEST_FIELD_MAX_CHARS) ?? \"\",",
+			"after": "\t\tlogWarning: truncateField(snapshot.logWarning, WAKE_MANIFEST_FIELD_MAX_CHARS),\n\t\tcommand: truncateField(snapshot.command, WAKE_MANIFEST_FIELD_MAX_CHARS) ?? \"\","
+		}
+	],
+	"extensions/completion-message.ts": [
+		{
+			"before": "\tlogFile: string;",
+			"after": "\tlogFile: string;\n\tlogWarning?: string;"
+		},
+		{
+			"before": "\t\tlogFile: boundedField(task.logFile),",
+			"after": "\t\tlogFile: boundedField(task.logFile),\n\t\t...(task.logWarning ? { logWarning: boundedField(task.logWarning) } : {}),"
+		},
+		{
+			"before": " \u2014 ${task.title}`),",
+			"after": " \u2014 ${task.title}${task.logWarning ? ` [${task.logWarning}]` : \"\"}`),"
+		}
+	]
+}

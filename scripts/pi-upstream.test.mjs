@@ -8,6 +8,21 @@ import { test } from "node:test";
 const root = resolve(import.meta.dirname, "..");
 const core = "@earendil-works/pi-agent-core",
 	ai = "@earendil-works/pi-ai";
+const alignedRuntime = [
+	core,
+	ai,
+	"@earendil-works/pi-codemode",
+	"@earendil-works/pi-coding-agent",
+	"@earendil-works/pi-mcp",
+	"@earendil-works/pi-telemetry",
+	"@earendil-works/pi-tui",
+];
+const packageLocations = [
+	"node_modules",
+	"packages/cli/node_modules",
+	"node_modules/extension/node_modules",
+	"packages/cli/node_modules/extension/node_modules",
+];
 const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
 const writeJson = (path, data) => writeFileSync(path, `${JSON.stringify(data, null, "\t")}\n`);
 function fixture(t) {
@@ -34,6 +49,11 @@ function fixture(t) {
 		cli.dependencies[name] = version;
 		if (!cli.bundleDependencies.includes(name)) cli.bundleDependencies.push(name);
 		lock.packages[`node_modules/${name}`] ??= { version };
+	}
+	for (const name of alignedRuntime) {
+		for (const [path, record] of Object.entries(lock.packages)) {
+			if (path.endsWith(`/node_modules/${name}`)) record.version = version;
+		}
 	}
 	lock.packages[""].devDependencies = { ...manifest.devDependencies };
 	lock.packages["packages/cli"].dependencies = { ...cli.dependencies };
@@ -86,6 +106,34 @@ for (const [range, version, accepted] of [
 
 test("the Pi offline check accepts explicit aligned core and AI dependencies", (t) => {
 	const { directory } = fixture(t);
+	const result = check(directory);
+	assert.equal(result.status, 0, result.stderr);
+});
+for (const name of alignedRuntime) {
+	for (const location of packageLocations) {
+		const path = `${location}/${name}`;
+		test(`the Pi offline check rejects a mismatched package at ${path}`, (t) => {
+			const { directory, lock } = fixture(t);
+			const version = lock.packages[`node_modules/${name}`].version;
+			lock.packages[path] = { ...lock.packages[`node_modules/${name}`], version: "0.0.0", inBundle: true };
+			writeJson(join(directory, "package-lock.json"), lock);
+			const result = check(directory);
+			assert.notEqual(result.status, 0);
+			assert.ok(result.stderr.includes(path), result.stderr);
+			assert.ok(result.stderr.includes("0.0.0"), result.stderr);
+			assert.ok(result.stderr.includes(version), result.stderr);
+		});
+	}
+}
+test("the Pi offline check accepts matching nested Pi copies", (t) => {
+	const { directory, lock } = fixture(t);
+	for (const name of alignedRuntime) {
+		for (const location of packageLocations.slice(1)) {
+			lock.packages[`${location}/${name}`] = { ...lock.packages[`node_modules/${name}`], inBundle: true };
+		}
+	}
+	lock.packages["packages/cli/node_modules/@earendil-works/pi-ai-tools"] = { version: "0.0.0" };
+	writeJson(join(directory, "package-lock.json"), lock);
 	const result = check(directory);
 	assert.equal(result.status, 0, result.stderr);
 });

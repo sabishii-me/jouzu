@@ -1,26 +1,44 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { EventEmitter } from "node:events";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { test } from "node:test";
+import { after, test } from "node:test";
 import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import {
-	applyInstalledMultiloopWaitSkill,
-	applyMultiloopWaitSkill,
+	applyMultiloopWaitSkill as applyPinnedMultiloop,
+	applyInstalledMultiloopWaitSkill as checkInstalledMultiloop,
 } from "../../../scripts/apply-multiloop-wait-skill.mjs";
+import {
+	extensionPatchFixture,
+	multiloopPredecessors,
+	sha256,
+} from "../../../scripts/fixtures/extension-flow-patch.mjs";
 
 const root = resolve(import.meta.dirname, "../../..");
+const candidate = process.env.JOUZU_MULTILOOP_SOURCE
+	? await extensionPatchFixture({ after }, "multiloop", process.env.JOUZU_MULTILOOP_SOURCE)
+	: undefined;
+if (candidate) await candidate.apply(candidate.packageRoot);
+const packageRoot = candidate?.packageRoot ?? join(root, "packages/cli/node_modules/pi-multiloop");
+const applyMultiloopWaitSkill = candidate?.apply ?? applyPinnedMultiloop;
+const applyInstalledMultiloopWaitSkill = candidate
+	? (checkOnly) => candidate.apply(packageRoot, checkOnly)
+	: checkInstalledMultiloop;
 async function fixture(t) {
 	await applyInstalledMultiloopWaitSkill(true);
 	const outputDir = await mkdtemp(join(root, "packages/cli/node_modules/.jouzu-loop-test-"));
 	const cwd = await mkdtemp(join(tmpdir(), "jouzu-loop-flow-"));
+	const priorTasks = process.env.PI_TASKS;
+	process.env.PI_TASKS = join(cwd, "tasks.json");
 	t.after(async () => {
+		if (priorTasks === undefined) delete process.env.PI_TASKS;
+		else process.env.PI_TASKS = priorTasks;
 		await rm(outputDir, { recursive: true, force: true });
 		await rm(cwd, { recursive: true, force: true });
 	});
-	const installed = join(root, "packages/cli/node_modules/pi-multiloop/extensions/pi-multiloop");
+	const installed = join(packageRoot, "extensions/pi-multiloop");
 	const output = join(outputDir, "loop.mjs");
 	await build({
 		stdin: {
@@ -44,11 +62,18 @@ async function fixture(t) {
 		sends = [],
 		notifications = [],
 		statuses = new Map(),
-		labelEvents = [];
+		labelEvents = [],
+		messages = [];
+	const bus = new EventEmitter();
 	const pi = {
 		events: {
+			on(name, handler) {
+				bus.on(name, handler);
+				return () => bus.off(name, handler);
+			},
 			emit(name, data) {
 				if (name === "jouzu:workflow-start") labelEvents.push(data);
+				bus.emit(name, data);
 			},
 		},
 		on(name, handler) {
@@ -63,7 +88,9 @@ async function fixture(t) {
 			commands.set(name, command);
 		},
 		registerMessageRenderer() {},
-		sendMessage() {},
+		sendMessage(message) {
+			messages.push(message);
+		},
 		sendUserMessage(text) {
 			sends.push(text);
 		},
@@ -91,6 +118,8 @@ async function fixture(t) {
 	const execute = (name, args) => tools.get(name).execute("tool", args, undefined, undefined, ctx);
 	return {
 		labelEvents,
+		messages,
+		events: pi.events,
 		statuses,
 		handlers,
 		...module,
@@ -115,6 +144,46 @@ test("workflow labels announce confirmed starts without a flow host, not iterati
 	assert.equal(f.labelEvents.length, 1);
 	await f.command("goal", "Implement labels");
 	assert.equal(f.labelEvents.at(-1).objective, "Implement labels");
+});
+
+test("multiloop activity stays session-scoped and completion still requires finished tasks", async (t) => {
+	const f = await fixture(t);
+	let invalidations = 0;
+	f.events.on("multiloop:activity:changed", () => invalidations++);
+	const activity = (sessionId = "session") => {
+		let snapshot;
+		f.events.emit("multiloop:activity", {
+			version: 1,
+			sessionId,
+			respond: (value) => {
+				snapshot = value;
+			},
+		});
+		assert.equal(snapshot?.availability, "available");
+		return snapshot;
+	};
+	await f.command("goal", "Finish activity checks");
+	assert.equal(activity().runs[0].status, "running");
+	assert.deepEqual(activity("another-session").runs, []);
+	await f.command("goal", "pause");
+	assert.equal(activity().runs[0].status, "paused");
+	await f.command("goal", "resume");
+	assert.equal(activity().runs[0].status, "running");
+	const task = { id: "1", subject: "Verify completion", status: "pending" };
+	await writeFile(join(f.ctx.cwd, "tasks.json"), JSON.stringify({ tasks: [task] }));
+	const blocked = await f.execute("update_goal", { status: "complete" });
+	assert.match(blocked.content[0].text, /Not marking the goal complete/);
+	assert.equal(activity().runs[0].status, "running");
+	task.status = "completed";
+	await writeFile(join(f.ctx.cwd, "tasks.json"), JSON.stringify({ tasks: [task] }));
+	const result = await f.execute("update_goal", { status: "complete" });
+	assert.match(result.content[0].text, /marked complete/);
+	assert.equal(activity().runs[0].status, "completed");
+	assert.deepEqual(activity("another-session").runs, []);
+	assert.equal(f.notifications.filter((text) => text.startsWith("Goal complete")).length, 1);
+	assert.deepEqual(f.messages, [], "completion summaries do not become model messages");
+	assert.equal(f.labelEvents.length, 2, "start and resume announce labels, not completion or activity reads");
+	assert.ok(invalidations >= 4);
 });
 
 test("installed multiloop reconnects its host on tree navigation", async (t) => {
@@ -309,7 +378,8 @@ test("goal and measured loop lifecycle immediately update footer status", async 
 	await f.command("multiloop", "archive measured/run");
 	assert.equal(f.statuses.get("multiloop"), "multiloop: 1 stopped");
 	await f.command("goal", "resume");
-	await f.execute("update_goal", { status: "complete" });
+	const result = await f.execute("update_goal", { status: "complete" });
+	assert.match(result.content[0].text, /marked complete/);
 	assert.equal(f.statuses.get("multiloop"), "multiloop: 1 completed");
 	await f.emit("session_start");
 	assert.equal(f.statuses.get("multiloop"), undefined);
@@ -383,25 +453,11 @@ test("installed multiloop drives its lanes again when a flow gate clears", async
 });
 
 test("installed multiloop gate-change upgrade replaces only the pinned preceding source", async (t) => {
-	const installed = join(root, "packages/cli/node_modules/pi-multiloop/extensions/pi-multiloop/index.ts");
+	const installed = join(packageRoot, "extensions/pi-multiloop/index.ts");
 	const source = await readFile(installed, "utf8");
-	const previous = source
-		.replaceAll(
-			'    "Autonomous task policy: do not set TaskUpdate waitForUser or paused during this loop. Reconcile resolved task waits by clearing the flag and completing the task with a result summary.",\n',
-			"",
-		)
-		.replaceAll(
-			'    "Autonomous task policy: do not create user-wait or paused task gates; resolve routine ambiguity and continue.",\n',
-			"",
-		)
-		.replace(
-			// biome-ignore lint/suspicious/noTemplateCurlyInString: the fixture quotes template literals from the patched source
-			'      const flow = multiloopFlow(ctx.sessionManager.getSessionId());\n      const blocked = Array.from(statusStates.values()).filter((state) => state.status === "running" && flow?.waiting({ lane: state.lane, runTag: state.runTag })).length;\n      ctx.ui.setStatus("multiloop", `multiloop: ${summaries.join(", ")}${blocked ? ` · ${blocked} blocked (see /flow)` : ""}`);',
-			// biome-ignore lint/suspicious/noTemplateCurlyInString: the fixture quotes template literals from the patched source
-			'      ctx.ui.setStatus("multiloop", `multiloop: ${summaries.join(", ")}`);',
-		);
+	const previous = multiloopPredecessors(source).previousAfter;
 	const lock = JSON.parse(await readFile(join(root, "upstream/multiloop-wait-skill/patch.lock.json"), "utf8"));
-	assert.equal(createHash("sha256").update(previous).digest("hex"), lock.extension.previousAfter);
+	assert.equal(sha256(previous), lock.extension.previousAfter);
 	const target = await mkdtemp(join(root, "packages/cli/node_modules/.jouzu-loop-upgrade-"));
 	t.after(() => rm(target, { recursive: true, force: true }));
 	await mkdir(join(target, "extensions/pi-multiloop"), { recursive: true });
@@ -413,7 +469,7 @@ test("installed multiloop gate-change upgrade replaces only the pinned preceding
 		"extensions/pi-multiloop/jouzu-flow.ts",
 	]) {
 		await mkdir(join(target, path, ".."), { recursive: true });
-		await writeFile(join(target, path), await readFile(join(root, "packages/cli/node_modules/pi-multiloop", path)));
+		await writeFile(join(target, path), await readFile(join(packageRoot, path)));
 	}
 	await writeFile(join(target, "extensions/pi-multiloop/index.ts"), previous);
 	await applyMultiloopWaitSkill(target);

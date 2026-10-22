@@ -1,7 +1,7 @@
 {
 	"schemaVersion": 1,
 	"package": "@earendil-works/pi-ai",
-	"version": "1.3.0",
+	"version": "1.4.0",
 	"files": {
 		"dist/api/transform-messages.js": {
 			"before": "5654d81fdacdf3f3e9ca9eb89c4dfa71b742b852163ecd49ba38307f876db63e",
@@ -12,72 +12,72 @@
 			"after": "6f6ef33093f2138f013e3c8a32c4db3b519f51d86211b06d9eb76f18103e6b9a"
 		},
 		"dist/api/openai-completions.js": {
-			"before": "4b3875e5ec18c5e2d06ce12409feb2554563fd2c392a5c1773af968b265e2bea",
-			"after": "5380ec4b325d636639c17c9ae00e52e58d7f25ef0a6dfdbc62ae03fefd7c5555"
+			"before": "106eb312121137abbe9ad8050e2c9baa1ea27315233c7b8bee8c7820c8b3a6cf",
+			"after": "6d22aaa0f56fd33641a6cdf04e74564ebcccb65932df2ee0d7f5e461fee884ea"
 		},
 		"dist/api/openai-completions.d.ts": {
 			"before": "552baa4343275a20df53734e5aa12f46cb8648ca28421adf1318b199eae69a05",
 			"after": "b6eccdaa2d0b9796728d4f8c3b922713862dac056d331f3b0b530ea57d9cfd95"
 		},
 		"dist/types.d.ts": {
-			"before": "4e76c0f67e2cb7243321059dbe212b676835c98ccc78344b3e2b052521e6803e",
-			"after": "7623af0896310f4c316ac3edd66ef07bc3d44924fed8a98aec8a97adda069568"
+			"before": "9348589a0c88c61e78e8575539cec4bf4e4fba8bf9029d3535ddeae07cb1c696",
+			"after": "60fb37887d9901ebb1a65947a05ef7f203414ce69e0176ef6cecf7b062aabc33"
 		},
 		"dist/api/simple-options.js": {
-			"before": "9b3cc0ae6daa86fdc050bc0cb0f3f986401e64ccddbde6757183c9f8ad411be2",
-			"after": "e3d1e8d02b67d5ab27a862189523404f2a8ebbf08ae1b2a880f6de3f756eabe7"
+			"before": "ff234becff46a6c25c1e437c86d72fbe7aeb4e107266d1bf6951622d223b0ae0",
+			"after": "ce381ab6783175012249e775774750bedcdd80cff82cd9423e58830bb0e5111d"
 		},
 		"dist/api/openai-responses.js": {
-			"before": "abb110a531362658ce21c478a782bcac936ef41e922a80b067f444ccf3c39f7e",
-			"after": "fa74b11fed88169f44eb32ed001fc14434581221ae88d04a08fe3a56a6045678"
+			"before": "002f15414b7c7b62a32610a8a915bdf1a01eed930b8b45d7691e8a5c475fa9b5",
+			"after": "47a18e965b9637a74132dd282fc973bf09d73fee6f6d8da85004af88aace2f78"
 		},
 		"dist/api/openai-responses-shared.js": {
-			"before": "aff96f7cf1bbb4ffb1a9c2366620dfbedaa5e8b667a0c5f89d726428e3006d77",
-			"after": "55be33e3c39ee7523505123b24ca069f6ff7d074cec2db3225fcbd539a3cf6a7"
+			"before": "eed025a4821b1e017dd024b930caf8fa11c7fe053a81efe11bd7d846fdc641d3",
+			"after": "9d43cd9cf0923a7f902d8f7c3cae7088394bdac75d6d8a2c702e077d3f37c041"
 		},
 		"dist/api/openai-responses-shared.d.ts": {
-			"before": "e8fbabf7229721b9a9b18f3957248c41cb0086d927be0e124f66bf7acf213046",
-			"after": "2209f7e32b9da7abea39baae7043d936f87d6ff8057aa6345b2f7c83b2f3aa02"
+			"before": "c6f6ed26e85294d5cf2ba21e24c3bb9e9e5969c22988708faf4a5edfc75a3fce",
+			"after": "6be675fc13e8d8772c09c8eee3cf8ef7827a567ec18a4f2f2793533b1c8f85cb"
 		},
 		"dist/api/anthropic-messages.js": {
-			"before": "2a61739aa1e42d42c0351f10fef371b3efd544bc746a97cf6d6f68e4dfc0ef96",
-			"after": "6cb5558647422297597ec16b4e477b7e0896cbe963bd832f2aa113618241f3ef"
+			"before": "360298eff89e8c517c213880088db33c93b56ba737c91e885b22e7e125ca5d55",
+			"after": "e0e305cb78b58b97a0d960aafc639147dcba3bf572ba8d14e2959fb51c9c96a1"
 		},
 		"dist/api/google-generative-ai.js": {
-			"before": "3a19fb56e96e60751a27a19f891264a3ab471cf4973307308ffdc8f8d2669397",
-			"after": "0a0df9974db0f5c3c7bbe35be4011386800a86a5d55f33082411520fc7929d5c"
+			"before": "959c5013c76c76a306e2621fe88b96bb436f38862bf6c48761f7dc48da6133f6",
+			"after": "56e3a07431fe1c1a35e3b95431fab55c5553b0c5346bc0a645ce630430889e93"
 		},
 		"dist/api/google-shared.js": {
-			"before": "c668c33dc25b2cd95cb5520c85bf22f2ff1652d0717aabc83aa26260205801ef",
-			"after": "18c711d25bf83bd3dc4541f3aa0bdb43ffded804bb6caa8a427c7ab4c772fddc"
+			"before": "dd6d525cfa495dc1f9b536049d68d265f95cc0988a3026cb418e3407978030ae",
+			"after": "0c7cf0bba43bda017497275048689c20e15fb54958e7cd236a732d4ed4d5024b"
 		},
 		"dist/api/google-shared.d.ts": {
 			"before": "cddabf0d12181149e4c9473eb2c6d2f0ad4e7870c76c2061b85346cb8031b2fc",
 			"after": "a000a950e3079006febd260f7c716441c89e56f4fe8c15db24f58f13a2f33695"
 		},
 		"dist/api/openai-codex-responses.js": {
-			"before": "4d90da82aaac68f9f0e1fd7daec39f1aa285c111bf04c7ddefa52e920b41b2cc",
-			"after": "a3d8bf53cb1d48a3fb8160b7da8c763ce20ec9882e3cc941de880b9454f00296"
+			"before": "339c75c5799ec3baca669114e3779988f819a5479e2b2c43dfa0b0f05b921c92",
+			"after": "d63b325d84360e3de6c889b88358fd5fc7afec6d142a21bcac674733182a89d8"
 		},
 		"dist/api/google-vertex.js": {
-			"before": "6f6c69ece547a7851a211aa7680e90edd93748992fbc78805918b73254f81b65",
-			"after": "23558cc26857c4a41e1e3a32f52f716ede8daefd1ab3c1fca7026891a95989e2"
+			"before": "b2cee57ba4ccc32efc98672c0c9bca7688bb71a497610b56b817ec00f4cf6fbe",
+			"after": "4f13c1fce136d4204f09f796dcb94d20533e5aaabcea122d02d10b22e2784fb7"
 		},
 		"dist/api/azure-openai-responses.js": {
-			"before": "c0ccd5ce9e248524b6c8d0646a792aad5739b1b12daa8021b96f809222185265",
-			"after": "3d7789d5850ee7a30507f953b49be171bcc7b6b9cd62cdae2e6c5228fccb34f9"
+			"before": "b07688947caf0dea5a6e7907b8aa7a3a35bd34c3c5406cf0c9050788df4e9695",
+			"after": "b6977f84b0cbfd347ddc36084b2dfeec0aea7fa07bc41a2ee31cbad4476ff005"
 		},
 		"dist/api/mistral-conversations.js": {
-			"before": "14e0acba42f00bcb317ce5d4e1cff40f9e267b047d08b608d3a2e2eb92f9a4f4",
-			"after": "e93788bc67aeef9a5d09c42ae646ea674a3ec8d44154b0385f063ff770fa014c"
+			"before": "9870c5bd8b92f1dc3a17af42a2e42e737e10d8d1a8c1e8c579db5f2ef1dfb92f",
+			"after": "e0f7e5049ef4a584ef6715106b08f3d7e3fa3fabed605278475de498b73b796d"
 		},
 		"dist/api/pi-messages.js": {
-			"before": "33cd3a7adc48775c88474d3c68b51f33791dc6e5b315ab9f3a8fc67eee4d8696",
-			"after": "3862e261036bfda28d1281ad4046fd4593f78a2b7402dd9956dfcb6eb95bca2d"
+			"before": "b4ad43cfb8eab44986c734d7f2f689204349abed6dfb4082971e1916efeb2ee6",
+			"after": "be3f14292cd4dcee719723353e23e578027926e3ff7980cb1ce813189afd9a30"
 		},
 		"dist/api/bedrock-converse-stream.js": {
-			"before": "6ff824a3cda4d34fb18c31a190b5a966b8660d7be3da0bd9e1b419ec6bc4c455",
-			"after": "73e81658944d39574e6885f54c98efe2932cb1ef215e47a9a351690b8f1d3989"
+			"before": "2e4a6b46379f7c43ceccb5cef44793bfe6e14f11f4ea42c507b3cc8460d54f0b",
+			"after": "0207190a1bac7186c3adb5e9d59994d3f65748065233683fdfc02507a6e0b988"
 		},
 		"dist/compat.js": {
 			"before": "df55dca273cb2a7053187b7b29d0fe5b91966a5099ab02d2efe38bb31c3f9738",

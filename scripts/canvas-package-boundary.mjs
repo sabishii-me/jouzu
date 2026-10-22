@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-export const canvasVersion = "1.0.11";
+export const canvasVersion = "1.0.13";
 const canvasName = "@napi-rs/canvas";
 
 /** Keep the consumer-selected canvas outside the bundled extension tree. */

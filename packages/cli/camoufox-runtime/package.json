@@ -7,18 +7,20 @@
     "@sinclair/typebox": "0.34.52",
     "@the-forge-flow/camoufox-pi": "0.2.1",
     "better-sqlite3": "13.0.3",
-    "camoufox-js": "0.12.0",
-    "impit": "0.11.0",
-    "playwright-core": "1.60.0",
+    "camoufox-js": "0.13.0",
+    "impit": "0.14.6",
+    "playwright-core": "1.62.1",
     "ua-parser-js": "2.0.10"
   },
   "overrides": {
     "@the-forge-flow/camoufox-pi": {
-      "camoufox-js": "0.12.0",
-      "playwright-core": "1.60.0"
+      "camoufox-js": "0.13.0",
+      "playwright-core": "1.62.1"
     },
+    "adm-zip": "0.6.1",
     "better-sqlite3": "13.0.3",
-    "impit": "0.11.0",
+    "brace-expansion": "5.0.12",
+    "impit": "0.14.6",
     "ua-parser-js": "2.0.10"
   }
 }

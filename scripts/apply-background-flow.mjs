@@ -3,6 +3,7 @@ import { readFile, realpath, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { paths, transform } from "./background-flow-transform.mjs";
+import { resourceHelpers, transformBackgroundResources } from "./background-resource-transform.mjs";
 import { claimBackgroundWidget } from "./background-widget-transform.mjs";
 
 const root = resolve(import.meta.dirname, "..");
@@ -29,6 +30,8 @@ export async function applyBackgroundFlow(packageRoot, checkOnly = false) {
 	if (sha(runtime) !== lock.runtime) throw new Error("Background flow runtime hash mismatch.");
 	const store = await readFile(join(root, "upstream/background-flow/store.ts"), "utf8");
 	if (sha(store) !== lock.store) throw new Error("Background flow store hash mismatch.");
+	if (sha(await readFile(join(root, "upstream/background-flow/resource-edits.json"))) !== lock.resourceEdits)
+		throw new Error("Background resource edits hash mismatch.");
 	const writes = [];
 	for (const path of paths) {
 		const original = await readFile(join(packageRoot, path), "utf8"),
@@ -36,11 +39,30 @@ export async function applyBackgroundFlow(packageRoot, checkOnly = false) {
 		const digest = sha(original);
 		if (digest === hashes.after) continue;
 		const upgradeWidget = path === paths[0] && digest === hashes.previousAfter;
-		if (checkOnly || (digest !== hashes.before && !upgradeWidget))
+		const upgradeResources = digest === hashes.resourcePreviousAfter;
+		if (checkOnly || (digest !== hashes.before && !upgradeWidget && !upgradeResources))
 			throw new Error(`Background flow hash mismatch: ${path}`);
-		const changed = upgradeWidget ? claimBackgroundWidget(original) : transform(path, original);
+		const changed = upgradeWidget
+			? transformBackgroundResources(path, claimBackgroundWidget(original))
+			: upgradeResources
+				? transformBackgroundResources(path, original)
+				: transform(path, original);
 		if (sha(changed) !== hashes.after) throw new Error(`Background flow transform mismatch: ${path}`);
 		writes.push([join(packageRoot, path), changed]);
+	}
+	if (JSON.stringify(Object.keys(lock.helpers ?? {}).sort()) !== JSON.stringify([...resourceHelpers].sort()))
+		throw new Error("Background resource helper identity mismatch.");
+	for (const name of resourceHelpers) {
+		const source = await readFile(join(root, "upstream/background-flow/resources", name), "utf8");
+		if (sha(source) !== lock.helpers[name]) throw new Error(`Background resource helper hash mismatch: ${name}`);
+		const destination = join(packageRoot, "extensions", name);
+		const installed = await readFile(destination, "utf8").catch((error) => {
+			if (error.code === "ENOENT") return undefined;
+			throw error;
+		});
+		if (installed === source) continue;
+		if (checkOnly || installed !== undefined) throw new Error(`Background resource installed helper mismatch: ${name}`);
+		writes.push([destination, source]);
 	}
 	const destination = join(packageRoot, "extensions/jouzu-flow.ts");
 	const installed = await readFile(destination, "utf8").catch((error) => {

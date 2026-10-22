@@ -3,19 +3,31 @@ import { EventEmitter } from "node:events";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { test } from "node:test";
+import { after, test } from "node:test";
 import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
-import { applyBackgroundFlow, applyInstalledBackgroundFlow } from "../../../scripts/apply-background-flow.mjs";
+import {
+	applyBackgroundFlow as applyPinnedBackgroundFlow,
+	applyInstalledBackgroundFlow as checkInstalledBackgroundFlow,
+} from "../../../scripts/apply-background-flow.mjs";
 import { paths } from "../../../scripts/background-flow-transform.mjs";
+import { extensionPatchFixture } from "../../../scripts/fixtures/extension-flow-patch.mjs";
 import { createFlowSession, deferred } from "../../../scripts/fixtures/pi-flow-session.mjs";
 import { attachBackgroundWaitSource } from "../dist/flow-control/background-adapter.js";
 import { PiFlowAttachment } from "../dist/flow-control/pi-attachment.js";
 import { createFlowWaitExtension } from "../dist/flow-control/wait-tools.js";
 import { createClaimedWorkSource, jobWorkUnits } from "../dist/work-dashboard-sources.js";
 
-const root = resolve(import.meta.dirname, "../../.."),
-	installed = join(root, "packages/cli/node_modules/@vanillagreen/pi-background-tasks");
+const root = resolve(import.meta.dirname, "../../..");
+const candidate = process.env.JOUZU_BACKGROUND_SOURCE
+	? await extensionPatchFixture({ after }, "background", process.env.JOUZU_BACKGROUND_SOURCE)
+	: undefined;
+if (candidate) await candidate.apply(candidate.packageRoot);
+const installed = candidate?.packageRoot ?? join(root, "packages/cli/node_modules/@vanillagreen/pi-background-tasks");
+const applyBackgroundFlow = candidate?.apply ?? applyPinnedBackgroundFlow;
+const applyInstalledBackgroundFlow = candidate
+	? (checkOnly) => candidate.apply(installed, checkOnly)
+	: checkInstalledBackgroundFlow;
 
 test("background execution patch is applied and idempotent in installed package resolutions", async () => {
 	await applyInstalledBackgroundFlow(true);
@@ -87,7 +99,8 @@ async function widgetFixture(t, hasUI = true) {
 		emit: (name, value) => bus.emit(name, value),
 	};
 	let sessionId = "widget-session",
-		popups = 0;
+		popups = 0,
+		widgetError;
 	const task = {
 		id: "bg-1",
 		command: "echo done",
@@ -116,6 +129,11 @@ async function widgetFixture(t, hasUI = true) {
 		},
 		ui: {
 			setWidget(key, value) {
+				if (widgetError) {
+					const error = widgetError;
+					widgetError = undefined;
+					throw error;
+				}
 				widgets.get(key)?.dispose?.();
 				if (value) widgets.set(key, value({ requestRender() {}, terminal: { rows: 32 } }, {}));
 				else widgets.delete(key);
@@ -142,6 +160,9 @@ async function widgetFixture(t, hasUI = true) {
 		commands,
 		shortcuts,
 		popups: () => popups,
+		failNextRender: (error) => {
+			widgetError = error;
+		},
 		start(id = sessionId) {
 			sessionId = id;
 			handlers.get("session_start")({}, ctx);
@@ -224,6 +245,10 @@ test("background widget claims are independent, reset per session, and release s
 		/rejected/,
 	);
 	assert.equal(f.widgets.size, 1, "failed handoff restores the widget");
+	const renderFailure = new Error("widget render failed");
+	f.failNextRender(renderFailure);
+	assert.throws(() => f.claim(), renderFailure);
+	assert.equal(f.widgets.size, 1, "failed render releases the claim before reporting failure");
 	f.events.emit("background-tasks:widget:claim", {
 		version: 2,
 		respond() {
@@ -236,6 +261,23 @@ test("background widget claims are independent, reset per session, and release s
 	last();
 	assert.equal(f.widgets.size, 0);
 	assert.equal(f.claim(), undefined);
+});
+
+test("background readiness lets the dashboard claim rows before the native widget renders", async (t) => {
+	const f = await widgetFixture(t);
+	const releases = [];
+	f.events.on("background-tasks:widget:ready", () => {
+		assert.equal(f.widgets.size, 0);
+		releases.push(f.claim());
+	});
+	f.start();
+	assert.equal(typeof releases[0], "function");
+	assert.equal(f.widgets.size, 0);
+	f.start("replacement-widget-session");
+	releases[0]();
+	assert.equal(f.widgets.size, 0, "the old session cannot release the replacement claim");
+	releases[1]();
+	assert.equal(f.widgets.size, 1);
 });
 
 test("background widget does not acknowledge claims without a UI", async (t) => {

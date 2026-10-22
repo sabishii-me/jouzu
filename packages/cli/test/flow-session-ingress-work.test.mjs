@@ -450,12 +450,13 @@ for (const lane of ["steer", "followUp"])
 			assert.equal(request, cancel ? 0 : 2);
 		});
 
-for (const mode of ["normal", "reversed", "reopen", "model-tools", "shared-results"])
+for (const mode of ["normal", "reversed", "reopen", "model-tools", "model-tools-reconciling", "shared-results"])
 	test(`loaded multiloop/background pair automatically composes after its wait (${mode})`, {
 		skip: process.platform === "win32",
 		timeout: 20000,
 	}, async (t) => {
 		const reverse = mode === "reversed";
+		const modelTools = mode.startsWith("model-tools") || mode === "shared-results";
 		const root = await mkdtemp(join(tmpdir(), "jouzu-loaded-background-"));
 		afterCleanup(t, () => rm(root, { recursive: true, force: true }));
 		const releaseFile = join(root, "release-task");
@@ -526,9 +527,9 @@ for (const mode of ["normal", "reversed", "reopen", "model-tools", "shared-resul
 			maxInputBytes: mode === "shared-results" ? 8192 : 4096,
 			admit: null,
 			autoRelease: { onError: (error) => errors.push(error) },
-			tools: ["model-tools", "shared-results"].includes(mode) ? ["multiloop_start", "bg_task", "agent_wait"] : [],
+			tools: modelTools ? ["multiloop_start", "bg_task", "agent_wait"] : [],
 			consumedAttempt: loopBridge.consumedAttempt,
-			response: !["model-tools", "shared-results"].includes(mode)
+			response: !modelTools
 				? undefined
 				: () => {
 						let name, args;
@@ -594,7 +595,7 @@ for (const mode of ["normal", "reversed", "reopen", "model-tools", "shared-resul
 		});
 		await f.session.bindExtensions({ onError: (error) => errors.push(error) });
 		const branch = f.ingress.branch();
-		if (["model-tools", "shared-results"].includes(mode)) {
+		if (modelTools) {
 			f.session.setActiveToolsByName(["multiloop_start", "bg_task", "agent_wait"]);
 			assert.equal(f.session.agent.state.tools.length, 3, JSON.stringify(f.session.getAllTools()));
 			await f.session.prompt("Start the lane, spawn its background process, and wait for its exit.");
@@ -646,9 +647,41 @@ for (const mode of ["normal", "reversed", "reopen", "model-tools", "shared-resul
 				token = (await branch.attachment.waits.snapshot())[0].token;
 			});
 		}
-		for (let i = 0; i < 3; i++) await f.session.prompt("status?");
+		for (let i = 0; i < 3; i++) {
+			if (mode === "model-tools-reconciling" && i === 2) {
+				const entered = deferred(),
+					proceed = deferred();
+				const waits = branch.attachment.waits;
+				const snapshot = waits.authoritySnapshot.bind(waits);
+				t.mock.method(
+					waits,
+					"authoritySnapshot",
+					async () => {
+						entered.resolve();
+						await proceed.promise;
+						return snapshot();
+					},
+					{ times: 1 },
+				);
+				const reconciliation = branch.attachment.waitProducers.restorePending();
+				await entered.promise;
+				try {
+					await f.session.prompt("status?");
+					assert.equal(f.sent.length, 6);
+					assert.equal((await f.ingress.heldInputs()).length, 1);
+				} finally {
+					proceed.resolve();
+					await reconciliation;
+				}
+			} else await f.session.prompt("status?");
+			// Admission can retain a prompt until source reconciliation schedules its release.
+			await waitForFlow(
+				async () =>
+					f.sent.length === (modelTools ? 5 : 1) + i && f.session.isIdle && (await f.ingress.heldInputs()).length === 0,
+			);
+		}
 		assert.equal((await branch.attachment.ledger.snapshot()).attempts.length, 0);
-		assert.equal(f.sent.length, ["model-tools", "shared-results"].includes(mode) ? 7 : 3);
+		assert.equal(f.sent.length, modelTools ? 7 : 3);
 		if (mode === "reopen") {
 			const expiry = (await branch.attachment.waits.snapshot())[0].expiresAt;
 			await f.ingress.dispose();
@@ -701,7 +734,7 @@ for (const mode of ["normal", "reversed", "reopen", "model-tools", "shared-resul
 		);
 		assert.equal((await branch.attachment.waits.snapshot())[0].token, token);
 		assert.deepEqual(errors, []);
-		assert.equal(f.sent.length, ["model-tools", "shared-results"].includes(mode) ? 8 : 4);
+		assert.equal(f.sent.length, modelTools ? 8 : 4);
 		if (mode === "shared-results") {
 			assert.match(JSON.stringify(f.sent.at(-1)), /flow-results:/);
 			assert.match(JSON.stringify(f.sent.at(-1)), /bg-result:/);

@@ -4,7 +4,6 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
 	driveMultiloopAfterOtherTurns,
-	driveMultiloopOnGateChange,
 	extensionPath,
 	notifyMultiloopLabels,
 	transformMultiloopAutonomy,
@@ -51,38 +50,28 @@ export async function applyMultiloopWaitSkill(packageRoot, checkOnly = false) {
 		writes.push([path, changed]);
 	}
 	const extension = await readFile(join(packageRoot, extensionPath), "utf8");
-	if (sha(extension) !== lock.extension.after) {
-		const extensionDigest = sha(extension);
-		if (extensionDigest === lock.extension.previousAfter || extensionDigest === lock.extension.after) {
-			const changed = transformMultiloopAutonomy(extension);
-			if (sha(changed) !== lock.extension.after) throw new Error("Multiloop autonomy transform differs.");
-			writes.push([join(packageRoot, extensionPath), changed]);
+	const extensionDigest = sha(extension);
+	if (extensionDigest !== lock.extension.after) {
+		if (
+			checkOnly ||
+			![
+				lock.extension.before,
+				lock.extension.previousAfter,
+				lock.extension.labelsPreviousAfter,
+				lock.extension.continuationPreviousAfter,
+			].includes(extensionDigest)
+		)
+			throw new Error("Multiloop extension source hash differs.");
+		let changed = extension;
+		if (extensionDigest === lock.extension.before) {
+			changed = transformMultiloopFlow(extension);
 		} else {
-			if (
-				checkOnly ||
-				![
-					lock.extension.before,
-					lock.extension.previousAfter,
-					lock.extension.labelsPreviousAfter,
-					lock.extension.continuationPreviousAfter,
-				].includes(extensionDigest)
-			)
-				throw new Error("Multiloop extension source hash differs.");
-			const changed =
-				extensionDigest === lock.extension.before
-					? transformMultiloopFlow(extension)
-					: driveMultiloopAfterOtherTurns(
-							extensionDigest === lock.extension.continuationPreviousAfter
-								? extension
-								: notifyMultiloopLabels(
-										extensionDigest === lock.extension.previousAfter
-											? driveMultiloopOnGateChange(extension)
-											: extension,
-									),
-						);
-			if (sha(changed) !== lock.extension.after) throw new Error("Multiloop flow transform differs.");
-			writes.push([join(packageRoot, extensionPath), changed]);
+			if (extensionDigest === lock.extension.labelsPreviousAfter) changed = notifyMultiloopLabels(changed);
+			if (extensionDigest !== lock.extension.previousAfter) changed = driveMultiloopAfterOtherTurns(changed);
+			changed = transformMultiloopAutonomy(changed);
 		}
+		if (sha(changed) !== lock.extension.after) throw new Error("Multiloop flow transform differs.");
+		writes.push([join(packageRoot, extensionPath), changed]);
 	}
 	const lanes = await readFile(join(packageRoot, lanesPath), "utf8");
 	if (lock.lanes.path !== lanesPath) throw new Error("Multiloop lanes path differs.");

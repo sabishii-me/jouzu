@@ -3,49 +3,45 @@ function replace(source, from, to) {
 	return source.replace(from, to);
 }
 
-/** Suppress only the inline widget while a dashboard holds a session-scoped claim. */
+/** Keep upstream widget claims scoped to an attached UI session. */
 export function claimBackgroundWidget(source) {
 	source = replace(
 		source,
-		"\tlet requestWidgetRender: (() => void) | null = null;",
-		"\tconst widgetClaims = new Set<symbol>();\n\tlet requestWidgetRender: (() => void) | null = null;",
+		"\tconst widgetClaims = createBackgroundWidgetClaims(() => {\n\t\tif (activeCtx) syncWidget(activeCtx);\n\t});",
+		"\tconst widgetClaims = createBackgroundWidgetClaims(() => {\n\t\tif (activeCtx && !shuttingDown) syncWidget(activeCtx);\n\t}, () => !!activeCtx?.hasUI && !shuttingDown);",
 	);
 	source = replace(
 		source,
-		"\t\twidgetExpiry.clear();\n\t\tconst now = Date.now();",
-		"\t\twidgetExpiry.clear();\n\t\tif (widgetClaims.size) { clearWidget(); return; }\n\t\tconst now = Date.now();",
-	);
-	source = replace(
-		source,
-		'\tpi.on("session_start", (_event, ctx) => {',
-		`\tpi.events.on("background-tasks:widget:claim", (data) => {
-		const request = data as { version?: number; respond?: (release: () => void) => void } | undefined;
-		if (request?.version !== 1 || typeof request.respond !== "function" || !activeCtx?.hasUI || shuttingDown) return;
-		const token = Symbol();
-		widgetClaims.add(token);
-		const release = () => {
-			if (!widgetClaims.delete(token)) return;
-			if (activeCtx && !shuttingDown) syncWidget(activeCtx);
-		};
-		try {
-			clearWidget();
-			request.respond(release);
-		} catch (error) {
-			release();
-			throw error;
-		}
-	});
-	pi.on("session_start", (_event, ctx) => {
-		widgetClaims.clear();`,
-	);
-	source = replace(
-		source,
-		"\t\torphanWatcher?.checkOnce();\n\t\tsyncWidget(ctx);",
-		'\t\torphanWatcher?.checkOnce();\n\t\tpi.events.emit("background-tasks:widget:ready", { version: 1 });\n\t\tsyncWidget(ctx);',
+		"\t\tshuttingDown = false;\n\t\twidgetClaims.releaseAll();",
+		"\t\tactiveCtx = null;\n\t\twidgetClaims.releaseAll();\n\t\tshuttingDown = false;",
 	);
 	return replace(
 		source,
-		'\tpi.on("session_shutdown", () => {\n\t\tshuttingDown = true;',
-		'\tpi.on("session_shutdown", () => {\n\t\tshuttingDown = true;\n\t\twidgetClaims.clear();',
+		"\t\tsyncWidget(ctx);\n\t\tpi.events?.emit?.(BACKGROUND_WIDGET_READY, { version: 1 });",
+		"\t\tpi.events?.emit?.(BACKGROUND_WIDGET_READY, { version: 1 });\n\t\tsyncWidget(ctx);",
+	);
+}
+
+/** A failed render or claim handoff must release the claim and report the error. */
+export function guardBackgroundWidgetClaims(source) {
+	source = replace(
+		source,
+		"export function createBackgroundWidgetClaims(changed: () => void) {",
+		"export function createBackgroundWidgetClaims(changed: () => void, canClaim: () => boolean = () => true) {",
+	);
+	source = replace(
+		source,
+		"\tconst notify = () => {\n\t\ttry {\n\t\t\tchanged();\n\t\t} catch {\n\t\t\t/* A render failure must not strand other claims. */\n\t\t}\n\t};",
+		"\tconst notify = changed;",
+	);
+	source = replace(
+		source,
+		'\t\t\t\tif (request.version !== 1 || typeof request.respond !== "function") return;',
+		'\t\t\t\tif (request.version !== 1 || typeof request.respond !== "function" || !canClaim()) return;',
+	);
+	return replace(
+		source,
+		"\t\t\t\treleases.add(release);\n\t\t\t\tnotify();\n\t\t\t\ttry {\n\t\t\t\t\trequest.respond(release);\n\t\t\t\t} catch {\n\t\t\t\t\trelease();\n\t\t\t\t}",
+		"\t\t\t\treleases.add(release);\n\t\t\t\ttry {\n\t\t\t\t\tnotify();\n\t\t\t\t\trequest.respond(release);\n\t\t\t\t} catch (error) {\n\t\t\t\t\trelease();\n\t\t\t\t\tthrow error;\n\t\t\t\t}",
 	);
 }

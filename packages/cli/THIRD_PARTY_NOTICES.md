@@ -5,14 +5,14 @@ Jouzu distributes the following release-owned Pi extensions and their default ru
 | Package | Version or revision | License evidence |
 | --- | --- | --- |
 | `pi-schedule-prompt` | 0.4.1 | MIT; `LICENSE` |
-| `@vanillagreen/pi-background-tasks` | `66356512b81d2358b17531fffa791e2f1e51afef` (2.0.0) | MIT in `package.json`; `THIRD_PARTY_NOTICES.md` contains the upstream attribution and license text |
+| `@vanillagreen/pi-background-tasks` | `1ab9fef053de921ea9d1741bf547cfed47808147` (2.0.0) | MIT in `package.json`; `THIRD_PARTY_NOTICES.md` contains the upstream attribution and license text |
 | `pi-webaio` | `f65ae726bc95c50dc0e2c5a0ea95c2cdfb9a1bc2` (1.0.5) | MIT; `LICENSE` |
 | `pi-code-previews` | 0.1.36 | MIT; `LICENSE` |
 | `@lhl/pi-tasks` | `3626078819db11d90e394d77752577956063b71d` | MIT; `LICENSE` |
-| `pi-multiloop` | `becca4ab47bf9953c66d96ecbac16bf2debe6881` (v0.4.1) | MIT; `LICENSE` |
+| `pi-multiloop` | `689cb09350da503a857eebc5f2c1e1edbbd41feb` (v0.4.1) | MIT; `LICENSE` |
 | `@sting8k/pi-vcc` | 0.10.2 | The upstream `README.md` declares MIT under its License heading; the package has no separate license file |
-| `pi-skill-dollar` | `308db930146e1b3f500eadebd0323ab88789336f` (v0.2.1) | MIT; `LICENSE` |
-| `@napi-rs/canvas` | 1.0.11 | MIT; `LICENSE`; installed by npm with the target platform's native binding |
+| `pi-skill-dollar` | `d4225d96a9121a7d14735758464f18416b603d50` (v0.2.1) | MIT; `LICENSE` |
+| `@napi-rs/canvas` | 1.0.13 | MIT; `LICENSE`; installed by npm with the target platform's native binding |
 | `partial-json` | 0.1.7 | MIT; `LICENSE` |
 | `esbuild` | 0.28.2 | MIT; `LICENSE.md` |
 | `typebox` | 1.3.27 | MIT; `license` |
@@ -38,7 +38,7 @@ data retain Unicode 17.0.0 provenance; generated character classes use Unicode
 | Package | Version | License evidence |
 | --- | --- | --- |
 | `@picovoice/pvrecorder-node` | 1.2.9 | Apache-2.0 in `package.json`; source headers credit Copyright 2021–2023 Picovoice Inc. The npm package omits a separate license file; Jouzu's bundled `LICENSE` contains the Apache-2.0 terms. |
-| `ws` | 8.21.3 | MIT; `LICENSE` |
+| `ws` | 8.22.0 | MIT; `LICENSE` |
 
 PvRecorder's native binaries and JavaScript binding are distributed unchanged. They load only in the microphone helper process when voice capture or device enumeration is requested.
 
@@ -49,10 +49,10 @@ Jouzu does not distribute or install the following packages by default. The firs
 | Package | Version | License |
 | --- | --- | --- |
 | `@the-forge-flow/camoufox-pi` | 0.2.1 | MIT |
-| `camoufox-js` | 0.12.0 | MPL-2.0 |
+| `camoufox-js` | 0.13.0 | MPL-2.0 |
 | `ua-parser-js` | 2.0.10 | AGPL-3.0-or-later |
-| `impit` | 0.11.0 | Apache-2.0 |
-| `playwright-core` | 1.60.0 | Apache-2.0 |
+| `impit` | 0.14.6 | Apache-2.0 |
+| `playwright-core` | 1.62.1 | Apache-2.0 |
 | `better-sqlite3` | 13.0.3 | MIT |
 | `@sinclair/typebox` | 0.34.52 | MIT |
 
