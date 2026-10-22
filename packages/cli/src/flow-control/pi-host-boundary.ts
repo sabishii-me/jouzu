@@ -23,6 +23,8 @@ export class PiHostBoundary {
 	private active = 0;
 	private closed = false;
 	private stopping = false;
+	private disposalRequested = false;
+	private disposalOwner?: Frame;
 	private stoppingPromise?: Promise<void>;
 	private drained?: () => void;
 	private navigated = false;
@@ -94,6 +96,28 @@ export class PiHostBoundary {
 		}
 		this.hooks.set(session, "setModel", this.wrap(session.setModel.bind(session)));
 		this.hooks.set(session, "cycleModel", this.wrap(session.cycleModel.bind(session)));
+		const dispose = session.dispose.bind(session);
+		this.hooks.set(session, "dispose", () => {
+			const frame = this.frames.getStore();
+			// Refuse self-joins before Pi memoizes disposal or invalidates extensions.
+			if (frame?.active && (frame.kind !== "command" || frame.nested > 0 || this.barrier))
+				return Promise.reject(new FlowLedgerError("busy", "Session shutdown cannot join its own active callback."));
+			if (frame?.active && this.disposalRequested && frame !== this.disposalOwner)
+				return Promise.reject(
+					new FlowLedgerError("busy", "Session shutdown is already in progress from another caller."),
+				);
+			const previous = this.disposalRequested;
+			const owner = this.disposalOwner;
+			this.disposalRequested = true;
+			this.disposalOwner ??= frame;
+			try {
+				return dispose();
+			} catch (error) {
+				this.disposalRequested = previous;
+				this.disposalOwner = owner;
+				throw error;
+			}
+		});
 	}
 	private execution<T>(run: () => Promise<T>): Promise<T> {
 		return this.operation(() => (this.invokeScope ? this.invokeScope(run) : run()));
