@@ -48,14 +48,15 @@ export function createTextGuardDesktopExtension(
 							snapshot: policy.contentSnapshot(review),
 						};
 					});
-					return reply(ctx, { ok: true, action: "inspect", mode: policy.currentMode(), items });
+					return reply(ctx, { ok: true, action: "inspect", sessionId, mode: policy.currentMode(), items });
 				}
 				if (request.action === "mode") {
 					const mode = request.mode === "on" ? "guarded" : request.mode;
 					if (!["guarded", "strict", "off"].includes(String(mode))) return reply(ctx, { ok: false, error: "Invalid TextGuard mode." });
 					if (!runtime.setMode(mode as TextGuardMode)) return reply(ctx, { ok: true, action: "mode", changed: false, mode: policy.currentMode() });
-					try { await ctx.reload(); } catch { /* The panel shows the mode change; retry /reload separately. */ }
-					return reply(ctx, { ok: true, action: "mode", changed: true, mode: mode as TextGuardMode });
+					reply(ctx, { ok: true, action: "mode", changed: true, mode: mode as TextGuardMode });
+					try { await ctx.reload(); } catch { /* A failed reload is visible on the next inspect. */ }
+					return;
 				}
 				if (request.action !== "approve" && request.action !== "dismiss") return reply(ctx, { ok: false, error: "Unsupported TextGuard action." });
 				if (typeof request.ticket !== "string" || typeof request.id !== "string") return reply(ctx, { ok: false, error: "Missing TextGuard ticket." });
@@ -70,8 +71,9 @@ export function createTextGuardDesktopExtension(
 					return reply(ctx, { ok: true, action: "dismiss" });
 				}
 				if (!runtime.approve(policy, request.id, request.persist === true)) return reply(ctx, { ok: false, error: "This TextGuard review expired." });
-				try { await ctx.reload(); } catch { return reply(ctx, { ok: true, action: "approve", reloaded: false }); }
-				return reply(ctx, { ok: true, action: "approve", reloaded: true });
+				reply(ctx, { ok: true, action: "approve", reloaded: true });
+				try { await ctx.reload(); } catch { /* The approval is durable; the next inspect reports the current state. */ }
+				return;
 			},
 		});
 	};

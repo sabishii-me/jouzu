@@ -46,11 +46,24 @@ test("reload retains approvals while replacement sessions reuse verdicts without
 	assert.equal(await runtime.createPolicy({ sessionId: "first", cwd: process.cwd() }), first);
 	const second = await runtime.createPolicy({ sessionId: "second", cwd: process.cwd() });
 	assert.notEqual(second, first);
-	assert.equal(runtime.forSession("first"), undefined);
+	assert.equal(runtime.forSession("first"), first);
 	assert.equal(runtime.forSession("second"), second);
 	assert.equal((await second.filterToolResult(request)).isError, true);
 	assert.equal(scans(), 1);
 	assert.equal(runtime.approve(first, second.reviews()[0].id), false);
+});
+
+test("retains a pending review when another session becomes active", async (t) => {
+	const { runtime } = fixture();
+	t.after(() => runtime.close());
+	const first = await runtime.createPolicy({ sessionId: "first", cwd: process.cwd() });
+	await first.filterToolResult(request);
+	const review = first.reviews()[0].id;
+	const second = await runtime.createPolicy({ sessionId: "second", cwd: process.cwd() });
+	assert.equal(runtime.forSession("first"), first);
+	assert.equal(first.reviews().length, 1);
+	assert.equal(runtime.approve(first, review), true);
+	assert.equal(second.reviews().length, 0);
 });
 
 test("a changed working directory invalidates approval even if the session identifier is reused", async (t) => {

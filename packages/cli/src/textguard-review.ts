@@ -585,8 +585,15 @@ export function createTextGuardReviewExtension(
 		let lastNotice = "";
 		let context: ExtensionContext | undefined;
 		const notify = (ctx: ExtensionContext, message: string, type: "info" | "warning" | "error" = "warning") => {
-			if (ctx.mode === "tui" && ctx.hasUI) ctx.ui.notify(message, type);
-			else writeDiagnostic(message);
+			// An alert can arrive after the capturing session was replaced. The old extension
+			// context is intentionally invalid then; keep the diagnostic path and drop only
+			// the stale UI delivery instead of surfacing an extension lifecycle error.
+			try {
+				if (ctx.mode === "tui" && ctx.hasUI) ctx.ui.notify(message, type);
+				else writeDiagnostic(message);
+			} catch {
+				writeDiagnostic(message);
+			}
 		};
 		const alertText = (alert: TextGuardAlert, interactive: boolean): string => {
 			const source = alert.source.length > 96 ? `${alert.source.slice(0, 96)}…` : alert.source;

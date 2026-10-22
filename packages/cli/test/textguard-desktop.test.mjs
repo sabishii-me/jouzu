@@ -49,6 +49,7 @@ test("desktop inspect issues a one-use ticket for real review state", async () =
 	await f.handler('{"action":"inspect"}', f.ctx);
 	const data = payload(f.messages.at(-1).message);
 	assert.equal(data.ok, true);
+	assert.equal(data.sessionId, "session");
 	assert.equal(data.mode, "strict");
 	assert.equal(data.items.length, 1);
 	assert.equal(data.items[0].snapshot.body, "body");
