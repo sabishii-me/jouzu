@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, linkSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { copyFileSync, linkSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -45,8 +45,8 @@ function withEnv(overrides) {
   }
   return env;
 }
-function run(args, env) {
-  return spawnSync(pwsh, ['-NoProfile', '-NonInteractive', '-File', script, ...args], {
+function run(args, env, scriptPath = script) {
+  return spawnSync(pwsh, ['-NoProfile', '-NonInteractive', '-File', scriptPath, ...args], {
     encoding: 'utf8',
     windowsHide: true,
     env: withEnv(env),
@@ -139,4 +139,45 @@ test('the report names every location and the version it read', () => {
   assert.equal(report.bundled_present, true);
   assert.equal(report.managed_present, true);
   assert.equal(report.system_present, true);
+  assert.equal(report.update_available, true);
+});
+
+test('the report offers an update for a working managed copy of another version', () => {
+  const space = workspace('git-managed-update-');
+  gitTree(join(space.local, 'Shisa.ai', 'Jouzu', 'tools', 'git'));
+  const result = run(['-InstallRoot', space.install, '-Report'], machineEnv(space));
+  assert.equal(result.status, 0, result.stderr);
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.bundled, null);
+  assert.equal(report.managed.git, process.version);
+  assert.equal(report.update_available, true);
+});
+
+test('the report does not offer an owned-copy update for absent or system-only Git', () => {
+  const space = workspace('git-no-owned-update-');
+  for (const machine of [false, true]) {
+    if (machine) gitTree(space.machine);
+    const result = run(['-InstallRoot', space.install, '-Report'], machineEnv(space));
+    assert.equal(result.status, 0, result.stderr);
+    const report = JSON.parse(result.stdout);
+    assert.equal(report.bundled, null);
+    assert.equal(report.managed, null);
+    assert.equal(report.update_available, false);
+  }
+});
+
+test('the report does not offer an update when the owned copy matches the expected version', () => {
+  const space = workspace('git-current-update-');
+  gitTree(join(space.install, 'runtime', 'git', 'installed'));
+  // Keep the real signed-executable probes, with the signed fixture's version as the expected one.
+  const fixtureScript = join(space.root, 'git-environment.ps1');
+  const source = readFileSync(script, 'utf8');
+  const fixture = source.replaceAll(/git version \d+\.\d+\.\d+\.windows\.\d+/g, process.version);
+  assert.notEqual(fixture, source);
+  writeFileSync(fixtureScript, fixture);
+  const result = run(['-InstallRoot', space.install, '-Report'], machineEnv(space), fixtureScript);
+  assert.equal(result.status, 0, result.stderr);
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.bundled.git, process.version);
+  assert.equal(report.update_available, false);
 });

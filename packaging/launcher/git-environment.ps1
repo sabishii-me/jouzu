@@ -80,6 +80,7 @@ $systemInfo = Get-SystemEnvironment
 $archive = Join-Path (Join-Path $InstallRoot 'runtime\git') 'PortableGit.exe'
 
 if ($Report) {
+ $ownedInfo = if ($bundledInfo) { $bundledInfo } else { $managedInfo }
  $value = [ordered]@{
   bundled = if ($bundledInfo) { [ordered]@{ path = $bundledInfo.path; git = $bundledInfo.git; bash = $bundledInfo.bash } } else { $null }
   managed = if ($managedInfo) { [ordered]@{ path = $managedInfo.path; git = $managedInfo.git; bash = $managedInfo.bash } } else { $null }
@@ -87,6 +88,7 @@ if ($Report) {
   bundled_present = $bundledPresent
   managed_present = $managedPresent
   system_present = $systemPresent
+  update_available = [bool]($ownedInfo -and $ownedInfo.git -ne 'git version 2.56.0.windows.2')
   archive = (Test-Path -LiteralPath $archive -PathType Leaf)
  }
  Write-Output ($value | ConvertTo-Json -Compress -Depth 4)

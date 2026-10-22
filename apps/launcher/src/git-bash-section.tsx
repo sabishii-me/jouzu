@@ -12,6 +12,7 @@ export interface GitBashState {
   managed_present: boolean;
   system_present: boolean;
   archive: boolean;
+  update_available?: boolean;
   effective: Environment | null;
 }
 
@@ -25,6 +26,7 @@ export function GitBashSection({ locale, api }: { locale: Locale; api: Component
   const { state, busy, error, run } = api;
   if (!state) return <ComponentSection title={t.gitBash} status={t.checking} busy={busy} error={error} installLabel={t.gitBashInstall} />;
   const own = state.bundled ?? state.managed;
+  const updateAvailable = Boolean(own && state.update_available);
   const installed = Boolean(state.effective);
   const usingSystem = installed && state.effective?.path === state.system?.path;
   // A copy that is here without answering a launch is repaired, not installed again; a copy this PC
@@ -38,10 +40,10 @@ export function GitBashSection({ locale, api }: { locale: Locale; api: Component
       ? describe([usingSystem ? t.gitBashSystem : t.gitBashBundled, version(state.effective?.git)])
       : ownBroken ? t.gitBashBroken : systemBroken ? t.gitBashSystemBroken : t.gitBashMissing}
     tone={installed ? 'ok' : 'missing'}
-    note={installed ? undefined : t.gitBashRequired}
+    note={updateAvailable ? t.updateAvailable : installed ? undefined : t.gitBashRequired}
     busy={busy} error={error}
-    install={own ? undefined : () => void run(() => invoke<GitBashState>('git_bash_install'))}
-    installLabel={ownBroken ? t.gitBashRepair : `${t.gitBashInstall} (${t.recommended})`}
+    install={own && !updateAvailable ? undefined : () => void run(() => invoke<GitBashState>('git_bash_install'))}
+    installLabel={ownBroken || updateAvailable ? t.gitBashRepair : `${t.gitBashInstall} (${t.recommended})`}
   />;
 }
 
