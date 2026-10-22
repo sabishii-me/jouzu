@@ -13,7 +13,7 @@ export function updateConfiguration({repository, launcherPublicKey, recipePublic
  if(recipeUrl.protocol!=='https:' || recipeUrl.username || recipeUrl.password || recipeUrl.search || recipeUrl.hash || !recipeUrl.pathname.endsWith('/')) throw new Error('Recipe source requires a directory HTTPS URL');
  const root=`https://github.com/${repository}/releases/download`;
  return {
-  launcher:{plugins:{updater:{pubkey:launcherPublicKey,endpoints:[`${root}/launcher-update/latest.json`],windows:{installMode:'quiet'}}}},
+  launcher:{plugins:{updater:{pubkey:launcherPublicKey,requireSignedVersion:true,endpoints:[`${root}/launcher-update/latest.json`],windows:{installMode:'quiet'}}}},
   jouzu:{schemaVersion:1,url:recipeUrl.href,publicKey:recipePublicKey},
  };
 }

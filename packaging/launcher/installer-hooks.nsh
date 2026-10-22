@@ -57,9 +57,9 @@
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
-  ; Components belong to the launcher: the installer prepares whatever the package carries and never
-  ; fails the installation for one. A component that is missing or could not be prepared shows up in
-  ; the System section, which installs it from the shipped archive or the pinned release.
+!if ${JOUZU_LAUNCHER_ONLY} == 0
+  ; Only the full installer prepares components. A launcher-only update must not replace them.
+  ; Preparation failures leave the component available for repair from the System section.
   IfFileExists "$INSTDIR\runtime\git\PortableGit.exe" 0 jouzu_components_done
     nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\runtime\launcher-update\git-environment.ps1" -InstallRoot "$INSTDIR" -Prepare'
     Pop $0
@@ -69,6 +69,7 @@
     Pop $0
     Pop $1
   jouzu_components_done:
+!endif
   ; The terminal entries are byte copies of the signed console, so no second binary ships. A copy that
   ; could not be refreshed leaves the previous one in place; the System section reports the state.
   IfFileExists "$INSTDIR\runtime\launcher-update\command-entries.ps1" 0 jouzu_entries_done

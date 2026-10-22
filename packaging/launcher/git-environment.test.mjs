@@ -110,6 +110,18 @@ test('an unsigned tree is not a copy, and is still reported as present', () => {
   assert.equal(prepare.stdout.trim(), '');
 });
 
+test('preparation does not reuse a working copy of another Git version', () => {
+  const space = workspace('git-prepare-version-');
+  gitTree(join(space.install, 'runtime', 'git', 'installed'));
+  gitTree(join(space.local, 'Shisa.ai', 'Jouzu', 'tools', 'git'));
+  // The signed fixture answers with Node's version, not the pinned Git version. No archive is
+  // supplied, so preparation must fail rather than claiming the old copy satisfies the upgrade.
+  const result = run(['-InstallRoot', space.install, '-Prepare'], machineEnv(space));
+  assert.notEqual(result.status, 0);
+  assert.equal(result.stdout.trim(), '');
+  assert.match(result.stderr, /bundled Git Bash package is missing/);
+});
+
 test('the report names every location and the version it read', () => {
   const space = workspace('git-report-');
   gitTree(join(space.install, 'runtime', 'git', 'installed'));

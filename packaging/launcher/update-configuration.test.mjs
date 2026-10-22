@@ -17,3 +17,7 @@ test('rejects missing keys and malformed repository names',()=>{
  for(const repository of ['','https://example/repo','../repo','owner/repo/extra'])assert.throws(()=>updateConfiguration({repository,launcherPublicKey,recipePublicKey,recipeBaseUrl:'https://updates.example.com/jouzu/'}));
  assert.throws(()=>updateConfiguration({repository:'owner/repo',launcherPublicKey:'',recipePublicKey}));
 });
+test('requires the launcher signature to bind the advertised release version',()=>{
+ const config=updateConfiguration({repository:'example/product',launcherPublicKey,recipePublicKey,recipeBaseUrl:'https://updates.example.com/jouzu/'});
+ assert.equal(config.launcher.plugins.updater.requireSignedVersion,true);
+});

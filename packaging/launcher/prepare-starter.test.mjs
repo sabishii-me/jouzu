@@ -22,7 +22,7 @@ function fixture(t) {
 
 test("offline preparation uses frozen lock and copies package content", () => {
 	const args = installArguments("app", "store");
-	for (const option of ["--offline", "--frozen-lockfile", "--ignore-scripts", "--prod", "--config.package-import-method=copy"]) assert.ok(args.includes(option));
+	for (const option of ["--offline", "--frozen-lockfile", "--ignore-scripts", "--prod", "--config.package-import-method=copy", "--config.verify-store-integrity=true", "--config.manage-package-manager-versions=false", "--config.package-manager-strict-version=true"]) assert.ok(args.includes(option));
 });
 
 test("materializes starter before publishing output", t => {
@@ -54,6 +54,13 @@ test("requires pinned manager and frozen lockfile", t => {
 	const input = fixture(t);
 	rmSync(join(input.recipe, "pnpm-lock.yaml"));
 	assert.throws(() => prepareStarter(input), /lockfile/);
+});
+
+test("refuses an older private pnpm before copying or executing inputs", t => {
+	const input = fixture(t);
+	writeFileSync(join(input.pnpmPackage, "package.json"), JSON.stringify({ name: "pnpm", version: "10.21.0" }));
+	assert.throws(() => prepareStarter(input, () => assert.fail("must not run an older package manager")), /Wrong private pnpm package/);
+	assert.equal(existsSync(input.output), false);
 });
 
 test("refuses output inside a build input", t => {

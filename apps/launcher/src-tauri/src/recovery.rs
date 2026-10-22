@@ -70,7 +70,11 @@ mod tests {
         std::fs::create_dir_all(dir.path().join("updates")).unwrap();
         let lock = dir.path().join("updates/operation.lock");
         std::fs::write(&lock, "owner").unwrap();
-        assert!(restore_bundled(dir.path(), dir.path()).unwrap_err().contains("interrupted"));
+        let error = restore_bundled(dir.path(), dir.path()).unwrap_err();
+        #[cfg(windows)]
+        assert!(error.contains("interrupted"));
+        #[cfg(not(windows))]
+        assert!(error.contains("locking is not available on this platform"));
         assert_eq!(std::fs::read_to_string(lock).unwrap(), "owner");
     }
 }

@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { installArguments, PNPM_VERSION } from './prepare-starter.mjs';
 import { assertInstalledTarget } from './installed-target.mjs';
 import { verifyRuntime } from './verify-runtime.mjs';
+import { assertUpdateRuntime } from './runtime-requirements.mjs';
 
 /** Stage only. The caller must authenticate the recipe before calling this function.
  * No active-directory mutation, activation, network release discovery or user-data writes.
@@ -14,11 +15,14 @@ export async function stageJouzuUpdate({recipe, runtime, store, destination, tar
  const run = dependencies.run ?? runPnpm;
  const verify = dependencies.verify ?? verifyRuntime;
  const targetCheck = dependencies.targetCheck ?? assertInstalledTarget;
+ const runtimeCheck = dependencies.runtimeCheck ?? assertUpdateRuntime;
  const output = resolve(destination);
  if (existsSync(output)) throw new Error('Update destination already exists');
  const manifest = JSON.parse(readFileSync(join(recipe,'package.json'),'utf8'));
  if (manifest.packageManager !== `pnpm@${PNPM_VERSION}` || !manifest.dependencies?.jouzu || manifest.scripts || manifest.workspaces) throw new Error('Invalid managed recipe');
  if (!existsSync(join(recipe,'pnpm-lock.yaml'))) throw new Error('Frozen release lockfile required');
+ signal?.throwIfAborted();
+ runtimeCheck(runtime);
  const temporary = `${output}.staging-${randomUUID()}`;
  mkdirSync(temporary);
  try {

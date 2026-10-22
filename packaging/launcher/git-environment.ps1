@@ -93,10 +93,14 @@ if ($Report) {
  exit 0
 }
 
-# Jouzu's own copies resolve first. A Git Bash this PC already has answers a launch, and never a
-# preparation or an installation.
-foreach ($info in @($bundledInfo, $managedInfo)) {
- if ($info) { Write-Output $info.path; exit 0 }
+# Launches may use an existing copy. Preparation and explicit installation require the pinned
+# bundled version, so a full installer does not leave a working but outdated Git in place.
+if ($Prepare -or $Install) {
+ if ($bundledInfo -and $bundledInfo.git -eq 'git version 2.56.0.windows.2') { Write-Output $bundledInfo.path; exit 0 }
+} else {
+ foreach ($info in @($bundledInfo, $managedInfo)) {
+  if ($info) { Write-Output $info.path; exit 0 }
+ }
 }
 if (-not ($Prepare -or $Install)) {
  if ($systemInfo) { Write-Output $systemInfo.path; exit 0 }
@@ -107,11 +111,11 @@ $parent = Join-Path $InstallRoot 'runtime\git'
 New-Item -ItemType Directory -Path $parent -Force | Out-Null
 if (-not (Test-Path -LiteralPath $archive -PathType Leaf)) {
  if (-not $Install) { throw 'The bundled Git Bash package is missing. Repair the installation.' }
- $url = 'https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.5/PortableGit-2.55.0.5-64-bit.7z.exe'
+ $url = 'https://github.com/git-for-windows/git/releases/download/v2.56.0.windows.2/PortableGit-2.56.0.2-64-bit.7z.exe'
  Invoke-WebRequest -Uri $url -OutFile $archive
 }
 $hash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
-if ($hash -ne '5aa8a20f6e9abb2c755f0e73c91c687701a46b309ad84a0ca6509380fa4ae290') {
+if ($hash -ne '075e158ef8e1f0ab80b347e245405d3eca735c2dc88fd8e032e137d0ca61f61b') {
  if (-not $Install) { throw 'PortableGit integrity verification failed' }
  Remove-Item -LiteralPath $archive -Force
  throw 'PortableGit integrity verification failed; the download was discarded'
@@ -130,7 +134,8 @@ try {
  . (Join-Path $PSScriptRoot 'extract-portable-git.ps1')
  $exitCode = Invoke-PortableGitExtraction $archive $stage
  $deadline = [DateTime]::UtcNow.AddSeconds(30)
- if ($exitCode -ne 0 -or -not (Get-GitEnvironment $stage)) { throw 'PortableGit preparation failed' }
+ $preparedInfo = if ($exitCode -eq 0) { Get-GitEnvironment $stage } else { $null }
+ if (-not $preparedInfo -or $preparedInfo.git -ne 'git version 2.56.0.windows.2') { throw 'PortableGit preparation failed' }
  if (Test-Path -LiteralPath $destination) {
   $backup = Join-Path $parent ('replaced-' + [guid]::NewGuid().ToString('N'))
   Move-Item -LiteralPath $destination -Destination $backup

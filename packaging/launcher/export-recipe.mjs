@@ -3,6 +3,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSyn
 import { packageRootFromConsumer } from "./package-root.mjs";
 import { dirname, basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { PNPM_VERSION } from "./prepare-starter.mjs";
 
 /** Export curated package content without its installed dependency tree.
  * Source must have completed Jouzu's exact patch/build qualification first.
@@ -54,7 +55,7 @@ export function exportRecipe(source, output) {
 		const packed = JSON.parse(result.stdout)[0];
 		overrides[name] = `file:artifacts/${packed.filename}`;
 	}
-	const recipe = { name: "jouzu-managed-installation", private: true, packageManager: "pnpm@10.21.0", dependencies: { jouzu: overrides.jouzu }, pnpm: { overrides } };
+	const recipe = { name: "jouzu-managed-installation", private: true, packageManager: `pnpm@${PNPM_VERSION}`, dependencies: { jouzu: overrides.jouzu }, pnpm: { overrides } };
 	writeFileSync(join(destination, "package.json"), `${JSON.stringify(recipe, null, 2)}\n`);
 	return recipe;
 }

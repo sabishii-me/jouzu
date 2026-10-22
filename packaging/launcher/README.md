@@ -32,9 +32,11 @@ The launcher binaries come from the Tauri CLI (`tauri build --no-bundle`), which
 frontend into them; a binary from a plain `cargo build` would load the development URL instead, so the
 packaging step runs the launcher's own production build check and refuses to bundle one.
 
-Pinned and hash-verified: Node 24.19.0 from nodejs.org (SHA-256 checked against `SHASUMS256.txt`),
-PortableGit 2.55.0.5 from git-for-windows (pinned SHA-256), and pnpm 10.21.0. `NOTICES.md` lists the
-bundled components and their licences.
+Pinned inputs: Node 24.22.1 from nodejs.org (the Windows x64 ZIP's pinned SHA-256 must also
+match `SHASUMS256.txt`), PortableGit 2.56.0.2 from git-for-windows (release
+`v2.56.0.windows.2`, pinned SHA-256), and pnpm 10.34.7 from npm (registry integrity checked
+by npm during the private build-tools installation). Windows Terminal stays at 1.25.2733.0.
+`NOTICES.md` lists the bundled components and their licences.
 
 ## Components
 
@@ -89,7 +91,7 @@ npm run test:node -- packaging/launcher/stage-application.test.mjs
 node packaging/launcher/prepare-starter.mjs <recipe> <node-runtime> <pnpm-package> <seeded-store> <new-output>
 ```
 
-The recipe contains `package.json`, `pnpm-lock.yaml`, and optional `patches/`. Pin `packageManager` to `pnpm@10.21.0`. The supplied pnpm package must match. Build on the target OS/architecture using qualified, authenticated inputs. The script does not download or authenticate those inputs itself.
+The recipe contains `package.json`, `pnpm-lock.yaml`, and optional `patches/`. Pin `packageManager` to `pnpm@10.34.7`. The supplied pnpm package must match. Build on the target OS/architecture using qualified, authenticated inputs. The script does not download or authenticate those inputs itself.
 
 The resulting directory contains `node/`, `pnpm/`, and installed `app/`. Installation uses a frozen lock, production dependencies, disabled lifecycle scripts, a hoisted layout and copied package content. The source store is not copied: shipping a second copy of package content is not required for startup. Packages requiring build scripts must be explicitly prepared and qualified separately; this command does not silently enable scripts.
 
@@ -107,6 +109,50 @@ own key pairs:
 `update-configuration.mjs` writes both feed addresses and both public keys into the build, so an
 installation only follows the address it was built with and only accepts a release signed by a key it
 already trusts.
+
+### Updating an existing installation's runtime
+
+Node and pnpm are updated by the **full installer**, not by either in-app update feed. The
+launcher-only `-update.exe` does not carry them. A signed Jouzu recipe updates the application
+using the installed runtime; it does not replace that runtime. The launcher's **Repair Jouzu**
+action selects the bundled application again and does not update Node or pnpm either.
+
+For an installation with Node 24.19.0 or pnpm 10.21.0, install a full package built with the
+pins above before applying a new Jouzu recipe:
+
+1. Download `jouzu-win-x64-v<jouzu version>-setup.exe` from the official Jouzu release and
+   check its Windows publisher signature. Do not use the smaller `-update.exe`.
+2. Close Jouzu sessions and the launcher.
+3. Run the full installer with `/UPDATE` to replace files in the registered installation
+   folder without uninstalling first. For an interactive install without `/UPDATE`, choose
+   add/reinstall for the same version, or the option not to uninstall when upgrading.
+   Uninstalling first removes downloaded application slots, so it is not the same operation.
+4. Check the installed runtimes in PowerShell, setting `$installRoot` to that installation
+   folder:
+
+   ```powershell
+   & "$installRoot\runtime\node\node.exe" --version
+   & "$installRoot\runtime\node\node.exe" "$installRoot\runtime\pnpm\bin\pnpm.cjs" --version --config.manage-package-manager-versions=false
+   & "$installRoot\runtime\git\installed\cmd\git.exe" --version
+   ```
+
+   Expect `v24.22.1`, `10.34.7`, and `git version 2.56.0.windows.2`. If Git preparation
+   failed, use the Git Bash repair action in the launcher's System section and check again.
+5. Reopen Jouzu and confirm the selected application and settings, then retry its update.
+
+The full installer replaces the bundled application and Node/pnpm files. With no uninstall,
+`updates/active.json`, downloaded slots and `data/` remain in the managed root. Full-installer
+Git preparation replaces a working older bundled Git with the verified pinned version; a
+launcher-only install does not prepare or replace runtime components. `/UPDATE` refuses to
+replace the full runtime while Jouzu sessions are running.
+
+The updated staging helper checks the installed Node executable and private pnpm metadata and
+version before running an install. It requires Node 24.22.1 or a newer Node 24 release
+and pnpm 10.34.7. A failing check produces a full-installer repair instruction without
+activating an application slot. If Node itself cannot start the helper, run the full installer
+directly. pnpm's automatic package-manager download is disabled; a recipe's `packageManager`
+field is not a runtime delivery channel. These checks arrive with the updated launcher support
+files; they do not retrofit an older launcher until it is replaced.
 
 ## Jouzu updates
 
@@ -173,3 +219,11 @@ the Rust tests, and exercises the interface with mocked IPC. It does not sign, p
 update, and a green check is not installed-upgrade acceptance: verify that a launcher replacement
 retains the selected Jouzu version and that a Jouzu update retains user configuration, and test
 uninstall separately from a launcher upgrade.
+
+Runtime-pin changes also require native existing-install acceptance: install the full package
+over an older Node/pnpm/Git installation with `/UPDATE`, verify all three versions, and confirm
+that an existing active slot and user-data marker are unchanged. Run the same check after a
+launcher-only update: runtime versions must remain unchanged, and a Jouzu update on the older
+runtime must request the full installer. Check the signed recipe again after the full repair,
+including its frozen install, health check and activation. Linux packaging tests do not establish
+these Windows installation results.

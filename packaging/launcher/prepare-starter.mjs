@@ -4,10 +4,10 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from "node:pat
 import { assertInstalledTarget } from "./installed-target.mjs";
 import { fileURLToPath } from "node:url";
 
-export const PNPM_VERSION = "10.21.0";
+export const PNPM_VERSION = "10.34.7";
 
 export function installArguments(app, store) {
-	return ["install", "--dir", app, "--store-dir", store, "--offline", "--frozen-lockfile", "--prod", "--ignore-scripts", "--config.node-linker=hoisted", "--config.package-import-method=copy", "--config.verify-store-integrity=true"];
+	return ["install", "--dir", app, "--store-dir", store, "--offline", "--frozen-lockfile", "--prod", "--ignore-scripts", "--config.node-linker=hoisted", "--config.package-import-method=copy", "--config.verify-store-integrity=true", "--config.manage-package-manager-versions=false", "--config.package-manager-strict-version=true"];
 }
 
 function run(executable, args, cwd, env) {
@@ -59,7 +59,7 @@ export function prepareStarter({ recipe, nodeRuntime, pnpmPackage, store, output
 		const node = join(temporary, "node", nodeRelative);
 		const pnpm = join(temporary, "pnpm", "bin", "pnpm.cjs");
 		const env = { ...process.env, JOUZU_NO_UPDATE: "1", PI_SKIP_VERSION_CHECK: "1", CI: "true" };
-		if (execute(node, [pnpm, "--version"], temporary, env) !== PNPM_VERSION) throw new Error("Private pnpm version check failed");
+		if (execute(node, [pnpm, "--version", "--config.manage-package-manager-versions=false"], temporary, env) !== PNPM_VERSION) throw new Error("Private pnpm version check failed");
 		execute(node, [pnpm, ...installArguments(app, resolve(store))], temporary, env);
 		const cli = join(app, "node_modules", "jouzu", "dist", "cli.js");
 		if (!existsSync(cli)) throw new Error("Installed Jouzu CLI is missing");

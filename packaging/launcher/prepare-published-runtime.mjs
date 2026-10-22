@@ -46,7 +46,7 @@ export async function preparePublishedRuntime({version,output,pnpm}) {
  const recipe=join(root,'recipe');
  exportRecipe(join(source,'package'),recipe);
  const store=join(root,'store');
- run(process.execPath,[resolve(pnpm),'install','--dir',recipe,'--store-dir',store,'--prod','--ignore-scripts','--config.node-linker=hoisted','--config.package-import-method=copy'],root);
+ run(process.execPath,[resolve(pnpm),'install','--dir',recipe,'--store-dir',store,'--prod','--ignore-scripts','--config.node-linker=hoisted','--config.package-import-method=copy','--config.manage-package-manager-versions=false','--config.package-manager-strict-version=true'],root);
  // Reinstall from the generated frozen lock in a distinct directory.
  const app=join(root,'app');mkdirSync(app);
  for(const file of ['package.json','pnpm-lock.yaml','artifacts'])cpSync(join(recipe,file),join(app,file),{recursive:true});

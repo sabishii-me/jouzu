@@ -3,6 +3,7 @@ import { appendFileSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:
 import { join } from 'node:path';
 import { authenticateRecipe } from './authenticate-recipe.mjs';
 import { installJouzuUpdate } from './install-update.mjs';
+import { RUNTIME_REPAIR_CODE, RUNTIME_REPAIR_MESSAGE } from './runtime-requirements.mjs';
 
 // Backend-only JSON bridge. No URLs/keys supplied by renderer or command line.
 const [install,managed,action]=process.argv.slice(2);
@@ -49,6 +50,6 @@ try {
 }catch(error){
  appendLog(`update ${typeof action==='string'?action:'unknown'} failed${typeof error?.code==='string'?` code=${error.code}`:''}`);
  // Package or network errors may contain credential-bearing URLs; never echo them.
- console.log(JSON.stringify({error:'Jouzu update failed. Check the update source, permissions and available disk space; the active version was not intentionally removed.'}));
+ console.log(JSON.stringify({error:error?.code === RUNTIME_REPAIR_CODE ? RUNTIME_REPAIR_MESSAGE : 'Jouzu update failed. Check the update source, permissions and available disk space; the active version was not intentionally removed.'}));
  process.exitCode=1;
 }
