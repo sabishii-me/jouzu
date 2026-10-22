@@ -29,6 +29,12 @@ warning-level findings never block or annotate content. The text scanner cannot
 check images; an inspected result containing one is treated as an incomplete
 check.
 
+Mentions of `curl`, `wget`, `bash -c`, and `powershell` produce warnings because
+these commands also appear in ordinary documentation. A skill containing those
+names can load; its warnings remain available in `/textguard reports`. Other
+findings, such as instruction overrides or hidden directional characters, can
+still require approval.
+
 ## Modes
 
 | Command | Launch flag | Effect |

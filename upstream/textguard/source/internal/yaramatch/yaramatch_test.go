@@ -1,3 +1,4 @@
+// Modified to keep command-name matches advisory in bundled rules.
 package yaramatch
 
 import (
@@ -587,6 +588,27 @@ func TestFindingFieldsArePopulated(t *testing.T) {
 	}
 	if !strings.Contains(f.Detail, "raw text") {
 		t.Errorf("detail should mention 'raw text', got %q", f.Detail)
+	}
+}
+
+func TestCommandNamesAreWarnings(t *testing.T) {
+	m, err := New(true, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, input := range []string{
+		"curl -sS https://api.example.com/items",
+		"wget https://example.com/archive.tar.gz",
+		"bash -c 'printf hello'",
+		"powershell -Command Get-Date",
+	} {
+		t.Run(input, func(t *testing.T) {
+			findings := m.Match(input, input)
+			f := findByKind(findings, "yara:command_injection")
+			if f == nil || f.Severity != "warn" {
+				t.Fatalf("expected advisory command finding, got %+v", findings)
+			}
+		})
 	}
 }
 
