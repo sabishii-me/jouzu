@@ -8,7 +8,7 @@ Pushes to `main` and pull requests run a required tier on Ubuntu unless they cha
 | --- | --- | --- |
 | `node` | Ubuntu and macOS, Node 22 | Source-checkout build, static checks, runner tests, Session UI and CLI suites; in full qualification, Ubuntu also runs the networked extension check |
 | `endurance` | Ubuntu, Node 22 | Flow-control cases that cross exact production storage limits (`@endurance`) |
-| `legacy-linux-static-fetch` | Rocky Linux 8 (glibc 2.28), Node 22.19.0 | Build and release-owned dependency loading without Camoufox |
+| `legacy-linux-static-fetch` | Rocky Linux 8 (glibc 2.28), Node 22.23.4 | Build, default dependency loading, and isolated optional browser-client imports without the unused IP-discovery transport; no browser launch |
 | `release-artifacts` | Ubuntu, Node 22 | Locked install, build, static checks, release-metadata and package-content tests, then the candidate package and updater fixtures |
 | `packed-install` | Ubuntu and macOS | Local, `npm exec`, and global installation from the candidate, one step per scope |
 | `automatic-update` | Ubuntu and macOS | Update success, then rollback from a broken package, one step each |
@@ -27,7 +27,7 @@ Hosted CI tests Node 22, the minimum version Jouzu supports. Windows runs also t
 A push or pull request runs:
 
 - `node (ubuntu-latest, 22)`: the canonical CLI suite and the test duration budgets;
-- `legacy-linux-static-fetch`: the glibc 2.28 floor and Node 22.19.0;
+- `legacy-linux-static-fetch`: the glibc 2.28 floor and Node 22.23.4;
 - `python (ubuntu-latest)`; and
 - `endurance` when the change touches flow control.
 

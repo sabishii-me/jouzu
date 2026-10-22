@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { registerHooks } from "node:module";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -451,11 +452,46 @@ async function importRuntimePackage(paths: CamoufoxRuntimePaths, name: string): 
 	return import(pathToFileURL(resolve(packageRoot, target)).href) as Promise<Record<string, unknown>>;
 }
 
+// Camoufox imports its IP-discovery client even when geoip is disabled. Resolve only
+// that import to a lazy constructor so default browsing does not load Impit's native
+// binary. No upstream files are changed; other callers retain normal resolution.
+export async function importJouzuCamoufoxModules(paths: CamoufoxRuntimePaths): Promise<{
+	camoufoxPi: Record<string, unknown>;
+	camoufoxJs: Record<string, unknown>;
+}> {
+	const ipModuleUrl = pathToFileURL(join(realpathSync(runtimePackagePath(paths, "camoufox-js")), "dist", "ip.js")).href;
+	const deferredImpit = `
+import { createRequire } from "node:module";
+const require = createRequire(${JSON.stringify(ipModuleUrl)});
+export class Impit {
+	constructor(...args) {
+		const { Impit: NativeImpit } = require("impit");
+		return new NativeImpit(...args);
+	}
+}
+`;
+	const deferredUrl = `data:text/javascript,${encodeURIComponent(deferredImpit)}`;
+	const hooks = registerHooks({
+		resolve(specifier, context, nextResolve) {
+			if (specifier === "impit" && context.parentURL === ipModuleUrl && context.conditions.includes("import")) {
+				return { url: deferredUrl, shortCircuit: true };
+			}
+			return nextResolve(specifier, context);
+		},
+	});
+	try {
+		const camoufoxPi = await importRuntimePackage(paths, "@the-forge-flow/camoufox-pi");
+		const camoufoxJs = await importRuntimePackage(paths, "camoufox-js");
+		return { camoufoxPi, camoufoxJs };
+	} finally {
+		hooks.deregister();
+	}
+}
+
 async function loadCamoufoxRuntime(stateDir: string, signal?: AbortSignal): Promise<InstalledCamoufoxRuntime> {
 	const paths = await ensureJouzuCamoufoxRuntimeInstalled(stateDir, signal);
 	process.env.CAMOUFOX_INSTALL_DIR ??= join(paths.root, "browser");
-	const camoufoxPi = await importRuntimePackage(paths, "@the-forge-flow/camoufox-pi");
-	const camoufoxJs = await importRuntimePackage(paths, "camoufox-js");
+	const { camoufoxPi, camoufoxJs } = await importJouzuCamoufoxModules(paths);
 	const playwright = await importRuntimePackage(paths, "playwright-core");
 	const pkgman = (await import(
 		pathToFileURL(join(runtimePackagePath(paths, "camoufox-js"), "dist", "pkgman.js")).href
@@ -470,6 +506,7 @@ async function loadCamoufoxRuntime(stateDir: string, signal?: AbortSignal): Prom
 				const launchOptions = withJouzuCamoufoxLibraryPath(
 					await (camoufoxJs.launchOptions as (options: unknown) => Promise<Record<string, unknown>>)({
 						headless: true,
+						geoip: false,
 						...(blockWebGl ? { block_webgl: true, i_know_what_im_doing: true } : {}),
 					}),
 				);

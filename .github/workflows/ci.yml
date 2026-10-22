@@ -285,6 +285,9 @@ jobs:
       - name: Load release-owned dependencies without Camoufox
         run: node scripts/run-tests.mjs packages/cli/test/release-extensions.test.mjs
         timeout-minutes: 5
+      - name: Verify optional browser client imports on glibc 2.28
+        run: node scripts/test-camoufox-client-import.mjs
+        timeout-minutes: 6
       - name: Verify the default installation excludes Camoufox
         shell: bash
         run: |

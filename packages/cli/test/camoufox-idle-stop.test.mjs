@@ -375,7 +375,10 @@ const camoufoxFake = {
 		"}",
 		"export const __test_wrapTool__ = (definition) => ({ execute: definition.execute });",
 	].join("\n"),
-	camoufoxJs: ["export const launchOptions = async () => ({});"].join("\n"),
+	camoufoxJs: [
+		"export const launchCalls = [];",
+		"export const launchOptions = async (options) => { launchCalls.push(options); return {}; };",
+	].join("\n"),
 	playwright: [
 		"export const firefox = {",
 		"	launch: async () => ({ newContext: async () => ({}), version: () => 'fake' }),",
@@ -476,6 +479,25 @@ const extensionHarness = () => {
 	const armed = () => timers.filter((timer) => !timer.cancelled && !timer.fired);
 	return { tools, handlers, timers, armed, pi, scheduleIdleStop };
 };
+
+test("the production browser launcher explicitly disables IP discovery", async () => {
+	const stateDir = mkdtempSync(join(tmpdir(), "jouzu-camoufox-no-geoip-"));
+	const { tools, handlers, pi, scheduleIdleStop } = extensionHarness();
+	try {
+		const paths = writeFakeRuntime(stateDir);
+		createJouzuCamoufoxExtension(pi, stateDir, { scheduleIdleStop });
+		await tools.get("tff-fetch_url").execute("call-1", { url: "https://example.com" });
+		const camoufoxPi = await fakeCamoufoxPi(stateDir);
+		await camoufoxPi.clients[0].options.launcher.launch();
+		const camoufoxJs = await import(
+			pathToFileURL(join(paths.installRoot, "node_modules", "camoufox-js", "index.js")).href
+		);
+		assert.deepEqual(camoufoxJs.launchCalls, [{ headless: true, geoip: false }]);
+	} finally {
+		await handlers.get("session_shutdown")?.();
+		rmSync(stateDir, { recursive: true, force: true });
+	}
+});
 
 test("an idle stop closes the loaded browser and a later call reloads it", async () => {
 	const stateDir = mkdtempSync(join(tmpdir(), "jouzu-camoufox-idle-"));
