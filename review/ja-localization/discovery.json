@@ -1,0 +1,2025 @@
+{
+  "excluded_prefix": "upstream/",
+  "matches": [
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        117,
+        131,
+        136
+      ],
+      "path": "apps/launcher/e2e/onboarding.spec.ts",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/apps/launcher/e2e/onboarding.spec.ts"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        12,
+        13,
+        14
+      ],
+      "path": "apps/launcher/src/i18n.test.ts",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/apps/launcher/src/i18n.test.ts"
+    },
+    {
+      "disposition": "indexed-source",
+      "matched_lines": [
+        1,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69,
+        70,
+        71,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94,
+        96,
+        101,
+        102
+      ],
+      "path": "apps/launcher/src/i18n.ts",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/apps/launcher/src/i18n.ts"
+    },
+    {
+      "disposition": "indexed-source",
+      "matched_lines": [
+        3,
+        4,
+        5
+      ],
+      "path": "apps/launcher/src/recovery-text.ts",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/apps/launcher/src/recovery-text.ts"
+    },
+    {
+      "disposition": "indexed-source",
+      "matched_lines": [
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        55,
+        56,
+        57
+      ],
+      "path": "apps/launcher/src/update-preview.tsx",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/apps/launcher/src/update-preview.tsx"
+    },
+    {
+      "disposition": "indexed-source",
+      "matched_lines": [
+        73
+      ],
+      "path": "docs/configuration.md",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/docs/configuration.md"
+    },
+    {
+      "disposition": "indexed-source",
+      "matched_lines": [
+        46
+      ],
+      "path": "docs/localization-cjk-verification.md",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/docs/localization-cjk-verification.md"
+    },
+    {
+      "disposition": "indexed-source",
+      "matched_lines": [
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        64,
+        65,
+        111,
+        112,
+        113,
+        114,
+        115,
+        116,
+        117,
+        118,
+        119,
+        120,
+        121,
+        122,
+        123,
+        124,
+        125,
+        126,
+        127,
+        128,
+        129,
+        130,
+        131,
+        132,
+        133,
+        134,
+        135,
+        136,
+        137,
+        138,
+        139,
+        140,
+        141,
+        142,
+        143,
+        144,
+        145,
+        149,
+        150,
+        151
+      ],
+      "path": "docs/localization-zh-hans-glossary.md",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/docs/localization-zh-hans-glossary.md"
+    },
+    {
+      "disposition": "indexed-source",
+      "matched_lines": [
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69,
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87,
+        131,
+        132,
+        133,
+        134,
+        135,
+        136,
+        137,
+        138,
+        139,
+        140,
+        141,
+        142,
+        143,
+        144,
+        145,
+        146,
+        147,
+        148,
+        149,
+        150,
+        151,
+        152,
+        153,
+        154,
+        155,
+        156,
+        157,
+        158,
+        159,
+        160,
+        161,
+        162,
+        163,
+        164,
+        165
+      ],
+      "path": "docs/localization-zh-hant-glossary.md",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/docs/localization-zh-hant-glossary.md"
+    },
+    {
+      "disposition": "indexed-source",
+      "matched_lines": [
+        28
+      ],
+      "path": "docs/localization.md",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/docs/localization.md"
+    },
+    {
+      "disposition": "indexed-source",
+      "matched_lines": [
+        213
+      ],
+      "path": "docs/palette-ux.md",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/docs/palette-ux.md"
+    },
+    {
+      "disposition": "indexed-source",
+      "matched_lines": [
+        16,
+        21
+      ],
+      "path": "packages/cli/locales/catalog-status.json",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/locales/catalog-status.json"
+    },
+    {
+      "disposition": "indexed-source",
+      "matched_lines": [
+        6,
+        7
+      ],
+      "path": "packages/cli/locales/catalog.lock.json",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/locales/catalog.lock.json"
+    },
+    {
+      "disposition": "indexed-source",
+      "matched_lines": [
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "path": "packages/cli/profiles/ja/assets/APPEND_SYSTEM.md",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/profiles/ja/assets/APPEND_SYSTEM.md"
+    },
+    {
+      "disposition": "indexed-source",
+      "matched_lines": [
+        189,
+        195,
+        196,
+        200
+      ],
+      "path": "packages/cli/src/command-report.ts",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/src/command-report.ts"
+    },
+    {
+      "disposition": "indexed-source",
+      "matched_lines": [
+        38
+      ],
+      "path": "packages/cli/src/human-messages.ts",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/src/human-messages.ts"
+    },
+    {
+      "disposition": "indexed-source",
+      "matched_lines": [
+        4,
+        5,
+        42,
+        43
+      ],
+      "path": "packages/cli/src/language-choice.ts",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/src/language-choice.ts"
+    },
+    {
+      "disposition": "indexed-source",
+      "matched_lines": [
+        41,
+        45,
+        54,
+        55,
+        125,
+        126
+      ],
+      "path": "packages/cli/src/language-contract.ts",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/src/language-contract.ts"
+    },
+    {
+      "disposition": "indexed-source",
+      "matched_lines": [
+        31,
+        46
+      ],
+      "path": "packages/cli/src/language-settings.ts",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/src/language-settings.ts"
+    },
+    {
+      "disposition": "indexed-source",
+      "matched_lines": [
+        302
+      ],
+      "path": "packages/cli/src/locale-catalog.ts",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/src/locale-catalog.ts"
+    },
+    {
+      "disposition": "indexed-source",
+      "matched_lines": [
+        82
+      ],
+      "path": "packages/cli/src/profile-choice.ts",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/src/profile-choice.ts"
+    },
+    {
+      "disposition": "indexed-source",
+      "matched_lines": [
+        48,
+        49
+      ],
+      "path": "packages/cli/src/subagents/language.ts",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/src/subagents/language.ts"
+    },
+    {
+      "disposition": "indexed-source",
+      "matched_lines": [
+        80,
+        691,
+        692,
+        697,
+        698
+      ],
+      "path": "packages/cli/src/ui-locale.ts",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/src/ui-locale.ts"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        7,
+        22,
+        24,
+        108,
+        110,
+        219
+      ],
+      "path": "packages/cli/test/args.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/args.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        108
+      ],
+      "path": "packages/cli/test/background-resources.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/background-resources.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        34,
+        35,
+        76,
+        86
+      ],
+      "path": "packages/cli/test/camoufox-adapter.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/camoufox-adapter.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        13
+      ],
+      "path": "packages/cli/test/camoufox-imports.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/camoufox-imports.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        169,
+        170,
+        171,
+        172,
+        173,
+        174,
+        175,
+        187,
+        190,
+        191,
+        192,
+        228
+      ],
+      "path": "packages/cli/test/catalog-command.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/catalog-command.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        131,
+        139,
+        146
+      ],
+      "path": "packages/cli/test/catalog-failure.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/catalog-failure.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        149,
+        152,
+        280
+      ],
+      "path": "packages/cli/test/catalog-settings-language-apply.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/catalog-settings-language-apply.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        127,
+        144,
+        788,
+        799,
+        1774,
+        1776,
+        1806,
+        1820
+      ],
+      "path": "packages/cli/test/catalog-settings.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/catalog-settings.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        54,
+        59,
+        61
+      ],
+      "path": "packages/cli/test/catalog-sources.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/catalog-sources.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        16,
+        37,
+        45,
+        50,
+        56,
+        57,
+        67,
+        87,
+        90,
+        109,
+        110,
+        111,
+        113,
+        114,
+        115,
+        116,
+        118,
+        121,
+        133,
+        140,
+        141,
+        145
+      ],
+      "path": "packages/cli/test/cjk.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/cjk.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        433,
+        496,
+        563,
+        570,
+        652,
+        856,
+        906,
+        1096
+      ],
+      "path": "packages/cli/test/cli.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/cli.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        106,
+        110,
+        141,
+        144,
+        164,
+        224,
+        225,
+        230
+      ],
+      "path": "packages/cli/test/command-report.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/command-report.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        145,
+        152,
+        159,
+        166,
+        173
+      ],
+      "path": "packages/cli/test/context-clamp.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/context-clamp.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        66,
+        92,
+        93,
+        94,
+        95,
+        96,
+        97,
+        117
+      ],
+      "path": "packages/cli/test/doctor-upstream-boundary.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/doctor-upstream-boundary.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        79,
+        80,
+        81,
+        82,
+        83
+      ],
+      "path": "packages/cli/test/doctor-upstream-constraint.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/doctor-upstream-constraint.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        87,
+        96,
+        97,
+        458,
+        472,
+        568,
+        846,
+        847,
+        848,
+        871,
+        905,
+        906,
+        928,
+        936,
+        940,
+        945,
+        950,
+        955,
+        960
+      ],
+      "path": "packages/cli/test/doctor.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/doctor.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        1,
+        3,
+        4,
+        5,
+        6,
+        7,
+        9,
+        10
+      ],
+      "path": "packages/cli/test/fixtures/cjk/要件　仕様.md",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/fixtures/cjk/%E8%A6%81%E4%BB%B6%E3%80%80%E4%BB%95%E6%A7%98.md"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        126,
+        146
+      ],
+      "path": "packages/cli/test/flow-delivery-format.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/flow-delivery-format.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        18,
+        23
+      ],
+      "path": "packages/cli/test/flow-goal-commands.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/flow-goal-commands.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        91
+      ],
+      "path": "packages/cli/test/flow-history-reader.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/flow-history-reader.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        57,
+        86
+      ],
+      "path": "packages/cli/test/flow-history-receipts.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/flow-history-receipts.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        51,
+        61
+      ],
+      "path": "packages/cli/test/flow-journal-checkpoint.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/flow-journal-checkpoint.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        11,
+        38,
+        39
+      ],
+      "path": "packages/cli/test/flow-journal-recovery.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/flow-journal-recovery.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        73,
+        74,
+        96,
+        103,
+        104,
+        116,
+        148,
+        189,
+        202,
+        235,
+        236,
+        275
+      ],
+      "path": "packages/cli/test/flow-locale-wiring.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/flow-locale-wiring.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        48
+      ],
+      "path": "packages/cli/test/flow-model-input.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/flow-model-input.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        12,
+        73,
+        99
+      ],
+      "path": "packages/cli/test/flow-preservation.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/flow-preservation.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        161,
+        299,
+        456,
+        472,
+        490,
+        491
+      ],
+      "path": "packages/cli/test/flow-readable-status.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/flow-readable-status.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        16,
+        110,
+        112
+      ],
+      "path": "packages/cli/test/flow-result-envelope.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/flow-result-envelope.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        21,
+        58,
+        170
+      ],
+      "path": "packages/cli/test/flow-result-manifest.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/flow-result-manifest.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        478,
+        483,
+        610,
+        611,
+        617,
+        625,
+        626,
+        664,
+        674,
+        679,
+        682
+      ],
+      "path": "packages/cli/test/flow-scalar-storage.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/flow-scalar-storage.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        689,
+        778,
+        792,
+        811,
+        828,
+        896,
+        1123,
+        1148
+      ],
+      "path": "packages/cli/test/flow-session-ingress-waits.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/flow-session-ingress-waits.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        440
+      ],
+      "path": "packages/cli/test/flow-submissions.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/flow-submissions.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        793,
+        826
+      ],
+      "path": "packages/cli/test/flow-task-adapter.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/flow-task-adapter.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        25
+      ],
+      "path": "packages/cli/test/flow-task-continuation-integration.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/flow-task-continuation-integration.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        96,
+        97,
+        98,
+        99,
+        100,
+        103
+      ],
+      "path": "packages/cli/test/help.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/help.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        30,
+        31,
+        33,
+        34,
+        35
+      ],
+      "path": "packages/cli/test/keybindings.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/keybindings.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        40,
+        52
+      ],
+      "path": "packages/cli/test/language-artifact-policy-runtime.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/language-artifact-policy-runtime.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        60,
+        69,
+        75,
+        90,
+        91,
+        92,
+        125,
+        136,
+        156,
+        158
+      ],
+      "path": "packages/cli/test/language-choice.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/language-choice.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        161,
+        164,
+        199,
+        205,
+        211,
+        212,
+        213,
+        306,
+        307,
+        314,
+        315,
+        321,
+        322
+      ],
+      "path": "packages/cli/test/language-contract-resolution.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/language-contract-resolution.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        164,
+        165,
+        314,
+        360,
+        361,
+        362,
+        363
+      ],
+      "path": "packages/cli/test/language-contract.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/language-contract.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        56,
+        60,
+        65
+      ],
+      "path": "packages/cli/test/language-runtime-callers.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/language-runtime-callers.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        198,
+        220,
+        231,
+        232,
+        233,
+        234,
+        236,
+        237,
+        240,
+        241,
+        245,
+        246,
+        383,
+        448,
+        469,
+        515,
+        516,
+        530,
+        531,
+        545,
+        560,
+        567,
+        574,
+        601,
+        659,
+        681,
+        682,
+        683,
+        686,
+        687,
+        690,
+        691,
+        696,
+        789,
+        790,
+        791,
+        796,
+        797,
+        804,
+        815,
+        837,
+        845,
+        855,
+        864,
+        877,
+        879,
+        885,
+        963,
+        964
+      ],
+      "path": "packages/cli/test/locale-catalog.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/locale-catalog.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        84,
+        85,
+        91,
+        92,
+        93,
+        94,
+        136
+      ],
+      "path": "packages/cli/test/locale-status.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/locale-status.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        145,
+        147,
+        174,
+        175,
+        198,
+        199,
+        226
+      ],
+      "path": "packages/cli/test/locale-support-state.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/locale-support-state.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        248,
+        254
+      ],
+      "path": "packages/cli/test/localization-deferral.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/localization-deferral.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        168,
+        169,
+        170,
+        171,
+        207
+      ],
+      "path": "packages/cli/test/model-picker-state.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/model-picker-state.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        370,
+        376,
+        609,
+        610,
+        611,
+        626,
+        1468
+      ],
+      "path": "packages/cli/test/model-picker.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/model-picker.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        68
+      ],
+      "path": "packages/cli/test/notifications.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/notifications.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        122,
+        123,
+        124,
+        125,
+        133,
+        134,
+        135,
+        136,
+        144,
+        145,
+        146,
+        147,
+        155,
+        156,
+        157,
+        158,
+        166,
+        167,
+        168,
+        169,
+        177,
+        178,
+        179,
+        180,
+        188,
+        189,
+        190,
+        191,
+        199,
+        200,
+        201,
+        202,
+        210,
+        211,
+        212,
+        213,
+        218,
+        232,
+        233,
+        234
+      ],
+      "path": "packages/cli/test/palette-golden.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/palette-golden.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        26,
+        27,
+        28,
+        29,
+        30,
+        36,
+        46,
+        50,
+        58,
+        60,
+        61,
+        62,
+        63
+      ],
+      "path": "packages/cli/test/paths.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/paths.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        26,
+        27,
+        28
+      ],
+      "path": "packages/cli/test/pi-import.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/pi-import.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        40,
+        240,
+        270,
+        295,
+        346,
+        350,
+        370,
+        400,
+        401,
+        402,
+        403,
+        404,
+        405,
+        406,
+        407,
+        408,
+        423
+      ],
+      "path": "packages/cli/test/presentation.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/presentation.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        38,
+        39,
+        62,
+        72,
+        73,
+        74
+      ],
+      "path": "packages/cli/test/profile-choice.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/profile-choice.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        151,
+        153
+      ],
+      "path": "packages/cli/test/profile-migration-command.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/profile-migration-command.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        419
+      ],
+      "path": "packages/cli/test/profile-migration.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/profile-migration.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        25
+      ],
+      "path": "packages/cli/test/profiles.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/profiles.test.mjs"
+    },
+    {
+      "disposition": "indexed-source",
+      "matched_lines": [
+        85
+      ],
+      "path": "packages/cli/test/protected-values.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/protected-values.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        320,
+        321,
+        323
+      ],
+      "path": "packages/cli/test/release-extensions.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/release-extensions.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        9
+      ],
+      "path": "packages/cli/test/resume.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/resume.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        36,
+        45,
+        57,
+        60,
+        73,
+        81,
+        93
+      ],
+      "path": "packages/cli/test/runtime-localization.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/runtime-localization.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        376,
+        427,
+        633,
+        646,
+        664,
+        674,
+        687,
+        1058
+      ],
+      "path": "packages/cli/test/scrollback.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/scrollback.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        60,
+        61,
+        62,
+        63,
+        69,
+        76,
+        78
+      ],
+      "path": "packages/cli/test/session-label-locale.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/session-label-locale.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        441
+      ],
+      "path": "packages/cli/test/session-label-service.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/session-label-service.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        10,
+        15,
+        36
+      ],
+      "path": "packages/cli/test/session-labels.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/session-labels.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        45,
+        81,
+        89,
+        90,
+        92,
+        96,
+        97,
+        99,
+        100,
+        101,
+        103,
+        124,
+        134,
+        158,
+        159,
+        164,
+        165,
+        170,
+        171,
+        196,
+        212,
+        217
+      ],
+      "path": "packages/cli/test/session-ui-golden.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/session-ui-golden.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        356,
+        360,
+        365
+      ],
+      "path": "packages/cli/test/shisa-logout.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/shisa-logout.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        243,
+        244,
+        245,
+        246
+      ],
+      "path": "packages/cli/test/shisa-onboarding.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/shisa-onboarding.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        62
+      ],
+      "path": "packages/cli/test/subagent-capabilities.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/subagent-capabilities.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        56,
+        57,
+        91,
+        92
+      ],
+      "path": "packages/cli/test/subagent-completion.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/subagent-completion.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        117,
+        192,
+        223
+      ],
+      "path": "packages/cli/test/subagent-context.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/subagent-context.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        10,
+        12,
+        20,
+        21,
+        88
+      ],
+      "path": "packages/cli/test/subagent-dashboard.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/subagent-dashboard.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        40,
+        1291
+      ],
+      "path": "packages/cli/test/subagent-integration.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/subagent-integration.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        13,
+        88,
+        108,
+        134,
+        135,
+        136,
+        137,
+        138,
+        139,
+        140
+      ],
+      "path": "packages/cli/test/subagent-render.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/subagent-render.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        21,
+        35,
+        64,
+        107
+      ],
+      "path": "packages/cli/test/subagent-trace.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/subagent-trace.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        10,
+        27,
+        41,
+        56,
+        100
+      ],
+      "path": "packages/cli/test/subagent-ux.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/subagent-ux.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        434,
+        442,
+        594,
+        595,
+        597,
+        598,
+        610,
+        689,
+        697,
+        710,
+        733,
+        737,
+        748,
+        758
+      ],
+      "path": "packages/cli/test/subagents.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/subagents.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        294,
+        317,
+        697
+      ],
+      "path": "packages/cli/test/terminal-clipboard.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/terminal-clipboard.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        21,
+        25,
+        29,
+        33,
+        34,
+        48,
+        51,
+        57,
+        61,
+        66,
+        67,
+        76,
+        77
+      ],
+      "path": "packages/cli/test/terminal-layout.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/terminal-layout.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        160,
+        220
+      ],
+      "path": "packages/cli/test/textguard-admission.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/textguard-admission.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        69
+      ],
+      "path": "packages/cli/test/textguard-native.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/textguard-native.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        11
+      ],
+      "path": "packages/cli/test/textguard-payload.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/textguard-payload.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        42,
+        142,
+        397,
+        398,
+        420,
+        519,
+        520,
+        521,
+        522,
+        523,
+        524,
+        531,
+        532,
+        533,
+        538,
+        539
+      ],
+      "path": "packages/cli/test/textguard-review.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/textguard-review.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        52,
+        174
+      ],
+      "path": "packages/cli/test/textguard-skills.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/textguard-skills.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        45,
+        46,
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87,
+        91,
+        92,
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        166,
+        167,
+        178,
+        238,
+        377,
+        378,
+        379,
+        391,
+        473,
+        508,
+        589,
+        605,
+        626,
+        631,
+        637,
+        643,
+        649,
+        655,
+        661,
+        680,
+        687,
+        693,
+        709,
+        730,
+        746,
+        759,
+        760,
+        761
+      ],
+      "path": "packages/cli/test/ui-locale.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/ui-locale.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        422,
+        424
+      ],
+      "path": "packages/cli/test/updater.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/updater.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        44,
+        47,
+        54,
+        65
+      ],
+      "path": "packages/cli/test/voice-realtime.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/voice-realtime.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        23,
+        31,
+        33,
+        53,
+        56,
+        61,
+        206,
+        231
+      ],
+      "path": "packages/cli/test/voice-segments.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/voice-segments.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        40,
+        186,
+        268,
+        278,
+        279,
+        280,
+        301,
+        360,
+        372,
+        379,
+        534,
+        536
+      ],
+      "path": "packages/cli/test/voice.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/voice.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        37,
+        217,
+        225,
+        230,
+        236,
+        240,
+        245,
+        273,
+        368,
+        369,
+        370,
+        515
+      ],
+      "path": "packages/cli/test/workflow.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/workflow.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        32,
+        102,
+        103,
+        104,
+        195,
+        196,
+        197,
+        203,
+        206,
+        209,
+        212,
+        229,
+        241
+      ],
+      "path": "packages/cli/test/zh-hant-catalog.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/cli/test/zh-hant-catalog.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        22,
+        65,
+        68
+      ],
+      "path": "packages/session-ui/test/golden.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/session-ui/test/golden.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        40,
+        44,
+        56,
+        62,
+        81
+      ],
+      "path": "packages/session-ui/test/prompt-frame.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/session-ui/test/prompt-frame.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        98,
+        99,
+        104,
+        110,
+        111,
+        173,
+        249
+      ],
+      "path": "packages/session-ui/test/session-line.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/session-ui/test/session-line.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        8,
+        37
+      ],
+      "path": "packages/session-ui/test/snapshot.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/session-ui/test/snapshot.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        27,
+        62,
+        113,
+        120
+      ],
+      "path": "packages/session-ui/test/status-bar.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/session-ui/test/status-bar.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        58
+      ],
+      "path": "packages/session-ui/test/work-dashboard-renderer.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packages/session-ui/test/work-dashboard-renderer.test.mjs"
+    },
+    {
+      "disposition": "indexed-source",
+      "matched_lines": [
+        8,
+        9,
+        10,
+        11,
+        12,
+        14,
+        15,
+        16,
+        17,
+        18,
+        20,
+        21,
+        22,
+        23,
+        24,
+        27,
+        28,
+        29
+      ],
+      "path": "packaging/launcher/installer-messages.nsh",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packaging/launcher/installer-messages.nsh"
+    },
+    {
+      "disposition": "indexed-source",
+      "matched_lines": [
+        12
+      ],
+      "path": "packaging/launcher/network-acceptance.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/packaging/launcher/network-acceptance.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        56,
+        57,
+        60
+      ],
+      "path": "scripts/code-previews.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/scripts/code-previews.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        33
+      ],
+      "path": "scripts/dev-smoke.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/scripts/dev-smoke.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        22
+      ],
+      "path": "scripts/dev-smoke.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/scripts/dev-smoke.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        24,
+        26,
+        27,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84
+      ],
+      "path": "scripts/live-ja-smoke.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/scripts/live-ja-smoke.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        67,
+        68,
+        73,
+        75,
+        76,
+        81,
+        83,
+        84
+      ],
+      "path": "scripts/live-locale-smoke.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/scripts/live-locale-smoke.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        63,
+        64,
+        68,
+        78,
+        90,
+        92,
+        93,
+        114,
+        117,
+        122,
+        126,
+        146,
+        148,
+        150,
+        176,
+        179,
+        180
+      ],
+      "path": "scripts/live-locale-smoke.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/scripts/live-locale-smoke.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        142,
+        177,
+        194
+      ],
+      "path": "scripts/pack-check.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/scripts/pack-check.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        37,
+        39,
+        40,
+        41,
+        42,
+        58,
+        64,
+        65,
+        66,
+        69,
+        74,
+        75,
+        78,
+        81,
+        84,
+        85
+      ],
+      "path": "scripts/pi-path-utils.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/scripts/pi-path-utils.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        157,
+        296,
+        396,
+        454
+      ],
+      "path": "scripts/test-auto-update.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/scripts/test-auto-update.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        217,
+        218,
+        220,
+        221,
+        222,
+        223,
+        225,
+        226,
+        227,
+        318,
+        425
+      ],
+      "path": "scripts/test-packed-cli.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/scripts/test-packed-cli.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        106
+      ],
+      "path": "scripts/textguard-artifact.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/scripts/textguard-artifact.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        336,
+        337
+      ],
+      "path": "scripts/vcc-goals.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/scripts/vcc-goals.test.mjs"
+    },
+    {
+      "disposition": "test-or-fixture-reference",
+      "matched_lines": [
+        244
+      ],
+      "path": "scripts/webaio-defuddle-transform.test.mjs",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/feba821523b1b04fd20372fa294925cd37c147c2/scripts/webaio-defuddle-transform.test.mjs"
+    }
+  ],
+  "pattern": "[\\u3040-\\u30ff\\u3400-\\u9fff]|[\\\"']zh-Han[st][\\\"']|LANG_JAPANESE",
+  "symlinks_followed": false,
+  "tracked_file_count": 1101
+}
