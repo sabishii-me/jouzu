@@ -1,0 +1,27 @@
+{
+  "version": "1",
+  "sourceLocale": "en",
+  "locales": {
+    "en": {
+      "sourceVersion": "0.1.19",
+      "sourceDigest": "d5f4c3ea7b8e477386e26fe74792fc49406753cef9683936bd67bfff5f2eef28",
+      "reviewed": true
+    },
+    "ja": {
+      "sourceVersion": "0.1.19",
+      "sourceDigest": "d5f4c3ea7b8e477386e26fe74792fc49406753cef9683936bd67bfff5f2eef28",
+      "reviewed": true,
+      "reviewRecord": "packages/cli/locales/ja/cli.ftl"
+    },
+    "zh-Hans": {
+      "sourceVersion": "0.1.19",
+      "sourceDigest": "d5f4c3ea7b8e477386e26fe74792fc49406753cef9683936bd67bfff5f2eef28",
+      "reviewed": false
+    },
+    "zh-Hant": {
+      "sourceVersion": "0.1.19",
+      "sourceDigest": "d5f4c3ea7b8e477386e26fe74792fc49406753cef9683936bd67bfff5f2eef28",
+      "reviewed": false
+    }
+  }
+}

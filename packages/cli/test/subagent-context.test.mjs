@@ -5,6 +5,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { resolveCatalog } from "../dist/locale-catalog.js";
 import { captureChildContext, inheritedContextText, parentContextTool } from "../dist/subagents/context.js";
 import { SubagentManager } from "../dist/subagents/manager.js";
 import { defaultAgentConfig } from "../dist/subagents/roles.js";
@@ -211,4 +212,13 @@ test("parent lookup reads only the saved snapshot and pages with trace cursors",
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
+});
+
+test("the parent_context label comes from the resolved catalog and the tool name is unchanged", () => {
+	const english = parentContextTool("/tmp/parent.jsonl");
+	assert.equal(english.name, "parent_context");
+	assert.equal(english.label, "Parent Context");
+	const japanese = parentContextTool("/tmp/parent.jsonl", resolveCatalog("ja").bundle);
+	assert.equal(japanese.name, "parent_context");
+	assert.equal(japanese.label, "親コンテキスト");
 });

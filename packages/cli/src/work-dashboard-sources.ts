@@ -1,6 +1,8 @@
+import { CatalogMessageId, catalogText, defaultCatalog } from "./cli-messages.js";
 import type { BackgroundJobSnapshot } from "./flow-control/background-adapter.js";
 import type { FlowStatus } from "./flow-control/flow-status.js";
 import type { FlowTask } from "./flow-control/task-producer.js";
+import type { CatalogBundle } from "./locale-catalog.js";
 import type {
 	WorkDashboardSnapshot,
 	WorkDashboardSource,
@@ -79,6 +81,7 @@ export function flowWorkSnapshot(
 	scope: WorkScope,
 	status: FlowStatus | undefined,
 	firstSeen?: (id: string) => number,
+	catalog: CatalogBundle = defaultCatalog(),
 ): WorkSourceSnapshot {
 	if (!status) return { availability: "available", complete: true, units: [] };
 	if (status.scope.sessionId !== scope.sessionId || status.scope.branchId !== scope.branchId)
@@ -86,12 +89,12 @@ export function flowWorkSnapshot(
 	const reasons = [
 		...status.retryable.map((request) => ({
 			id: `request:${request.requestId}`,
-			label: "Withheld request",
+			label: catalogText(catalog, CatalogMessageId.workWithheldRequest),
 			revision: request.hash,
 		})),
 		...status.uncertain.map((attempt) => ({
 			id: `attempt:${attempt.id}`,
-			label: "Outcome unknown",
+			label: catalogText(catalog, CatalogMessageId.workOutcomeUnknown),
 			revision: undefined,
 		})),
 		...status.unaccountable.map((work) => ({
@@ -132,6 +135,7 @@ export function createFlowWorkSource(
 	read: () => Promise<FlowStatus | undefined>,
 	now: () => number = Date.now,
 	idleIntervalMs = 5_000,
+	catalog: CatalogBundle = defaultCatalog(),
 ): WorkDashboardSource {
 	const seen = new Map<string, number>();
 	let last: { at: number; snapshot: WorkSourceSnapshot } | undefined;
@@ -143,7 +147,7 @@ export function createFlowWorkSource(
 		read: async (scope) => {
 			const at = now();
 			if (last && !last.snapshot.units.length && at - last.at < idleIntervalMs) return last.snapshot;
-			const snapshot = flowWorkSnapshot(scope, await read(), (id) => seen.get(id) ?? at);
+			const snapshot = flowWorkSnapshot(scope, await read(), (id) => seen.get(id) ?? at, catalog);
 			const current = new Set(snapshot.units.map((unit) => unit.id));
 			for (const id of seen.keys()) if (!current.has(id)) seen.delete(id);
 			for (const id of current) if (!seen.has(id)) seen.set(id, at);
@@ -254,7 +258,11 @@ const JOB_STATES: Record<string, WorkUnit["state"]> = {
 	stopped: "cancelled",
 };
 /** A finished job whose completion has not reached the model yet needs attention, as a child result does. */
-export function jobWorkUnits(scope: WorkScope, jobs: BackgroundJobSnapshot[]): WorkUnit[] {
+export function jobWorkUnits(
+	scope: WorkScope,
+	jobs: BackgroundJobSnapshot[],
+	catalog: CatalogBundle = defaultCatalog(),
+): WorkUnit[] {
 	return jobs
 		.filter((job) => job.sessionId === scope.sessionId)
 		.map((job): WorkUnit => {
@@ -269,7 +277,7 @@ export function jobWorkUnits(scope: WorkScope, jobs: BackgroundJobSnapshot[]): W
 				state,
 				label: sanitizeTerminalText(`${job.id}${name ? ` ${name}` : ""}`),
 				...(state === "failed" && job.exitCode !== undefined && job.exitCode !== null
-					? { detail: `exit ${job.exitCode}` }
+					? { detail: catalogText(catalog, CatalogMessageId.workJobExit, { code: job.exitCode }) }
 					: {}),
 				...(job.startedAt !== undefined ? { createdAt: job.startedAt } : {}),
 				...(finished && job.updatedAt !== undefined ? { completedAt: job.updatedAt } : {}),

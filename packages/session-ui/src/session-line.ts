@@ -1,5 +1,5 @@
 import type { Component } from "@earendil-works/pi-tui";
-import type { SessionUiActivity, SessionUiHint, SessionUiSemanticRole } from "./contracts.js";
+import type { SessionUiActivity, SessionUiHint, SessionUiSemanticRole, SessionUiText } from "./contracts.js";
 import type { SessionStatusController } from "./controller.js";
 import { fitTerminalText, padTerminalText, sanitizeTerminalText, terminalTextWidth } from "./layout.js";
 import type { SessionStatusSnapshot } from "./snapshot.js";
@@ -43,8 +43,8 @@ function formatProvider(providerId: string | undefined): string {
 	return known[safe] ?? safe.replace(/[-_]/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
-function formatModelId(modelId: string | undefined): string {
-	if (!modelId) return "no model";
+function formatModelId(modelId: string | undefined, text: SessionUiText): string {
+	if (!modelId) return text.noModel;
 	const safe = sanitizeTerminalText(modelId);
 	return safe.slice(safe.lastIndexOf("/") + 1);
 }
@@ -75,17 +75,18 @@ export function renderSessionLine(
 	hints: readonly SessionUiHint[],
 	width: number,
 	styles: SessionUiStyles,
+	text: SessionUiText,
 	activity?: SessionUiActivity,
 	glyph?: string,
 	fastMode = false,
 ): string {
 	if (width <= 0) return "";
 	const provider = formatProvider(snapshot.model.providerId);
-	const model = formatModelId(snapshot.model.modelId);
+	const model = formatModelId(snapshot.model.modelId, text);
 	const thinking = snapshot.model.thinkingLevel;
 	const qualifiers = [
 		thinking && thinking !== "off" ? sanitizeTerminalText(thinking) : "",
-		fastMode ? "fast" : "",
+		fastMode ? text.fast : "",
 	].filter(Boolean);
 	const modelIdentity = `${model}${qualifiers.length ? ` (${qualifiers.join(" · ")})` : ""}`;
 	const fastIdentity = (available: number): string => {
@@ -94,9 +95,9 @@ export function renderSessionLine(
 			return `${provider ? `${styles.apply("session.provider", provider)} ` : ""}${styles.apply("session.model", modelIdentity)}`;
 		// Keep the paid processing choice visible before spending space on a long model name.
 		let suffix = ` (${qualifiers.join(" · ")})`;
-		if (terminalTextWidth(suffix) + 2 > available) suffix = " (fast)";
+		if (terminalTextWidth(suffix) + 2 > available) suffix = ` (${text.fast})`;
 		if (terminalTextWidth(suffix) + 2 > available)
-			return styles.apply("session.model", fitTerminalText("fast", available));
+			return styles.apply("session.model", fitTerminalText(text.fast, available));
 		return styles.apply(
 			"session.model",
 			`${fitTerminalText(model, available - terminalTextWidth(suffix), "…")}${suffix}`,
@@ -123,7 +124,7 @@ export function renderSessionLine(
 				: activity.text.trim()
 					? renderActivityLeft(activity, glyph, detailWidth, styles)
 					: detailWidth >= 9
-						? styles.apply("session.hint.muted", "attention")
+						? styles.apply("session.hint.muted", text.attention)
 						: undefined;
 		const prefix = `${left}${detail ? (activity.text.trim() ? `  ${detail}` : ` ${detail}`) : ""}`;
 		return `${prefix}${" ".repeat(width - terminalTextWidth(prefix) - terminalTextWidth(identity))}${identity}`;
@@ -183,6 +184,7 @@ export class SessionLineComponent implements Component {
 	constructor(
 		controller: SessionStatusController,
 		private readonly styles: SessionUiStyles,
+		private readonly text: SessionUiText,
 		private readonly getHints: () => readonly SessionUiHint[],
 		private readonly requestRender: () => void,
 		private readonly getActivity: () => SessionUiActivity | undefined = () => undefined,
@@ -201,7 +203,16 @@ export class SessionLineComponent implements Component {
 		const glyph = activity ? sessionActivityGlyph(activity, this.frame) : undefined;
 		return [
 			this.snapshot
-				? renderSessionLine(this.snapshot, this.getHints(), width, this.styles, activity, glyph, this.getFastMode())
+				? renderSessionLine(
+						this.snapshot,
+						this.getHints(),
+						width,
+						this.styles,
+						this.text,
+						activity,
+						glyph,
+						this.getFastMode(),
+					)
 				: "",
 		];
 	}

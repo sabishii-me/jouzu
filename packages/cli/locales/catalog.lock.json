@@ -1,0 +1,27 @@
+{
+  "version": "1",
+  "locales": {
+    "en": "d5f4c3ea7b8e477386e26fe74792fc49406753cef9683936bd67bfff5f2eef28",
+    "ja": "3862411e1a938548979cf86b6f81fd487a35e7772db917fa851b79cd57b9a3d4",
+    "zh-Hans": "12efbf5c23155c5579d5cb8688b70eed83cf165e11a9cffbc2c156ed68ca55f4",
+    "zh-Hant": "ba1be20f9ce1fa378b4b1a34008b47eca3d771b0a7f761d99305c070c8782b55"
+  },
+  "extra": {
+    "en/localization-deferral.ftl": "8a609fcd4f5bfe420f0f399cbe5cca1dab3d1617c46c26a8ba29308508febece",
+    "en/localization-settings.ftl": "e9feb2ef6342a2283a92f39e0509a3447cfc6328852b55a2bec9d9068b052b51",
+    "en/profile-migration-command.ftl": "3e1ed9789c9f80c9f9c4d8076b3115425a5e82a5a975e1d1cea6397e7d1166e9",
+    "en/runtime.ftl": "96ea3d7c25871b00a982b9befbf008eb082b9a151fdf1b20141326042ea2ebd1",
+    "ja/localization-deferral.ftl": "5d1ff4ae935ece7c906119bbd45a6e4a87727b25132e8965d5e4b68671940179",
+    "ja/localization-settings.ftl": "9699d550c87414b1efb5d234e6f05a1a3ae59e89c2d70d1314ff2a912bb9976c",
+    "ja/profile-migration-command.ftl": "6b5683a0923c48a69d1521e0d1d7bfda8b0b734a921133a2f33563ee80aa496e",
+    "ja/runtime.ftl": "9fffbbebdb5a6e196f8a256210da0e79bf3bac7d081332c03f0ff6ffd498f3c0",
+    "zh-Hans/localization-deferral.ftl": "8aad4d0690a7c1863c34c150916fcc2f8e5bba1fa09e660f3777cc3d7c5123c7",
+    "zh-Hans/localization-settings.ftl": "9f5f8c17553d1ac8e64cdff6693c65053a858bb2203f0149fb999ea7f0341cf6",
+    "zh-Hans/profile-migration-command.ftl": "0f4746c4435a9235317e4c9c844a1cea5dd6099569012daa4daff1cdb89f17ff",
+    "zh-Hans/runtime.ftl": "f36b3f0283b840c33a6be0a44ea27c8592cd96cced9edc92aa64da096a69b417",
+    "zh-Hant/localization-deferral.ftl": "5bafb9887c7970e76b29d3f2c7440060a8da464bb1abaffdd56640aa712e72f8",
+    "zh-Hant/localization-settings.ftl": "d75f0c70a898a69eed20026cebe37060f152f9d78cafe0f5012173156abd8bb1",
+    "zh-Hant/profile-migration-command.ftl": "860619721097f5fcd659a06c403be9fca529625dfba62db3ab9685ee6d836fb0",
+    "zh-Hant/runtime.ftl": "879c1645f44dda28cca9d83ac8e8084f53fdbf1f0bca15230ba1352ff395c235"
+  }
+}

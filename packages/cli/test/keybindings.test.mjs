@@ -12,6 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { catalogMessageText, defaultCatalog } from "../dist/cli-messages.js";
 import {
 	applyKeybindings,
 	ensureDefaultKeybindings,
@@ -187,7 +188,11 @@ test("the v0.1.0 upgrade restores Tab when Ctrl+Enter is already claimed", () =>
 		writeV1OwnedDefaults(context, { "app.model.select": "ctrl+enter" });
 		const result = ensureDefaultKeybindings(context.paths, {});
 		assert.equal(result.changed, true);
-		assert.match(result.message, /removed its previous tab binding.*assigned to app\.model\.select/);
+		assert.ok(result.message);
+		assert.match(
+			catalogMessageText(defaultCatalog(), result.message),
+			/removed its previous tab binding.*assigned to app\.model\.select/,
+		);
 		assert.deepEqual(readKeybindingConfig(context.configPath), {
 			"app.message.dequeue": "ctrl+up",
 			"app.model.select": "ctrl+enter",
@@ -331,7 +336,9 @@ test("malformed and symlink configs fail closed without touching their targets",
 	try {
 		writeConfig(malformed, { "app.message.followUp": 42 });
 		assert.throws(() => planKeybindings(malformed.paths), /must be a key or array/);
-		assert.match(ensureDefaultKeybindings(malformed.paths, {}).message, /must be a key or array/);
+		const malformedMessage = ensureDefaultKeybindings(malformed.paths, {}).message;
+		assert.ok(malformedMessage);
+		assert.match(catalogMessageText(defaultCatalog(), malformedMessage), /must be a key or array/);
 	} finally {
 		rmSync(malformed.root, { recursive: true, force: true });
 	}

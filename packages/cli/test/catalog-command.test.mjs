@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { catalogStatus, formatCatalogStatus, validateCatalogFile } from "../dist/catalog-command.js";
+import { loadCatalog } from "../dist/locale-catalog.js";
 
 const ESCAPE = String.fromCharCode(27);
 
@@ -14,6 +15,11 @@ const RENDER = { colorEnabled: false, columns: 100 };
 /** Collapse the renderer's alignment and wrapping so message assertions stay readable. */
 function flat(text) {
 	return text.replace(/\s+/gu, " ");
+}
+
+/** Remove every space and line break, for Japanese text the wrapper may split mid-sentence. */
+function squeeze(text) {
+	return text.replace(/\s+/gu, "");
 }
 
 const paths = {
@@ -89,6 +95,138 @@ test("catalog status lists offerings that declare no thinking levels", () => {
 	assert.match(text, /^ +aiand\/deepseek-ai\/deepseek-v4-flash$/mu);
 	assert.match(flat(text), /⚠ codex-pool 1 of 36 offerings have no declared levels/u);
 	assert.doesNotMatch(formatCatalogStatus({ ...status, thinkingLevelGaps: [] }, RENDER), /Thinking levels/u);
+});
+
+test("catalog status renders every hoisted note and gap field from the catalog", () => {
+	const status = {
+		schemaVersion: 1,
+		status: "active",
+		configured: true,
+		sourceId: "codex-pool",
+		label: "codex-pool",
+		enabled: true,
+		endpoint: "http://catalog.example.test/v1/jouzu/model-catalog",
+		catalogId: "ai.shisa.codex-pool",
+		revision: "sha256:fixture",
+		sequence: "7",
+		offeringCount: 36,
+		registrationGaps: [
+			{
+				providerId: "aiand",
+				modelId: "deepseek-ai/deepseek-v4-flash",
+				missing: ["textModality", "maxOutputTokens"],
+			},
+		],
+		thinkingLevelGaps: [{ providerId: "aiand", modelId: "deepseek-ai/deepseek-v4-flash" }],
+		credentialName: "CODEX_POOL_KEY",
+		credentialAvailable: false,
+		credentialEnv: false,
+		credentialStored: false,
+		quarantined: 2,
+	};
+	const text = formatCatalogStatus(status, RENDER);
+	assert.match(flat(text), /⚠ codex-pool This catalog uses HTTP, so its bearer token is sent in plain text/u);
+	assert.match(
+		flat(text),
+		/⚠ codex-pool token variable CODEX_POOL_KEY is not set and no token is saved for this source; refreshes are skipped until one is available\./u,
+	);
+	assert.match(
+		flat(text),
+		/⚠ codex-pool 35 of 36 offerings carry the fields a new model needs \(1 no text input, 1 no maximum output tokens\)\. An offering for a model Pi does not already provide is dropped, so that model never reaches the model list\./u,
+	);
+	assert.match(
+		flat(text),
+		/⚠ codex-pool 1 of 36 offerings have no declared levels, so Jouzu cannot control their reasoning effort\./u,
+	);
+	assert.match(flat(text), /⚠ codex-pool 2 candidate revisions are quarantined\./u);
+	assert.match(text, /^ +Registration {2,}35 of 36 offerings carry the fields a new model needs$/mu);
+	assert.match(flat(text), /aiand\/deepseek-ai\/deepseek-v4-flash — no text input, no maximum output tokens/u);
+	assert.match(text, /^ +Thinking levels {2,}1 of 36 offerings have no declared levels$/mu);
+	assert.match(text, /^ +Credential {2,}environment variable CODEX_POOL_KEY \(not set\)$/mu);
+	assert.match(text, /^ +Quarantined candidates {2,}2$/mu);
+});
+
+test("catalog status renders the migrated text from the Japanese catalog", () => {
+	const status = {
+		schemaVersion: 1,
+		status: "active",
+		configured: true,
+		sourceId: "codex-pool",
+		label: "codex-pool",
+		enabled: true,
+		endpoint: "http://catalog.example.test/v1/jouzu/model-catalog",
+		offeringCount: 36,
+		registrationGaps: [{ providerId: "aiand", modelId: "m", missing: ["textModality", "maxOutputTokens"] }],
+		thinkingLevelGaps: [{ providerId: "aiand", modelId: "m" }],
+		credentialName: "CODEX_POOL_KEY",
+		credentialAvailable: false,
+		credentialEnv: false,
+		credentialStored: false,
+		quarantined: 2,
+	};
+	const text = formatCatalogStatus(status, { ...RENDER, catalog: loadCatalog("ja"), locale: "ja" });
+	for (const fragment of [
+		"トークン変数 CODEX_POOL_KEY が設定されておらず",
+		"提供 36 件のうち 35 件が、新しいモデルに必要な項目を備えています",
+		"テキスト入力なし 1 件、最大出力トークンなし 1 件",
+		"提供 36 件のうち 1 件が思考レベルを宣言していないため",
+		"2 件の候補リビジョンが検疫されています",
+		"aiand/m — テキスト入力なし、最大出力トークンなし",
+		"資格情報 環境変数 CODEX_POOL_KEY（未設定）",
+	]) {
+		assert.ok(squeeze(text).includes(squeeze(fragment)), `${fragment}\n${text}`);
+	}
+});
+
+test("the catalog title state word renders from the catalog", () => {
+	const japanese = { ...RENDER, catalog: loadCatalog("ja"), locale: "ja" };
+	const single = formatCatalogStatus(
+		{ schemaVersion: 1, status: "unconfigured", configured: false, message: "not configured" },
+		japanese,
+	);
+	assert.match(flat(single), /Jouzu モデルカタログ 未設定/u, single);
+
+	for (const [status, word] of [
+		["empty", "空"],
+		["active", "有効"],
+		["degraded", "一部制限"],
+	]) {
+		const text = formatCatalogStatus({ schemaVersion: 1, status, configured: 1, active: 1, sources: [] }, japanese);
+		assert.ok(flat(text).includes(word), `${status}: ${text}`);
+	}
+
+	for (const status of ["empty", "active", "degraded", "unconfigured"]) {
+		const text = flat(
+			formatCatalogStatus({ schemaVersion: 1, status, configured: 1, active: 1, sources: [] }, japanese),
+		);
+		assert.doesNotMatch(text, new RegExp(`\\b${status}\\b`, "u"), `${status}: ${text}`);
+	}
+
+	const withSource = flat(
+		formatCatalogStatus(
+			{
+				schemaVersion: 1,
+				status: "empty",
+				configured: 1,
+				active: 0,
+				sources: [
+					{
+						schemaVersion: 1,
+						status: "empty",
+						configured: true,
+						sourceId: "shisa-api",
+						label: "Shisa API",
+						enabled: true,
+						endpoint: "https://api.example.test/v1/jouzu/model-catalog",
+						quarantined: 0,
+					},
+				],
+			},
+			japanese,
+		),
+	);
+	assert.match(withSource, /Shisa API \[shisa-api\] · 空/u, withSource);
+	assert.doesNotMatch(withSource, /\bempty\b/u, withSource);
 });
 
 test("catalog file validation fails gracefully", () => {

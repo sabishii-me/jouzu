@@ -9,7 +9,9 @@ import {
 	TuiAltScreen,
 	TuiMainScreen,
 } from "@earendil-works/pi-tui";
+import { CatalogMessageId, catalogText, defaultCatalog } from "./cli-messages.js";
 import { createJouzuKeybindingsManagerFromConfig, type JouzuKeybindingsManager } from "./jouzu-keybindings.js";
+import type { CatalogBundle } from "./locale-catalog.js";
 import {
 	createSessionUiStyles,
 	fillTerminalColumns,
@@ -46,6 +48,12 @@ export interface PaletteComponentContext {
 	jouzuKeybindings: JouzuKeybindingsManager;
 	/** Jouzu-owned semantic colors. Views style through these roles rather than emitting escapes. */
 	styles: SessionUiStyles;
+	/**
+	 * The resolved catalog a view renders its human text from. It is resolved once
+	 * when the Palette opens, so a view formats an ID and never re-resolves the
+	 * locale while the user is inside the Palette.
+	 */
+	catalog: CatalogBundle;
 	close(): void;
 }
 
@@ -71,8 +79,8 @@ export function renderPaletteTabs(activeView: PaletteViewId, theme: Theme, style
 }
 
 /** Abbreviate a count for a column that has no room for every digit. */
-export function compactNumber(value: number | undefined): string {
-	if (value === undefined) return "unknown";
+export function compactNumber(value: number | undefined, catalog: CatalogBundle = defaultCatalog()): string {
+	if (value === undefined) return catalogText(catalog, CatalogMessageId.paletteValueUnknown);
 	if (value >= 1_000_000) return `${Math.round(value / 100_000) / 10}M`;
 	if (value >= 1_000) return `${Math.round(value / 100) / 10}K`;
 	return String(value);
@@ -414,11 +422,15 @@ export function selectPalettePresentation(options: PaletteSurfaceOptions = {}): 
 export class JouzuPaletteSurfaceHost {
 	private active?: ActivePalette;
 	private readonly jouzuKeybindings: JouzuKeybindingsManager;
+	private readonly catalog: CatalogBundle;
 
-	constructor(options?: { jouzuKeybindings?: JouzuKeybindingsManager }) {
+	constructor(options?: { jouzuKeybindings?: JouzuKeybindingsManager; catalog?: CatalogBundle }) {
 		// The default carries code defaults without user overrides; the product
 		// wiring passes a manager loaded from the active keybindings.json.
 		this.jouzuKeybindings = options?.jouzuKeybindings ?? createJouzuKeybindingsManagerFromConfig();
+		// A caller without a resolved catalog (a unit test, for example) renders
+		// English rather than a second copy of the text.
+		this.catalog = options?.catalog ?? defaultCatalog();
 	}
 
 	isOpen(): boolean {
@@ -468,6 +480,7 @@ export class JouzuPaletteSurfaceHost {
 					keybindings,
 					jouzuKeybindings: this.jouzuKeybindings,
 					styles: createSessionUiStyles(theme),
+					catalog: this.catalog,
 					close: () => done(undefined),
 				},
 				route,

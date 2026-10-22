@@ -1,4 +1,6 @@
 import { open } from "node:fs/promises";
+import { CatalogMessageId, catalogText, defaultCatalog } from "../cli-messages.js";
+import type { CatalogBundle } from "../locale-catalog.js";
 
 export interface TraceQuery {
 	offset?: number;
@@ -120,27 +122,32 @@ function bounded(record: TraceRecord): TraceRecord {
 }
 
 /** Read without opening a SessionManager: inspecting a rollout must never migrate or rewrite it. */
-export async function readSessionTrace(sessionFile: string, options: TraceQuery = {}): Promise<TracePage> {
+export async function readSessionTrace(
+	sessionFile: string,
+	options: TraceQuery = {},
+	catalog: CatalogBundle = defaultCatalog(),
+): Promise<TracePage> {
 	const { offset = 0, limit = 20 } = options;
+	const msg = (id: CatalogMessageId, args?: Readonly<Record<string, string | number>>) =>
+		catalogText(catalog, id, args);
 	if (!Number.isInteger(offset) || offset < 0 || !Number.isInteger(limit) || limit < 1 || limit > 100)
-		throw new Error("Trace: offset must be a nonnegative byte cursor and limit must be 1–100.");
+		throw new Error(msg(CatalogMessageId.subagentTraceBounds));
 	if (options.kind !== undefined && !["all", "messages", "tools", "errors", "compaction"].includes(options.kind))
-		throw new Error("Trace: choose all, messages, tools, errors, or compaction.");
+		throw new Error(msg(CatalogMessageId.subagentTraceKind));
 	if (
 		(options.query !== undefined && (typeof options.query !== "string" || options.query.length > 2000)) ||
 		(options.entryId !== undefined && typeof options.entryId !== "string")
 	)
-		throw new Error("Trace: use a text query of at most 2000 characters and a string entryId.");
+		throw new Error(msg(CatalogMessageId.subagentTraceQuery));
 	const file = await open(sessionFile, "r");
 	try {
 		const stat = await file.stat();
-		if (!stat.isFile()) throw new Error("Trace: session path is not a regular file.");
-		if (offset > stat.size) throw new Error("Trace: offset is past the end of the session.");
+		if (!stat.isFile()) throw new Error(msg(CatalogMessageId.subagentTraceNotRegularFile));
+		if (offset > stat.size) throw new Error(msg(CatalogMessageId.subagentTracePastEnd));
 		if (offset) {
 			const previous = Buffer.alloc(1);
 			await file.read(previous, 0, 1, offset - 1);
-			if (previous[0] !== 10)
-				throw new Error("Trace: offset must start a JSONL line. Use nextOffset from the previous page.");
+			if (previous[0] !== 10) throw new Error(msg(CatalogMessageId.subagentTraceLineBoundary));
 		}
 		const records: TraceRecord[] = [];
 		let position = offset;
@@ -167,9 +174,7 @@ export async function readSessionTrace(sessionFile: string, options: TraceQuery 
 				try {
 					parsed = JSON.parse(line);
 				} catch {
-					throw new Error(
-						`Trace: malformed complete JSONL entry at byte ${lineStart}. Inspect the saved session file.`,
-					);
+					throw new Error(msg(CatalogMessageId.subagentTraceMalformedEntry, { offset: lineStart }));
 				}
 				const entry = object(parsed);
 				const record = entry ? project(entry) : undefined;
@@ -188,8 +193,7 @@ export async function readSessionTrace(sessionFile: string, options: TraceQuery 
 			pending = pending.subarray(start);
 		}
 		if (position < stat.size) {
-			if (lineStart === offset)
-				throw new Error("Trace: one entry exceeds the 8 MB scan limit. Read the saved session file directly.");
+			if (lineStart === offset) throw new Error(msg(CatalogMessageId.subagentTraceEntryTooLarge));
 			return page(lineStart, "Scan limit reached. Continue with nextOffset.");
 		}
 		if (pending.length)

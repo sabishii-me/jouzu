@@ -7,6 +7,8 @@ import {
 	type TUI,
 	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
+import { catalogText, defaultCatalog } from "./cli-messages.js";
+import type { CatalogBundle } from "./locale-catalog.js";
 
 /**
  * Export the active transcript to the terminal's main screen so a user can search and select it
@@ -16,13 +18,14 @@ import {
  * session manager, never the session file, and it writes through the supplied TUI's terminal.
  */
 
-const BUSY_MESSAGE = "Wait for the current run to finish before exporting the transcript.";
-const ALREADY_OPEN_MESSAGE = "A transcript export is already open.";
-const FULLSCREEN_MESSAGE = "Transcript export requires fullscreen mode.";
+const BUSY_MESSAGE = "jouzu.cli.scrollback.busy";
+const ALREADY_OPEN_MESSAGE = "jouzu.cli.scrollback.alreadyOpen";
+const FULLSCREEN_MESSAGE = "jouzu.cli.scrollback.fullscreen";
 const DEFAULT_CHUNK_SIZE = 16 * 1024;
 const MAX_NOTICE_LENGTH = 240;
 
 export interface ScrollbackDependencies {
+	catalog: CatalogBundle;
 	env: NodeJS.ProcessEnv;
 	isTTY(): boolean;
 	isShellBusy?(): boolean;
@@ -32,6 +35,7 @@ export interface ScrollbackDependencies {
 }
 
 const DEFAULT_DEPENDENCIES: ScrollbackDependencies = {
+	catalog: defaultCatalog(),
 	env: process.env,
 	isTTY: () => Boolean(process.stdin.isTTY && process.stdout.isTTY),
 	isShellBusy: () => false,
@@ -41,6 +45,7 @@ const DEFAULT_DEPENDENCIES: ScrollbackDependencies = {
 };
 
 export interface ScrollbackRenderOptions {
+	catalog?: CatalogBundle;
 	/** Terminal columns the exported lines must fit. */
 	width: number;
 	sessionId?: string;
@@ -76,6 +81,7 @@ interface LineWriter {
 }
 
 interface RenderContext extends LineWriter {
+	catalog: CatalogBundle;
 	entryCount: number;
 	imageCount: number;
 	omittedSystem: number;
@@ -287,11 +293,13 @@ function renderBlock(ctx: RenderContext, block: unknown, indent: string): boolea
 	if (type === "toolCall") {
 		const name = stringValue((block as { name?: unknown }).name) || "tool";
 		const namespace = stringValue((block as { namespace?: unknown }).namespace);
-		const label = namespace ? `Tool call: ${namespace}.${name}` : `Tool call: ${name}`;
+		const label = catalogText(ctx.catalog, "jouzu.cli.scrollback.toolCall", {
+			name: namespace ? `${namespace}.${name}` : name,
+		});
 		pushBlank(ctx);
 		pushWrapped(ctx, label, indent);
 		const nested = indentFor(ctx.width, indent.length + 2);
-		pushWrapped(ctx, formatJson((block as { arguments?: unknown }).arguments), nested);
+		pushWrapped(ctx, formatJson((block as { arguments?: unknown }).arguments, ctx.catalog), nested);
 		return true;
 	}
 	if (type === "image") {
@@ -344,7 +352,12 @@ function renderMessage(ctx: RenderContext, message: unknown): void {
 	if (role === "toolResult") {
 		const toolName = stringValue((message as { toolName?: unknown }).toolName) || "tool";
 		const isError = (message as { isError?: unknown }).isError === true;
-		beginEntry(ctx, `Tool result: ${toolName}${isError ? " (error)" : ""}`);
+		beginEntry(
+			ctx,
+			catalogText(ctx.catalog, isError ? "jouzu.cli.scrollback.toolError" : "jouzu.cli.scrollback.toolResult", {
+				name: toolName,
+			}),
+		);
 		if (!renderContent(ctx, (message as { content?: unknown }).content, indent)) {
 			pushWrapped(ctx, "(no output)", indent);
 		}
@@ -368,7 +381,7 @@ function renderMessage(ctx: RenderContext, message: unknown): void {
 	if (role === "branchSummary") {
 		beginEntry(ctx, "Branch summary");
 		const summary = stringValue((message as { summary?: unknown }).summary);
-		pushWrapped(ctx, summary || "(empty summary)", indent);
+		pushWrapped(ctx, summary || catalogText(ctx.catalog, "jouzu.cli.scrollback.emptySummary"), indent);
 		const fromId = stringValue((message as { fromId?: unknown }).fromId);
 		if (fromId) pushWrapped(ctx, `[from ${fromId}]`, indent);
 		return;
@@ -376,7 +389,7 @@ function renderMessage(ctx: RenderContext, message: unknown): void {
 	if (role === "compactionSummary") {
 		beginEntry(ctx, "Compaction summary");
 		const summary = stringValue((message as { summary?: unknown }).summary);
-		pushWrapped(ctx, summary || "(empty summary)", indent);
+		pushWrapped(ctx, summary || catalogText(ctx.catalog, "jouzu.cli.scrollback.emptySummary"), indent);
 		const tokensBefore = numberValue((message as { tokensBefore?: unknown }).tokensBefore);
 		if (tokensBefore !== undefined) pushWrapped(ctx, `[${tokensBefore} tokens before]`, indent);
 		return;
@@ -393,7 +406,7 @@ function renderBashExecution(ctx: RenderContext, message: unknown, indent: strin
 	const command = stringValue((message as { command?: unknown }).command);
 	if (command) pushWrapped(ctx, `$ ${command}`, indent);
 	const output = stringValue((message as { output?: unknown }).output);
-	pushWrapped(ctx, output || "(no output)", indent);
+	pushWrapped(ctx, output || catalogText(ctx.catalog, "jouzu.cli.scrollback.noOutput"), indent);
 	const status: string[] = [];
 	const exitCode = numberValue((message as { exitCode?: unknown }).exitCode);
 	if (exitCode !== undefined) status.push(`exit code ${exitCode}`);
@@ -416,14 +429,14 @@ function renderCustomMessageEntry(ctx: RenderContext, entry: SessionEntry & { ty
 function renderCompactionEntry(ctx: RenderContext, entry: SessionEntry & { type: "compaction" }): void {
 	const indent = indentFor(ctx.width, 2);
 	beginEntry(ctx, "Compaction summary");
-	pushWrapped(ctx, stringValue(entry.summary) || "(empty summary)", indent);
+	pushWrapped(ctx, stringValue(entry.summary) || catalogText(ctx.catalog, "jouzu.cli.scrollback.emptySummary"), indent);
 	if (typeof entry.tokensBefore === "number") pushWrapped(ctx, `[${entry.tokensBefore} tokens before]`, indent);
 }
 
 function renderBranchSummaryEntry(ctx: RenderContext, entry: SessionEntry & { type: "branch_summary" }): void {
 	const indent = indentFor(ctx.width, 2);
 	beginEntry(ctx, "Branch summary");
-	pushWrapped(ctx, stringValue(entry.summary) || "(empty summary)", indent);
+	pushWrapped(ctx, stringValue(entry.summary) || catalogText(ctx.catalog, "jouzu.cli.scrollback.emptySummary"), indent);
 	const fromId = stringValue(entry.fromId);
 	if (fromId) pushWrapped(ctx, `[from ${fromId}]`, indent);
 }
@@ -448,6 +461,7 @@ function renderEntry(ctx: RenderContext, entry: SessionEntry): void {
 }
 
 function renderHeader(options: {
+	catalog: CatalogBundle;
 	width: number;
 	sessionId: string;
 	sessionName: string;
@@ -458,16 +472,18 @@ function renderHeader(options: {
 	omittedState: number;
 }): string[] {
 	const writer: LineWriter = { lines: [], width: options.width };
-	pushWrapped(writer, "Jouzu transcript export", "");
+	pushWrapped(writer, catalogText(options.catalog, "jouzu.cli.scrollback.title"), "");
 	const session =
 		options.sessionName && options.sessionId
-			? `Session: ${options.sessionName} (${options.sessionId})`
-			: options.sessionName
-				? `Session: ${options.sessionName}`
-				: options.sessionId
-					? `Session: ${options.sessionId}`
-					: "Session";
-	pushWrapped(writer, session, "");
+			? `${options.sessionName} (${options.sessionId})`
+			: options.sessionName || options.sessionId;
+	pushWrapped(
+		writer,
+		catalogText(options.catalog, session ? "jouzu.cli.scrollback.sessionNamed" : "jouzu.cli.scrollback.session", {
+			session,
+		}),
+		"",
+	);
 	pushWrapped(writer, `Exported: ${options.exportedAt}`, "");
 	pushWrapped(writer, "Scope: stored entries on the active branch, including entries before compaction.", "");
 	pushWrapped(
@@ -495,6 +511,7 @@ export function renderScrollbackTranscript(
 ): ScrollbackTranscript {
 	const width = normalizeWidth(options.width);
 	const ctx: RenderContext = {
+		catalog: options.catalog ?? defaultCatalog(),
 		lines: [],
 		width,
 		entryCount: 0,
@@ -506,6 +523,7 @@ export function renderScrollbackTranscript(
 	while (ctx.lines.length > 0 && ctx.lines[ctx.lines.length - 1] === "") ctx.lines.pop();
 
 	const header = renderHeader({
+		catalog: ctx.catalog,
 		width,
 		sessionId: sanitizeScrollbackText(options.sessionId ?? "").trim(),
 		sessionName: sanitizeScrollbackText(options.sessionName ?? "").trim(),
@@ -581,20 +599,25 @@ function formatBytes(bytes: number): string {
 	return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
 }
 
-function formatJson(value: unknown): string {
+function formatJson(value: unknown, catalog: CatalogBundle): string {
 	if (value === undefined) return "{}";
 	try {
 		const text = JSON.stringify(value, null, 2);
-		return typeof text === "string" ? text : "[unserializable arguments]";
+		return typeof text === "string" ? text : catalogText(catalog, "jouzu.cli.scrollback.unserializable");
 	} catch {
-		return "[unserializable arguments]";
+		return catalogText(catalog, "jouzu.cli.scrollback.unserializable");
 	}
 }
 
-function failureNotice(error: unknown): Notice {
+function failureNotice(error: unknown, catalog: CatalogBundle): Notice {
 	const message = error instanceof Error ? error.message : String(error);
 	const safe = sanitizeScrollbackText(message).replace(/\s+/g, " ").trim().slice(0, MAX_NOTICE_LENGTH);
-	return { message: `Transcript export failed: ${safe || "unknown error"}`, type: "error" };
+	return {
+		message: catalogText(catalog, "jouzu.cli.scrollback.failureDetail", {
+			message: safe || catalogText(catalog, "jouzu.cli.scrollback.unknownError"),
+		}),
+		type: "error",
+	};
 }
 
 /**
@@ -692,7 +715,7 @@ function createScrollbackExport(options: ScrollbackExportOptions): ScrollbackExp
 			} catch {
 				// Best-effort terminal cleanup.
 			}
-			if (!notice) notice = failureNotice(error);
+			if (!notice) notice = failureNotice(error, deps.catalog);
 			reportNotice();
 		} finally {
 			onClosed();
@@ -742,8 +765,9 @@ function createScrollbackExport(options: ScrollbackExportOptions): ScrollbackExp
 		closed = true;
 		if (!notice) {
 			if (nextNotice) notice = nextNotice;
-			else if (reason === "busy") notice = { message: BUSY_MESSAGE, type: "warning" };
-			else if (reason === "failure") notice = { message: "Transcript export failed.", type: "error" };
+			else if (reason === "busy") notice = { message: catalogText(deps.catalog, BUSY_MESSAGE), type: "warning" };
+			else if (reason === "failure")
+				notice = { message: catalogText(deps.catalog, "jouzu.cli.scrollback.failure"), type: "error" };
 		}
 		if (reason === "return") {
 			// Keep the closed input handler installed until the current StdinBuffer batch unwinds.
@@ -809,9 +833,10 @@ function createScrollbackExport(options: ScrollbackExportOptions): ScrollbackExp
 				sessionId: ctx.sessionManager.getSessionId(),
 				sessionName: ctx.sessionManager.getSessionName(),
 				exportedAt: deps.now(),
+				catalog: deps.catalog,
 			});
 		} catch (error) {
-			finish("failure", failureNotice(error));
+			finish("failure", failureNotice(error, deps.catalog));
 			return;
 		}
 		if (closed) return;
@@ -831,7 +856,7 @@ function createScrollbackExport(options: ScrollbackExportOptions): ScrollbackExp
 			if (closed) return;
 			await writeTranscript(tui.terminal, document.lines, deps, () => closed);
 		} catch (error) {
-			finish("failure", failureNotice(error));
+			finish("failure", failureNotice(error, deps.catalog));
 		}
 	};
 
@@ -839,7 +864,7 @@ function createScrollbackExport(options: ScrollbackExportOptions): ScrollbackExp
 		start() {
 			// Let ctx.ui.custom() mount the overlay and finish the factory before the takeover.
 			setImmediate(() => {
-				void run().catch((error) => finish("failure", failureNotice(error)));
+				void run().catch((error) => finish("failure", failureNotice(error, deps.catalog)));
 			});
 		},
 		handleInput,
@@ -872,31 +897,31 @@ export function createScrollbackExtension(overrides: Partial<ScrollbackDependenc
 						}
 					};
 					if (ctx.mode !== "tui" || !ctx.hasUI) {
-						notify("Transcript export requires the interactive terminal.", "warning");
+						notify(catalogText(deps.catalog, "jouzu.cli.scrollback.interactive"), "warning");
 						return;
 					}
 					if (deps.env.TERM?.toLowerCase() === "dumb") {
-						notify("Transcript export is unavailable because TERM=dumb.", "warning");
+						notify(catalogText(deps.catalog, "jouzu.cli.scrollback.dumb"), "warning");
 						return;
 					}
 					if (!deps.isTTY()) {
-						notify("Transcript export requires an interactive terminal.", "warning");
+						notify(catalogText(deps.catalog, "jouzu.cli.scrollback.tty"), "warning");
 						return;
 					}
 					const existing = active;
 					if (existing) {
-						notify(ALREADY_OPEN_MESSAGE, "warning");
+						notify(catalogText(deps.catalog, ALREADY_OPEN_MESSAGE), "warning");
 						return;
 					}
 					if (sessionBusy(ctx, deps)) {
-						notify(BUSY_MESSAGE, "warning");
+						notify(catalogText(deps.catalog, BUSY_MESSAGE), "warning");
 						return;
 					}
 					try {
 						await ctx.ui.custom<void>(
 							(tui, _theme, keybindings, done) => {
 								if (tui.mode !== "fullscreen") {
-									notify(FULLSCREEN_MESSAGE, "warning");
+									notify(catalogText(deps.catalog, FULLSCREEN_MESSAGE), "warning");
 									done();
 									return {
 										render: () => [],
@@ -927,7 +952,7 @@ export function createScrollbackExtension(overrides: Partial<ScrollbackDependenc
 							{ overlay: true },
 						);
 					} catch (error) {
-						const failure = failureNotice(error);
+						const failure = failureNotice(error, deps.catalog);
 						if (active) active.finish("failure", failure);
 						else notify(failure.message, failure.type);
 					}

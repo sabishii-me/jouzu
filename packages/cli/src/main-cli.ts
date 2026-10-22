@@ -1,12 +1,26 @@
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { formatHelp, isBlockedPiSelfUpdate, parseJouzuArgs, UsageError } from "./args.js";
+import { formatHelp, isBlockedPiSelfUpdate, parseJouzuArgs, UsageError, usageErrorMessage } from "./args.js";
 import { createAstraCompatibilityExtension } from "./astra-compatibility.js";
-import { catalogStatus, formatCatalogStatus, validateCatalogFile } from "./catalog-command.js";
+import {
+	catalogStatus,
+	catalogValidationMessage,
+	formatCatalogStatus,
+	validateCatalogFile,
+} from "./catalog-command.js";
 import { classicHostBuiltinOverrides, createDirectToolPolicyExtension } from "./classic-host-policy.js";
+import {
+	CatalogError,
+	CatalogMessageId,
+	catalogMessage,
+	catalogMessageText,
+	catalogText,
+	defaultCatalog,
+} from "./cli-messages.js";
 import { DashboardVisibility, loadDashboardPolicy } from "./dashboard-policy.js";
 import { createDoctorReport } from "./doctor.js";
 import { createFastModeExtension, FAST_MODE_STATUS } from "./fast-mode.js";
+import { CliMessageId, protectedSourceError } from "./human-messages.js";
 import { isInteractivePiStartup, usesMachineReadableStdout } from "./interactive-startup.js";
 import {
 	applyKeybindings,
@@ -18,6 +32,11 @@ import {
 	resetKeybindings,
 } from "./keybindings.js";
 import { createLabelPolicy } from "./label-policy.js";
+import { promptForLanguageChoice, saveLanguageChoice } from "./language-choice.js";
+import { createLanguageContractExtension } from "./language-contract.js";
+import { readProjectArtifactPolicy, resolveArtifactPolicy, resolveResponseLanguage } from "./language-settings.js";
+import { type CatalogBundle, summarizeCatalog } from "./locale-catalog.js";
+import { catalogSupportStates } from "./locale-status.js";
 import { loadMetadata } from "./metadata.js";
 import { catalogRegistrationGaps, catalogThinkingLevelGaps } from "./model-catalog.js";
 import {
@@ -32,7 +51,8 @@ import {
 import { projectDefaultAppliesAtStartup } from "./model-picker-state.js";
 import { resolveJouzuPaths } from "./paths.js";
 import { offerPiConfigurationImport, PiImportError } from "./pi-import.js";
-import { promptForJapaneseSupport, writeProfileChoice } from "./profile-choice.js";
+import { buildPreRuntimeContext } from "./pre-runtime.js";
+import { writeProfileChoice } from "./profile-choice.js";
 import {
 	applyProfile,
 	formatProfilePlan,
@@ -40,6 +60,7 @@ import {
 	ProfileStateError,
 	planProfile,
 } from "./profile-manager.js";
+import { runProfileMigrationCommand } from "./profile-migration-command.js";
 import { loadBundledProfile } from "./profiles.js";
 import {
 	createReleaseExtensionDiagnostics,
@@ -61,6 +82,7 @@ import { createShisaExtension } from "./shisa-link/extension.js";
 import { offerShisaOnboarding } from "./shisa-link/onboarding.js";
 import { ensureQuietStartupDefault, suppressPiReleaseNotes } from "./startup-settings.js";
 import { createToolArgumentExtension } from "./tool-arguments.js";
+import { osLocaleCandidates, readLocalizationSettings, resolveUiLocale, UiLocaleUsageError } from "./ui-locale.js";
 import { JouzuUpdater } from "./updater.js";
 import {
 	activeChildCount,
@@ -81,17 +103,59 @@ async function loadPiRuntime(): Promise<typeof import("@earendil-works/pi-coding
 export async function runMainCli(args: string[]): Promise<void> {
 	const parsed = parseJouzuArgs(args);
 	if (parsed.kind === "self-update") throw new Error("self-update must be handled by the lightweight CLI bootstrap");
-	if (parsed.kind === "help") {
-		console.log(formatHelp());
-		return;
-	}
 	if (parsed.kind === "pi" && isBlockedPiSelfUpdate(parsed.args)) {
-		throw new UsageError(
-			"Jouzu pins its Pi runtime and cannot run Pi self-update. Upgrade Jouzu instead; package-only updates such as `jz update --extensions` remain available.",
-		);
+		throw new UsageError(catalogMessage(CatalogMessageId.usagePinnedPiSelfUpdate));
 	}
 
 	const paths = resolveJouzuPaths({ homeOverride: parsed.options.home });
+	// Resolve the UI locale from the real startup inputs. This reads the option,
+	// the Jouzu environment variable, and the saved settings file, and never
+	// writes any of them. The resolved value is carried to the doctor context so
+	// the diagnostics issue can render it without re-reading the sources.
+	const localizationConfig = readLocalizationSettings(paths.configDir);
+	const uiLocale = resolveUiLocale({
+		...(parsed.options.uiLocale ? { cli: parsed.options.uiLocale } : {}),
+		...(process.env.JOUZU_UI_LOCALE ? { env: process.env.JOUZU_UI_LOCALE } : {}),
+		config: localizationConfig,
+		os: osLocaleCandidates(process.env),
+	});
+	// Resolve the language contract from the same settings read. The response
+	// language and artifact policy never consult the OS or the UI locale. The
+	// project policy is read only for a repository the runtime reports as
+	// trusted; no runtime trust signal exists yet, so the default is untrusted.
+	const savedSettings = localizationConfig.status === "ok" ? localizationConfig.settings : undefined;
+	const responseLanguage = resolveResponseLanguage({ config: savedSettings?.responseLanguage });
+	const projectPolicy = readProjectArtifactPolicy(process.cwd(), { trusted: false });
+	const artifactPolicy = resolveArtifactPolicy({
+		...(projectPolicy.status === "ok" ? { project: projectPolicy.artifactPolicy } : {}),
+		...(savedSettings?.artifactPolicy ? { config: savedSettings.artifactPolicy } : {}),
+	});
+	// The language contract owns the response-language section and the prompt
+	// epoch. It is created here so the presentation extension reads the section
+	// for the active turn, and it is registered before presentation so a staged
+	// change is committed before the prompt is composed.
+	const languageContract = createLanguageContractExtension({ responseLanguage, artifactPolicy });
+	// Build the pre-runtime context once. Everything below reads this context
+	// instead of resolving the locale again, so `--help`, `--version`, the
+	// argument errors, and the report commands share one catalog decision.
+	const preRuntime = buildPreRuntimeContext({
+		uiLocale,
+		machineReadable: parsed.kind === "pi" && usesMachineReadableStdout(parsed.args),
+	});
+	// One renderer option object and one message helper for every human output
+	// below, so no command re-resolves the locale or reads `process` again.
+	const renderOptions = { ...preRuntime.display, catalog: preRuntime.catalog.bundle };
+	const text = (id: CatalogMessageId, args?: Readonly<Record<string, string | number>>): string =>
+		catalogText(preRuntime.catalog.bundle, id, args);
+	if (parsed.kind === "help") {
+		console.log(formatHelp(preRuntime.catalog.bundle));
+		return;
+	}
+	if (localizationConfig.status === "future") {
+		console.error(text(CatalogMessageId.localizationFuture, { version: localizationConfig.schemaVersion }));
+	} else if (localizationConfig.status === "invalid") {
+		console.error(text(CatalogMessageId.localizationInvalid, { reason: localizationConfig.reason }));
+	}
 	const metadata = loadMetadata();
 	const interactiveStartup = parsed.kind === "pi" && isInteractivePiStartup(parsed.args);
 	const executable = process.argv[1] ?? fileURLToPath(import.meta.url);
@@ -99,45 +163,65 @@ export async function runMainCli(args: string[]): Promise<void> {
 		paths,
 		currentVersion: metadata.jouzuVersion,
 		executable,
-		report: (message) => console.log(message),
+		report: (message) => console.log(catalogMessageText(preRuntime.catalog.bundle, message)),
+		catalog: preRuntime.catalog.bundle,
 	});
 
 	if (parsed.kind === "catalog") {
 		if (parsed.operation === "status") {
-			const status = catalogStatus(paths, process.env, parsed.sourceId);
-			console.log(parsed.json ? JSON.stringify(status, null, 2) : formatCatalogStatus(status));
+			const status = catalogStatus(paths, process.env, parsed.sourceId, preRuntime.catalog.bundle);
+			console.log(parsed.json ? JSON.stringify(status, null, 2) : formatCatalogStatus(status, renderOptions));
 			return;
 		}
 		if (parsed.operation === "refresh") {
 			if (parsed.sourceId) {
-				const result = await refreshModelCatalog(paths, { sourceId: parsed.sourceId });
-				console.log(parsed.json ? JSON.stringify(result, null, 2) : formatCatalogStatus(result.catalogStatus));
+				const result = await refreshModelCatalog(paths, {
+					sourceId: parsed.sourceId,
+					catalog: preRuntime.catalog.bundle,
+				});
+				console.log(
+					parsed.json ? JSON.stringify(result, null, 2) : formatCatalogStatus(result.catalogStatus, renderOptions),
+				);
 				if (result.status === "rejected" || result.status === "error") process.exitCode = 1;
 				return;
 			}
-			const result = await refreshAllModelCatalogs(paths);
-			console.log(parsed.json ? JSON.stringify(result, null, 2) : formatCatalogStatus(catalogStatus(paths)));
+			const result = await refreshAllModelCatalogs(paths, { catalog: preRuntime.catalog.bundle });
+			console.log(
+				parsed.json ? JSON.stringify(result, null, 2) : formatCatalogStatus(catalogStatus(paths), renderOptions),
+			);
 			if (result.status === "partial" || result.status === "failed") process.exitCode = 1;
 			return;
 		}
 		if (parsed.operation === "accept") {
 			if (!parsed.revision || !parsed.digest)
-				throw new UsageError("catalog accept requires an exact revision and digest");
+				throw new UsageError(catalogMessage(CatalogMessageId.usageCatalogAcceptRevisionDigest));
 			console.log(
 				formatCatalogStatus(
-					acceptQuarantinedCatalog(paths, parsed.revision, parsed.digest, process.env, new Date(), parsed.sourceId),
+					acceptQuarantinedCatalog(
+						paths,
+						parsed.revision,
+						parsed.digest,
+						process.env,
+						new Date(),
+						parsed.sourceId,
+						preRuntime.catalog.bundle,
+					),
+					renderOptions,
 				),
 			);
 			return;
 		}
-		if (!parsed.path) throw new UsageError(`catalog ${parsed.operation} requires a file path`);
+		if (!parsed.path)
+			throw new UsageError(catalogMessage(CatalogMessageId.usageCatalogFileRequired, { operation: parsed.operation }));
 		const result = validateCatalogFile(parsed.path, parsed.operation === "conformance");
 		console.log(
 			parsed.json
 				? JSON.stringify(result, null, 2)
 				: result.valid
-					? "Model catalog is valid."
-					: `Model catalog is invalid: ${result.error?.message}`,
+					? text(CatalogMessageId.catalogValid)
+					: text(CatalogMessageId.catalogInvalid, {
+							message: catalogValidationMessage(result, preRuntime.catalog.bundle),
+						}),
 		);
 		if (!result.valid) process.exitCode = 1;
 		return;
@@ -145,19 +229,45 @@ export async function runMainCli(args: string[]): Promise<void> {
 
 	if (parsed.kind === "keybindings") {
 		if (parsed.operation === "status" || parsed.operation === "plan") {
-			const plan = planKeybindings(paths);
-			console.log(parsed.json ? JSON.stringify(plan, null, 2) : formatKeybindingPlan(plan));
+			const plan = planKeybindings(paths, { catalog: preRuntime.catalog.bundle });
+			console.log(parsed.json ? JSON.stringify(plan, null, 2) : formatKeybindingPlan(plan, renderOptions));
 			if (plan.actions.some((action) => action.type === "conflict")) process.exitCode = 5;
 			return;
 		}
-		const result = parsed.operation === "apply" ? applyKeybindings(paths) : resetKeybindings(paths);
-		console.log(formatKeybindingPlan(result.plan));
+		const result =
+			parsed.operation === "apply"
+				? applyKeybindings(paths, new Date(), preRuntime.catalog.bundle)
+				: resetKeybindings(paths, new Date(), preRuntime.catalog.bundle);
+		console.log(formatKeybindingPlan(result.plan, renderOptions));
 		console.log(
 			result.changed
-				? `${parsed.operation === "apply" ? "Applied" : "Reset"} keybinding transaction: ${result.transactionId}`
-				: `Keybinding defaults already ${parsed.operation === "apply" ? "converged" : "disabled"}.`,
+				? text(parsed.operation === "apply" ? CatalogMessageId.keybindingsApplied : CatalogMessageId.keybindingsReset, {
+						id: String(result.transactionId),
+					})
+				: text(
+						parsed.operation === "apply"
+							? CatalogMessageId.keybindingsAlreadyConverged
+							: CatalogMessageId.keybindingsAlreadyDisabled,
+					),
 		);
-		if (result.backupDir) console.log(`Backup: ${result.backupDir}`);
+		if (result.backupDir) console.log(text(CatalogMessageId.backupPath, { path: result.backupDir }));
+		return;
+	}
+
+	if (parsed.kind === "profile-migration") {
+		// The migration entry previews, confirms, applies, and rolls back the
+		// Japanese profile migration. A non-interactive run needs the explicit
+		// `--yes` confirmation; nothing applies without one.
+		const exitCode = await runProfileMigrationCommand(paths, {
+			operation: parsed.operation,
+			json: parsed.json,
+			yes: parsed.yes,
+			interactive: process.stdin.isTTY === true && process.stdout.isTTY === true,
+			...(parsed.options.profile ? { explicitProfile: parsed.options.profile } : {}),
+			catalog: preRuntime.catalog.bundle,
+			render: renderOptions,
+		});
+		if (exitCode !== 0) process.exitCode = exitCode;
 		return;
 	}
 
@@ -168,40 +278,69 @@ export async function runMainCli(args: string[]): Promise<void> {
 		explicitProfile: parsed.options.profile,
 		allowSavedChoice: parsed.kind !== "version",
 		interactiveStartup,
+		catalog: preRuntime.catalog.bundle,
 	});
 	let firstRunChoice = false;
 	if (profile.needsFirstRunInput) {
-		profile = {
-			id: await promptForJapaneseSupport(),
-			source: "first-run choice",
-			needsFirstRunInput: false,
-		};
-		firstRunChoice = true;
+		// The first-run screen chooses the interface language by self-name and
+		// confirms the response language separately. A skip or a non-interactive
+		// run writes nothing, so the saved settings stay byte-identical.
+		const choice = await promptForLanguageChoice(process.stdin, process.stdout, {
+			catalog: preRuntime.catalog.bundle,
+			env: process.env,
+		});
+		if (choice) {
+			try {
+				saveLanguageChoice(paths, choice, preRuntime.catalog.bundle);
+				profile = {
+					id: choice.uiLocale === "ja" ? "ja" : "core",
+					source: "first-run choice",
+					needsFirstRunInput: false,
+				};
+				firstRunChoice = true;
+			} catch (error) {
+				console.error(
+					catalogText(preRuntime.catalog.bundle, CatalogMessageId.languageChoiceSaveFailed, {
+						message: protectedSourceError(error instanceof Error ? error.message : String(error)),
+					}),
+				);
+				profile = { id: "core", source: "default", needsFirstRunInput: false };
+			}
+		} else {
+			profile = { id: "core", source: "default", needsFirstRunInput: false };
+		}
 	}
 
 	if (parsed.kind === "profile") {
 		const selected = parsed.profile ?? profile.id;
 		const bundled = loadBundledProfile(selected);
 		if (parsed.operation === "plan") {
-			const plan = planProfile(bundled, paths, metadata.jouzuVersion);
-			console.log(parsed.json ? JSON.stringify(plan, null, 2) : formatProfilePlan(plan));
+			const plan = planProfile(bundled, paths, metadata.jouzuVersion, preRuntime.catalog.bundle);
+			console.log(parsed.json ? JSON.stringify(plan, null, 2) : formatProfilePlan(plan, renderOptions));
 			if (plan.actions.some((action) => action.type === "conflict")) process.exitCode = 3;
 			return;
 		}
-		const result = applyProfile(bundled, paths, metadata.jouzuVersion);
+		const result = applyProfile(bundled, paths, metadata.jouzuVersion, preRuntime.catalog.bundle);
 		writeProfileChoice(profileChoicePath, selected);
-		console.log(formatProfilePlan(result.plan));
-		console.log(result.changed ? `Applied transaction: ${result.transactionId}` : "Profile already converged");
-		if (result.backupDir) console.log(`Backups: ${result.backupDir}`);
+		console.log(formatProfilePlan(result.plan, renderOptions));
+		console.log(
+			result.changed
+				? text(CatalogMessageId.profileApplied, { id: String(result.transactionId) })
+				: text(CatalogMessageId.profileAlreadyConverged),
+		);
+		if (result.backupDir) console.log(text(CatalogMessageId.backupsPath, { path: result.backupDir }));
 		return;
 	}
 
 	if (interactiveStartup) {
-		await offerPiConfigurationImport(paths, { inheritedAgentDir: inheritedPiAgentDir });
+		await offerPiConfigurationImport(paths, {
+			inheritedAgentDir: inheritedPiAgentDir,
+			catalog: preRuntime.catalog.bundle,
+		});
 		ensureQuietStartupDefault(paths);
 		suppressPiReleaseNotes(paths, metadata.piVersion);
 		const bootstrap = ensureDefaultKeybindings(paths);
-		if (bootstrap.message) console.error(bootstrap.message);
+		if (bootstrap.message) console.error(catalogMessageText(preRuntime.catalog.bundle, bootstrap.message));
 	}
 
 	configurePiProcess(paths);
@@ -217,14 +356,29 @@ export async function runMainCli(args: string[]): Promise<void> {
 
 	if (parsed.kind === "version") {
 		if (piImportDiagnostic || !piRuntimeVersion) {
-			throw new Error(`Jouzu could not load its pinned Pi runtime: ${piImportDiagnostic ?? "unavailable"}`);
+			throw new CatalogError(
+				piImportDiagnostic
+					? catalogMessage(CatalogMessageId.runtimePiLoadFailed, { diagnostic: piImportDiagnostic })
+					: catalogMessage(CatalogMessageId.runtimePiLoadFailedUnavailable),
+			);
 		}
 		if (piRuntimeVersion !== metadata.piVersion) {
-			throw new Error(`loaded Pi ${piRuntimeVersion} does not match Jouzu's exact pin ${metadata.piVersion}`);
+			throw new CatalogError(
+				catalogMessage(CatalogMessageId.runtimePiPinMismatch, {
+					loaded: piRuntimeVersion,
+					pinned: metadata.piVersion,
+				}),
+			);
 		}
-		console.log(`jouzu ${metadata.displayVersion}`);
-		console.log(`pi ${piRuntimeVersion}`);
-		console.log(`profile schema ${metadata.profileSchemaVersion}`);
+		console.log(
+			catalogText(preRuntime.catalog.bundle, "jouzu.cli.version.jouzu", { version: metadata.displayVersion }),
+		);
+		console.log(catalogText(preRuntime.catalog.bundle, "jouzu.cli.version.pi", { version: piRuntimeVersion }));
+		console.log(
+			catalogText(preRuntime.catalog.bundle, "jouzu.cli.version.profileSchema", {
+				version: metadata.profileSchemaVersion,
+			}),
+		);
 		return;
 	}
 	if (parsed.kind === "doctor") {
@@ -237,13 +391,21 @@ export async function runMainCli(args: string[]): Promise<void> {
 		let releaseExtensionDiagnostic: string | undefined;
 		let catalogSources: Parameters<typeof createDoctorReport>[0]["catalogSources"];
 		let catalogDiagnostic: string | undefined;
+		// Read the UI locale catalog summary from the already-resolved pre-runtime
+		// context instead of resolving it a second time. `resolveCatalog` never
+		// throws for a missing or damaged catalog, so the summary is always present.
+		const localeCatalog = summarizeCatalog(preRuntime.catalog);
+		// The per-locale support states come from the shipped status record. The
+		// reader returns an empty list for a missing or malformed record, so
+		// `doctor` reports the fields as unavailable instead of failing.
+		const catalogSupport = catalogSupportStates();
 		try {
 			updateStatus = updater.status();
 		} catch (error) {
 			updateDiagnostic = error instanceof Error ? error.message : String(error);
 		}
 		try {
-			keybindingPlan = planKeybindings(paths);
+			keybindingPlan = planKeybindings(paths, { catalog: preRuntime.catalog.bundle });
 		} catch (error) {
 			keybindingDiagnostic = error instanceof Error ? error.message : String(error);
 		}
@@ -254,13 +416,15 @@ export async function runMainCli(args: string[]): Promise<void> {
 			releaseExtensionDiagnostic = error instanceof Error ? error.message : String(error);
 		}
 		try {
-			catalogSources = loadActiveModelCatalogs(paths, process.env).map(({ source, document }) => ({
-				sourceId: source.id,
-				label: source.label,
-				offerings: document.modelOfferings.length,
-				thinkingLevelGaps: catalogThinkingLevelGaps(document),
-				registrationGaps: catalogRegistrationGaps(document),
-			}));
+			catalogSources = loadActiveModelCatalogs(paths, process.env, preRuntime.catalog.bundle).map(
+				({ source, document }) => ({
+					sourceId: source.id,
+					label: source.label,
+					offerings: document.modelOfferings.length,
+					thinkingLevelGaps: catalogThinkingLevelGaps(document),
+					registrationGaps: catalogRegistrationGaps(document),
+				}),
+			);
 		} catch (error) {
 			catalogDiagnostic = error instanceof Error ? error.message : String(error);
 		}
@@ -268,6 +432,13 @@ export async function runMainCli(args: string[]): Promise<void> {
 			metadata,
 			paths,
 			profile,
+			uiLocale,
+			responseLanguage,
+			artifactPolicy,
+			projectPolicy,
+			...(localeCatalog ? { catalog: localeCatalog } : {}),
+			catalogSupport,
+			render: { ...preRuntime.display, catalog: preRuntime.catalog.bundle },
 			piRuntimeVersion: piRuntimeVersion ?? "unavailable",
 			piRuntimeDiagnostic: piImportDiagnostic,
 			executable,
@@ -289,24 +460,40 @@ export async function runMainCli(args: string[]): Promise<void> {
 	}
 
 	const bundled = loadBundledProfile(profile.id);
-	applyProfile(bundled, paths, metadata.jouzuVersion);
+	applyProfile(bundled, paths, metadata.jouzuVersion, preRuntime.catalog.bundle);
 	if (firstRunChoice) {
 		writeProfileChoice(profileChoicePath, profile.id);
-		console.log(profile.id === "ja" ? "Japanese support enabled." : "Continuing with the Core profile.");
+		console.log(
+			profile.id === "ja" ? text(CatalogMessageId.profileJapaneseEnabled) : text(CatalogMessageId.profileCoreFallback),
+		);
 	}
 	if (piImportDiagnostic || !pi || !piRuntimeVersion) {
-		throw new Error(`Jouzu could not load its pinned Pi runtime: ${piImportDiagnostic ?? "unavailable"}`);
+		throw new CatalogError(
+			piImportDiagnostic
+				? catalogMessage(CatalogMessageId.runtimePiLoadFailed, { diagnostic: piImportDiagnostic })
+				: catalogMessage(CatalogMessageId.runtimePiLoadFailedUnavailable),
+		);
 	}
 	if (piRuntimeVersion !== metadata.piVersion) {
-		throw new Error(`loaded Pi ${piRuntimeVersion} does not match Jouzu's exact pin ${metadata.piVersion}`);
+		throw new CatalogError(
+			catalogMessage(CatalogMessageId.runtimePiPinMismatch, {
+				loaded: piRuntimeVersion,
+				pinned: metadata.piVersion,
+			}),
+		);
 	}
-	await offerShisaOnboarding({ paths, jouzuVersion: metadata.jouzuVersion, interactive: interactiveStartup });
+	await offerShisaOnboarding({
+		paths,
+		jouzuVersion: metadata.jouzuVersion,
+		interactive: interactiveStartup,
+		catalog: preRuntime.catalog.bundle,
+	});
 	const [
 		presentation,
 		{ createJouzuModelPicker },
 		{ createJouzuHelpExtension },
 		{ createScrollbackExtension },
-		{ createSessionUiExtension, WorkDashboardController, selectWork },
+		{ createSessionUiExtension, SESSION_UI_MESSAGE_IDS, WorkDashboardController, selectWork },
 	] = await Promise.all([
 		import("./presentation.js"),
 		import("./model-picker.js"),
@@ -322,11 +509,14 @@ export async function runMainCli(args: string[]): Promise<void> {
 	// unreachable, and the session starts from cached and local configuration.
 	if (interactiveStartup) {
 		try {
-			const pendingCatalogs = pendingStartupCatalogSources(paths, process.env);
+			const pendingCatalogs = pendingStartupCatalogSources(paths, process.env, preRuntime.catalog.bundle);
 			if (pendingCatalogs.length > 0) {
-				presentation.writeStartupNotice(presentation.CATALOG_STARTUP_NOTICE);
+				presentation.writeStartupNotice(presentation.catalogStartupNotice(preRuntime.catalog.bundle));
 				try {
-					await refreshModelCatalogSources(paths, pendingCatalogs, { timeoutMs: STARTUP_CATALOG_TIMEOUT_MS });
+					await refreshModelCatalogSources(paths, pendingCatalogs, {
+						timeoutMs: STARTUP_CATALOG_TIMEOUT_MS,
+						catalog: preRuntime.catalog.bundle,
+					});
 				} finally {
 					presentation.clearStartupNotice();
 				}
@@ -339,7 +529,7 @@ export async function runMainCli(args: string[]): Promise<void> {
 	const releaseExtensionStatus = inspectReleaseExtensions();
 	probeReleaseRuntimeCompatibility(releaseExtensionStatus);
 	ensureReleaseRuntimeCompatibility(releaseExtensionStatus);
-	const piArgs = withReleaseExtensionArguments(parsed.args, releaseExtensionStatus);
+	const piArgs = withReleaseExtensionArguments(parsed.args, releaseExtensionStatus, preRuntime.catalog.bundle);
 	const runtimeDiagnostics = createRuntimeDiagnostics(
 		metadata,
 		usesReleaseExtensions(parsed.args) ? releaseExtensionStatus.resolvedPackageRoots : {},
@@ -362,6 +552,8 @@ export async function runMainCli(args: string[]): Promise<void> {
 		},
 		runtime: runtimeDiagnostics,
 		jouzuVersion: metadata.jouzuVersion,
+		catalog: preRuntime.catalog.bundle,
+		...(parsed.options.uiLocale ? { uiLocaleCli: parsed.options.uiLocale } : {}),
 		textguardFiles: parsed.options.textguardFiles,
 		// Read at launch time: a child inherits whatever mode the session is in.
 		textguardMode: () => nativeTextguard.currentMode(),
@@ -373,16 +565,26 @@ export async function runMainCli(args: string[]): Promise<void> {
 	if (interactiveStartup) {
 		// Best-effort catalog refresh in the background: a source is contacted only
 		// when its credential is available, and cached revisions keep serving.
-		void refreshAvailableModelCatalogs(paths)
+		void refreshAvailableModelCatalogs(paths, { catalog: preRuntime.catalog.bundle })
 			.then((result) => {
 				if (result) modelPicker.reloadCatalogs();
 			})
 			.catch(() => {});
 	}
-	const help = createJouzuHelpExtension();
-	const voice = (await import("./voice/integration.js")).createVoiceExtension(paths);
+	const help = createJouzuHelpExtension(preRuntime.catalog.bundle);
+	const voice = (await import("./voice/integration.js")).createVoiceExtension(paths, {
+		catalog: preRuntime.catalog.bundle,
+	});
 	const effectiveKeyText = (action: "app.model.select" | "app.model.cycleForward") => pi.keyText(action) || "unbound";
+	// The Session Line's shortcut hint is catalog text. The keys are resolved at
+	// launch and injected, so the message itself carries no key notation.
+	const paletteShortcutHint = catalogText(preRuntime.catalog.bundle, SESSION_UI_MESSAGE_IDS.hintPaletteShortcuts, {
+		select: effectiveKeyText("app.model.select"),
+		cycle: effectiveKeyText("app.model.cycleForward"),
+		help: "Ctrl+/",
+	});
 	const sessionUi = createSessionUiExtension({
+		catalog: preRuntime.catalog.bundle,
 		dashboard: {
 			controller: dashboardController,
 			mode: () => dashboardVisibility.mode(dashboardMode),
@@ -395,7 +597,9 @@ export async function runMainCli(args: string[]): Promise<void> {
 				const work = flow?.dashboardWork;
 				dashboardController.attach(scope, [
 					createChildWorkSource(modelPicker.workflowService),
-					...(flow ? [createFlowWorkSource(() => flow.dashboardStatus())] : []),
+					...(flow
+						? [createFlowWorkSource(() => flow.dashboardStatus(), Date.now, 5_000, preRuntime.catalog.bundle)]
+						: []),
 					...(work
 						? [
 								createClaimedWorkSource({
@@ -420,7 +624,7 @@ export async function runMainCli(args: string[]): Promise<void> {
 									subscribe: (changed) => work.watchJobs(changed),
 									read: (current) => {
 										const jobs = work.jobs();
-										return jobs && jobWorkUnits(current, jobs);
+										return jobs && jobWorkUnits(current, jobs, preRuntime.catalog.bundle);
 									},
 								}),
 							]
@@ -429,14 +633,19 @@ export async function runMainCli(args: string[]): Promise<void> {
 				const policy = loadDashboardPolicy(paths);
 				dashboardMode = policy.mode;
 				if (resetVisibility && policy.error)
-					ctx.ui.notify(`Dashboard settings could not be read: ${policy.error}`, "warning");
+					ctx.ui.notify(
+						catalogText(preRuntime.catalog.bundle, "jouzu.cli.settings.dashboardUnreadable", {
+							message: policy.error,
+						}),
+						"warning",
+					);
 			},
 		},
 		getFastMode: ({ extensionStatuses }) => extensionStatuses.get(FAST_MODE_STATUS) === "on",
 		getHints: () => [
 			{
 				id: "palette.shortcuts",
-				text: `${effectiveKeyText("app.model.select")} models · ${effectiveKeyText("app.model.cycleForward")} favorites · Ctrl+/ help`,
+				text: paletteShortcutHint,
 				priority: 10,
 				role: "muted",
 			},
@@ -484,8 +693,13 @@ export async function runMainCli(args: string[]): Promise<void> {
 					root: join(paths.stateDir, "flow"),
 					interactive: interactiveStartup,
 					runtimeReport: runtimeDiagnostics.report,
+					catalog: preRuntime.catalog.bundle,
 					onError: (error) =>
-						console.error(`Jouzu flow control: ${error instanceof Error ? error.message : String(error)}`),
+						console.error(
+							catalogText(preRuntime.catalog.bundle, CatalogMessageId.flowRuntimeError, {
+								message: error instanceof Error ? error.message : String(error),
+							}),
+						),
 				})
 			: undefined;
 	const scrollbackSession = createScrollbackSessionObserver();
@@ -508,18 +722,26 @@ export async function runMainCli(args: string[]): Promise<void> {
 				createSessionLabelsExtension(undefined, undefined, createLabelPolicy(paths)),
 				...(flow ? flow.extensions : []),
 				{ name: "jouzu-textguard-review", factory: createTextGuardReviewExtension(nativeTextguard) },
-				presentation.createJouzuPresentationExtension(metadata, profile),
+				languageContract.extension,
+				presentation.createJouzuPresentationExtension(metadata, profile, {
+					catalog: preRuntime.catalog.bundle,
+					responseLanguageSection: () => languageContract.currentSection(),
+				}),
 				sessionUi,
 				// Account commands must run before model-availability input checks.
-				createShisaExtension({ paths, jouzuVersion: metadata.jouzuVersion }),
+				createShisaExtension({
+					paths,
+					jouzuVersion: metadata.jouzuVersion,
+					catalog: preRuntime.catalog.bundle,
+				}),
 				modelPicker.extension,
 				modelPicker.workflowExtension,
 				createAstraCompatibilityExtension(),
-				createFastModeExtension(),
+				createFastModeExtension(preRuntime.catalog.bundle),
 				createResponsesToolSchemaExtension(),
 				voice,
 				help,
-				createScrollbackExtension({ isShellBusy: scrollbackSession.isShellBusy }),
+				createScrollbackExtension({ isShellBusy: scrollbackSession.isShellBusy, catalog: preRuntime.catalog.bundle }),
 				releaseDiagnostics,
 			],
 		});
@@ -542,44 +764,54 @@ export async function runMainCli(args: string[]): Promise<void> {
 	}
 }
 
-export function handleMainCliError(error: unknown): void {
+export function handleMainCliError(error: unknown, catalog: CatalogBundle = defaultCatalog()): void {
+	const text = (id: CliMessageId, args?: Parameters<typeof catalogText>[2]): string => catalogText(catalog, id, args);
 	if (error instanceof PiImportError) {
-		console.error(`Jouzu Pi import failed: ${error.message}`);
+		console.error(text(CliMessageId.piImport, { message: protectedSourceError(error.message) }));
 		process.exitCode = error.exitCode;
 		return;
 	}
 	if (error instanceof KeybindingConflictError) {
-		console.error(formatKeybindingPlan(error.plan));
-		console.error('Resolve the conflicts above, then run "jouzu keybindings apply" again.');
+		console.error(text(CliMessageId.keybindingConflict, { plan: formatKeybindingPlan(error.plan, { catalog }) }));
+		console.error(text(CliMessageId.keybindingConflictRecovery));
 		process.exitCode = error.exitCode;
 		return;
 	}
 	if (error instanceof KeybindingConfigError) {
-		console.error(`Jouzu keybindings failed: ${error.message}`);
+		console.error(text(CliMessageId.keybindingConfig, { message: protectedSourceError(error.message) }));
 		process.exitCode = error.exitCode;
 		return;
 	}
 	if (error instanceof ProfileStateError) {
-		console.error(`Jouzu profile state is unreadable: ${error.message}`);
-		console.error(
-			'Recovery: repair or remove the profile state file, then run "jouzu profile plan" and "jouzu profile apply" again.',
-		);
+		console.error(text(CliMessageId.profileState, { message: protectedSourceError(error.message) }));
+		console.error(text(CliMessageId.profileStateRecovery));
 		process.exitCode = 1;
 		return;
 	}
 	if (error instanceof ProfileConflictError) {
-		console.error(formatProfilePlan(error.plan));
-		console.error('Resolve the conflicts above, then run "jouzu profile apply" again.');
+		console.error(text(CliMessageId.profileConflict, { plan: formatProfilePlan(error.plan, { catalog }) }));
+		console.error(text(CliMessageId.profileConflictRecovery));
 		process.exitCode = error.exitCode;
 		return;
 	}
 	if (error instanceof UsageError) {
-		console.error(`Error: ${error.message}`);
-		console.error('Run "jouzu --help" for Jouzu usage or "jouzu pi --help" for Pi usage.');
+		console.error(text(CliMessageId.usage, { message: protectedSourceError(usageErrorMessage(error, catalog)) }));
+		console.error(text(CliMessageId.usageHint));
 		process.exitCode = error.exitCode;
 		return;
 	}
-	const message = error instanceof Error ? error.message : String(error);
-	console.error(`Jouzu failed: ${message}`);
+	if (error instanceof UiLocaleUsageError) {
+		console.error(text(CliMessageId.usage, { message: protectedSourceError(error.message) }));
+		console.error(text(CliMessageId.usageHint));
+		process.exitCode = error.exitCode;
+		return;
+	}
+	const message =
+		error instanceof CatalogError
+			? catalogMessageText(catalog, error.catalogMessage)
+			: error instanceof Error
+				? error.message
+				: String(error);
+	console.error(text(CliMessageId.generic, { message: protectedSourceError(message) }));
 	process.exitCode = 1;
 }

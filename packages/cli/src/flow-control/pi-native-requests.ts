@@ -2,6 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { type AssistantMessage, getCurrentSystemPrompt, type Message } from "@earendil-works/pi-ai";
 import type { AgentSession, AgentSessionEvent } from "@earendil-works/pi-coding-agent";
+import { CatalogMessageId, catalogText, defaultCatalog } from "../cli-messages.js";
+import type { CatalogBundle } from "../locale-catalog.js";
 import { cacheWarmAdmission } from "./cache-warm-admission.js";
 import { flowDiagnosticText } from "./diagnostic-text.js";
 import {
@@ -38,6 +40,7 @@ function nativeFailure(
 	error: unknown,
 	model: { api: string; provider: string; id: string },
 	stage: NativeRequestFailure["stage"],
+	catalog: CatalogBundle = defaultCatalog(),
 ): NativeRequestFailure {
 	return {
 		stage,
@@ -45,7 +48,7 @@ function nativeFailure(
 		code: error instanceof FlowLedgerError ? error.code : "provider",
 		message:
 			flowDiagnosticText(error instanceof Error ? error.message : String(error), 300) ||
-			"No failure description was returned.",
+			catalogText(catalog, CatalogMessageId.flowNativeNoFailureDescription),
 		api: flowDiagnosticText(model.api, 128) || "unknown",
 		provider: flowDiagnosticText(model.provider, 128) || "unknown",
 		model: flowDiagnosticText(model.id, 128) || "unknown",
@@ -116,6 +119,7 @@ export class PiNativeRequests {
 		 */
 		flowEnabled?: () => boolean,
 		retireHistory?: () => Promise<unknown>,
+		private readonly catalog: CatalogBundle = defaultCatalog(),
 	) {
 		if (!Number.isSafeInteger(maxBytes) || maxBytes < 1)
 			throw new FlowLedgerError("capacity", "Invalid native payload limit.");
@@ -489,7 +493,7 @@ export class PiNativeRequests {
 				}
 			};
 			const withheld = async (error?: unknown) => {
-				if (error !== undefined) failure ??= nativeFailure(error, model, "compaction-preparation");
+				if (error !== undefined) failure ??= nativeFailure(error, model, "compaction-preparation", this.catalog);
 				if (!handedOff) await store.finish(id, "withheld", failure);
 			};
 			try {
@@ -548,8 +552,10 @@ export class PiNativeRequests {
 								throw new FlowLedgerError(
 									"transition",
 									message.stopReason === "error" && message.errorMessage
-										? `Compaction provider failed before payload admission: ${flowDiagnosticText(message.errorMessage, 300)}`
-										: "Maintenance provider returned without payload admission.",
+										? catalogText(this.catalog, CatalogMessageId.flowNativeCompactionProviderFailed, {
+												message: flowDiagnosticText(message.errorMessage, 300),
+											})
+										: catalogText(catalog, CatalogMessageId.flowNativeMaintenanceNoAdmission),
 								);
 							await store.finish(
 								id,
@@ -617,7 +623,12 @@ export class PiNativeRequests {
 			const withheld = async (error?: unknown) => {
 				if (handedOff) return;
 				if (error !== undefined)
-					failure ??= nativeFailure(error, model, admissionFailure ? "payload-admission" : "provider-preparation");
+					failure ??= nativeFailure(
+						error,
+						model,
+						admissionFailure ? "payload-admission" : "provider-preparation",
+						this.catalog,
+					);
 				await store.finish(id, "withheld", failure);
 				if (composed) await this.composition?.withhold(composed);
 			};
@@ -692,12 +703,21 @@ export class PiNativeRequests {
 							if (!handedOff && admissionFailure) throw admissionFailure.error;
 							if (!handedOff) {
 								if (message.stopReason === "error" && message.errorMessage)
-									failure ??= nativeFailure(new Error(message.errorMessage), model, "provider-preparation");
+									failure ??= nativeFailure(
+										new Error(message.errorMessage),
+										model,
+										"provider-preparation",
+										this.catalog,
+									);
 								const error = new FlowLedgerError(
 									"transition",
 									message.stopReason === "error" && message.errorMessage
-										? `Provider request failed before payload admission (${flowDiagnosticText(model.provider)} / ${flowDiagnosticText(model.id)}): ${flowDiagnosticText(message.errorMessage, 300)}. Run /flow for recovery options.`
-										: "Native provider returned without payload admission. Run /flow for recovery options.",
+										? catalogText(this.catalog, CatalogMessageId.flowNativeProviderFailed, {
+												provider: flowDiagnosticText(model.provider),
+												model: flowDiagnosticText(model.id),
+												message: flowDiagnosticText(message.errorMessage, 300),
+											})
+										: catalogText(this.catalog, CatalogMessageId.flowNativeProviderNoAdmission),
 								);
 								this.turn?.failed?.(error);
 								throw error;

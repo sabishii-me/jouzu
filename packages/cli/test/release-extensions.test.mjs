@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { pathToFileURL } from "node:url";
+import { resolveCatalog } from "../dist/locale-catalog.js";
 import {
 	consolidateReleaseToolConflicts,
 	createReleaseExtensionDiagnostics,
@@ -305,6 +306,26 @@ test("native extension diagnostics retain verbose cause details", () => {
 	assert.match(
 		formatReleaseExtensionFailure(degraded),
 		/Caused by: Cannot find module '@apify\/impit-win32-x64-msvc'/u,
+	);
+});
+
+test("formatReleaseExtensionFailure renders from the resolved bundle", () => {
+	const failure = {
+		packageName: "pi-webaio",
+		packageVersion: "1.0.0",
+		tools: ["tff-fetch_url", "tff-search_web"],
+		error: "native binding is unavailable",
+	};
+	const japanese = formatReleaseExtensionFailure(failure, resolveCatalog("ja").bundle);
+	assert.match(japanese, /省略可能な拡張機能 pi-webaio@1\.0\.0 は利用できません。/u, "the sentence is Japanese");
+	assert.match(japanese, /無効化されたツール: tff-fetch_url, tff-search_web。/u, "the tools fragment is Japanese");
+	assert.match(japanese, /native binding is unavailable/u, "the upstream error stays verbatim");
+	assert.match(japanese, /`jz doctor` で詳細を確認してください。/u, "the recovery tail is Japanese");
+	assert.doesNotMatch(japanese, /Optional extension|Run `jz doctor` for details/u, "no English sentence survives");
+	assert.equal(
+		formatReleaseExtensionFailure(failure),
+		"Optional extension pi-webaio@1.0.0 is unavailable. Disabled tools: tff-fetch_url, tff-search_web. native binding is unavailable Run `jz doctor` for details.",
+		"the default catalog stays byte-identical to the former literal",
 	);
 });
 

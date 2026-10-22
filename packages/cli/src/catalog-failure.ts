@@ -1,3 +1,5 @@
+import { catalogText, defaultCatalog } from "./cli-messages.js";
+import type { CatalogBundle } from "./locale-catalog.js";
 import { sanitizeTerminalText } from "./terminal-layout.js";
 
 export interface CatalogFailure {
@@ -5,64 +7,56 @@ export interface CatalogFailure {
 	message: string;
 }
 
-const REQUEST_CODES: Record<string, CatalogFailure> = {
-	ENOTFOUND: {
-		code: "dns_error",
-		message: "Catalog hostname could not be resolved. Check the endpoint, DNS, and VPN connection.",
-	},
-	EAI_AGAIN: {
-		code: "dns_error",
-		message: "Catalog DNS lookup temporarily failed. Check the network connection and retry.",
-	},
-	ECONNREFUSED: {
-		code: "connection_refused",
-		message: "The catalog connection was refused. Check the endpoint and proxy address.",
-	},
-	ECONNRESET: {
-		code: "connection_reset",
-		message: "The catalog connection was reset. Check the connection and any proxy or security software.",
-	},
-	ENETUNREACH: {
-		code: "network_unreachable",
-		message: "The catalog network is unreachable. Check the network, VPN, and proxy configuration.",
-	},
-	EHOSTUNREACH: {
-		code: "network_unreachable",
-		message: "The catalog host is unreachable. Check the network, VPN, and proxy configuration.",
-	},
-	ETIMEDOUT: {
-		code: "timeout",
-		message: "The catalog request timed out. Check connectivity and proxy configuration, then retry.",
-	},
-	UND_ERR_CONNECT_TIMEOUT: {
-		code: "timeout",
-		message: "Connecting to the catalog timed out. Check connectivity and proxy configuration.",
-	},
-	UND_ERR_HEADERS_TIMEOUT: {
-		code: "timeout",
-		message: "The catalog did not send response headers in time. Retry or check the catalog service.",
-	},
-	UND_ERR_BODY_TIMEOUT: {
-		code: "timeout",
-		message: "The catalog response stalled. Retry or check the catalog service.",
-	},
-	UND_ERR_SOCKET: {
-		code: "connection_reset",
-		message: "The catalog connection closed unexpectedly. Check the connection and proxy configuration.",
-	},
-	EACCES: {
-		code: "network_permission",
-		message: "Permission to connect to the catalog was denied. Check the machine's outbound network policy.",
-	},
-	EPERM: {
-		code: "network_permission",
-		message: "Permission to connect to the catalog was denied. Check the machine's outbound network policy.",
-	},
-	REDIRECT_BLOCKED: {
-		code: "redirect_blocked",
-		message:
-			"The catalog redirected the request. Use its final endpoint URL; Jouzu does not forward catalog credentials through redirects.",
-	},
+/**
+ * Catalog IDs for the catalog failure explanations.
+ *
+ * The failure `code` stays the identity of the result; only the explanation is
+ * catalog text. The IDs are local to this module rather than added to the
+ * shared `CatalogMessageId` table so a parallel migration of another surface
+ * does not conflict on that file; `scripts/check-locales.mjs` allows a
+ * catalog-only ID present in both locales.
+ */
+const FAILURE_MESSAGE_IDS = {
+	dnsHostname: "jouzu.cli.catalog.failure.dnsHostname",
+	dnsLookup: "jouzu.cli.catalog.failure.dnsLookup",
+	connectionRefused: "jouzu.cli.catalog.failure.connectionRefused",
+	connectionReset: "jouzu.cli.catalog.failure.connectionReset",
+	connectionClosed: "jouzu.cli.catalog.failure.connectionClosed",
+	networkUnreachable: "jouzu.cli.catalog.failure.networkUnreachable",
+	hostUnreachable: "jouzu.cli.catalog.failure.hostUnreachable",
+	timeout: "jouzu.cli.catalog.failure.timeout",
+	connectTimeout: "jouzu.cli.catalog.failure.connectTimeout",
+	headersTimeout: "jouzu.cli.catalog.failure.headersTimeout",
+	bodyTimeout: "jouzu.cli.catalog.failure.bodyTimeout",
+	networkPermission: "jouzu.cli.catalog.failure.networkPermission",
+	redirectBlocked: "jouzu.cli.catalog.failure.redirectBlocked",
+	filesystem: "jouzu.cli.catalog.failure.filesystem",
+	certificate: "jouzu.cli.catalog.failure.certificate",
+	network: "jouzu.cli.catalog.failure.network",
+	cache: "jouzu.cli.catalog.failure.cache",
+} as const;
+
+/** The failure code and catalog message ID for one upstream error code. */
+interface CatalogFailureExplanation {
+	code: string;
+	messageId: string;
+}
+
+const REQUEST_CODES: Record<string, CatalogFailureExplanation> = {
+	ENOTFOUND: { code: "dns_error", messageId: FAILURE_MESSAGE_IDS.dnsHostname },
+	EAI_AGAIN: { code: "dns_error", messageId: FAILURE_MESSAGE_IDS.dnsLookup },
+	ECONNREFUSED: { code: "connection_refused", messageId: FAILURE_MESSAGE_IDS.connectionRefused },
+	ECONNRESET: { code: "connection_reset", messageId: FAILURE_MESSAGE_IDS.connectionReset },
+	ENETUNREACH: { code: "network_unreachable", messageId: FAILURE_MESSAGE_IDS.networkUnreachable },
+	EHOSTUNREACH: { code: "network_unreachable", messageId: FAILURE_MESSAGE_IDS.hostUnreachable },
+	ETIMEDOUT: { code: "timeout", messageId: FAILURE_MESSAGE_IDS.timeout },
+	UND_ERR_CONNECT_TIMEOUT: { code: "timeout", messageId: FAILURE_MESSAGE_IDS.connectTimeout },
+	UND_ERR_HEADERS_TIMEOUT: { code: "timeout", messageId: FAILURE_MESSAGE_IDS.headersTimeout },
+	UND_ERR_BODY_TIMEOUT: { code: "timeout", messageId: FAILURE_MESSAGE_IDS.bodyTimeout },
+	UND_ERR_SOCKET: { code: "connection_reset", messageId: FAILURE_MESSAGE_IDS.connectionClosed },
+	EACCES: { code: "network_permission", messageId: FAILURE_MESSAGE_IDS.networkPermission },
+	EPERM: { code: "network_permission", messageId: FAILURE_MESSAGE_IDS.networkPermission },
+	REDIRECT_BLOCKED: { code: "redirect_blocked", messageId: FAILURE_MESSAGE_IDS.redirectBlocked },
 };
 const CERTIFICATE_CODES = new Set([
 	"CERT_HAS_EXPIRED",
@@ -108,42 +102,47 @@ function causeCodes(error: unknown): string[] {
 	return codes;
 }
 
-export function describeCatalogFailure(error: unknown, phase: "network" | "filesystem"): CatalogFailure {
+/**
+ * Classify a catalog request or filesystem failure into a code and an
+ * explanation resolved from `catalog`.
+ *
+ * The upstream error code is appended to the catalog explanation in
+ * parentheses, so the code stays the identity of the failure and the
+ * explanation is the only catalog text. `catalog` defaults to the English
+ * bundle, so the returned `message` is the same English bytes as before the
+ * migration while a caller with a resolved bundle can render the same ID in
+ * the active locale.
+ */
+export function describeCatalogFailure(
+	error: unknown,
+	phase: "network" | "filesystem",
+	catalog: CatalogBundle = defaultCatalog(),
+): CatalogFailure {
 	if (error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError")) {
-		return {
-			code: "timeout",
-			message: "The catalog request timed out. Check connectivity and proxy configuration, then retry.",
-		};
+		return { code: "timeout", message: catalogText(catalog, FAILURE_MESSAGE_IDS.timeout) };
 	}
 	for (const code of causeCodes(error)) {
 		if (phase === "filesystem" && FILESYSTEM_CODES.has(code)) {
 			return {
 				code: "filesystem_error",
-				message: `Jouzu could not read or write its local catalog data (${code}). Check the Jouzu data folder's permissions, available space, and whether another program is using it.`,
+				message: catalogText(catalog, FAILURE_MESSAGE_IDS.filesystem, { code }),
 			};
 		}
 		if (phase !== "network") continue;
 		if (CERTIFICATE_CODES.has(code)) {
 			return {
 				code: "tls_certificate_error",
-				message: `Catalog certificate verification failed (${code}). Check the system clock and trusted certificates, including any organization proxy certificate. Do not disable certificate verification.`,
+				message: catalogText(catalog, FAILURE_MESSAGE_IDS.certificate, { code }),
 			};
 		}
 		if (Object.hasOwn(REQUEST_CODES, code)) {
 			const detail = REQUEST_CODES[code];
-			return { code: detail.code, message: `${detail.message} (${code})` };
+			return { code: detail.code, message: `${catalogText(catalog, detail.messageId)} (${code})` };
 		}
 	}
 	return phase === "network"
-		? {
-				code: "network_error",
-				message:
-					"The catalog request failed. Check the endpoint, network connection, proxy environment variables, and trusted certificates.",
-			}
-		: {
-				code: "cache_error",
-				message: "Jouzu could not access its local catalog data. Check the Jouzu data folder and retry.",
-			};
+		? { code: "network_error", message: catalogText(catalog, FAILURE_MESSAGE_IDS.network) }
+		: { code: "cache_error", message: catalogText(catalog, FAILURE_MESSAGE_IDS.cache) };
 }
 
 /** Bound locally generated validation messages and remove the request's bearer before persistence. */

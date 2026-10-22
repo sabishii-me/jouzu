@@ -6,13 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import {
-	acquireStateLock,
-	describeStateLock,
-	inspectStateLock,
-	STATE_LOCK_MAX_BYTES,
-	STATE_LOCK_STALE_MS,
-} from "../dist/state-lock.js";
+import { acquireStateLock, inspectStateLock, STATE_LOCK_MAX_BYTES, STATE_LOCK_STALE_MS } from "../dist/state-lock.js";
 
 function makeStateDir() {
 	const root = mkdtempSync(join(tmpdir(), "jouzu-state-lock-"));
@@ -139,7 +133,6 @@ for (const operation of ["lstatSync", "fstatSync", "readSync"]) {
 		syncBuiltinESMExports();
 		try {
 			assert.deepEqual(inspectStateLock(path, new Date()), { exists: true, status: "unreadable", ageMs: null });
-			assert.match(describeStateLock(path, STATE_LOCK_STALE_MS, new Date()), /unreadable/);
 			assert.throws(() => acquireStateLock({ path, describe: "test", onBusy: busyError }), /domain busy/);
 			assert.ok(existsSync(path), "inspection failure must not remove the lock");
 		} finally {
@@ -179,20 +172,20 @@ test("oversized lock records stay busy and token release leaves them untouched",
 	assert.equal(existsSync(path), false);
 });
 
-test("describeStateLock reports free, dead, and owner-unknown states", async () => {
+test("inspectStateLock reports free, dead, and owner-unknown states", async () => {
 	const { root, stateDir } = makeStateDir();
 	try {
 		const path = join(stateDir, "lock");
-		assert.equal(describeStateLock(path, STATE_LOCK_STALE_MS, new Date()), "free");
+		assert.equal(inspectStateLock(path, new Date()).status, "free");
 
 		writeFileSync(
 			path,
 			`${JSON.stringify({ pid: await deadPid(), startedAt: new Date().toISOString(), token: "x" })}\n`,
 		);
-		assert.match(describeStateLock(path, STATE_LOCK_STALE_MS, new Date()), /dead process/);
+		assert.equal(inspectStateLock(path, new Date()).status, "held-dead");
 
 		writeAged(path, "", 5000);
-		assert.match(describeStateLock(path, STATE_LOCK_STALE_MS, new Date()), /owner unknown/);
+		assert.equal(inspectStateLock(path, new Date()).status, "owner-unknown");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}

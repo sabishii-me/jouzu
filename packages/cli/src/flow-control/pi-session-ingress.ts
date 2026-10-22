@@ -2,6 +2,8 @@ import { AsyncLocalStorage, AsyncResource } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import type { AgentSession, CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent";
+import { CatalogMessageId, catalogText, defaultCatalog } from "../cli-messages.js";
+import type { CatalogBundle } from "../locale-catalog.js";
 import { retiredMemberHash } from "./attempt-retention.js";
 import { type FlowProducer, retainedByReceipt } from "./controller.js";
 import { admissionPause, INTERRUPTED_PAUSE, isAdmissionPause, providerPause } from "./flow-pause.js";
@@ -18,7 +20,7 @@ import {
 import { type PiFlowBranchResources, type PiFlowSessionOptions, PiFlowSessionService } from "./pi-session-service.js";
 import { FlowLedgerError, type FlowLedgerState } from "./receipt-ledger.js";
 import type { FlowNativeInput } from "./submission-store.js";
-import { activeAdmissionHolds, UNAVAILABLE_INPUT_REASON } from "./submission-view.js";
+import { activeAdmissionHolds } from "./submission-view.js";
 import { captureUserWorkParticipants, retainUserWork } from "./user-work.js";
 import type { FlowWorkStatus } from "./wait-authority.js";
 import { type FlowWaitClock, systemWaitClock } from "./wait-deadlines.js";
@@ -90,11 +92,13 @@ export class PiSessionFlowIngress implements Ingress {
 	private semanticReleaseRequested = false;
 	private automaticReleaseRunning = false;
 	private releasing?: Promise<{ released: string[]; held: string[] }>;
+	private readonly catalog: CatalogBundle;
 	constructor(private readonly options: PiFlowIngressOptions) {
 		this.options = {
 			...options,
 			userWorkParticipants: captureUserWorkParticipants(options.userWorkParticipants),
 		};
+		this.catalog = options.catalog ?? defaultCatalog();
 	}
 
 	attach(session: AgentSession): Promise<void> {
@@ -600,7 +604,7 @@ export class PiSessionFlowIngress implements Ingress {
 		const records = await this.branch().attachment.submissions.snapshot(false);
 		return records.flatMap((record) =>
 			record.unavailable && record.status !== "cancelled"
-				? [{ id: record.id, reason: UNAVAILABLE_INPUT_REASON }]
+				? [{ id: record.id, reason: catalogText(this.catalog, CatalogMessageId.flowSubmissionUnavailable) }]
 				: activeAdmissionHolds(record).map((hold) => ({ id: record.id, reason: hold.reason })),
 		);
 	}
@@ -617,7 +621,10 @@ export class PiSessionFlowIngress implements Ingress {
 			// it is reported alongside what is held.
 			const uncertain = state.attempts
 				.filter((attempt) => attempt.phase === "uncertain")
-				.map((attempt) => ({ id: attempt.id, reason: attempt.reason ?? "Provider outcome is unknown." }));
+				.map((attempt) => ({
+					id: attempt.id,
+					reason: attempt.reason ?? catalogText(this.catalog, CatalogMessageId.flowIngressProviderOutcomeUnknown),
+				}));
 			return { version: 1 as const, scope: { ...branch.scope }, submissions, uncertain };
 		});
 	}
@@ -774,7 +781,7 @@ export class PiSessionFlowIngress implements Ingress {
 					input ? structuredClone(input) : undefined,
 				))
 					? { allowed: true }
-					: { allowed: false, reason: "Input is held by host admission policy." };
+					: { allowed: false, reason: catalogText(this.catalog, CatalogMessageId.flowIngressHostAdmission) };
 			} catch (error) {
 				await branch.attachment.submissions.recordAdmission(
 					submission.id,
@@ -788,7 +795,10 @@ export class PiSessionFlowIngress implements Ingress {
 		// A boolean host override supplies no authority to bypass a durable dependency wait.
 		const durableWaitDecision = () => {
 			if (this.automaticReleaseRunning && this.semanticReleaseRequested && !isUserInstruction(submission))
-				return { allowed: false, reason: "Input is waiting for updated semantic admission." } as const;
+				return {
+					allowed: false,
+					reason: catalogText(this.catalog, CatalogMessageId.flowIngressSemanticAdmission),
+				} as const;
 			const currentWaits = branch.attachment.waits.gate();
 			if (
 				!currentWaits.updating &&
@@ -813,7 +823,10 @@ export class PiSessionFlowIngress implements Ingress {
 		const waitDecision = durableWaitDecision();
 		if (!waitDecision.allowed) decision = waitDecision;
 		if (this.nativeRecoveryBlocked(submission, branch, phase))
-			decision = { allowed: false, reason: "Input is waiting for recovery reconciliation." };
+			decision = {
+				allowed: false,
+				reason: catalogText(this.catalog, CatalogMessageId.flowIngressRecoveryReconciliation),
+			};
 		const current = records.find((record) => record.id === submission.id);
 		if (!current) return false;
 		const saved = await branch.attachment.submissions.recordAdmission(

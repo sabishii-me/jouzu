@@ -1,4 +1,6 @@
 import { Text } from "@earendil-works/pi-tui";
+import { CatalogMessageId, catalogText, defaultCatalog } from "../cli-messages.js";
+import type { CatalogBundle } from "../locale-catalog.js";
 import { fitTerminalText, sanitizeTerminalText } from "../terminal-layout.js";
 
 interface Theme {
@@ -10,7 +12,7 @@ const safe = (value: unknown): string => sanitizeTerminalText(String(value ?? "?
 const short = (value: unknown, width: number): string => fitTerminalText(safe(value), width, "…");
 const count = (value: unknown): value is number => Number.isSafeInteger(value) && (value as number) >= 0;
 
-function summarize(kind: unknown, content: unknown, theme: Theme): string[] | undefined {
+function summarize(kind: unknown, content: unknown, theme: Theme, catalog: CatalogBundle): string[] | undefined {
 	if (typeof content === "string" && (kind === "wait" || kind === "result")) {
 		try {
 			content = JSON.parse(content);
@@ -74,7 +76,7 @@ function summarize(kind: unknown, content: unknown, theme: Theme): string[] | un
 			lines.push(
 				theme.fg(
 					"warning",
-					`  ⚠ ${warningResults} result${warningResults === 1 ? "" : "s"} with warnings${reviewNote ? ` · ${safe(reviewNote)}` : ""}`,
+					`  ⚠ ${warningResults} result${warningResults === 1 ? "" : "s"} with warnings${reviewNote ? ` · ${catalogText(catalog, CatalogMessageId.flowMessageReviewNote)}` : ""}`,
 				),
 			);
 		lines.push(
@@ -91,7 +93,7 @@ function summarize(kind: unknown, content: unknown, theme: Theme): string[] | un
 	if ((kind === "work" || kind === "alert") && typeof content === "string") {
 		const [first, ...rest] = content.split("\n");
 		const lines = [
-			`${theme.fg(kind === "work" ? "accent" : "warning", kind === "work" ? "▶ work" : "⚠ alert")} ${short(first, 120)}`,
+			`${theme.fg(kind === "work" ? "accent" : "warning", kind === "work" ? catalogText(catalog, CatalogMessageId.flowMessageWork) : catalogText(catalog, CatalogMessageId.flowMessageAlert))} ${short(first, 120)}`,
 		];
 		if (rest.length) lines.push(theme.fg("dim", short(rest.join(" "), 200)));
 		return lines;
@@ -104,6 +106,7 @@ export function renderFlowMessage(
 	message: { content: unknown },
 	{ expanded, outputPad }: { expanded: boolean; outputPad: number },
 	theme: Theme,
+	catalog: CatalogBundle = defaultCatalog(),
 ): Text {
 	const lines: string[] = [];
 	const parts = Array.isArray(message.content) ? message.content : [{ type: "text", text: message.content }];
@@ -118,7 +121,7 @@ export function renderFlowMessage(
 		try {
 			const parsed: unknown = JSON.parse(part.text);
 			if (record(parsed) && Array.isArray(parsed.flowInput) && parsed.flowInput[0] === "jouzu-flow")
-				summary = summarize(parsed.kind, parsed.content, theme);
+				summary = summarize(parsed.kind, parsed.content, theme, catalog);
 		} catch {
 			/* Unknown or malformed messages remain inspectable as text. */
 		}

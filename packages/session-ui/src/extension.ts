@@ -1,5 +1,6 @@
 import type { ExtensionContext, InlineExtension } from "@earendil-works/pi-coding-agent";
-import type { SessionUiActivity, SessionUiActivityContext, SessionUiHint } from "./contracts.js";
+import type { SessionUiActivity, SessionUiActivityContext, SessionUiCatalog, SessionUiHint } from "./contracts.js";
+import { sessionUiText } from "./contracts.js";
 import { SessionStatusController } from "./controller.js";
 import { SESSION_UI_RUNTIME_IDS } from "./identity.js";
 import { type ModelCycleDirection, SessionPromptEditor } from "./prompt-frame.js";
@@ -12,6 +13,11 @@ import type { WorkDashboardController } from "./work-dashboard-controller.js";
 import { dashboardAvailableRows } from "./work-dashboard-height.js";
 
 export interface SessionUiExtensionOptions {
+	/**
+	 * The resolved catalog the Session UI renders its own text from. It reaches
+	 * the renderers once, here, and the render path never resolves a locale.
+	 */
+	catalog: SessionUiCatalog;
 	dashboard?: {
 		controller: WorkDashboardController;
 		attach(ctx: ExtensionContext, resetVisibility: boolean): void;
@@ -34,7 +40,10 @@ export interface SessionUiExtensionOptions {
 	env?: NodeJS.ProcessEnv;
 }
 
-export function createSessionUiExtension(options: SessionUiExtensionOptions = {}): InlineExtension {
+export function createSessionUiExtension(options: SessionUiExtensionOptions): InlineExtension {
+	// Resolve the display text once, when the renderers are created, so a render
+	// call formats no locale and the text cannot change mid-session.
+	const text = sessionUiText(options.catalog);
 	return {
 		name: SESSION_UI_RUNTIME_IDS.extension,
 		factory: (pi) => {
@@ -77,6 +86,7 @@ export function createSessionUiExtension(options: SessionUiExtensionOptions = {}
 				sessionLine = new SessionLineComponent(
 					activeController,
 					stylesFor(ctx.ui.theme),
+					text,
 					() => options.getHints?.(activeController.getSnapshot()) ?? [],
 					() => requestRender(),
 					() => options.getActivity?.({ extensionStatuses }),
@@ -91,6 +101,7 @@ export function createSessionUiExtension(options: SessionUiExtensionOptions = {}
 							const component: WorkDashboardComponent = new WorkDashboardComponent(
 								dashboard.controller,
 								stylesFor(theme),
+								text.dashboard,
 								(width) => ({
 									mode: dashboard.mode(),
 									animate: activeController.getSnapshot()?.activity.idle === true,
@@ -107,7 +118,7 @@ export function createSessionUiExtension(options: SessionUiExtensionOptions = {}
 				ctx.ui.setFooter((tui, theme, footerData) => {
 					requestRender = () => tui.requestRender();
 					extensionStatuses = footerData.getExtensionStatuses();
-					const statusBar = new StatusBarComponent(activeController, stylesFor(theme), () => tui.requestRender());
+					const statusBar = new StatusBarComponent(activeController, stylesFor(theme), text, () => tui.requestRender());
 					const unsubscribeBranch = footerData.onBranchChange(() => {
 						void activeController.refreshGit(ctx);
 					});

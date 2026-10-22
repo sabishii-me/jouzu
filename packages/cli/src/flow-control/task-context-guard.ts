@@ -1,4 +1,6 @@
 import type { ContextEvent, ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { CatalogMessageId, catalogText, defaultCatalog } from "../cli-messages.js";
+import type { CatalogBundle } from "../locale-catalog.js";
 import type { FlowAttempt } from "./receipt-ledger.js";
 
 type Message = ContextEvent["messages"][number];
@@ -16,8 +18,11 @@ export function installTaskContextGuard(
 		activeAttempt(): Promise<FlowAttempt | undefined>;
 		valid(attempt: FlowAttempt): Promise<boolean>;
 		onError(error: unknown): void;
+		/** The resolved catalog the skip notice reads its text from. */
+		catalog?: CatalogBundle;
 	},
 ) {
+	const catalog = options.catalog ?? defaultCatalog();
 	let incoming: Message[] = [];
 	const skipped = new Set<string>();
 	pi.on("session_start", async (_event, ctx) => {
@@ -47,7 +52,7 @@ export function installTaskContextGuard(
 			if (!skipped.has(attempt.id)) {
 				skipped.add(attempt.id);
 				pi.appendEntry(skippedType, { attemptId: attempt.id });
-				ctx.ui.notify("Skipped a task continuation because its task changed.", "info");
+				ctx.ui.notify(catalogText(catalog, CatalogMessageId.flowTaskContinuationSkipped), "info");
 			}
 			if (
 				inputs.every((message) => attemptId(message) === attempt.id) &&

@@ -16,6 +16,7 @@ import {
 	stepContextClamp,
 	writeContextPolicy,
 } from "../dist/context-clamp.js";
+import { resolveCatalog } from "../dist/locale-catalog.js";
 import { resolveJouzuPaths } from "../dist/paths.js";
 
 function setup() {
@@ -121,4 +122,66 @@ test("clamping composes through min and ignores models already below the ceiling
 	assert.equal(modelsExceedContextClamp([{ contextWindow: 1_000_000 }], 384_000), true);
 	assert.equal(modelsExceedContextClamp([{ contextWindow: 384_000 }], 384_000), false);
 	assert.equal(modelsExceedContextClamp([{ contextWindow: 1_000_000 }], undefined), false);
+});
+
+/**
+ * The stored-context-policy diagnostics moved onto the catalog without changing
+ * their English bytes. Each case pins the English text the pre-migration module
+ * produced and the Japanese text the glossary author wrote, so a reworded
+ * catalog entry fails here instead of only changing what a user reads.
+ */
+test("the context-policy diagnostics keep their English bytes and localize", () => {
+	const { root, paths } = setup();
+	const ja = resolveCatalog("ja").bundle;
+	const cases = [
+		[
+			"a bounded regular file",
+			undefined,
+			() => {
+				writeFileSync(join(root, "policy-target.json"), '{"schemaVersion":1}');
+				symlinkSync(join(root, "policy-target.json"), contextPolicyPath(paths));
+			},
+			"context policy must be a bounded regular file",
+			"コンテキストポリシーはサイズ上限のある通常ファイルでなければなりません",
+		],
+		[
+			"an object",
+			"[]",
+			undefined,
+			"context policy must be an object",
+			"コンテキストポリシーはオブジェクトでなければなりません",
+		],
+		[
+			"unknown keys",
+			'{"schemaVersion":1,"maxContextTokens":384000,"extra":true}',
+			undefined,
+			"context policy has unknown keys: extra",
+			"コンテキストポリシーに不明なキーがあります: extra",
+		],
+		[
+			"schemaVersion 1",
+			'{"schemaVersion":2,"maxContextTokens":384000}',
+			undefined,
+			"context policy requires schemaVersion 1",
+			"コンテキストポリシーには schemaVersion 1 が必要です",
+		],
+		[
+			"the token range",
+			'{"schemaVersion":1,"maxContextTokens":12}',
+			undefined,
+			"context policy maxContextTokens must be an integer from 1024 to 100000000",
+			"コンテキストポリシーの maxContextTokens は 1024 から 100000000 までの整数でなければなりません",
+		],
+	];
+	try {
+		for (const [name, contents, prepare, english, japanese] of cases) {
+			rmSync(contextPolicyPath(paths), { force: true });
+			if (contents !== undefined) writeFileSync(contextPolicyPath(paths), contents);
+			prepare?.();
+			assert.equal(loadContextPolicy(paths).error, english, `${name} keeps the English bytes`);
+			assert.equal(loadContextPolicy(paths, ja).error, japanese, `${name} renders in Japanese`);
+		}
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
 });

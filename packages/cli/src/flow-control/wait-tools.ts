@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { InlineExtension, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { CatalogMessageId, catalogText, defaultCatalog } from "../cli-messages.js";
+import type { CatalogBundle } from "../locale-catalog.js";
 import { retainAutomaticWork } from "./automatic-work.js";
 import { FLOW_OFF_MESSAGE } from "./flow-off-message.js";
 import type { PiFlowAttachment } from "./pi-attachment.js";
@@ -50,6 +52,8 @@ export interface FlowWaitToolOptions {
 	enabled?(): boolean;
 	maxDurationMs: number;
 	now?(): number;
+	/** The resolved catalog the tool labels read their display text from. */
+	catalog?: CatalogBundle;
 }
 interface WaitArguments {
 	work?: string;
@@ -225,6 +229,7 @@ export function createFlowWaitExtension(options: FlowWaitToolOptions): InlineExt
 		throw new FlowLedgerError("capacity", "Invalid session wait duration limit.");
 	const maxDurationMs = options.maxDurationMs;
 	const now = options.now ?? Date.now;
+	const catalog = options.catalog ?? defaultCatalog();
 	const requireEnabled = () => {
 		if (options.enabled && !options.enabled()) throw new FlowLedgerError("stale", FLOW_OFF_MESSAGE);
 	};
@@ -261,7 +266,7 @@ export function createFlowWaitExtension(options: FlowWaitToolOptions): InlineExt
 			pi.registerTool({
 				name: "agent_wait",
 				exposure: "model-only",
-				label: "Wait for dependencies",
+				label: catalogText(catalog, CatalogMessageId.flowWaitLabel),
 				description:
 					"Wait for asynchronous dependencies as the current task or invocation. Copy each producer's waitDependency into on and supply reason and deadline. Omit optional fields, or use null if the interface requires them. Top-level work selects the work to suspend, not the child/job to wait for; normally omit it or pass null. Never invent dependency metadata or use until as a health policy. A waiting result holds this work until completion, failure, cancellation, a health decision, or the capped deadline. Replacing a live wait requires its exact replaceToken.",
 				promptSnippet: "agent_wait: wait for exact asynchronous dependencies with a hard deadline.",
@@ -389,7 +394,7 @@ export function createFlowWaitExtension(options: FlowWaitToolOptions): InlineExt
 			pi.registerTool({
 				name: "agent_wait_cancel",
 				exposure: "model-only",
-				label: "Cancel dependency wait",
+				label: catalogText(catalog, CatalogMessageId.flowWaitCancelLabel),
 				description:
 					"Idempotently remove a wait gate by token and reason. This leaves its process and requested work active.",
 				promptSnippet: "agent_wait_cancel: remove a dependency gate without stopping its job or completing its work.",

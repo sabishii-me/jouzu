@@ -3,8 +3,12 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { createDoctorReport, formatDoctorReport } from "../dist/doctor.js";
+import { catalogMessageText, defaultCatalog } from "../dist/cli-messages.js";
+import { createDoctorReport, formatDoctorReport, stateLockValue } from "../dist/doctor.js";
+import { loadCatalog } from "../dist/locale-catalog.js";
 import { ModelPickerStore } from "../dist/model-picker-state.js";
+import { STATE_LOCK_STALE_MS } from "../dist/state-lock.js";
+import { DOCTOR_DEFAULT_ISSUE_IDS, DOCTOR_FIELD_IDS } from "./fixtures/machine-contract.mjs";
 
 const ESCAPE = String.fromCharCode(27);
 const ANSI_SEQUENCE = new RegExp(`${ESCAPE}\\[[0-9;]*m`, "gu");
@@ -133,6 +137,204 @@ test("doctor reports an injected healthy Linux runtime without mutating roots", 
 	assertField(healthy, "Jouzu default dequeue key", "ctrl+up");
 	assert.doesNotMatch(healthy, /must-not-appear/);
 	assert.equal(rmSync(root, { recursive: true, force: true }), undefined);
+});
+
+test("doctor reports the UI locale separately from the OS locale", () => {
+	const root = mkdtempSync(join(tmpdir(), "jouzu-doctor-ui-locale-"));
+	try {
+		const reportFor = (uiLocale) =>
+			createDoctorReport({
+				...healthyContext(root),
+				locale: "ja-JP",
+				...(uiLocale ? { uiLocale } : { uiLocale: undefined }),
+			});
+
+		const resolved = reportFor({ requested: "auto", effective: "ja", source: "os" });
+		const resolvedText = render(resolved);
+		assertField(resolvedText, "Locale", "ja-JP");
+		assertField(resolvedText, "UI locale requested", "auto");
+		assertField(resolvedText, "UI locale effective", "ja");
+		assertField(resolvedText, "UI locale source", "os");
+		assertField(resolvedText, "UI locale fallback reason", "none");
+		// The OS locale keeps its own key, section, label, and value.
+		assert.deepEqual(
+			resolved.report.fields.find((field) => field.id === "locale"),
+			{ id: "locale", section: "platform", label: "Locale", value: "ja-JP" },
+		);
+
+		const fallback = reportFor({
+			requested: "auto",
+			effective: "en",
+			source: "os",
+			fallback: {
+				requested: "fr_FR.UTF-8",
+				effective: "en",
+				reason: "unsupported OS locale candidate: fr_FR.UTF-8",
+			},
+		});
+		const fallbackText = render(fallback);
+		assertField(fallbackText, "UI locale effective", "en");
+		assertField(fallbackText, "UI locale fallback reason", "unsupported OS locale candidate: fr_FR.UTF-8");
+		assertField(fallbackText, "Locale", "ja-JP");
+
+		const absent = reportFor(undefined);
+		const absentText = render(absent);
+		assertField(absentText, "UI locale requested", "unavailable");
+		assertField(absentText, "UI locale effective", "unavailable");
+		assertField(absentText, "UI locale source", "unavailable");
+		assertField(absentText, "UI locale fallback reason", "unavailable");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("doctor reports the response language and artifact policy with requested, effective, and source", () => {
+	const root = mkdtempSync(join(tmpdir(), "jouzu-doctor-language-"));
+	try {
+		const result = createDoctorReport({
+			...healthyContext(root),
+			responseLanguage: { requested: "ja", effective: "ja", source: "config" },
+			artifactPolicy: {
+				requested: { documentation: "project" },
+				effective: { comments: "preserve", documentation: "project", commits: "project", reviews: "project" },
+				source: "config",
+				fieldSources: {
+					comments: "builtin",
+					documentation: "config",
+					commits: "builtin",
+					reviews: "builtin",
+				},
+			},
+			projectPolicy: { status: "untrusted" },
+		});
+		const text = render(result);
+		assertField(text, "Response language requested", "ja");
+		assertField(text, "Response language effective", "ja");
+		assertField(text, "Response language source", "config");
+		assertField(text, "Artifact policy requested", "documentation=project");
+		// The full effective policy is wider than the render column, so the row wraps;
+		// compare it against the flattened report.
+		assert.ok(
+			flat(text).includes(
+				"Artifact policy effective comments=preserve documentation=project commits=project reviews=project",
+			),
+			"the effective artifact policy is rendered",
+		);
+		assertField(text, "Artifact policy source", "config");
+		assertField(text, "Project language policy", "untrusted");
+
+		// The machine keys carry the same values for the `--json` report.
+		const fieldValue = (id) => result.report.fields.find((field) => field.id === id)?.value;
+		assert.equal(fieldValue("language.responseLanguage.requested"), "ja");
+		assert.equal(fieldValue("language.responseLanguage.effective"), "ja");
+		assert.equal(fieldValue("language.responseLanguage.source"), "config");
+		assert.equal(fieldValue("language.artifactPolicy.source"), "config");
+		assert.equal(fieldValue("language.projectPolicy"), "untrusted");
+		for (const id of [
+			"language.responseLanguage.requested",
+			"language.responseLanguage.effective",
+			"language.responseLanguage.source",
+			"language.artifactPolicy.requested",
+			"language.artifactPolicy.effective",
+			"language.artifactPolicy.source",
+			"language.projectPolicy",
+		]) {
+			assert.equal(result.report.fields.find((field) => field.id === id)?.section, "localization");
+		}
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("doctor reports an unset language contract as unavailable", () => {
+	const root = mkdtempSync(join(tmpdir(), "jouzu-doctor-language-absent-"));
+	try {
+		const text = render(createDoctorReport(healthyContext(root)));
+		assertField(text, "Response language requested", "unavailable");
+		assertField(text, "Response language effective", "unavailable");
+		assertField(text, "Response language source", "unavailable");
+		assertField(text, "Artifact policy effective", "unavailable");
+		assertField(text, "Project language policy", "unavailable");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("doctor reports a trusted project policy's fields and an invalid policy's reason", () => {
+	const root = mkdtempSync(join(tmpdir(), "jouzu-doctor-language-policy-"));
+	try {
+		const trusted = render(
+			createDoctorReport({
+				...healthyContext(root),
+				responseLanguage: { requested: "ja", effective: "ja", source: "config" },
+				artifactPolicy: {
+					requested: { documentation: "en" },
+					effective: { comments: "preserve", documentation: "en", commits: "project", reviews: "project" },
+					source: "project",
+					fieldSources: { comments: "builtin", documentation: "project", commits: "builtin", reviews: "builtin" },
+				},
+				// A trusted policy renders the fields it supplied, so a reader can see
+				// what crossed the trust boundary.
+				projectPolicy: { status: "ok", artifactPolicy: { documentation: "en" } },
+			}),
+		);
+		assertField(trusted, "Project language policy", "documentation=en");
+
+		// An invalid file names the reason it was left untouched.
+		const invalid = render(
+			createDoctorReport({
+				...healthyContext(root),
+				responseLanguage: { requested: "auto", effective: "auto", source: "builtin" },
+				artifactPolicy: {
+					requested: {},
+					effective: { comments: "preserve", documentation: "project", commits: "project", reviews: "project" },
+					source: "builtin",
+					fieldSources: {
+						comments: "builtin",
+						documentation: "builtin",
+						commits: "builtin",
+						reviews: "builtin",
+					},
+				},
+				projectPolicy: { status: "invalid", reason: "the project policy is not a regular file" },
+			}),
+		);
+		assertField(invalid, "Project language policy", "the project policy is not a regular file");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("doctor keeps the UI locale and the response language on independent sources", () => {
+	const root = mkdtempSync(join(tmpdir(), "jouzu-doctor-language-independent-"));
+	try {
+		// A Japanese UI locale must not move the response language, and vice versa.
+		const result = createDoctorReport({
+			...healthyContext(root),
+			uiLocale: { requested: "ja", effective: "ja", source: "cli" },
+			responseLanguage: { requested: "en", effective: "en", source: "config" },
+			artifactPolicy: {
+				requested: {},
+				effective: { comments: "preserve", documentation: "project", commits: "project", reviews: "project" },
+				source: "builtin",
+				fieldSources: { comments: "builtin", documentation: "builtin", commits: "builtin", reviews: "builtin" },
+			},
+			projectPolicy: { status: "untrusted" },
+		});
+		const fieldValue = (id) => result.report.fields.find((field) => field.id === id)?.value;
+		assert.equal(fieldValue("localization.effective"), "ja");
+		assert.equal(fieldValue("localization.source"), "cli");
+		assert.equal(fieldValue("language.responseLanguage.effective"), "en");
+		assert.equal(fieldValue("language.responseLanguage.source"), "config");
+		// Each setting keeps its own source, so neither is derived from the other.
+		assert.notEqual(fieldValue("localization.source"), fieldValue("language.responseLanguage.source"));
+		const text = render(result);
+		assertField(text, "UI locale effective", "ja");
+		assertField(text, "Response language effective", "en");
+		assertField(text, "Response language source", "config");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
 });
 
 test("doctor summarizes catalog gaps per source and points to the catalog detail", () => {
@@ -357,6 +559,17 @@ test("doctor reports degraded optional extensions and disabled tools as action r
 		assert.match(flat(degraded), /rerun `jz doctor`/u);
 		assert.ok(report.report.issues.some((issue) => issue.id === "extensions.optionalUnavailable"));
 		assert.match(flat(degraded), /✗ \d+ problem/u);
+		const japanese = formatDoctorReport(report.report, {
+			colorEnabled: false,
+			columns: 120,
+			locale: "ja",
+			catalog: loadCatalog("ja"),
+		});
+		assert.match(flat(japanese), /無効\s*化されたツール: web_fetch, batch_web_fetch/u);
+		assert.ok(
+			!flat(japanese).includes("disabled tools"),
+			"the ja render localizes the disabled-tools fragment instead of embedding the English one",
+		);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
@@ -465,6 +678,7 @@ function healthyContext(root) {
 		architecture: "x64",
 		nodeVersion: "v22.19.0",
 		locale: "en-US",
+		uiLocale: { requested: "auto", effective: "en", source: "builtin" },
 		commandPaths: { git: "/usr/bin/git", bash: "/usr/bin/bash", npm: "/usr/bin/npm" },
 	};
 }
@@ -510,6 +724,23 @@ test("doctor exposes a structured report whose text rendering matches it", () =>
 			);
 		}
 		assert.match(text, /^Jouzu doctor /u);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("doctor field and issue identifiers are a stable machine contract", () => {
+	const root = mkdtempSync(join(tmpdir(), "jouzu-doctor-contract-"));
+	try {
+		const report = createDoctorReport(healthyContext(root)).report;
+		assert.deepEqual(
+			report.fields.map((field) => field.id),
+			DOCTOR_FIELD_IDS,
+		);
+		assert.deepEqual(
+			report.issues.map((issue) => issue.id),
+			DOCTOR_DEFAULT_ISSUE_IDS,
+		);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
@@ -596,4 +827,144 @@ test("doctor styling is opt-in and every marker survives without color", () => {
 	assert.ok(colored.includes(`${ESCAPE}[32m✓${ESCAPE}[39m 0 problems`), "a clean count is green");
 	// Stripping the styling returns the same report, so color adds no meaning of its own.
 	assert.equal(stripAnsi(colored), plain);
+});
+
+test("renders doctor labels and chrome from the ja catalog", () => {
+	const report = {
+		...MINIMAL_REPORT,
+		fields: [
+			{ id: "jouzu.version", section: "runtime", label: "Jouzu version", value: "0.1.0" },
+			{ id: "a", section: "runtime", label: "A", value: "1" },
+		],
+	};
+	const text = formatDoctorReport(report, {
+		colorEnabled: false,
+		columns: 100,
+		locale: "ja",
+		catalog: loadCatalog("ja"),
+	});
+	assert.match(text, /Jouzu 診断/u);
+	assert.match(text, /実行環境/u);
+	assert.match(text, /Jouzu バージョン/u);
+	// A field with no mapped catalog ID keeps the label the report carries.
+	assert.match(text, /A {2,}1/u);
+	assert.match(text, /`jz doctor --json`/u);
+});
+
+test("doctor warning text renders from the ja catalog while the report stays English", () => {
+	const root = mkdtempSync(join(tmpdir(), "jouzu-doctor-warning-ja-"));
+	try {
+		const result = createDoctorReport(healthyContext(root));
+		const provider = result.report.issues.find((issue) => issue.id === "provider.unconfigured");
+		assert.ok(provider, "the unconfigured-provider warning is present");
+		assert.equal(
+			provider.message,
+			"No obvious provider credential or custom model configuration was found; use /login or provider environment variables",
+			"the machine report keeps the English message",
+		);
+		const japanese = formatDoctorReport(result.report, {
+			colorEnabled: false,
+			columns: 100,
+			locale: "ja",
+			catalog: loadCatalog("ja"),
+		});
+		assert.match(flat(japanese), /プロバイダーの資格情報、カスタムモデル設定が見つかりませんでした/u);
+		assert.ok(!japanese.includes("No obvious provider"), "the ja render does not fall back to the English message");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("doctor catalog warnings render their embedded gap text from the ja catalog", () => {
+	const root = mkdtempSync(join(tmpdir(), "jouzu-doctor-catalog-ja-"));
+	rmSync(root, { recursive: true, force: true });
+	try {
+		const result = createDoctorReport({
+			...healthyContext(root),
+			catalogSources: [
+				{
+					sourceId: "codex-pool",
+					label: "codex-pool",
+					offerings: 2,
+					thinkingLevelGaps: [],
+					registrationGaps: [{ providerId: "p", modelId: "m", missing: ["textModality"] }],
+				},
+			],
+		});
+		const registration = result.report.issues.find((issue) => issue.id === "catalog.registration.codex-pool");
+		assert.ok(registration, "the catalog registration warning is present");
+		// The machine report keeps the English fragments the old code built inline.
+		assert.match(registration.message, /1 of 2 offerings carry the fields a new model needs/u);
+		assert.match(registration.message, /An offering for a model Pi does not already provide is dropped/u);
+		const japanese = formatDoctorReport(result.report, {
+			colorEnabled: false,
+			columns: 100,
+			locale: "ja",
+			catalog: loadCatalog("ja"),
+		});
+		assert.match(flat(japanese), /提供 2 件のうち 1 件が、新しいモデルに必要な項目を備えています/u);
+		assert.match(flat(japanese), /Pi がまだ提供していないモデルの提供は破棄される/u);
+		assert.ok(!japanese.includes("offerings carry the fields"), "the ja render does not embed the English fragments");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("doctor migrates the settings.json package warnings through the catalog", () => {
+	const root = mkdtempSync(join(tmpdir(), "jouzu-doctor-packages-"));
+	try {
+		mkdirSync(join(root, "agent"), { recursive: true });
+		writeFileSync(join(root, "agent", "settings.json"), JSON.stringify({ packages: "not-an-array" }));
+		const result = createDoctorReport(healthyContext(root));
+		const issue = result.report.issues.find((candidate) => candidate.id === "packages.invalid");
+		assert.ok(issue, "the invalid-packages warning is present");
+		assert.equal(issue.message, "settings.json packages is not an array");
+		const japanese = formatDoctorReport(result.report, {
+			colorEnabled: false,
+			columns: 100,
+			locale: "ja",
+			catalog: loadCatalog("ja"),
+		});
+		assert.match(flat(japanese), /settings.json の packages が配列ではありません/u);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("lock field values render from the catalog in both locales", () => {
+	const states = [
+		[{ exists: false, status: "free", ageMs: null }, "free", "空き"],
+		[
+			{ exists: true, status: "held-live", ageMs: 12_000 },
+			"held by a live process (12s)",
+			"実行中のプロセスが保持しています（12s）",
+		],
+		[
+			{ exists: true, status: "held-dead", ageMs: 12_000 },
+			"left by a dead process (12s; recoverable after 30m 0s)",
+			"終了したプロセスが残しています（12s、30m 0s 後に回復可能）",
+		],
+		[
+			{ exists: true, status: "owner-unknown", ageMs: 12_000 },
+			"owner unknown (12s; recoverable after 30m 0s)",
+			"所有者を特定できません（12s、30m 0s 後に回復可能）",
+		],
+		[
+			{ exists: true, status: "unreadable", ageMs: null },
+			"unreadable (lock inspection failed)",
+			"読み取れません（ロックの検査に失敗しました）",
+		],
+		[
+			{ exists: true, status: "invalid", ageMs: null },
+			"invalid (not a regular lock file)",
+			"無効です（通常のロックファイルではありません）",
+		],
+	];
+	const japaneseCatalog = loadCatalog("ja");
+	for (const [inspection, english, japanese] of states) {
+		const ref = stateLockValue(inspection, STATE_LOCK_STALE_MS);
+		assert.equal(catalogMessageText(defaultCatalog(), ref), english, `${inspection.status} in en`);
+		assert.equal(catalogMessageText(japaneseCatalog, ref), japanese, `${inspection.status} in ja`);
+		assert.doesNotMatch(japanese, /[A-Za-z]{3,}/u, `${inspection.status} keeps an English word`);
+	}
 });

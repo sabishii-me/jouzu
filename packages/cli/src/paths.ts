@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 import { posix, win32 } from "node:path";
+import { type ProtectedValue, protectedPath } from "./human-messages.js";
 
 export interface JouzuPaths {
 	configDir: string;
@@ -9,6 +10,21 @@ export interface JouzuPaths {
 	sessionDir: string;
 	profileStatePath: string;
 	backupDir: string;
+}
+
+/** The seven Jouzu-owned paths as protected values, so a wrapper never splits one. */
+export type ProtectedJouzuPaths = { readonly [Key in keyof JouzuPaths]: ProtectedValue };
+
+export function protectedJouzuPaths(paths: JouzuPaths): ProtectedJouzuPaths {
+	return {
+		configDir: protectedPath(paths.configDir),
+		agentDir: protectedPath(paths.agentDir),
+		stateDir: protectedPath(paths.stateDir),
+		cacheDir: protectedPath(paths.cacheDir),
+		sessionDir: protectedPath(paths.sessionDir),
+		profileStatePath: protectedPath(paths.profileStatePath),
+		backupDir: protectedPath(paths.backupDir),
+	};
 }
 
 export interface PathResolutionOptions {

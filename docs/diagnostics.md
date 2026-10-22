@@ -12,10 +12,12 @@ jz --version
 - Pi version and commit
 - Platform and runtime prerequisites
 - Configuration, state, and cache locations
+- The resolved UI locale, response language, and artifact policy, each with the source that supplied it, and the project language policy's trust state
 - Profile hashes and package count
 - Whether credentials exist (never their values), proxy and CA status
 - Shared skill directories
 - Catalog sources and catalog gaps
+- Catalog support states and recorded upstream display-surface counts, which do not establish whole-product language readiness; see [Localization](localization.md)
 - Warnings and problems with suggested fixes
 
 It exits `1` when it reports a problem.

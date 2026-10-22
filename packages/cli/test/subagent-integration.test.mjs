@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { validateToolArguments } from "@earendil-works/pi-ai";
 import { convertResponsesTools } from "@earendil-works/pi-ai/api/openai-responses-shared";
+import { resolveCatalog } from "../dist/locale-catalog.js";
 import { notificationHash } from "../dist/notifications/inbox.js";
 import { pathDigest } from "../dist/path-digest.js";
 import { createWorkflowIntegration } from "../dist/subagents/integration.js";
@@ -26,6 +27,20 @@ test("shared dashboard takeover suppresses child widget and routes visibility wi
 		assert.ok(widgets.every(([, content]) => content === undefined));
 	} finally {
 		await f.handlers.get("session_shutdown")({}, f.ctx);
+	}
+});
+
+test("the subagent tool label comes from the resolved catalog and the tool name is unchanged", async () => {
+	const english = fixture();
+	const japanese = fixture(false, { catalog: resolveCatalog("ja").bundle });
+	try {
+		assert.equal(english.tool.name, "subagent");
+		assert.equal(english.tool.label, "Subagent");
+		assert.equal(japanese.tool.name, "subagent");
+		assert.equal(japanese.tool.label, "子エージェント");
+	} finally {
+		await english.handlers.get("session_shutdown")({}, english.ctx);
+		await japanese.handlers.get("session_shutdown")({}, japanese.ctx);
 	}
 });
 

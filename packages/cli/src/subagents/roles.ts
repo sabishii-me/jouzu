@@ -2,6 +2,14 @@ import { createHash } from "node:crypto";
 import { existsSync, lstatSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { CatalogMessageId, catalogText, defaultCatalog } from "../cli-messages.js";
+import {
+	LANGUAGE_CONTRACT_PRESERVE_EXACT,
+	type LanguageContract,
+	type LanguageContractPreserveExact,
+	languageContractId,
+} from "../language-contract.js";
+import type { CatalogBundle } from "../locale-catalog.js";
 import { catalogRuntimeIdentity, preferCatalogModels } from "../model-catalog-projection.js";
 import type { JouzuPaths } from "../paths.js";
 import { writeFilePrivateAtomic } from "../private-fs.js";
@@ -57,6 +65,110 @@ export interface RoleSnapshot {
 export function digest(value: unknown): string {
 	return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
+/**
+ * The role families that carry their own default language contract.
+ *
+ * `implementation` is the writing worker, `research` a read-only investigator,
+ * `review` a fresh adversarial reviewer, `compaction` the summarizer, and
+ * `monitor` a background execution observer. `orchestrator` is the main agent,
+ * which resolves its contract from the user's response language instead; its
+ * entry exists so a role lookup is total.
+ */
+export const ROLE_LANGUAGE_KINDS = [
+	"orchestrator",
+	"implementation",
+	"research",
+	"review",
+	"compaction",
+	"monitor",
+] as const;
+export type RoleLanguageKind = (typeof ROLE_LANGUAGE_KINDS)[number];
+
+/** The role IDs shipped by the built-in configuration, mapped to a family. */
+const ROLE_ID_LANGUAGE_KINDS: Readonly<Record<string, RoleLanguageKind>> = {
+	orchestrator: "orchestrator",
+	coder: "implementation",
+	researcher: "research",
+	reviewer: "review",
+	compactor: "compaction",
+	monitor: "monitor",
+};
+
+const ALL_PRESERVE_EXACT = [...LANGUAGE_CONTRACT_PRESERVE_EXACT] as LanguageContractPreserveExact[];
+
+/** Build a frozen contract whose id is the digest of its terms. */
+function roleLanguageContract(content: Omit<LanguageContract, "contractId">): LanguageContract {
+	return Object.freeze({
+		contractId: languageContractId(content),
+		taskLanguage: content.taskLanguage,
+		artifactLanguage: content.artifactLanguage,
+		returnLanguage: content.returnLanguage,
+		preserveExact: Object.freeze([...content.preserveExact]),
+	});
+}
+
+/**
+ * The default language contract for each role family.
+ *
+ * A role receives only the terms it needs. A writing worker keeps the task's
+ * language, follows the project's artifact policy, and returns in the parent's
+ * response language. A researcher reads and quotes, so it produces no project
+ * artifacts (`preserve`) and protects quoted text. A reviewer follows the
+ * project's review language and protects source errors and quoted text. The
+ * compactor and the monitor never produce user-facing prose, so they preserve
+ * everything they touch: their terms are preservation-only. The orchestrator
+ * declares no fixed language either; the main agent's effective contract is
+ * resolved separately from the response language.
+ */
+export const DEFAULT_ROLE_LANGUAGE_CONTRACTS: Readonly<Record<RoleLanguageKind, LanguageContract>> = Object.freeze({
+	orchestrator: roleLanguageContract({
+		taskLanguage: "preserve",
+		artifactLanguage: "project",
+		returnLanguage: "structured",
+		preserveExact: ALL_PRESERVE_EXACT,
+	}),
+	implementation: roleLanguageContract({
+		taskLanguage: "preserve",
+		artifactLanguage: "project",
+		returnLanguage: "parent-response-language",
+		preserveExact: ALL_PRESERVE_EXACT,
+	}),
+	research: roleLanguageContract({
+		taskLanguage: "preserve",
+		artifactLanguage: "preserve",
+		returnLanguage: "parent-response-language",
+		preserveExact: ["commands", "identifiers", "paths", "quoted-text"],
+	}),
+	review: roleLanguageContract({
+		taskLanguage: "preserve",
+		artifactLanguage: "project",
+		returnLanguage: "parent-response-language",
+		preserveExact: ["commands", "identifiers", "paths", "source-errors", "quoted-text"],
+	}),
+	compaction: roleLanguageContract({
+		taskLanguage: "preserve",
+		artifactLanguage: "preserve",
+		returnLanguage: "structured",
+		preserveExact: ALL_PRESERVE_EXACT,
+	}),
+	monitor: roleLanguageContract({
+		taskLanguage: "preserve",
+		artifactLanguage: "preserve",
+		returnLanguage: "structured",
+		preserveExact: ["commands", "identifiers", "paths"],
+	}),
+});
+
+/** Resolve a role to its language family. An unknown role falls back by judging. */
+export function roleLanguageKind(role: Pick<AgentRole, "id" | "judging">): RoleLanguageKind {
+	return ROLE_ID_LANGUAGE_KINDS[role.id] ?? (role.judging ? "review" : "implementation");
+}
+
+/** The default language contract for a role. */
+export function defaultLanguageContract(role: Pick<AgentRole, "id" | "judging">): LanguageContract {
+	return DEFAULT_ROLE_LANGUAGE_CONTRACTS[roleLanguageKind(role)];
+}
+
 export function defaultAgentConfig(): AgentConfig {
 	const common = { thinking: "medium" as const, timeoutSeconds: 7200, maxTurns: 500 };
 	return {
@@ -100,9 +212,21 @@ export function defaultAgentConfig(): AgentConfig {
 		],
 	};
 }
-function text(value: unknown, label: string, max: number, empty = false): string {
+function text(
+	value: unknown,
+	label: string,
+	max: number,
+	empty = false,
+	catalog: CatalogBundle = defaultCatalog(),
+): string {
 	if (typeof value !== "string" || (!empty && !value.trim()) || value.length > max || value.includes("\0"))
-		throw new Error(`Validation: ${label} must be ${empty ? "at most" : "1–"}${max} characters.`);
+		throw new Error(
+			catalogText(
+				catalog,
+				empty ? CatalogMessageId.subagentValidationLengthMax : CatalogMessageId.subagentValidationLength,
+				{ label, max },
+			),
+		);
 	return value;
 }
 function integer(value: unknown, label: string, min: number, max: number): number {
@@ -123,7 +247,7 @@ export function parseWorkspaceWriters(value: unknown): WorkspaceWriterPolicy {
 		throw new Error("Validation: child writers must be serialize or parallel.");
 	return value as WorkspaceWriterPolicy;
 }
-export function parseAgentConfig(value: unknown): AgentConfig {
+export function parseAgentConfig(value: unknown, catalog: CatalogBundle = defaultCatalog()): AgentConfig {
 	if (!value || typeof value !== "object") throw new Error("Validation: invalid agent configuration.");
 	const raw = value as Record<string, unknown>;
 	if (raw.schemaVersion !== 1 || !Array.isArray(raw.roles) || raw.roles.length > 64)
@@ -132,7 +256,7 @@ export function parseAgentConfig(value: unknown): AgentConfig {
 	const roles = raw.roles.map((item: unknown): AgentRole => {
 		if (!item || typeof item !== "object") throw new Error("Validation: invalid role.");
 		const role = item as Record<string, unknown>;
-		const id = text(role.id, "Role ID", 64);
+		const id = text(role.id, "Role ID", 64, false, catalog);
 		if (!/^[a-z][a-z0-9_-]*$/.test(id) || ids.has(id))
 			throw new Error(
 				"Validation: role IDs must be unique lowercase names using letters, numbers, hyphens, or underscores.",
@@ -155,9 +279,9 @@ export function parseAgentConfig(value: unknown): AgentConfig {
 			throw new Error("Validation: invalid thinking level.");
 		return {
 			id,
-			description: text(role.description, "Description", 300, true),
-			model: text(role.model, "Model", 300),
-			instructions: text(role.instructions, "Instructions", 32_000),
+			description: text(role.description, "Description", 300, true, catalog),
+			model: text(role.model, "Model", 300, false, catalog),
+			instructions: text(role.instructions, "Instructions", 32_000, false, catalog),
 			placement: role.placement as AgentRole["placement"],
 			judging: role.judging,
 			tools,
@@ -176,7 +300,10 @@ export function parseAgentConfig(value: unknown): AgentConfig {
 }
 export class AgentRoleStore {
 	readonly path: string;
-	constructor(paths: Pick<JouzuPaths, "configDir">) {
+	constructor(
+		paths: Pick<JouzuPaths, "configDir">,
+		private readonly catalog: CatalogBundle = defaultCatalog(),
+	) {
 		this.path = join(paths.configDir, "agents.json");
 	}
 	load(): RoleSnapshot {
@@ -185,12 +312,12 @@ export class AgentRoleStore {
 			const stat = lstatSync(this.path);
 			if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 2_100_000)
 				throw new Error("Storage: agent configuration must be a regular file under 2 MB.");
-			config = parseAgentConfig(JSON.parse(readFileSync(this.path, "utf8")));
+			config = parseAgentConfig(JSON.parse(readFileSync(this.path, "utf8")), this.catalog);
 		}
 		return { config, revision: digest(config) };
 	}
 	save(config: AgentConfig, expectedRevision: string): RoleSnapshot {
-		const validated = parseAgentConfig(config);
+		const validated = parseAgentConfig(config, this.catalog);
 		if (Buffer.byteLength(JSON.stringify(validated, null, 2), "utf8") + 1 > 2_100_000)
 			throw new Error(
 				"Validation: agent definitions must fit in 2 MB. Shorten the instructions or remove unused definitions.",
@@ -210,7 +337,11 @@ export class AgentRoleStore {
 		}
 	}
 }
-export function resolveAgentModel(selector: string, models: readonly AgentModel[]): AgentModel {
+export function resolveAgentModel(
+	selector: string,
+	models: readonly AgentModel[],
+	catalog: CatalogBundle = defaultCatalog(),
+): AgentModel {
 	const matches = preferCatalogModels(models).filter(
 		(model) =>
 			selector === `${model.provider}/${model.id}` ||
@@ -221,13 +352,21 @@ export function resolveAgentModel(selector: string, models: readonly AgentModel[
 	if (unique.length !== 1)
 		throw new Error(
 			unique.length
-				? `Model: ${selector} matches ${unique.length} providers: ${unique
-						.slice(0, 8)
-						.map((model) => `${model.provider}/${model.id}`)
-						.join(
-							", ",
-						)}${unique.length > 8 ? `, and ${unique.length - 8} more` : ""}. Retry with the full provider/model.`
-				: `Model: ${selector} is unavailable. Choose an available model in Workflow.`,
+				? catalogText(catalog, CatalogMessageId.subagentModelAmbiguous, {
+						selector,
+						count: unique.length,
+						providers: `${unique
+							.slice(0, 8)
+							.map((model) => `${model.provider}/${model.id}`)
+							.join(", ")}${
+							unique.length > 8
+								? catalogText(catalog, CatalogMessageId.subagentModelAmbiguousMore, {
+										count: unique.length - 8,
+									})
+								: ""
+						}`,
+					})
+				: catalogText(catalog, CatalogMessageId.subagentModelUnavailable, { selector }),
 		);
 	return unique[0];
 }

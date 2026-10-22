@@ -6,6 +6,13 @@ import { homedir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertExternalCanvas } from "./canvas-package-boundary.mjs";
+import {
+	assertCatalogLockMatches,
+	catalogFiles,
+	catalogLocales,
+	catalogLockFileName,
+	readRuntimeCatalogVersion,
+} from "./catalog-lock.mjs";
 import { isPrunedDependencyMetadata } from "./configure-release-packlists.mjs";
 import { assertVoiceBundlePresent } from "./voice-package-boundary.mjs";
 
@@ -71,6 +78,48 @@ export function assertProfileFilesPresent(packedFiles, required) {
 			throw new Error(`jouzu tarball is missing bundled profile file ${profileFile}`);
 		}
 	}
+}
+
+/**
+ * Derive the dist-relative catalog files that must ship in the tarball from the
+ * built `dist/locales` directory. The lock and status files are required, and
+ * every locale directory that carries a `cli.ftl` contributes its `*.ftl`
+ * files, so a `files` allow list that drops a catalog fails the gate. The
+ * compiled loader is required too: without it the packed catalogs have no
+ * reader, and its `CATALOG_VERSION` is what the lock is checked against.
+ */
+export function deriveRequiredLocaleFiles(distLocalesDirectory) {
+	const required = [catalogLockFileName, "catalog-status.json"].map((name) => `dist/locales/${name}`);
+	required.push("dist/locale-catalog.js");
+	for (const locale of catalogLocales(distLocalesDirectory)) {
+		for (const name of catalogFiles(distLocalesDirectory, locale)) {
+			required.push(`dist/locales/${locale}/${name}`);
+		}
+	}
+	return required;
+}
+
+/** Assert that every required catalog file appears in a packed-file listing. */
+export function assertLocaleFilesPresent(packedFiles, required) {
+	for (const localeFile of required) {
+		if (!packedFiles.some((file) => file.path === localeFile)) {
+			throw new Error(`jouzu tarball is missing catalog file ${localeFile}`);
+		}
+	}
+}
+
+/**
+ * Assert that the packed lock matches the packed catalogs and the version the
+ * packed loader exports. The comparison is between the files in `dist/locales`
+ * and the lock beside them, so a lock that no longer describes those bytes
+ * fails; it does not compare the copy against the source tree, and a stale
+ * catalog left with its own stale lock passes here.
+ */
+export function assertLocaleCatalogsConsistent(distLocalesDirectory, runtimeLoaderPath) {
+	assertCatalogLockMatches(distLocalesDirectory, {
+		runtimeVersion: readRuntimeCatalogVersion(runtimeLoaderPath),
+		label: "jouzu tarball",
+	});
 }
 
 /** Require every platform helper in each bundled Pi TUI package. */
@@ -171,6 +220,25 @@ export function publicContentForScan(path, text) {
 	}
 	return text;
 }
+
+/**
+ * Assert that no packed text file carries forbidden public content.
+ *
+ * Catalogs are scanned like the other text files: `.ftl` files ship in
+ * `dist/locales` and hold user-visible text, so they are held to the same rule
+ * as the Markdown and JavaScript files beside them.
+ */
+export function assertForbiddenPublicContent(packedFiles, packageDirectory, forbidden = forbiddenPublicContent()) {
+	for (const file of packedFiles) {
+		if (!/\.(?:js|json|md|txt|ftl)$/.test(file.path) && file.path !== "LICENSE") continue;
+		const text = publicContentForScan(file.path, readFileSync(join(packageDirectory, file.path), "utf8"));
+		for (const entry of forbidden) {
+			if (file.path.startsWith("node_modules/") && entry === "AWS_SECRET_ACCESS_KEY") continue;
+			if (file.path.endsWith("/jose/dist/webapi/key/import.js") && entry === "BEGIN PRIVATE KEY") continue;
+			if (text.includes(entry)) throw new Error(`jouzu tarball ${file.path} contains forbidden public content`);
+		}
+	}
+}
 const piPackageName = "@earendil-works/pi-coding-agent";
 const piServerPackageName = "@earendil-works/pi-server";
 const externalPiRuntimePackageNames = [piServerPackageName];
@@ -256,6 +324,8 @@ for (const directory of executedDirectly ? packageDirectories : []) {
 			throw new Error("jouzu dist/cli.js is missing its Node shebang");
 		}
 		assertProfileFilesPresent(packed.files, deriveRequiredProfileFiles(join(directory, "profiles")));
+		assertLocaleFilesPresent(packed.files, deriveRequiredLocaleFiles(join(directory, "dist", "locales")));
+		assertLocaleCatalogsConsistent(join(directory, "dist", "locales"), join(directory, "dist", "locale-catalog.js"));
 		assertVoiceBundlePresent(packed.files);
 		assertPiNativeHelpersPresent(packed.files);
 		assertTerminalClipboardBundlePresent(packed.files);
@@ -360,16 +430,7 @@ for (const directory of executedDirectly ? packageDirectories : []) {
 				throw new Error(`release bundle commit differs for ${record.name}@${record.commit}`);
 			}
 		}
-		const forbidden = forbiddenPublicContent();
-		for (const file of packed.files) {
-			if (!/\.(?:js|json|md|txt)$/.test(file.path) && file.path !== "LICENSE") continue;
-			const text = publicContentForScan(file.path, readFileSync(join(directory, file.path), "utf8"));
-			for (const entry of forbidden) {
-				if (file.path.startsWith("node_modules/") && entry === "AWS_SECRET_ACCESS_KEY") continue;
-				if (file.path.endsWith("/jose/dist/webapi/key/import.js") && entry === "BEGIN PRIVATE KEY") continue;
-				if (text.includes(entry)) throw new Error(`jouzu tarball ${file.path} contains forbidden public content`);
-			}
-		}
+		assertForbiddenPublicContent(packed.files, directory);
 	}
 	for (const [command, target] of Object.entries(packageJson.bin ?? {})) {
 		if (target.startsWith("./")) {

@@ -1,20 +1,28 @@
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { CatalogMessageId, catalogText, defaultCatalog } from "../cli-messages.js";
+import type { CatalogBundle } from "../locale-catalog.js";
 import { FLOW_OFF_MESSAGE } from "./flow-off-message.js";
 import type { PiFlowAttachment } from "./pi-attachment.js";
 import { FlowLedgerError } from "./receipt-ledger.js";
 
 /** Manifest pages expose retained membership; retrieving metadata does not acknowledge terminal output. */
-export function createFlowResultExtension(options: { attachment(): PiFlowAttachment; enabled?(): boolean }): {
+export function createFlowResultExtension(options: {
+	attachment(): PiFlowAttachment;
+	enabled?(): boolean;
+	/** The resolved catalog the tool label reads its display text from. */
+	catalog?: CatalogBundle;
+}): {
 	name: string;
 	factory: import("@earendil-works/pi-coding-agent").ExtensionFactory;
 } {
+	const catalog = options.catalog ?? defaultCatalog();
 	return {
 		name: "jouzu-flow-results",
 		factory(pi) {
 			pi.registerTool({
 				name: "agent_results",
 				exposure: "model-only",
-				label: "Read completion results",
+				label: catalogText(catalog, CatalogMessageId.flowResultsLabel),
 				description:
 					"Read a page of completion metadata from a flow-results reference. Follow each result reference to inspect its output. Use the returned next cursor to read another page when needed.",
 				parameters: {

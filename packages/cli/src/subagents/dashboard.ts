@@ -1,4 +1,6 @@
 import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
+import { CatalogMessageId, catalogText, defaultCatalog } from "../cli-messages.js";
+import type { CatalogBundle } from "../locale-catalog.js";
 import { fitTerminalText, sanitizeTerminalText } from "../terminal-layout.js";
 import { type AgentRun, isActiveRun } from "./manager.js";
 
@@ -10,6 +12,7 @@ export function renderSubagentDashboard(
 	width: number,
 	terminalRows: number,
 	theme: Pick<Theme, "fg">,
+	catalog: CatalogBundle = defaultCatalog(),
 ): string[] {
 	if (!runs.length || width < 1) return [];
 	const active = runs.filter(isActiveRun);
@@ -30,12 +33,11 @@ export function renderSubagentDashboard(
 		const activity = run.currentTool ? `${run.currentTool} · ` : "";
 		lines.push(theme.fg("dim", sanitizeTerminalText(`  ${activity}${run.cwd}`)));
 	}
-	lines.push(
-		theme.fg(
-			"muted",
-			`Details: /subagents · Hide: /subagents hide${display.length > shown.length ? ` · +${display.length - shown.length} more` : ""}`,
-		),
-	);
+	const more =
+		display.length > shown.length
+			? ` ${catalogText(catalog, CatalogMessageId.subagentDashboardMore, { count: display.length - shown.length })}`
+			: "";
+	lines.push(theme.fg("muted", `Details: /subagents · Hide: /subagents hide${more}`));
 	return lines.map((line) => fitTerminalText(line, width, "…"));
 }
 
@@ -45,6 +47,8 @@ export class SubagentDashboard {
 	private installed = false;
 	private runs: AgentRun[] = [];
 	private render?: () => void;
+
+	constructor(private readonly catalog: CatalogBundle = defaultCatalog()) {}
 
 	attach(ctx: ExtensionContext): void {
 		this.dispose();
@@ -78,7 +82,7 @@ export class SubagentDashboard {
 			(tui, theme) => {
 				this.render = () => tui.requestRender();
 				return {
-					render: (width) => renderSubagentDashboard(this.runs, width, tui.terminal.rows, theme),
+					render: (width) => renderSubagentDashboard(this.runs, width, tui.terminal.rows, theme, this.catalog),
 					invalidate() {},
 				};
 			},

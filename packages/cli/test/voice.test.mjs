@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
+import { loadCatalog } from "../dist/locale-catalog.js";
 import { resolveJouzuPaths } from "../dist/paths.js";
 import { setShisaSignedOut } from "../dist/shisa-link/credentials.js";
 import { newShisaInstallId, shisaLinkStatePath, writeShisaLinkState } from "../dist/shisa-link/state.js";
@@ -111,6 +112,7 @@ async function harness(t, overrides = {}) {
 		capture,
 		ctx,
 		command: (args) => commands.get("voice").handler(args, ctx),
+		commandDefinition: () => commands.get("voice"),
 		shutdown: () => handlers.get("session_shutdown")(),
 		get connectionOptions() {
 			return connectionOptions;
@@ -268,6 +270,39 @@ test("voice widget fits narrow terminals and strips remote escape sequences", ()
 			assert.ok(lines.every((line) => !line.includes("\x1b")));
 		}
 	}
+});
+
+test("the widget renders the ja catalog's state word and key hint", () => {
+	const ja = loadCatalog("ja");
+	for (const [state, expected] of [
+		["starting", "音声: 接続中…"],
+		["recording", "音声: 録音中"],
+		["finishing", "音声: 文字起こしを完了しています…"],
+	]) {
+		const lines = renderVoiceWidget(state, "", 80, undefined, ja);
+		assert.equal(lines[0], expected);
+		assert.ok(lines[1].includes("/voice"));
+	}
+	// A narrow widget falls back to the localized label, and the localized text
+	// still fits the terminal it is rendered into.
+	for (const width of [1, 10, 11]) {
+		const lines = renderVoiceWidget("recording", "", width, undefined, ja);
+		assert.ok(lines.every((line) => visibleWidth(line) <= width));
+	}
+});
+
+test("the ja catalog renders the login recovery notice in Japanese", async (t) => {
+	const h = await harness(t, { env: {}, catalog: loadCatalog("ja") });
+	await h.command("start");
+	assert.deepEqual(
+		h.calls.find(([name]) => name === "notify"),
+		[
+			"notify",
+			"音声には Shisa のログインまたは SHISA_API_KEY が必要です。`/login shisa` を実行するか SHISA_API_KEY を設定してください。",
+			"error",
+		],
+	);
+	assert.equal(h.connectionOptions, undefined);
 });
 
 test("transcript commits finals, deduplicates IDs, and ignores partials", () => {
@@ -492,4 +527,18 @@ test("Shisa sign-out cancels recording and suppresses an unchanged environment k
 	await h.command("start");
 	assert.notEqual(h.connectionOptions, previous);
 	assert.equal(h.draft, "existing draft");
+});
+
+test("the voice command and shortcut descriptions render from the ja catalog", async (t) => {
+	const h = await harness(t, { catalog: loadCatalog("ja") });
+	assert.equal(h.commandDefinition().description, "プロンプトへ音声入力します。開始、停止、キャンセル、設定を行います");
+	const shortcut = h.calls.find((call) => call[0] === "shortcut");
+	assert.equal(shortcut[2].description, "音声入力を開始または停止します");
+});
+
+test("the voice command and shortcut descriptions keep their English default", async (t) => {
+	const h = await harness(t);
+	assert.equal(h.commandDefinition().description, "Dictate into the prompt; start, stop, cancel, or configure voice");
+	const shortcut = h.calls.find((call) => call[0] === "shortcut");
+	assert.equal(shortcut[2].description, "Start or stop voice dictation");
 });

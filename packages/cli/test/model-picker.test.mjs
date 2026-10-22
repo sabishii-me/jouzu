@@ -8,6 +8,7 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 import { CatalogSourceStore } from "../dist/catalog-sources.js";
 import { writeContextPolicy } from "../dist/context-clamp.js";
 import { createJouzuKeybindingsManagerFromConfig } from "../dist/jouzu-keybindings.js";
+import { resolveCatalog } from "../dist/locale-catalog.js";
 import { MODEL_CATALOG_MEDIA_TYPE, parseAndValidateModelCatalog } from "../dist/model-catalog.js";
 import { refreshCatalogSource } from "../dist/model-catalog-sync.js";
 import {
@@ -331,6 +332,7 @@ function createComponent(overrides = {}) {
 			},
 			theme: identityTheme,
 			styles: createSessionUiStyles(identityTheme),
+			catalog: overrides.catalog,
 			keybindings: overrides.keybindings ?? fakeKeybindings(),
 			jouzuKeybindings: overrides.jouzuKeybindings ?? createJouzuKeybindingsManagerFromConfig(),
 			close() {
@@ -356,6 +358,32 @@ function createComponent(overrides = {}) {
 	});
 	return { component, calls };
 }
+
+test("Japanese model rows keep the current columns and query-preserving favorite route", () => {
+	const { component, calls } = createComponent({
+		catalog: resolveCatalog("ja").bundle,
+		jouzuKeybindings: createJouzuKeybindingsManagerFromConfig({ "jouzu.model.toggleFavorite": "f" }),
+	});
+	for (const width of [24, 48, 80, 120]) {
+		const lines = component.render(width);
+		assert.ok(lines.every((line) => visibleWidth(line) <= width));
+		assert.match(lines.join("\n"), /名前/u);
+		assert.doesNotMatch(lines.join("\n"), /Recent|Favorites|View/u);
+	}
+	component.handleInput("/");
+	component.handleInput("a");
+	const search = stripSgr(component.render(120).join("\n"));
+	assert.match(search, /検索をクリア/u);
+	assert.match(search, /↑↓ → F/u);
+	component.handleInput("down");
+	assert.equal(component.snapshotRoute().query, "a");
+	component.handleInput("f");
+	assert.equal(calls.favorites.length, 1);
+	component.handleInput("escape");
+	assert.equal(component.snapshotRoute().query, undefined);
+	assert.equal(calls.close, 0);
+	component.dispose();
+});
 
 async function createFavoriteCycleHarness(options = {}) {
 	const root = mkdtempSync(join(tmpdir(), "jouzu-favorite-cycle-"));
@@ -1371,6 +1399,74 @@ test("Enter selects a model and stores it for the project", async () => {
 			provider: "p",
 			modelId: "b",
 		});
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("the Models picker renders a selection failure in Japanese from the resolved bundle", async () => {
+	const root = mkdtempSync(join(tmpdir(), "jouzu-model-picker-locale-selection-"));
+	try {
+		const paths = resolveJouzuPaths({ homeOverride: join(root, "home") });
+		const integration = createJouzuModelPicker(paths, { catalog: resolveCatalog("ja").bundle });
+		const handlers = new Map();
+		integration.extension.factory({
+			on(name, handler) {
+				handlers.set(name, handler);
+			},
+			// A failed activation makes `onSelect` throw the no-authentication message.
+			async setModel() {
+				return false;
+			},
+		});
+		const models = ["a", "b"].map((id) => ({
+			provider: "p",
+			id,
+			name: id.toUpperCase(),
+			contextWindow: 100_000,
+			maxTokens: 10_000,
+		}));
+		let rendered = "";
+		const ctx = {
+			mode: "tui",
+			cwd: root,
+			model: models[0],
+			scopedModels: [],
+			sessionManager: { getBranch: () => [] },
+			modelRegistry: {
+				getAvailable: () => models,
+				find: (provider, id) => (provider === "p" ? models.find((model) => model.id === id) : undefined),
+				refresh: async () => ({ errors: new Map() }),
+			},
+			getContextUsage: () => ({ tokens: 100, contextWindow: 100_000, percent: 1 }),
+			isIdle: () => true,
+			ui: {
+				notify() {},
+				custom(factory) {
+					return new Promise((resolve) => {
+						const component = factory(
+							{ terminal: { rows: 30 }, requestRender() {} },
+							identityTheme,
+							fakeKeybindings(),
+							resolve,
+						);
+						setImmediate(async () => {
+							component.handleInput("down");
+							component.handleInput("down");
+							component.handleInput("enter");
+							await new Promise((settle) => setImmediate(settle));
+							await new Promise((settle) => setImmediate(settle));
+							rendered = component.render(72).join("\n");
+							component.handleInput("escape");
+						});
+					});
+				},
+			},
+		};
+		await handlers.get("session_start")({ reason: "startup" }, ctx);
+		assert.equal(await integration.open({ source: "action" }), true);
+		assert.match(rendered, /認証がありません/u, "the selection failure reads the Japanese bundle");
+		assert.doesNotMatch(rendered, /No authentication for/u, "no English selection failure survives");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}

@@ -1,4 +1,5 @@
 import type { ExtensionAPI, InlineExtension, SessionManager } from "@earendil-works/pi-coding-agent";
+import type { CatalogBundle } from "../locale-catalog.js";
 import {
 	attachBackgroundWaitSource,
 	type BackgroundFlowSourceAPI,
@@ -17,6 +18,8 @@ export function createBackgroundControllerExtension(options: {
 	enabled?(): boolean;
 	currentWork(): { id: string; revision: number } | undefined;
 	onError(error: unknown): void;
+	/** The resolved catalog the result-tool label reads its display text from. */
+	catalog?: CatalogBundle;
 }): InlineExtension & {
 	attach(attachment: PiFlowAttachment, sessionManager: SessionManager): "attached" | "unavailable";
 	/** Register the current producer on the branch's controller; safe to call again after `detach`. */
@@ -64,6 +67,7 @@ export function createBackgroundControllerExtension(options: {
 				createFlowResultExtension({
 					attachment: () => getIngress().branch().attachment,
 					enabled: options.enabled ?? (() => true),
+					catalog: options.catalog,
 				}).factory(pi);
 			pi.on("session_start", async () => install());
 			pi.on("session_tree", async () => install());

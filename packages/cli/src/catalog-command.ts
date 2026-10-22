@@ -1,18 +1,28 @@
 import { existsSync, lstatSync, readFileSync } from "node:fs";
 import { catalogInsecureTransportWarning, resolveCatalogSources } from "./catalog-sources.js";
 import {
+	CATALOG_FIELD_LABEL_IDS,
+	CatalogMessageId,
+	type CatalogMessageRef,
+	type CatalogRenderOptions,
+	catalogMessage,
+	catalogMessageText,
+	catalogText,
+	defaultCatalog,
+} from "./cli-messages.js";
+import {
 	CommandReport,
 	type CommandReportCount,
 	type CommandReportEntry,
 	type CommandReportField,
-	type CommandReportOptions,
 	type CommandReportStatus,
 	pluralize,
 } from "./command-report.js";
+import type { CatalogBundle } from "./locale-catalog.js";
 import {
-	CATALOG_REGISTRATION_EFFECT,
 	type CatalogConformanceResult,
 	checkCatalogConformance,
+	describeCatalogRegistrationEffect,
 	describeCatalogRegistrationGap,
 	describeCatalogRegistrationGaps,
 } from "./model-catalog.js";
@@ -26,20 +36,36 @@ import type { JouzuPaths } from "./paths.js";
 
 export type CatalogStatus = CatalogStatuses;
 
+/**
+ * The state word a reader sees in the catalog report title. The value stays a
+ * state identifier in `--json`, so only the title renders through the catalog.
+ */
+type CatalogStateWord = CatalogStatus["status"] | CatalogSyncStatus["status"];
+
+const CATALOG_STATE_WORD_IDS: Record<CatalogStateWord, CatalogMessageId> = {
+	unconfigured: CatalogMessageId.catalogStateUnconfigured,
+	empty: CatalogMessageId.catalogStateEmpty,
+	active: CatalogMessageId.catalogStateActive,
+	stale: CatalogMessageId.catalogStateStale,
+	degraded: CatalogMessageId.catalogStateDegraded,
+};
+
 type ConfiguredCatalogStatus = Extract<CatalogSyncStatus, { configured: true }>;
 
-const UNCONFIGURED_MESSAGE =
-	"No model catalog endpoint is configured. Jouzu continues using Pi and local model configuration.";
-
-const CATALOG_DETAIL_HINT = 'Run "jz catalog status <source-id>" for one source, or add --json for the stored record.';
-
 /** The closing counts, matching the notes above them. */
-function noteCounts(notes: readonly CommandReportEntry[]): CommandReportCount[] {
+function noteCounts(notes: readonly CommandReportEntry[], catalog: CatalogBundle): CommandReportCount[] {
+	const text = (id: CatalogMessageId): string => catalogText(catalog, id);
 	const problems = notes.filter((note) => note.status === "problem").length;
 	const warnings = notes.filter((note) => note.status === "warning").length;
 	return [
-		{ status: problems > 0 ? "problem" : "ok", text: pluralize(problems, "problem") },
-		{ status: warnings > 0 ? "warning" : "ok", text: pluralize(warnings, "warning") },
+		{
+			status: problems > 0 ? "problem" : "ok",
+			text: pluralize(problems, text(CatalogMessageId.catalogProblem), text(CatalogMessageId.catalogProblems)),
+		},
+		{
+			status: warnings > 0 ? "warning" : "ok",
+			text: pluralize(warnings, text(CatalogMessageId.catalogWarning), text(CatalogMessageId.catalogWarnings)),
+		},
 	];
 }
 
@@ -47,17 +73,22 @@ export function catalogStatus(
 	paths: JouzuPaths,
 	env: NodeJS.ProcessEnv = process.env,
 	sourceId?: string,
+	catalog: CatalogBundle = defaultCatalog(),
 ): CatalogStatus | CatalogSyncStatus {
-	if (!sourceId) return getCatalogStatuses(paths, env);
-	const source = resolveCatalogSources(paths, env, { includeDisabled: true }).find(
+	if (!sourceId) return getCatalogStatuses(paths, env, new Date(), catalog);
+	const source = resolveCatalogSources(paths, env, { includeDisabled: true }, catalog).find(
 		(candidate) => candidate.id === sourceId,
 	);
-	if (!source) throw new Error(`catalog source not found: ${sourceId}`);
-	return getCatalogSourceStatus(paths, source, new Date(), env);
+	if (!source) {
+		throw new Error(catalogText(catalog, CatalogMessageId.catalogSourceNotFound, { id: sourceId }));
+	}
+	return getCatalogSourceStatus(paths, source, new Date(), env, catalog);
 }
 
-function sourceStatusWord(status: ConfiguredCatalogStatus): string {
-	return status.enabled ? status.status : "disabled";
+function sourceStatusWord(status: ConfiguredCatalogStatus, catalog: CatalogBundle): string {
+	return status.enabled
+		? catalogText(catalog, CATALOG_STATE_WORD_IDS[status.status])
+		: catalogText(catalog, CatalogMessageId.catalogStatusDisabled);
 }
 
 function sourceMarker(status: ConfiguredCatalogStatus): CommandReportStatus {
@@ -68,25 +99,30 @@ function sourceMarker(status: ConfiguredCatalogStatus): CommandReportStatus {
 	return "idle";
 }
 
-function describeCredential(status: ConfiguredCatalogStatus): string | undefined {
+function describeCredential(status: ConfiguredCatalogStatus, catalog: CatalogBundle): string | undefined {
 	if (!status.credentialName) return undefined;
-	if (status.credentialAvailable && status.credentialEnv) return `environment variable ${status.credentialName} (set)`;
-	if (status.credentialAvailable) return `saved token (environment variable ${status.credentialName} not set)`;
-	return `environment variable ${status.credentialName} (not set)`;
+	const name = status.credentialName;
+	if (status.credentialAvailable && status.credentialEnv) {
+		return catalogText(catalog, CatalogMessageId.catalogCredentialEnvironmentSet, { name });
+	}
+	if (status.credentialAvailable) {
+		return catalogText(catalog, CatalogMessageId.catalogCredentialSavedToken, { name });
+	}
+	return catalogText(catalog, CatalogMessageId.catalogCredentialEnvironmentNotSet, { name });
 }
 
 /** Hoist every condition a user may need to act on, keyed by the source it came from. */
-function sourceNotes(status: CatalogSyncStatus): CommandReportEntry[] {
+function sourceNotes(status: CatalogSyncStatus, catalog: CatalogBundle): CommandReportEntry[] {
 	if (!status.configured) return [];
 	const key = status.sourceId;
 	const notes: CommandReportEntry[] = [];
-	const transportWarning = catalogInsecureTransportWarning(status.endpoint);
+	const transportWarning = catalogInsecureTransportWarning(status.endpoint, catalog);
 	if (transportWarning) notes.push({ status: "warning", key, message: transportWarning });
 	if (status.credentialName && !status.credentialAvailable) {
 		notes.push({
 			status: "warning",
 			key,
-			message: `token variable ${status.credentialName} is not set and no token is saved for this source; refreshes are skipped until one is available.`,
+			message: catalogText(catalog, CatalogMessageId.catalogNoteTokenMissing, { name: status.credentialName }),
 		});
 	}
 	if (status.registrationGaps?.length) {
@@ -94,19 +130,31 @@ function sourceNotes(status: CatalogSyncStatus): CommandReportEntry[] {
 		notes.push({
 			status: "warning",
 			key,
-			message: `${complete} of ${status.offeringCount ?? "?"} offerings carry the fields a new model needs (${describeCatalogRegistrationGaps(status.registrationGaps)}). ${CATALOG_REGISTRATION_EFFECT}`,
+			message: catalogText(catalog, CatalogMessageId.catalogNoteRegistrationGaps, {
+				complete,
+				total: status.offeringCount ?? "?",
+				gaps: describeCatalogRegistrationGaps(status.registrationGaps, catalog),
+				effect: describeCatalogRegistrationEffect(catalog),
+			}),
 		});
 	}
 	if (status.thinkingLevelGaps?.length) {
 		notes.push({
 			status: "warning",
 			key,
-			message: `${status.thinkingLevelGaps.length} of ${status.offeringCount ?? "?"} offerings have no declared levels, so Jouzu cannot control their reasoning effort.`,
+			message: catalogText(catalog, CatalogMessageId.catalogNoteThinkingLevels, {
+				count: status.thinkingLevelGaps.length,
+				total: status.offeringCount ?? "?",
+			}),
 		});
 	}
 	if (status.conflict) notes.push({ status: "warning", key, message: status.conflict });
 	if (status.quarantined > 0) {
-		notes.push({ status: "warning", key, message: `${status.quarantined} candidate revisions are quarantined.` });
+		notes.push({
+			status: "warning",
+			key,
+			message: catalogText(catalog, CatalogMessageId.catalogNoteQuarantined, { count: status.quarantined }),
+		});
 	}
 	if (status.lastError) {
 		notes.push({ status: "problem", key, message: `${status.lastError.code}: ${status.lastError.message}` });
@@ -114,42 +162,56 @@ function sourceNotes(status: CatalogSyncStatus): CommandReportEntry[] {
 	return notes;
 }
 
-function sourceFields(status: ConfiguredCatalogStatus): CommandReportField[] {
-	const fields: CommandReportField[] = [{ label: "Endpoint", value: status.endpoint }];
-	if (status.catalogId) fields.push({ label: "Catalog", value: status.catalogId });
-	if (status.offeringCount !== undefined) fields.push({ label: "Models", value: String(status.offeringCount) });
+function sourceFields(status: ConfiguredCatalogStatus, catalog: CatalogBundle): CommandReportField[] {
+	const label = (fallback: string): string => {
+		const id = CATALOG_FIELD_LABEL_IDS[fallback];
+		return id === undefined ? fallback : catalogText(catalog, id);
+	};
+	const fields: CommandReportField[] = [{ label: label("Endpoint"), value: status.endpoint }];
+	if (status.catalogId) fields.push({ label: label("Catalog"), value: status.catalogId });
+	if (status.offeringCount !== undefined) fields.push({ label: label("Models"), value: String(status.offeringCount) });
 	if (status.registrationGaps?.length) {
 		const complete = (status.offeringCount ?? status.registrationGaps.length) - status.registrationGaps.length;
 		fields.push({
-			label: "Registration",
-			value: `${complete} of ${status.offeringCount ?? "?"} offerings carry the fields a new model needs`,
-			details: status.registrationGaps.map(
-				(gap) => `${gap.providerId}/${gap.modelId} — ${describeCatalogRegistrationGap(gap)}`,
+			label: label("Registration"),
+			value: catalogText(catalog, CatalogMessageId.catalogFieldRegistrationValue, {
+				complete,
+				total: status.offeringCount ?? "?",
+			}),
+			details: status.registrationGaps.map((gap) =>
+				catalogText(catalog, CatalogMessageId.catalogRegistrationGapDetail, {
+					model: `${gap.providerId}/${gap.modelId}`,
+					gap: describeCatalogRegistrationGap(gap, catalog),
+				}),
 			),
 		});
 	}
 	if (status.thinkingLevelGaps?.length) {
 		fields.push({
-			label: "Thinking levels",
-			value: `${status.thinkingLevelGaps.length} of ${status.offeringCount ?? "?"} offerings have no declared levels`,
+			label: label("Thinking levels"),
+			value: catalogText(catalog, CatalogMessageId.catalogFieldThinkingLevelsValue, {
+				count: status.thinkingLevelGaps.length,
+				total: status.offeringCount ?? "?",
+			}),
 			details: status.thinkingLevelGaps.map((gap) => `${gap.providerId}/${gap.modelId}`),
 		});
 	}
-	if (status.revision) fields.push({ label: "Revision", value: status.revision });
-	if (status.sequence) fields.push({ label: "Sequence", value: status.sequence });
-	if (status.validatedAt) fields.push({ label: "Validated", value: status.validatedAt });
-	const credential = describeCredential(status);
-	if (credential) fields.push({ label: "Credential", value: credential });
-	if (status.quarantined > 0) fields.push({ label: "Quarantined candidates", value: String(status.quarantined) });
+	if (status.revision) fields.push({ label: label("Revision"), value: status.revision });
+	if (status.sequence) fields.push({ label: label("Sequence"), value: status.sequence });
+	if (status.validatedAt) fields.push({ label: label("Validated"), value: status.validatedAt });
+	const credential = describeCredential(status, catalog);
+	if (credential) fields.push({ label: label("Credential"), value: credential });
+	if (status.quarantined > 0)
+		fields.push({ label: label("Quarantined candidates"), value: String(status.quarantined) });
 	if (status.lastError) {
-		fields.push({ label: "Last error", value: `${status.lastError.code}: ${status.lastError.message}` });
+		fields.push({ label: label("Last error"), value: `${status.lastError.code}: ${status.lastError.message}` });
 	}
 	return fields;
 }
 
-function renderSource(out: CommandReport, status: ConfiguredCatalogStatus): void {
-	const word = sourceStatusWord(status);
-	out.section(status.label, sourceFields(status), {
+function renderSource(out: CommandReport, status: ConfiguredCatalogStatus, catalog: CatalogBundle): void {
+	const word = sourceStatusWord(status, catalog);
+	out.section(status.label, sourceFields(status, catalog), {
 		status: sourceMarker(status),
 		detail: status.label === status.sourceId ? word : `[${status.sourceId}] · ${word}`,
 	});
@@ -157,44 +219,78 @@ function renderSource(out: CommandReport, status: ConfiguredCatalogStatus): void
 
 export function formatCatalogStatus(
 	status: CatalogStatus | CatalogSyncStatus,
-	options: CommandReportOptions = {},
+	options: CatalogRenderOptions = {},
 ): string {
+	const catalog = options.catalog ?? defaultCatalog();
+	const text = (id: CatalogMessageId, args?: Readonly<Record<string, string | number>>): string =>
+		catalogText(catalog, id, args);
 	const out = new CommandReport(options);
 	const single = !("sources" in status);
 	if (single && !status.configured) {
-		return out.title("Jouzu model catalog", status.status).paragraph(status.message).toString();
+		return out
+			.title(text(CatalogMessageId.catalogTitle), text(CATALOG_STATE_WORD_IDS[status.status]))
+			.paragraph(status.message)
+			.toString();
 	}
 	const sources = single ? [status] : status.sources;
-	if (single) out.title("Jouzu model catalog");
+	if (single) out.title(text(CatalogMessageId.catalogTitle));
 	else {
-		out.title("Jouzu model catalogs", status.status, `${status.active} of ${status.configured} sources active`);
-		if (status.status === "unconfigured") return out.paragraph(UNCONFIGURED_MESSAGE).toString();
+		out.title(
+			text(CatalogMessageId.catalogTitlePlural),
+			text(CATALOG_STATE_WORD_IDS[status.status]),
+			text(CatalogMessageId.catalogSourcesActive, { active: status.active, configured: status.configured }),
+		);
+		if (status.status === "unconfigured") return out.paragraph(text(CatalogMessageId.catalogUnconfigured)).toString();
 	}
-	const notes = sources.flatMap(sourceNotes);
-	out.entries("Notes", notes);
+	const notes = sources.flatMap((source) => sourceNotes(source, catalog));
+	out.entries(text(CatalogMessageId.catalogNotes), notes);
 	if (notes.length > 0) out.rule();
 	for (const source of sources) {
-		if (source.configured) renderSource(out, source);
+		if (source.configured) renderSource(out, source, catalog);
 	}
 	out.blank().rule();
-	out.tally(noteCounts(notes));
-	out.paragraph(CATALOG_DETAIL_HINT);
+	out.tally(noteCounts(notes, catalog));
+	out.paragraph(text(CatalogMessageId.catalogHint));
 	return out.toString();
+}
+
+function withValidationMessageRef(
+	result: CatalogConformanceResult,
+	messageRef: CatalogMessageRef,
+): CatalogConformanceResult {
+	if (result.error) {
+		Object.defineProperty(result.error, "messageRef", { value: messageRef, enumerable: false });
+	}
+	return result;
+}
+
+/** The human text of a validation error, resolved from the catalog when it has an ID. */
+export function catalogValidationMessage(result: CatalogConformanceResult, catalog: CatalogBundle): string {
+	const ref = result.error ? (result.error as { messageRef?: CatalogMessageRef }).messageRef : undefined;
+	return ref === undefined ? (result.error?.message ?? "") : catalogMessageText(catalog, ref);
 }
 
 export function validateCatalogFile(path: string, remote: boolean): CatalogConformanceResult {
 	if (!existsSync(path)) {
-		return {
-			valid: false,
-			error: { code: "invalid_json", path: "$", message: `catalog file does not exist: ${path}` },
-		};
+		const messageRef = catalogMessage(CatalogMessageId.catalogFileNotFound, { path });
+		return withValidationMessageRef(
+			{
+				valid: false,
+				error: { code: "invalid_json", path: "$", message: catalogMessageText(defaultCatalog(), messageRef) },
+			},
+			messageRef,
+		);
 	}
 	const metadata = lstatSync(path);
 	if (!metadata.isFile() || metadata.isSymbolicLink()) {
-		return {
-			valid: false,
-			error: { code: "invalid_json", path: "$", message: `catalog path must be a regular file: ${path}` },
-		};
+		const messageRef = catalogMessage(CatalogMessageId.catalogFileNotRegular, { path });
+		return withValidationMessageRef(
+			{
+				valid: false,
+				error: { code: "invalid_json", path: "$", message: catalogMessageText(defaultCatalog(), messageRef) },
+			},
+			messageRef,
+		);
 	}
 	return checkCatalogConformance(readFileSync(path, "utf8"), { remote });
 }

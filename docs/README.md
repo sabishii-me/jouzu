@@ -33,6 +33,8 @@ Install and first steps are in the [project README](../README.md).
 | [Windows](windows.md) | Check installation prerequisites and Windows-specific limits |
 | [Report a bug](bug-reporting.md) | Prepare a `/bug` report or diagnose a startup failure |
 | [Release notes](releases/) | See what changed in each version |
+| [Localization](localization.md) | Choose a UI language and understand English fallback and service-owned screens |
+| [Catalog glossary](localization-glossary.md) | Keep commands, identifiers, and other protected values unchanged across catalogs |
 
 ## Contributing
 

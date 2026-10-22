@@ -71,6 +71,7 @@ async function setup(t, scan = evidence, options = {}) {
 	createTextGuardReviewExtension(runtime, {
 		terminal: () => dimensions,
 		writeDiagnostic: (text) => messages.push(text),
+		...(options.catalog ? { catalog: options.catalog } : {}),
 	})({
 		on: (name, handler) => events.set(name, handler),
 		registerCommand: (name, command) => commands.set(name, command),
@@ -500,6 +501,45 @@ test("reload failure does not print exception details", async (t) => {
 	await pending;
 	assert.match(f.messages.at(-1), /Run \/reload/);
 	assert.doesNotMatch(f.messages.join("\n"), /secret exception/);
+});
+
+test("a resolved Japanese catalog localizes the review view and leaves the English default unchanged", async (t) => {
+	const { resolveCatalog } = await import("../dist/locale-catalog.js");
+	const ja = resolveCatalog("ja").bundle;
+	const f = await setup(t, evidence, { catalog: ja });
+	const review = f.policy.reviews()[0];
+	const snapshot = f.policy.admission.snapshotFor(review.id);
+	// The default English rendering is byte-identical to the base build.
+	const english = flat(reviewLines(review, snapshot).join("\n"));
+	assert.match(english, /Source: /);
+	assert.match(english, /Content fingerprint \(SHA-256\): [a-f0-9]{64}/);
+	assert.match(english, /bidi control character/);
+	// The Japanese bundle resolves the same IDs.
+	const japanese = flat(reviewLines(review, snapshot, true, ja).join("\n"));
+	assert.match(japanese, /ソース: /);
+	assert.match(japanese, /内容の指紋（SHA-256）: [a-f0-9]{64}/);
+	assert.match(japanese, /エラー（この内容をブロック）: 双方向制御文字 U\+202E、1 行 1 列目。/);
+	assert.match(japanese, /この文字はテキストの表示順を逆転させる/);
+	assert.match(japanese, /フラグが付いた内容（制御文字と不可視文字はエスケープして表示）:/);
+	assert.match(japanese, /走査はリスクを減らしますが、内容が安全であることを証明できません。/);
+	for (const label of ["Source:", "Content fingerprint", "bidi control character", "Scans reduce risk"])
+		assert.equal(japanese.includes(label), false, `English label survives: ${label}`);
+
+	// The overlay chrome resolves from the same bundle: header, summary, status, and hints.
+	const { pending, component } = await f.open();
+	const list = clean(component.render(48));
+	assert.match(list, /TextGuard レビュー/);
+	assert.match(list, /1 件を保留 · 0 件を配信/);
+	assert.match(list, /保留中/);
+	for (const label of ["TextGuard review", "withheld · ", "Delivered", "Report   "])
+		assert.equal(list.includes(label), false, `English chrome survives: ${label}`);
+	component.handleInput(ENTER);
+	const detail = clean(component.render(48));
+	assert.match(detail, /TextGuard レビュー — 保留中の内容/);
+	assert.match(detail, /このセッションで許可/);
+	component.handleInput(ESC);
+	component.handleInput(ESC);
+	await pending;
 });
 
 test("the component renders a bounded list for many items", async (t) => {
