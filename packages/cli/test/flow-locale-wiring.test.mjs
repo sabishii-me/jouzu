@@ -15,6 +15,7 @@ import {
 	capturedNotices,
 	installedProducerExtensions,
 } from "./fixtures/flow-assembly.mjs";
+import { controlledBackground } from "./fixtures/flow-background-gate.mjs";
 import { campaignScript, liveWait } from "./fixtures/flow-campaign.mjs";
 
 const ja = () => resolveCatalog("ja").bundle;
@@ -55,10 +56,11 @@ function loadRuntimeExtensions(flow) {
 }
 
 test("a Japanese session renders the flow status and its wait line in Japanese through the runtime", async (t) => {
+	const background = await controlledBackground(t);
 	const f = await assembledSession(t, {
 		catalog: ja(),
 		producerExtensions: await installedProducerExtensions(),
-		script: campaignScript({ goal: "Report the sweep" }),
+		script: campaignScript({ command: background.command, goal: "Report the sweep" }),
 	});
 	await f.session.prompt("start the sweep and wait");
 	await liveWait(f.ingress, "the campaign leaves one live wait");
@@ -76,9 +78,10 @@ test("a Japanese session renders the flow status and its wait line in Japanese t
 });
 
 test("the English default runtime renders the same flow status in English", async (t) => {
+	const background = await controlledBackground(t);
 	const f = await assembledSession(t, {
 		producerExtensions: await installedProducerExtensions(),
-		script: campaignScript({ goal: "Report the sweep" }),
+		script: campaignScript({ command: background.command, goal: "Report the sweep" }),
 	});
 	await f.session.prompt("start the sweep and wait");
 	await liveWait(f.ingress, "the campaign leaves one live wait");

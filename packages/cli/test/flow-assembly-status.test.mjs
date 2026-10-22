@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { assistantToolCalls } from "../../../scripts/fixtures/pi-flow-session.mjs";
+import { assistantToolCalls, deferred } from "../../../scripts/fixtures/pi-flow-session.mjs";
 import {
 	assembledSession,
 	capturedNotices,
@@ -17,9 +17,10 @@ const offered = (text) => /noReply[\\":]+[a-f0-9]{64}/.test(text);
 const permissionFrom = (text) => text.match(/noReply[\\":]+([a-f0-9]{64})/)?.[1];
 
 test("the status command reads and repairs holds without reaching the model", async (t) => {
+	const background = await controlledBackground(t);
 	const f = await assembledSession(t, {
 		producerExtensions: await installedProducerExtensions(),
-		script: campaignScript({ goal: "Report status" }),
+		script: campaignScript({ command: background.command, goal: "Report status" }),
 	});
 	await f.session.prompt("start the sweep and wait");
 	const wait = await liveWait(f.ingress, "the campaign leaves one live wait");
@@ -94,7 +95,11 @@ test("the status command refuses unknown targets and states what it accepts", as
 
 test("a lane from an earlier session in the same process does not break the next one", async (t) => {
 	const producers = await installedProducerExtensions();
-	const first = await assembledSession(t, { producerExtensions: producers, script: campaignScript({ goal: "One" }) });
+	const background = await controlledBackground(t);
+	const first = await assembledSession(t, {
+		producerExtensions: producers,
+		script: campaignScript({ command: background.command, goal: "One" }),
+	});
 	await first.session.prompt("start the sweep and wait");
 	await liveWait(first.ingress, "the first session leaves a live campaign");
 	assert.deepEqual(first.errors, []);
@@ -111,9 +116,10 @@ test("a lane from an earlier session in the same process does not break the next
 });
 
 test("status names an active campaign, so pause and stop have a target without a wait", async (t) => {
+	const background = await controlledBackground(t);
 	const f = await assembledSession(t, {
 		producerExtensions: await installedProducerExtensions(),
-		script: campaignScript({ goal: "Name the target" }),
+		script: campaignScript({ command: background.command, goal: "Name the target" }),
 	});
 	await f.session.prompt("start the sweep and wait");
 	const wait = await liveWait(f.ingress, "the campaign is live");
@@ -209,9 +215,10 @@ test("pausing a campaign holds its turns and resuming releases them", async (t) 
 });
 
 test("stopping a campaign cancels its waits and refuses a second transition", { timeout: 15000 }, async (t) => {
+	const background = await controlledBackground(t);
 	const f = await assembledSession(t, {
 		producerExtensions: await installedProducerExtensions(),
-		script: campaignScript({ goal: "Stop it" }),
+		script: campaignScript({ command: background.command, goal: "Stop it" }),
 	});
 	await f.session.prompt("start the sweep and wait");
 	const wait = await liveWait(f.ingress, "the campaign is live");
@@ -272,21 +279,37 @@ test("a result-only wake offers no-reply and a mixed wake does not", async (t) =
 });
 
 test("a wake carrying a wait decision and lane work offers no permission", async (t) => {
+	const background = await controlledBackground(t);
+	const wakeEntered = deferred();
+	const campaign = campaignScript({ command: background.command, goal: "Owed a reply" });
 	const f = await assembledSession(t, {
 		producerExtensions: await installedProducerExtensions(),
-		script: campaignScript({ command: "sleep 0.3 && echo swept", goal: "Owed a reply" }),
+		script: (body, index) => {
+			if (index === 4) wakeEntered.resolve(JSON.stringify(body.messages));
+			return campaign(body, index);
+		},
 	});
 	await f.session.prompt("start the sweep and wait");
-	const deadline = Date.now() + 5000;
+	assert.equal(f.bodies.length, 4, "the initial turn declares its wait before the dependency finishes");
+	// Early completion resolves agent_wait inline, so no later wait wake would be due.
+	const wait = await liveWait(f.ingress);
+	const timeout = setTimeout(() => wakeEntered.resolve(), 5000);
 	let wake;
-	while (Date.now() < deadline && !wake) {
-		wake = f.bodies.map((body) => JSON.stringify(body.messages)).find((text) => text.includes('kind\\":\\"wait'));
-		if (!wake) await new Promise((resolve) => setTimeout(resolve, 50));
+	try {
+		await background.release();
+		wake = await wakeEntered.promise;
+	} finally {
+		clearTimeout(timeout);
 	}
 	assert.ok(wake, "the composed wake was delivered");
+	assert.ok(wake.includes('kind\\":\\"wait'), "the wake carries a wait decision");
+	assert.ok(wake.includes(wait.token), "the decision names the declared wait");
+	assert.ok(wake.includes('kind\\":\\"work'), "the wake also carries lane work");
 	// It carries a wait decision and a lane continuation, both of which the model was asked to act
 	// on, so no permission is offered anywhere in it.
 	assert.equal(offered(wake), false);
+	await f.session.waitForIdle();
+	assert.equal(f.bodies.length, 5, "the dependency produces one composed wake");
 	assert.deepEqual(f.errors, []);
 });
 

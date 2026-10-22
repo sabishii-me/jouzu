@@ -10,6 +10,7 @@ import {
 	installedProducerExtensions,
 	replacedSession,
 } from "./fixtures/flow-assembly.mjs";
+import { controlledBackground } from "./fixtures/flow-background-gate.mjs";
 import { campaignScript, liveWait } from "./fixtures/flow-campaign.mjs";
 
 const idle = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -34,11 +35,12 @@ async function persistentRoot(t) {
 async function campaignThenReopen(t) {
 	const root = await persistentRoot(t);
 	const producers = await installedProducerExtensions();
+	const background = await controlledBackground(t);
 	const first = await assembledSession(t, {
 		root,
 		persist: true,
 		producerExtensions: producers,
-		script: campaignScript({ goal: "Survive a reopen" }),
+		script: campaignScript({ command: background.command, goal: "Survive a reopen" }),
 	});
 	await first.session.prompt("start the sweep and wait");
 
