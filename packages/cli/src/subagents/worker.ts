@@ -12,6 +12,7 @@ import { TextGuardRuntime } from "../textguard-runtime.js";
 import { inheritedContextText, parentContextTool } from "./context.js";
 import type { WorkerCommand, WorkerEvent, WorkerLaunch } from "./protocol.js";
 import { configureChildResources, expandedChildResourceLoader } from "./resources.js";
+import { resolveAgentThinking } from "./roles.js";
 import { observeChildBackgroundExecution, settleChildWork } from "./settle.js";
 import { createChildToolPolicy } from "./tool-policy.js";
 
@@ -137,7 +138,7 @@ async function runGuardedWorker(
 		agentDir: launch.directory,
 		modelRuntime: runtime,
 		model: { ...model, headers: { ...model.headers, ...auth.headers }, baseUrl: auth.baseUrl ?? model.baseUrl },
-		thinkingLevel: role.thinking,
+		thinkingLevel: resolveAgentThinking(role.thinking, launch.thinkingLevel),
 		tools,
 		customTools,
 		sessionManager,

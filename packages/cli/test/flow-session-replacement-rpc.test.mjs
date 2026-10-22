@@ -473,3 +473,43 @@ export default function(pi) {
 	assert.equal(rpc.responses(prompt.id), 1);
 	assertCleanRun(rpc, exit);
 });
+
+test("overlapping replacement commands settle and EOF exits cleanly", async (t) => {
+	const rpc = await launch(t, {
+		extension: `${appendRecord}
+export default function(pi) {
+	let arrived = 0, release;
+	const gate = new Promise(resolve => { release = resolve; });
+	pi.registerCommand("replace-together", {
+		handler: async (_args, ctx) => {
+			const outcome = { before: ctx.sessionManager.getSessionId() };
+			if (++arrived === 2) release();
+			await gate;
+			try {
+				outcome.result = await ctx.newSession({withSession: next => {
+					outcome.withSession = next.sessionManager.getSessionId();
+				}});
+			} catch (error) { outcome.error = error.message; }
+			record(outcome);
+		},
+	});
+}
+`,
+	});
+	const prompts = await Promise.all([
+		rpc.request("prompt", { message: "/replace-together" }),
+		rpc.request("prompt", { message: "/replace-together" }),
+	]);
+	const outcomes = await rpc.records();
+	assert.equal(outcomes.length, 2);
+	const succeeded = outcomes.filter((outcome) => outcome.result?.cancelled === false);
+	assert.equal(succeeded.length, 1, JSON.stringify(outcomes));
+	assert.match(outcomes.find((outcome) => outcome.error)?.error ?? "", /already in progress|stale/);
+	assert.equal((await rpc.request("get_state")).data.sessionId, succeeded[0].withSession);
+	const exit = await rpc.end();
+	for (const prompt of prompts) {
+		assert.equal(prompt.data.disposition, "handled");
+		assert.equal(rpc.responses(prompt.id), 1);
+	}
+	assertCleanRun(rpc, exit);
+});

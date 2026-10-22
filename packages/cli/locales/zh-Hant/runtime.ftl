@@ -1,4 +1,6 @@
 # 執行階段命令與模型清單標籤（草稿）。
+jouzu-cli-workflow-sameAsMain = 與主工作階段相同
+jouzu-cli-subagent-thinkingRequired = 思考：請在主工作階段中選擇推理強度，或為此角色明確指定推理強度。
 jouzu-cli-helpOverlay-fastMode = { $command } 模型快速處理
 jouzu-cli-helpOverlay-scrollback = { $command } 匯出對話記錄
 jouzu-cli-modelPicker-columnName = 名稱

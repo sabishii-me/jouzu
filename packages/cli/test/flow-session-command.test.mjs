@@ -184,6 +184,7 @@ test("a nested command callback cannot relinquish its parent's host boundary", a
 			(pi) => {
 				pi.on("model_select", async () => {
 					await assert.rejects(boundary.abortAndJoin(), { code: "busy" });
+					await assert.rejects(session.dispose(), { code: "busy" });
 					seen.push("nested refused");
 				});
 				pi.registerCommand("close", {
@@ -191,6 +192,7 @@ test("a nested command callback cannot relinquish its parent's host boundary", a
 						try {
 							await session.setModel({ ...model, id: "other" });
 							assert.deepEqual(await boundary.atIdle(async () => "usable"), { kind: "idle", value: "usable" });
+							await session.dispose();
 							await boundary.abortAndJoin();
 							outcome = "closed";
 						} catch (error) {
@@ -208,4 +210,38 @@ test("a nested command callback cannot relinquish its parent's host boundary", a
 	assert.equal(outcome, "closed");
 	await assert.rejects(session.prompt("after closure"), { code: "stale" });
 	await boundary.abortAndJoin();
+});
+
+test("overlapping commands cannot join each other's session disposal", { timeout: 10000 }, async (t) => {
+	const release = deferred(),
+		bothEntered = deferred();
+	let session,
+		entered = 0;
+	const outcomes = [];
+	const f = await fixture(t, {
+		extensions: [
+			(pi) =>
+				pi.registerCommand("close", {
+					handler: async () => {
+						if (++entered === 2) bothEntered.resolve();
+						await release.promise;
+						try {
+							await session.dispose();
+							outcomes.push("closed");
+						} catch (error) {
+							outcomes.push(error.code);
+						}
+					},
+				}),
+		],
+	});
+	session = f.session;
+	const first = session.prompt("/close");
+	const second = session.prompt("/close");
+	await bothEntered.promise;
+	release.resolve();
+	await Promise.all([first, second]);
+	assert.deepEqual(outcomes.sort(), ["busy", "closed"]);
+	await session.dispose();
+	assert.equal(f.sent.length, 0);
 });

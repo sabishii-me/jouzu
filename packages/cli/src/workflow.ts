@@ -34,9 +34,9 @@ import {
 	CONCURRENCY_BOUNDS,
 	defaultAgentConfig,
 	READ_TOOLS,
+	ROLE_THINKING_LEVELS,
 	type RoleSnapshot,
 	SAME_MODEL,
-	THINKING_LEVELS,
 	type WorkspaceWriterPolicy,
 } from "./subagents/roles.js";
 import {
@@ -275,9 +275,7 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 			role ?? {
 				...defaultAgentConfig().roles[1],
 				id: "new-agent",
-				model: this.service.models()[0]
-					? `${this.service.models()[0].provider}/${this.service.models()[0].id}`
-					: "choose-model",
+				model: SAME_MODEL,
 			},
 		);
 		this.fields.clear();
@@ -552,9 +550,11 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 				{ label: this.msg(CatalogMessageId.workflowRowChildTools), input: this.fields.get("tools") },
 				{
 					label: this.msg(CatalogMessageId.workflowRowThinking),
-					value: paletteChoice(role.thinking),
+					value: paletteChoice(
+						role.thinking === "same" ? catalogText(this.catalog, "jouzu.cli.workflow.sameAsMain") : role.thinking,
+					),
 					choice: (delta) => {
-						role.thinking = cycle(THINKING_LEVELS, role.thinking, delta);
+						role.thinking = cycle(ROLE_THINKING_LEVELS, role.thinking, delta);
 					},
 				},
 				{ label: this.msg(CatalogMessageId.workflowRowTimeoutSeconds), input: this.fields.get("timeoutSeconds") },
@@ -1034,6 +1034,13 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 					lines.push(heading("Run", sanitizeTerminalText(run.status)));
 					lines.push(detail(catalogMessage(CatalogMessageId.workflowFieldAgent), sanitizeTerminalText(run.role.id)));
 					lines.push(detail(catalogMessage(CatalogMessageId.workflowFieldModel), agentModelDisplay(run.model).label));
+					const thinking = run.thinkingLevel ?? run.role.thinking;
+					lines.push(
+						detail(
+							catalogMessage(CatalogMessageId.workflowRowThinking),
+							thinking === "same" ? catalogText(this.catalog, "jouzu.cli.workflow.sameAsMain") : thinking,
+						),
+					);
 					lines.push(detail(catalogMessage(CatalogMessageId.workflowFieldWorkspace), sanitizeTerminalText(run.cwd)));
 					if (run.context)
 						lines.push(

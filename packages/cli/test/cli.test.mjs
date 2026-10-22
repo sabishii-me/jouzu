@@ -98,7 +98,7 @@ test("a non-interactive first run uses Core without recording Japanese consent",
 		assert.equal(result.stdout.trim(), piVersion);
 		const state = JSON.parse(readFileSync(join(jouzuHome, "state", "profile-state.json"), "utf8"));
 		assert.equal(state.activeProfile, "core");
-		assert.equal(state.profileVersion, 13);
+		assert.equal(state.profileVersion, 14);
 		assert.equal(existsSync(join(jouzuHome, "state", "profile-choice.json")), false);
 	} finally {
 		rmSync(temp, { recursive: true, force: true });
@@ -794,8 +794,8 @@ test("changing the UI locale leaves the response language, profile, model, provi
 			"localization.fallback": "none",
 			"localization.catalogVersion": "1",
 			"localization.catalogFallback": "none",
-			"localization.catalogState": "complete",
-			"localization.supportStates": "en=complete; ja=complete; zh-Hans=unsupported; zh-Hant=unsupported",
+			"localization.catalogState": "stale",
+			"localization.supportStates": "en=complete; ja=stale; zh-Hans=unsupported; zh-Hant=unsupported",
 		});
 		assert.deepEqual(localizedWithoutDigest(english), {
 			"localization.requested": "en",
@@ -805,7 +805,7 @@ test("changing the UI locale leaves the response language, profile, model, provi
 			"localization.catalogVersion": "1",
 			"localization.catalogFallback": "none",
 			"localization.catalogState": "complete",
-			"localization.supportStates": "en=complete; ja=complete; zh-Hans=unsupported; zh-Hant=unsupported",
+			"localization.supportStates": "en=complete; ja=stale; zh-Hans=unsupported; zh-Hant=unsupported",
 		});
 		assert.match(localized(japanese)["localization.catalogDigest"], /^[0-9a-f]{64}$/u);
 		assert.match(localized(english)["localization.catalogDigest"], /^[0-9a-f]{64}$/u);

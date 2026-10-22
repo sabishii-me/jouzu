@@ -64,12 +64,10 @@ test("the committed status record covers every locked catalog and names the sour
 		assert.ok(entry.sourceVersion.length > 0, locale);
 		assert.equal(typeof entry.reviewed, "boolean", locale);
 	}
-	// Every catalog was translated against the current English source, so the
-	// record and the lock agree and nothing is stale.
+	// The source metadata advances without inventing a new Japanese review.
 	assert.equal(record.locales.en.sourceDigest, lock.locales.en);
-	for (const locale of Object.keys(record.locales)) {
-		assert.equal(record.locales[locale].sourceDigest, lock.locales.en, locale);
-	}
+	assert.notEqual(record.locales.ja.sourceDigest, lock.locales.en);
+	assert.equal(record.locales.ja.sourceVersion, "0.1.19");
 });
 
 test("the state vocabulary carries all six identifiers", () => {
@@ -79,10 +77,10 @@ test("the state vocabulary carries all six identifiers", () => {
 	);
 });
 
-test("the committed catalogs are complete or unsupported, never stale or partial", () => {
+test("the committed Japanese preview remains stale until its source changes are reviewed", () => {
 	assert.deepEqual(catalogSupportStates({ localesRoot: sourceLocales }), [
 		{ locale: "en", state: "complete" },
-		{ locale: "ja", state: "complete" },
+		{ locale: "ja", state: "stale" },
 		{ locale: "zh-Hans", state: "unsupported" },
 		{ locale: "zh-Hant", state: "unsupported" },
 	]);
@@ -137,8 +135,12 @@ test("a catalog that misses a source message id is partial", () => {
 		mutateCatalog(localesRoot, "ja", (source) =>
 			source.replace("jouzu-cli-args-homeRepeated = --jouzu-home は 1 回だけ指定できます\n", ""),
 		);
-		// The English source did not move, so the catalog is not stale; it is
-		// incomplete, which is the partial state.
+		// Give this fixture current review metadata so the missing-ID check,
+		// rather than the shipped preview's stale provenance, determines its state.
+		const statusPath = join(localesRoot, CATALOG_STATUS_FILE_NAME);
+		const status = JSON.parse(readFileSync(statusPath, "utf8"));
+		status.locales.ja.sourceDigest = status.locales.en.sourceDigest;
+		writeFileSync(statusPath, JSON.stringify(status));
 		assert.equal(catalogSupportState("ja", { localesRoot }), "partial");
 	});
 });

@@ -41,6 +41,7 @@ import {
 	parseAgentConfig,
 	type RoleSnapshot,
 	resolveAgentModel,
+	resolveAgentThinking,
 	SAME_MODEL,
 	type WorkspaceWriterPolicy,
 } from "./roles.js";
@@ -103,6 +104,7 @@ export function createWorkflowIntegration(
 		id: run.id,
 		role: run.role.id,
 		model: run.model,
+		thinking: run.thinkingLevel ?? run.role.thinking,
 		status: run.status,
 		workspace: run.cwd,
 		context: run.context,
@@ -179,6 +181,7 @@ export function createWorkflowIntegration(
 					catalog,
 				);
 		const model = resolveModel(modelSelector ?? role.model);
+		const thinkingLevel = resolveAgentThinking(role.thinking, api?.getThinkingLevel?.(), catalog);
 		const registered = active.modelRegistry.getRegisteredProviderConfig(model.provider);
 		if (registered?.streamSimple) throw new Error(catalogText(catalog, CatalogMessageId.subagentProviderInProcess));
 		const auth = await active.modelRegistry.getApiKeyAndHeaders(model);
@@ -198,6 +201,7 @@ export function createWorkflowIntegration(
 				cacheWarming: settings.getCacheWarmingMode(),
 				role,
 				model,
+				thinkingLevel,
 				auth: {
 					apiKey: auth.apiKey,
 					headers: auth.headers as Record<string, string> | undefined,
@@ -264,8 +268,13 @@ export function createWorkflowIntegration(
 		async resume(id, task) {
 			requireSubagents();
 			const previous = controller().get(id);
-			// The saved role revision and provider are immutable across a resumed run.
-			return dispatch(previous.role, task, id, `${previous.model.provider}/${previous.model.id}`);
+			// Saved selectors remain authoritative; inherited settings follow the parent.
+			return dispatch(
+				previous.role,
+				task,
+				id,
+				isSameModelSelector(previous.role.model) ? SAME_MODEL : `${previous.model.provider}/${previous.model.id}`,
+			);
 		},
 		steer: (id, text) => {
 			requireSubagents();
@@ -285,7 +294,7 @@ export function createWorkflowIntegration(
 				if (!(await api.setModel(model)))
 					throw new Error(catalogText(catalog, CatalogMessageId.subagentRoleAuthenticationUnavailable));
 			}
-			api.setThinkingLevel(role.thinking);
+			if (role.thinking !== "same") api.setThinkingLevel(role.thinking);
 			mainRole = structuredClone(role);
 			api.appendEntry("jouzu-main-role", { role: mainRole, revision: digest(mainRole) });
 			notify();
@@ -614,7 +623,7 @@ export function createWorkflowIntegration(
 				exposure: "model-only",
 				label: catalogText(catalog, SUBAGENT_LABEL_ID),
 				description:
-					'Launch and control child agents. Start with {"op":"roles"} for live availability and role definitions. Omit unused fields; use null only if required by the interface. A launch needs only op, role, and task; context defaults to fresh. Never invent IDs or placeholder values. Only the user changes role models or enables subagents. Launch uses the configured model; resume keeps its saved model, workspace, and context. Steer queues a message; resume starts a follow-up. File access follows enabled tools and OS permissions, not a workspace fence. Launch returns immediately; unread terminal results arrive in a batch after active work and queued messages finish. Read pages use byte offsets; reading all terminal output prevents redundant completion turns. Trace searches saved messages, tool calls/results, errors, and compactions without acknowledging completion. Acknowledge only the delivered batchId, alone, when no reply is needed. You retain main-session ownership; verify child output before accepting it.',
+					'Launch and control child agents. Start with {"op":"roles"} for live availability and role definitions. Omit unused fields; use null only if required by the interface. A launch needs only op, role, and task; context defaults to fresh. Never invent IDs or placeholder values. Only the user changes role models or enables subagents. Launch uses the configured model; resume keeps its saved role, workspace, and context. A same model or thinking setting follows the current main session on launch and resume. Steer queues a message; resume starts a follow-up. File access follows enabled tools and OS permissions, not a workspace fence. Launch returns immediately; unread terminal results arrive in a batch after active work and queued messages finish. Read pages use byte offsets; reading all terminal output prevents redundant completion turns. Trace searches saved messages, tool calls/results, errors, and compactions without acknowledging completion. Acknowledge only the delivered batchId, alone, when no reply is needed. You retain main-session ownership; verify child output before accepting it.',
 				promptSnippet:
 					"subagent: discover roles, delegate coding or fresh review, inspect results, steer/stop/resume children.",
 				parameters: schema,
@@ -721,11 +730,12 @@ export function createWorkflowIntegration(
 								maxConcurrent: config.maxConcurrent,
 								workspaceWriters: config.workspaceWriters,
 								roles: config.roles.map(
-									({ id, description, model, placement, judging, tools, maxTurns, timeoutSeconds }) => ({
+									({ id, description, model, thinking, placement, judging, tools, maxTurns, timeoutSeconds }) => ({
 										id,
 										description,
 										model,
 										modelLabel: agentModelSelectorLabel(model, availableModels()),
+										thinking,
 										placement,
 										judging,
 										tools,

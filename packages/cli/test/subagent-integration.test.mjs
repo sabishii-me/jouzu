@@ -78,6 +78,7 @@ function fixture(realWorker = false, options = {}) {
 	let command;
 	let commandDefinition;
 	let selected;
+	let thinking = "high";
 	integration.register(
 		{
 			on: (name, handler) => handlers.set(name, handler),
@@ -97,7 +98,10 @@ function fixture(realWorker = false, options = {}) {
 				selected = model;
 				return true;
 			},
-			setThinkingLevel() {},
+			getThinkingLevel: () => thinking,
+			setThinkingLevel: (value) => {
+				thinking = value;
+			},
 			appendEntry: (type, data) => entries.push({ type, data }),
 			sendMessage: (message, options) => {
 				messages.push({ message, options });
@@ -116,6 +120,7 @@ function fixture(realWorker = false, options = {}) {
 		api: "openai-completions",
 	}));
 	const ctx = {
+		model: models[0],
 		mode: "tui",
 		cwd: root,
 		isIdle: () => true,
@@ -155,6 +160,9 @@ function fixture(realWorker = false, options = {}) {
 		},
 		get commandDefinition() {
 			return commandDefinition;
+		},
+		setThinking(value) {
+			thinking = value;
 		},
 		get selected() {
 			return selected;
@@ -511,6 +519,9 @@ test("unreadable warming settings refuse launch instead of enabling refreshes", 
 test("role and run displays use catalog names without changing selectors or read content", async () => {
 	const f = fixture();
 	await f.handlers.get("session_start")({}, f.ctx);
+	const configured = f.integration.service.roles();
+	configured.config.roles.find((role) => role.id === "coder").model = "glm-5.3-flash";
+	f.integration.service.save(configured);
 	try {
 		const provider = "catalog:office:local:8f5c5bb9e126e978";
 		f.ctx.modelRegistry.getAvailable = () => [
@@ -716,6 +727,9 @@ test("agent calls cannot override configured models, including through stale too
 	const f = fixture();
 	try {
 		await f.handlers.get("session_start")({}, f.ctx);
+		const configured = f.integration.service.roles();
+		configured.config.roles.find((role) => role.id === "coder").model = "glm-5.3-flash";
+		f.integration.service.save(configured);
 		f.ctx.model = { id: "gpt-6-astra", provider: "fixture", name: "Astra", api: "openai-completions" };
 		assert.equal(f.tool.parameters.properties.model, undefined);
 		assert.equal(f.tool.parameters.additionalProperties, false);
@@ -749,6 +763,9 @@ test("user-saved role models affect new launches while resumes retain the saved 
 	const f = fixture();
 	try {
 		await f.handlers.get("session_start")({}, f.ctx);
+		const configured = f.integration.service.roles();
+		configured.config.roles.find((role) => role.id === "coder").model = "glm-5.3-flash";
+		f.integration.service.save(configured);
 		const run = await f.invoke({ op: "launch", role: "coder", task: "First" });
 		const childSession = join(f.workers[0].launch.directory, "session.jsonl");
 		writeFileSync(childSession, "{}\n");
@@ -775,6 +792,7 @@ test("same resolves against the session model only when saved in the role", asyn
 		const snapshot = f.integration.service.roles();
 		snapshot.config.roles.find((role) => role.id === "reviewer").model = "same";
 		f.integration.service.save(snapshot);
+		f.ctx.model = undefined;
 		await assert.rejects(f.invoke({ op: "launch", role: "reviewer", task: "Review" }), /no model selected/);
 		f.ctx.model = { id: "gpt-6-astra", provider: "fixture", name: "Astra", api: "openai-completions" };
 		const run = await f.invoke({ op: "launch", role: "reviewer", task: "Review" });
@@ -1225,6 +1243,101 @@ test("malformed definitions preserve session startup and cancellation notifies t
 		await f.invoke({ op: "stop", id: a.id });
 		await new Promise((resolve) => setTimeout(resolve, 130));
 		assert.equal(f.messages[0].options.triggerTurn, true);
+	} finally {
+		await f.shutdown();
+	}
+});
+
+test("default children inherit current model and effort on launch and resume", async () => {
+	const f = fixture();
+	try {
+		await f.handlers.get("session_start")({}, f.ctx);
+		const first = await f.invoke({ op: "launch", role: "coder", task: "First" });
+		assert.equal(first.model.id, "gpt-6-astra");
+		assert.equal(first.thinking, "high");
+		assert.equal(f.workers[0].launch.role.model, "same");
+		assert.equal(f.workers[0].launch.role.thinking, "same");
+		assert.equal(f.workers[0].launch.thinkingLevel, "high");
+		const childSession = join(f.workers[0].launch.directory, "session.jsonl");
+		writeFileSync(childSession, "{}\n");
+		f.workers[0].emit({ type: "ready", sessionFile: childSession, sessionId: "child" });
+		f.workers[0].emit({ type: "result", status: "completed", text: "Done" });
+		f.workers[0].exit(true);
+		f.ctx.model = { ...f.ctx.model, id: "glm-5.3-flash" };
+		f.setThinking("xhigh");
+		const resumed = await f.invoke({ op: "resume", id: first.id, task: "Continue" });
+		assert.equal(resumed.model.id, "glm-5.3-flash");
+		assert.equal(resumed.thinking, "xhigh");
+		assert.equal(f.workers[1].launch.sessionFile, childSession);
+		assert.equal(f.workers[1].launch.thinkingLevel, "xhigh");
+		assert.equal(f.workers[0].launch.model.id, "gpt-6-astra");
+		assert.equal(f.workers[0].launch.thinkingLevel, "high");
+		const review = await f.invoke({ op: "launch", role: "reviewer", task: "Review" });
+		assert.equal(review.model.id, "glm-5.3-flash");
+		assert.equal(review.thinking, "xhigh");
+		assert.equal(f.workers[2].launch.role.judging, true);
+	} finally {
+		await f.shutdown();
+	}
+});
+
+test("Japanese inherited effort errors keep the configured selector and launch snapshot intact", async () => {
+	const f = fixture(false, { catalog: resolveCatalog("ja").bundle });
+	try {
+		await f.handlers.get("session_start")({}, f.ctx);
+		f.setThinking(undefined);
+		await assert.rejects(
+			f.invoke({ op: "launch", role: "coder", task: "Implement" }),
+			/メインセッションで推論の強度を選択/u,
+		);
+		assert.equal(f.workers.length, 0);
+		assert.equal(f.integration.service.roles().config.roles.find((role) => role.id === "coder").thinking, "same");
+		f.setThinking("low");
+		const run = await f.invoke({ op: "launch", role: "coder", task: "Implement" });
+		assert.equal(run.thinking, "low");
+		assert.equal(f.workers[0].launch.thinkingLevel, "low");
+		f.setThinking("high");
+		assert.equal(f.workers[0].launch.thinkingLevel, "low");
+	} finally {
+		await f.shutdown();
+	}
+});
+
+test("explicit child effort survives parent changes and inherited effort requires a selected value", async () => {
+	const f = fixture();
+	try {
+		await f.handlers.get("session_start")({}, f.ctx);
+		const snapshot = f.integration.service.roles();
+		snapshot.config.roles.find((role) => role.id === "coder").thinking = "low";
+		f.integration.service.save(snapshot);
+		f.setThinking("max");
+		const run = await f.invoke({ op: "launch", role: "coder", task: "Use fixed effort" });
+		assert.equal(run.thinking, "low");
+		assert.equal(f.workers[0].launch.thinkingLevel, "low");
+		f.setThinking(undefined);
+		await assert.rejects(f.invoke({ op: "launch", role: "reviewer", task: "Review" }), /select an effort/);
+		assert.equal(f.workers.length, 1);
+	} finally {
+		await f.shutdown();
+	}
+});
+
+test("a queued inherited child keeps the model and effort captured at request time", async () => {
+	const f = fixture();
+	try {
+		await f.handlers.get("session_start")({}, f.ctx);
+		const snapshot = f.integration.service.roles();
+		snapshot.config.maxConcurrent = 1;
+		f.integration.service.save(snapshot);
+		const first = await f.invoke({ op: "launch", role: "coder", task: "Occupy slot" });
+		const queued = await f.invoke({ op: "launch", role: "reviewer", task: "Queued review" });
+		assert.equal(queued.status, "queued");
+		f.ctx.model = { ...f.ctx.model, id: "glm-5.3-flash" };
+		f.setThinking("off");
+		await f.invoke({ op: "stop", id: first.id });
+		assert.equal(f.workers.length, 2);
+		assert.equal(f.workers[1].launch.model.id, "gpt-6-astra");
+		assert.equal(f.workers[1].launch.thinkingLevel, "high");
 	} finally {
 		await f.shutdown();
 	}

@@ -132,10 +132,7 @@ test("the four states are distinct identifiers and each is displayed", () => {
 		});
 		// complete, unsupported, and upstream-owned are displayed in one report.
 		assert.match(text, /UI catalog support state complete/u);
-		assert.match(
-			text,
-			/Recorded UI catalog states en=complete; ja=complete; zh-Hans=unsupported; zh-Hant=unsupported/u,
-		);
+		assert.match(text, /Recorded UI catalog states en=complete; ja=stale; zh-Hans=unsupported; zh-Hant=unsupported/u);
 		assert.match(text, /Upstream-owned surfaces 42/u);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
@@ -226,8 +223,8 @@ test("the state tokens stay untranslated in the ja render", () => {
 		};
 		const report = createDoctorReport(context(root, overrides)).report;
 		const text = flat(formatDoctorReport(report, { ...RENDER, locale: "ja", catalog: loadCatalog("ja") }));
-		assert.match(text, /UI カタログの対応状態 complete/u);
-		assert.match(text, /en=complete; ja=complete; zh-Hans=unsupported; zh-Hant=unsupported/u);
+		assert.match(text, /UI カタログの対応状態 stale/u);
+		assert.match(text, /en=complete; ja=stale; zh-Hans=unsupported; zh-Hant=unsupported/u);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}

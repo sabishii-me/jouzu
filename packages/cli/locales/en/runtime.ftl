@@ -1,4 +1,6 @@
 # Runtime commands and model-list labels.
+jouzu-cli-workflow-sameAsMain = Same as main
+jouzu-cli-subagent-thinkingRequired = Thinking: select an effort in the main session or choose an explicit effort for this role.
 jouzu-cli-helpOverlay-fastMode = { $command } Fast model requests
 jouzu-cli-helpOverlay-scrollback = { $command } Export transcript
 jouzu-cli-modelPicker-columnName = Name

@@ -1,4 +1,6 @@
 # ランタイムのコマンドとモデル一覧のラベル。
+jouzu-cli-workflow-sameAsMain = メインと同じ
+jouzu-cli-subagent-thinkingRequired = 思考: メインセッションで推論の強度を選択するか、このロールの強度を明示的に指定してください。
 jouzu-cli-helpOverlay-fastMode = { $command } モデルの高速処理
 jouzu-cli-helpOverlay-scrollback = { $command } 会話記録を出力
 jouzu-cli-modelPicker-columnName = 名前

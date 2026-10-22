@@ -1,4 +1,6 @@
 # 运行时命令和模型列表标签（草稿）。
+jouzu-cli-workflow-sameAsMain = 与主会话相同
+jouzu-cli-subagent-thinkingRequired = 思考：请在主会话中选择推理投入，或为此角色明确指定推理投入。
 jouzu-cli-helpOverlay-fastMode = { $command } 模型快速处理
 jouzu-cli-helpOverlay-scrollback = { $command } 导出对话记录
 jouzu-cli-modelPicker-columnName = 名称
