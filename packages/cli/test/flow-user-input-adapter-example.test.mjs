@@ -471,6 +471,37 @@ test("branch navigation refreshes the binding and its subscriptions", async () =
 	);
 });
 
+for (const outcome of ["resolve", "reject"])
+	test(`overlapping rebinds ignore an older ${outcome} and retain one subscription`, async (t) => {
+		const f = await harness();
+		await f.invoke("session_start", { type: "session_start", reason: "startup" });
+		const first = Promise.withResolvers();
+		const second = Promise.withResolvers();
+		t.after(() => {
+			first.resolve(BINDING);
+			second.resolve(BINDING);
+		});
+		let calls = 0;
+		f.adapter.bind = () => (++calls === 1 ? first.promise : second.promise);
+		const older = f.invoke("session_tree", { type: "session_tree", newLeafId: "leaf-2", oldLeafId: "leaf-1" });
+		f.invalidate();
+		assert.equal(calls, 2);
+		const latest = { target: "b".repeat(64), generation: "generation-3" };
+		second.resolve(latest);
+		await until(() => f.client.state.bindings.at(-1) === latest, "the newer target was not published");
+		if (outcome === "resolve") first.resolve({ target: "c".repeat(64), generation: "generation-2" });
+		else first.reject(new Error("superseded binding failed"));
+		await older;
+		assert.deepEqual(f.client.state.bindings, [BINDING, undefined, latest]);
+		assert.equal(f.calls.subscribe, 2);
+		assert.equal(f.calls.unsubscribe, 1);
+		assert.equal(f.listeners.size, 1);
+		assert.deepEqual(f.client.state.failures, []);
+		await f.invoke("session_shutdown", { type: "session_shutdown" });
+		assert.equal(f.listeners.size, 0);
+		assert.equal(f.calls.unsubscribe, 2);
+	});
+
 test("a reset that invalidates the target rebinds without registering again", async () => {
 	const f = await harness();
 	await f.invoke("session_start", { type: "session_start", reason: "startup" });

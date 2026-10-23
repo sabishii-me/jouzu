@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, realpath, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -61,6 +61,64 @@ const input = (f, messageId = "one", text = "external instruction", deliverAs = 
 const lookup = (f, messageId) => f.adapter.lookup({ target: f.binding.target, messageId });
 const externalRecords = async (f) =>
 	(await f.ingress.branch().attachment.submissions.snapshot()).filter((record) => record.submission.externalUser);
+
+test("canonical identity drift cannot authorize an old handle or its retained input", async (t) => {
+	let allowed = false;
+	const f = await setup(t, { register: false, admit: async () => allowed });
+	const other = join(f.agentDir, "other.ts");
+	const alias = join(f.agentDir, "alias.ts");
+	await writeFile(other, "export default () => {};\n");
+	await symlink(f.extensionId, alias);
+	f.adapter = await f.register({ extensionId: alias });
+	f.binding = await f.adapter.bind();
+	assert.equal((await f.adapter.submit(input(f))).state, "held");
+	const [record] = await externalRecords(f);
+	await unlink(alias);
+	await symlink(other, alias);
+	await f.writeGrants([{ extensionPath: await realpath(other), adapterId: "fixture" }]);
+	await assert.rejects(f.adapter.bind(), { code: "unauthorized" });
+	await assert.rejects(lookup(f, "one"), { code: "unauthorized" });
+	await assert.rejects(f.adapter.submit(input(f, "two")), { code: "unauthorized" });
+	await assert.rejects(
+		f.ingress.authorizeExternal(
+			record.submission,
+			await f.ingress.branch().attachment.submissions.externalTargetEpoch(),
+		),
+		{ code: "unauthorized" },
+	);
+	allowed = true;
+	assert.equal(await f.ingress.release(record.id, record.revision), false);
+	await f.ingress.joinPendingOperations();
+	const [cancelled] = await externalRecords(f);
+	assert.equal(cancelled.status, "cancelled");
+	assert.equal(cancelled.cancellationReason, "unauthorized");
+	assert.equal(f.sent.length, 0);
+	const replacement = await f.register({ extensionId: alias });
+	assert.equal(await replacement.lookup({ target: f.binding.target, messageId: "one" }), undefined);
+});
+
+test("a first authorization fault records a visible hold without a prior policy hold", async (t) => {
+	const f = await setup(t);
+	const store = f.ingress.branch().attachment.submissions;
+	const retain = store.retainExternal.bind(store);
+	t.mock.method(store, "retainExternal", async (...args) => {
+		const retained = await retain(...args);
+		await writeFile(join(f.agentDir, "user-input-adapters.json"), "{");
+		return retained;
+	});
+	await assert.rejects(f.adapter.submit(input(f)), { code: "invalid-config" });
+	const [record] = await externalRecords(f);
+	assert.equal(record.dispatch, undefined);
+	assert.match(record.holds?.[0]?.reason ?? "", /authorization is unavailable/);
+	assert.ok((await f.ingress.heldInputs()).some((held) => held.id === record.id));
+	assert.equal(f.sent.length, 0);
+	await f.restore();
+	assert.equal((await lookup(f, "one")).state, "held");
+	assert.equal(await f.ingress.release(record.id, record.revision), true);
+	await f.ingress.joinPendingOperations();
+	assert.equal((await lookup(f, "one")).state, "consumed");
+	assert.equal(f.sent.length, 1);
+});
 
 test("external human clears reopening pause, consumes once, and conflicting retry does not dispatch", async (t) => {
 	const f = await setup(t);

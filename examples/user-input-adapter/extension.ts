@@ -72,6 +72,7 @@ function toFailure(error: unknown, messageId?: string): AdapterFailure {
 export function createUserInputAdapterExtension(transport: AuthenticatedClientTransport): ExtensionFactory {
 	return (pi) => {
 		let lifecycle = 0;
+		let bindingOperation = 0;
 		let adapter: Adapter | undefined;
 		let binding: UserInputBinding | undefined;
 		let stopReceipts: (() => void) | undefined;
@@ -81,6 +82,7 @@ export function createUserInputAdapterExtension(transport: AuthenticatedClientTr
 
 		const release = () => {
 			lifecycle++;
+			bindingOperation++;
 			stopReceipts?.();
 			stopMessages?.();
 			stopReconnects?.();
@@ -94,6 +96,7 @@ export function createUserInputAdapterExtension(transport: AuthenticatedClientTr
 
 		/** Withdraw the published target. The registration stays live for the next binding. */
 		const withdraw = () => {
+			bindingOperation++;
 			stopReceipts?.();
 			stopReceipts = undefined;
 			const published = binding !== undefined;
@@ -102,17 +105,32 @@ export function createUserInputAdapterExtension(transport: AuthenticatedClientTr
 		};
 
 		/** Bind the current target and publish it with a receipt subscription for this attachment. */
-		const bindCurrent = async () => {
+		const bindCurrent = async (operation = ++bindingOperation) => {
 			const current = adapter;
 			if (!current) return;
 			const generation = lifecycle;
-			const next = await current.bind();
-			if (lifecycle !== generation || adapter !== current) return;
+			const active = () => lifecycle === generation && bindingOperation === operation && adapter === current;
+			let next: UserInputBinding;
+			try {
+				next = await current.bind();
+			} catch (error) {
+				if (!active()) return;
+				throw error;
+			}
+			if (!active()) return;
+			stopReceipts?.();
+			stopReceipts = undefined;
 			binding = next;
 			// A subscription publishes a current snapshot first, then journal-triggered updates.
-			stopReceipts = current.subscribe((receipt) => {
-				if (adapter === current) transport.setReceipt(receipt);
+			const stop = current.subscribe((receipt) => {
+				if (active()) transport.setReceipt(receipt);
 			});
+			// The snapshot listener may synchronously withdraw this target or end the session.
+			if (!active()) {
+				stop();
+				return;
+			}
+			stopReceipts = stop;
 			transport.setBinding(next);
 		};
 
@@ -125,10 +143,11 @@ export function createUserInputAdapterExtension(transport: AuthenticatedClientTr
 			if (!current) return;
 			const generation = lifecycle;
 			withdraw();
+			const operation = bindingOperation;
 			try {
-				await bindCurrent();
+				await bindCurrent(operation);
 			} catch (error) {
-				if (lifecycle !== generation || adapter !== current) return;
+				if (lifecycle !== generation || bindingOperation !== operation || adapter !== current) return;
 				const failure = toFailure(error);
 				transport.reportFailure(failure);
 				if (ctx.hasUI) ctx.ui.notify(`External user input: ${failure.text}`, "error");

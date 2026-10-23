@@ -281,12 +281,7 @@ export class PiSessionFlowIngress implements Ingress {
 	 * so an old binding would otherwise dispatch into the new journal lifetime.
 	 */
 	async authorizeExternal(submission: Submission, epoch: string): Promise<void> {
-		const provenance = submission.externalUser;
-		if (!provenance) return;
-		await this.external.authorize(submission.origin.id, provenance.adapterId);
-		const branch = this.branch();
-		if ((await branch.attachment.submissions.externalTargetEpoch()) !== epoch)
-			throw userInputError("stale-target", "External input target changed before dispatch.");
+		await this.external.authorizeSubmission(submission, epoch);
 	}
 
 	/**
@@ -904,6 +899,21 @@ export class PiSessionFlowIngress implements Ingress {
 			? branch.requests.queueingBlocked
 			: branch.attachment.nativeRequests.recoveryBlocked;
 	}
+	private async holdExternalAuthorization(
+		branch: PiFlowBranchResources,
+		id: string,
+		phase: "submission" | "queue",
+		input?: FlowNativeInput,
+	): Promise<void> {
+		const [record] = await branch.attachment.submissions.forIds([id]);
+		if (!record) return;
+		await branch.attachment.submissions.recordAdmission(
+			id,
+			record.revision,
+			{ phase, ...(input?.queue ? { queue: input.queue } : {}) },
+			"External input authorization is unavailable; review the configuration before retrying.",
+		);
+	}
 	private async admit(
 		submission: Submission,
 		branch: PiFlowBranchResources,
@@ -914,13 +924,16 @@ export class PiSessionFlowIngress implements Ingress {
 		if (submission.externalUser) {
 			if (phase === "submission" && this.suspended) return false;
 			try {
-				await this.external.authorize(submission.origin.id, submission.externalUser.adapterId);
+				await this.external.authorizeSubmission(submission);
 			} catch (error) {
 				// Only a revocation withdraws authority for this input. Every other refusal — an unusable
 				// grants file (`invalid-config`), an unreadable directory, a changed target — is a repairable
 				// condition: hold it and admit it once the operator fixes it. Cancelling here would discard
 				// the person's message permanently for a fault that ends when the file is repaired.
-				if ((error as { code?: unknown }).code !== "unauthorized") return false;
+				if ((error as { code?: unknown }).code !== "unauthorized") {
+					await this.holdExternalAuthorization(branch, submission.id, phase, input);
+					return false;
+				}
 				if (
 					phase === "submission" &&
 					(await branch.attachment.submissions.cancelExternal(submission.id, "unauthorized"))
@@ -1358,14 +1371,14 @@ export class PiSessionFlowIngress implements Ingress {
 			if (startsWork && branch.workContext.busy) return false;
 			if (pending.submission.externalUser) {
 				try {
-					await this.external.authorize(
-						pending.submission.origin.id,
-						pending.submission.externalUser.adapterId,
-					);
+					await this.external.authorizeSubmission(pending.submission);
 				} catch (error) {
 					// A revocation ends the callback. A repairable authorization fault holds it instead: the
 					// pending callback stays live, and a later release retries after the grants file is repaired.
-					if ((error as { code?: unknown }).code !== "unauthorized") return false;
+					if ((error as { code?: unknown }).code !== "unauthorized") {
+						await this.holdExternalAuthorization(branch, id, "submission");
+						return false;
+					}
 					await branch.attachment.submissions.cancelExternal(id, "unauthorized");
 					this.pending.delete(id);
 					this.retainedUserInput.delete(id);

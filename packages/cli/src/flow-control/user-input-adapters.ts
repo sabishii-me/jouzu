@@ -164,6 +164,19 @@ export class UserInputAdapters {
 		if (!decision.authorized) throw userInputError(decision.code, "External input adapter is not authorized.");
 		return decision.grant.extensionPath;
 	}
+	/** Revalidate the canonical identity encoded in a retained message's receipt namespace. */
+	async authorizeSubmission(submission: Submission, expectedEpoch?: string): Promise<void> {
+		const provenance = submission.externalUser;
+		if (!provenance) return;
+		const extensionId = await this.authorize(submission.origin.id, provenance.adapterId);
+		const branch = this.owner.branch();
+		const epoch = await branch.attachment.submissions.externalTargetEpoch();
+		if (expectedEpoch !== undefined && expectedEpoch !== epoch)
+			throw userInputError("stale-target", "External input target changed before dispatch.");
+		const target = hash([branch.scope.sessionId, branch.scope.branchId, epoch]);
+		if (submission.id !== hash([target, extensionId, provenance.adapterId, provenance.messageId]))
+			throw userInputError("unauthorized", "External input extension identity changed.");
+	}
 	async register(host: Host, options: Parameters<Register>[1]): Promise<Adapter> {
 		keys(options, ["id", "label"]);
 		if (
@@ -223,11 +236,15 @@ export class UserInputAdapters {
 			const epoch = await branch.attachment.submissions.externalTargetEpoch();
 			return { epoch, target: hash([branch.scope.sessionId, branch.scope.branchId, epoch]) };
 		};
+		const authorize = async () => {
+			if ((await this.authorize(host.extensionId, adapterId)) !== extensionId)
+				throw userInputError("unauthorized", "External input extension identity changed.");
+		};
 		const identity = (target: string, messageId: string) => hash([target, extensionId, adapterId, messageId]);
 		const lookup = async (target: string, messageId: string) => {
 			if (!identifier(messageId) || typeof target !== "string" || !/^[a-f0-9]{64}$/.test(target))
 				throw userInputError("invalid-input", "Invalid external input receipt identity.");
-			await this.authorize(host.extensionId, adapterId);
+			await authorize();
 			const branch = active();
 			if (target !== (await bindingFor(branch)).target)
 				throw userInputError("target-unavailable", "Receipt target is not attached.");
@@ -255,7 +272,7 @@ export class UserInputAdapters {
 		return {
 			version: 1,
 			bind: async () => {
-				await this.authorize(host.extensionId, adapterId);
+				await authorize();
 				const branch = active();
 				const generation = scope().attachmentId;
 				const { target } = await bindingFor(branch);
@@ -289,7 +306,7 @@ export class UserInputAdapters {
 							"invalid-input",
 							"External input requires text up to 32 KiB and a valid delivery mode.",
 						);
-					await this.authorize(host.extensionId, adapterId);
+					await authorize();
 					const branch = active();
 					const { target, epoch } = await bindingFor(branch);
 					const liveScope = scope();
@@ -356,7 +373,7 @@ export class UserInputAdapters {
 							// One authorization decision, target, and journal read serve this pass: the projection is
 							// pure, so a revocation or target change applies to the whole pass instead of being re-read
 							// for every record in it.
-							await this.authorize(host.extensionId, adapterId);
+							await authorize();
 							const { target } = await bindingFor(branch);
 							// Reset may occur between target capture and the journal read. Never carry a cursor
 							// filtered under the old target into publication for its replacement target.

@@ -155,6 +155,32 @@ const messageIds = (records) => records.map((record) => record.submission.extern
 const receiptIds = (records) => records.map((record) => record.id);
 const published = (receipts) => receipts.map((receipt) => [receipt.messageId, receipt.state]);
 
+test("lookup and resubscription recover a failed initial snapshot without a journal write", async (t) => {
+	const h = await harness(t);
+	const { adapter, binding } = await h.register("first");
+	await submit(adapter, binding, "one");
+	const before = (await h.store.snapshotVersioned()).journal;
+	const snapshot = h.store.snapshotChanged.bind(h.store);
+	let fail = true;
+	t.mock.method(h.store, "snapshotChanged", async (...args) => {
+		if (fail) throw new Error("snapshot unavailable");
+		return snapshot(...args);
+	});
+	const seen = [];
+	const stop = adapter.subscribe((receipt) => seen.push(receipt));
+	t.after(stop);
+	await until(() => h.errors.length === 1, "the snapshot failure was not reported");
+	assert.equal(seen.length, 0);
+	fail = false;
+	assert.equal((await adapter.lookup({ target: binding.target, messageId: "one" })).state, "retained");
+	stop();
+	const replacement = adapter.subscribe((receipt) => seen.push(receipt));
+	t.after(replacement);
+	await until(() => seen.length === 1, "resubscription did not recover the initial snapshot");
+	assert.equal(seen[0].messageId, "one");
+	assert.deepEqual((await h.store.snapshotVersioned()).journal, before);
+});
+
 test("a changed snapshot reads the archived journal once and then only changed records", async (t) => {
 	const h = await harness(t);
 	const { adapter, binding } = await h.register("first");
