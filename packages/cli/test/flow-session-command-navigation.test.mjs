@@ -90,6 +90,155 @@ test("an awaited command continuation uses the new branch but ended callbacks re
 	assert.equal((await branch.host.atIdle(async () => {})).kind, "idle");
 });
 
+for (const enabled of [true, false])
+	test(`a continuing command owns the destination branch with flow ${enabled ? "on" : "off"}`, async (t) => {
+		const entered = deferred(),
+			release = deferred();
+		let f,
+			outcome,
+			callbacks = 0;
+		f = await navigationFixture(t, {
+			extensions: [
+				(pi) => {
+					pi.on("session_before_tree", () => {
+						callbacks++;
+					});
+					pi.registerCommand("hold-after-navigation", {
+						handler: async (_args, ctx) => {
+							try {
+								await ctx.navigateTree(f.targets[0], { summarize: false });
+								entered.resolve();
+								await release.promise;
+								await ctx.navigateTree(f.targets[1], { summarize: false });
+								outcome = "completed";
+							} catch (error) {
+								outcome = error;
+								entered.resolve();
+							}
+						},
+					});
+				},
+			],
+		});
+		if (!enabled) await f.ingress.suspend();
+		const holding = f.session.prompt("/hold-after-navigation");
+		try {
+			await entered.promise;
+			const branch = f.ingress.branch();
+			const leaf = f.session.sessionManager.getLeafId();
+			assert.equal(callbacks, 1);
+			assert.equal((await branch.host.atIdle(async () => {})).kind, "busy");
+			await assert.rejects(f.session.navigateTree(f.targets[1], { summarize: false }), { code: "busy" });
+			await f.session.prompt("/navigate-local 1");
+			assert.equal(f.outcomes[0].code, "busy", String(f.outcomes[0]));
+			assert.equal(callbacks, 1);
+			assert.equal(f.ingress.branch(), branch);
+			assert.equal(f.session.sessionManager.getLeafId(), leaf);
+		} finally {
+			release.resolve();
+			await holding;
+		}
+		assert.equal(outcome, "completed");
+		assert.equal(callbacks, 2);
+		assert.equal((await f.ingress.branch().host.atIdle(async () => {})).kind, "idle");
+		assert.equal((await f.session.navigateTree(f.targets[0], { summarize: false })).cancelled, false);
+	});
+
+test("a command that throws after navigation releases its destination ownership", async (t) => {
+	let f;
+	f = await navigationFixture(t, {
+		extensions: [
+			(pi) =>
+				pi.registerCommand("navigate-throw", {
+					handler: async (_args, ctx) => {
+						await ctx.navigateTree(f.targets[0], { summarize: false });
+						throw new Error("fixture command failure");
+					},
+				}),
+		],
+	});
+	await f.session.prompt("/navigate-throw");
+	assert.equal((await f.ingress.branch().host.atIdle(async () => {})).kind, "idle");
+	assert.equal((await f.session.navigateTree(f.targets[1], { summarize: false })).cancelled, false);
+});
+
+test("a navigated command can dispose its destination without joining itself", async (t) => {
+	let f, outcome;
+	f = await navigationFixture(t, {
+		extensions: [
+			(pi) =>
+				pi.registerCommand("navigate-dispose", {
+					handler: async (_args, ctx) => {
+						try {
+							await ctx.navigateTree(f.targets[0], { summarize: false });
+							await f.session.dispose();
+							outcome = "disposed";
+						} catch (error) {
+							outcome = error;
+						}
+					},
+				}),
+		],
+	});
+	await f.session.prompt("/navigate-dispose");
+	assert.equal(outcome, "disposed");
+});
+
+test("failed destination startup releases the transferred command before closing", async (t) => {
+	const f = await navigationFixture(t);
+	const prototype = Object.getPrototypeOf(f.ingress.branch().workContext);
+	const attach = t.mock.method(prototype, "attach", async () => {
+		throw new Error("destination startup failed");
+	});
+	try {
+		await f.session.prompt("/navigate-local 0");
+		assert.match(f.outcomes[0].message, /destination startup failed/);
+	} finally {
+		attach.mock.restore();
+	}
+	await f.ingress.dispose();
+});
+
+for (const enabled of [true, false])
+	for (const phase of ["teardown", "destination startup"])
+		test(`navigation fences host writes during ${phase} with flow ${enabled ? "on" : "off"}`, async (t) => {
+			const f = await navigationFixture(t);
+			if (!enabled) await f.ingress.suspend();
+			const entered = deferred(),
+				release = deferred();
+			const branch = f.ingress.branch();
+			const target = phase === "teardown" ? branch.attachment : Object.getPrototypeOf(branch.workContext);
+			const method = phase === "teardown" ? "close" : "attach";
+			const original = target[method];
+			const gate = t.mock.method(target, method, async function (...args) {
+				entered.resolve();
+				await release.promise;
+				return original.apply(this, args);
+			});
+			const navigating = f.session.prompt("/navigate-local 0");
+			await entered.promise;
+			try {
+				assert.throws(() => f.session.agent.followUp({ role: "user", content: "late queue", timestamp: 1 }), {
+					code: "busy",
+				});
+				assert.throws(() => f.session.agent.steer({ role: "user", content: "late steer", timestamp: 1 }), {
+					code: "busy",
+				});
+				await assert.rejects(f.session.setModel({ ...model, id: "other" }), { code: "busy" });
+				await assert.rejects(f.session.prompt("concurrent input"), { code: "busy" });
+				await assert.rejects(f.session.navigateTree(f.targets[1], { summarize: false }), { code: "busy" });
+				assert.equal(f.session.agent.hasQueuedMessages(), false);
+			} finally {
+				release.resolve();
+				await navigating;
+				gate.mock.restore();
+			}
+			assert.equal(f.outcomes[0].cancelled, false, String(f.outcomes[0]));
+			assert.equal((await f.ingress.branch().host.atIdle(async () => {})).kind, "idle");
+			await f.session.prompt("usable after navigation");
+			assert.equal(f.sent.length, 1);
+		});
+
 test("a captured input dispatch cannot follow a live command across navigation", async (t) => {
 	let session, target, retained, outcome;
 	({ session } = await createFlowSession(t, {

@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- Let extension commands await tree navigation and continue on the selected branch, with flow control on or off. Refuse busy navigation before callbacks or branch changes, and keep previously captured input bound to its original branch. See [Branches and resuming](docs/flow-control.md#branches-and-resuming).
+- Let extension commands await tree navigation and continue on the selected branch, with flow control on or off. Refuse busy navigation before callbacks or branch changes, refuse host operations during navigation preparation (including in `session_before_tree` callbacks), and keep previously captured input bound to its original branch. See [Branches and resuming](docs/flow-control.md#branches-and-resuming).
 - Avoid loading an unused native HTTP library that prevented browser tools from starting on older Linux systems.
 - Save Defuddle extraction diagnostics with web-fetch results instead of printing parser warnings over the terminal interface. Expand the tool entry to review them. See [Web tools](docs/web.md#extraction-diagnostics).
 - Pause automatic replies after a provider error remains unrecovered, and report the cause. Resume with a new message or `/flow resume`. See [Flow control](docs/flow-control.md).
