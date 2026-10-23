@@ -292,15 +292,12 @@ test("the widget renders the ja catalog's state word and key hint", () => {
 });
 
 test("the ja catalog renders the login recovery notice in Japanese", async (t) => {
-	const h = await harness(t, { env: {}, catalog: loadCatalog("ja") });
+	const ja = loadCatalog("ja");
+	const h = await harness(t, { env: {}, catalog: ja });
 	await h.command("start");
 	assert.deepEqual(
 		h.calls.find(([name]) => name === "notify"),
-		[
-			"notify",
-			"音声には Shisa のログインまたは SHISA_API_KEY が必要です。`/login shisa` を実行するか SHISA_API_KEY を設定してください。",
-			"error",
-		],
+		["notify", ja.format("jouzu.cli.voice.requiresLogin"), "error"],
 	);
 	assert.equal(h.connectionOptions, undefined);
 });

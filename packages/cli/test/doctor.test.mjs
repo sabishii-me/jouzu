@@ -3,9 +3,10 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { catalogMessageText, defaultCatalog } from "../dist/cli-messages.js";
+import { CatalogMessageId, catalogMessageText, defaultCatalog } from "../dist/cli-messages.js";
 import { createDoctorReport, formatDoctorReport, stateLockValue } from "../dist/doctor.js";
 import { loadCatalog } from "../dist/locale-catalog.js";
+import { describeCatalogRegistrationEffect, describeCatalogRegistrationGaps } from "../dist/model-catalog.js";
 import { ModelPickerStore } from "../dist/model-picker-state.js";
 import { STATE_LOCK_STALE_MS } from "../dist/state-lock.js";
 import { DOCTOR_DEFAULT_ISSUE_IDS, DOCTOR_FIELD_IDS } from "./fixtures/machine-contract.mjs";
@@ -31,6 +32,11 @@ function escapeRegExp(value) {
 /** Collapse the renderer's alignment and wrapping so message assertions stay readable. */
 function flat(text) {
 	return text.replace(/\s+/gu, " ");
+}
+
+/** Wrapped CJK text breaks anywhere, so compare catalog text with all whitespace removed. */
+function dense(text) {
+	return text.replace(/\s+/gu, "");
 }
 
 /** Assert one aligned label and value row of the rendered report. */
@@ -559,13 +565,17 @@ test("doctor reports degraded optional extensions and disabled tools as action r
 		assert.match(flat(degraded), /rerun `jz doctor`/u);
 		assert.ok(report.report.issues.some((issue) => issue.id === "extensions.optionalUnavailable"));
 		assert.match(flat(degraded), /✗ \d+ problem/u);
+		const ja = loadCatalog("ja");
 		const japanese = formatDoctorReport(report.report, {
 			colorEnabled: false,
 			columns: 120,
 			locale: "ja",
-			catalog: loadCatalog("ja"),
+			catalog: ja,
 		});
-		assert.match(flat(japanese), /無効\s*化されたツール: web_fetch, batch_web_fetch/u);
+		const disabledTools = ja.format(CatalogMessageId.doctorProblemExtensionsDisabledTools, {
+			tools: "web_fetch, batch_web_fetch",
+		});
+		assert.ok(dense(japanese).includes(dense(disabledTools)), "the ja render localizes the disabled-tools fragment");
 		assert.ok(
 			!flat(japanese).includes("disabled tools"),
 			"the ja render localizes the disabled-tools fragment instead of embedding the English one",
@@ -896,14 +906,21 @@ test("doctor catalog warnings render their embedded gap text from the ja catalog
 		// The machine report keeps the English fragments the old code built inline.
 		assert.match(registration.message, /1 of 2 offerings carry the fields a new model needs/u);
 		assert.match(registration.message, /An offering for a model Pi does not already provide is dropped/u);
+		const ja = loadCatalog("ja");
 		const japanese = formatDoctorReport(result.report, {
 			colorEnabled: false,
 			columns: 100,
 			locale: "ja",
-			catalog: loadCatalog("ja"),
+			catalog: ja,
 		});
-		assert.match(flat(japanese), /提供 2 件のうち 1 件が、新しいモデルに必要な項目を備えています/u);
-		assert.match(flat(japanese), /Pi がまだ提供していないモデルの提供は破棄される/u);
+		const expected = ja.format(CatalogMessageId.doctorWarningCatalogRegistration, {
+			complete: 1,
+			total: 2,
+			gaps: describeCatalogRegistrationGaps([{ providerId: "p", modelId: "m", missing: ["textModality"] }], ja),
+			effect: describeCatalogRegistrationEffect(ja),
+			sourceId: "codex-pool",
+		});
+		assert.ok(dense(japanese).includes(dense(expected)), "the warning renders from the ja catalog");
 		assert.ok(!japanese.includes("offerings carry the fields"), "the ja render does not embed the English fragments");
 	} finally {
 		rmSync(root, { recursive: true, force: true });

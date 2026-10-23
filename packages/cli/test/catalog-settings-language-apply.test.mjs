@@ -168,9 +168,12 @@ test("a saved-setting change applies to the current session and backs up the pre
 	assert.match(component.render(90).join("\n"), /Saved setting/u);
 	component.handleInput("enter");
 
-	const rendered = component.render(90).join("\n");
+	const lines = component.render(90);
+	const rendered = lines.join("\n");
+	// Long temp paths (Windows) wrap mid-segment, so match the path with the box borders removed.
+	const unwrapped = lines.map((line) => line.replace(/^│ ?|\s*│$/gu, "")).join("");
 	assert.match(rendered, /Transaction:/u);
-	assert.match(rendered, /Backup:[\s\S]*localization[\\/]environment/u);
+	assert.match(unwrapped, /Backup:\s*\S*localization[\\/]environment/u);
 	assert.match(rendered, /English.*config/u);
 
 	const saved = JSON.parse(readFileSync(settingsPath(f.paths), "utf8"));

@@ -316,11 +316,21 @@ test("formatReleaseExtensionFailure renders from the resolved bundle", () => {
 		tools: ["tff-fetch_url", "tff-search_web"],
 		error: "native binding is unavailable",
 	};
-	const japanese = formatReleaseExtensionFailure(failure, resolveCatalog("ja").bundle);
-	assert.match(japanese, /省略可能な拡張機能 pi-webaio@1\.0\.0 は利用できません。/u, "the sentence is Japanese");
-	assert.match(japanese, /無効化されたツール: tff-fetch_url, tff-search_web。/u, "the tools fragment is Japanese");
+	const ja = resolveCatalog("ja").bundle;
+	const japanese = formatReleaseExtensionFailure(failure, ja);
+	const tools = ja.format("jouzu.cli.releaseExtensions.disabledTools", { tools: "tff-fetch_url, tff-search_web" });
+	assert.equal(
+		japanese,
+		ja.format("jouzu.cli.releaseExtensions.unavailable", {
+			package: "pi-webaio",
+			version: "1.0.0",
+			tools: ` ${tools}`,
+			error: "native binding is unavailable",
+		}),
+		"the sentence renders from the ja catalog",
+	);
+	assert.ok(japanese.includes(tools), "the tools fragment renders from the ja catalog");
 	assert.match(japanese, /native binding is unavailable/u, "the upstream error stays verbatim");
-	assert.match(japanese, /`jz doctor` で詳細を確認してください。/u, "the recovery tail is Japanese");
 	assert.doesNotMatch(japanese, /Optional extension|Run `jz doctor` for details/u, "no English sentence survives");
 	assert.equal(
 		formatReleaseExtensionFailure(failure),

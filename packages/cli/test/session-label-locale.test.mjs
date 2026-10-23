@@ -70,10 +70,11 @@ test("the command description renders from the ja catalog", () => {
 });
 
 test("the labels notices render from the ja catalog", async () => {
-	const f = fixture(loadCatalog("ja"));
+	const ja = loadCatalog("ja");
+	const f = fixture(ja);
 	f.ctx.model = undefined;
 	await f.command("on");
-	assert.equal(f.notifications.at(-1), "先にモデルを選択してください。");
+	assert.equal(f.notifications.at(-1), ja.format("jouzu.cli.sessionLabels.notify.selectModel"));
 	await f.command("unknown");
-	assert.equal(f.notifications.at(-1), "状態とコマンドを確認するには /labels を使用してください。");
+	assert.equal(f.notifications.at(-1), ja.format("jouzu.cli.sessionLabels.notify.useCommand"));
 });

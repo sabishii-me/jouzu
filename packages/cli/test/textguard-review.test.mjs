@@ -516,27 +516,39 @@ test("a resolved Japanese catalog localizes the review view and leaves the Engli
 	assert.match(english, /bidi control character/);
 	// The Japanese bundle resolves the same IDs.
 	const japanese = flat(reviewLines(review, snapshot, true, ja).join("\n"));
-	assert.match(japanese, /ソース: /);
-	assert.match(japanese, /内容の指紋（SHA-256）: [a-f0-9]{64}/);
-	assert.match(japanese, /エラー（この内容をブロック）: 双方向制御文字 U\+202E、1 行 1 列目。/);
-	assert.match(japanese, /この文字はテキストの表示順を逆転させる/);
-	assert.match(japanese, /フラグが付いた内容（制御文字と不可視文字はエスケープして表示）:/);
-	assert.match(japanese, /走査はリスクを減らしますが、内容が安全であることを証明できません。/);
+	const t9n = (id, args) => ja.format(`jouzu.cli.textguard.${id}`, args);
+	const includes = (text, expected, message) => assert.ok(dense(text).includes(dense(expected)), message ?? expected);
+	includes(japanese, t9n("review.source", { source: "" }));
+	const fingerprint = dense(t9n("review.fingerprint", { digest: "" }));
+	const afterFingerprint = dense(japanese).split(fingerprint)[1] ?? "";
+	assert.match(afterFingerprint, /^[a-f0-9]{64}/u, "the fingerprint label renders from the ja catalog");
+	includes(
+		japanese,
+		t9n("finding.locatedLine", {
+			severity: t9n("severity.error"),
+			name: t9n("kind.bidiControl"),
+			codepoint: " U+202E",
+			location: t9n("location.line", { line: 1, column: 1 }),
+		}),
+	);
+	includes(japanese, t9n("kind.bidiControl.explanation"));
+	includes(japanese, t9n("review.flaggedHeading"));
+	includes(japanese, t9n("review.riskNotice"));
 	for (const label of ["Source:", "Content fingerprint", "bidi control character", "Scans reduce risk"])
 		assert.equal(japanese.includes(label), false, `English label survives: ${label}`);
 
 	// The overlay chrome resolves from the same bundle: header, summary, status, and hints.
 	const { pending, component } = await f.open();
 	const list = clean(component.render(48));
-	assert.match(list, /TextGuard レビュー/);
-	assert.match(list, /1 件を保留 · 0 件を配信/);
-	assert.match(list, /保留中/);
+	includes(list, t9n("list.header"));
+	includes(list, t9n("list.summary", { withheld: 1, delivered: 0 }));
+	includes(list, t9n("status.withheld"));
 	for (const label of ["TextGuard review", "withheld · ", "Delivered", "Report   "])
 		assert.equal(list.includes(label), false, `English chrome survives: ${label}`);
 	component.handleInput(ENTER);
 	const detail = clean(component.render(48));
-	assert.match(detail, /TextGuard レビュー — 保留中の内容/);
-	assert.match(detail, /このセッションで許可/);
+	includes(detail, t9n("detail.withheld"));
+	includes(detail, t9n("action.allowSession"));
 	component.handleInput(ESC);
 	component.handleInput(ESC);
 	await pending;

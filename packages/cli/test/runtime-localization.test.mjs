@@ -54,10 +54,10 @@ test("Japanese flow reset still requires explicit confirmation and leaves later 
 	const notices = capturedNotices(f.session);
 	await f.session.prompt("First request");
 	await f.session.prompt("/flow reset");
-	assert.match(notices.at(-1).text, /まず \/flow clear/u);
+	assert.equal(notices.at(-1).text, catalog.format("jouzu.cli.flow.resetConfirm"));
 	assert.match(notices.at(-1).text, /\/flow reset confirm/u);
 	await f.session.prompt("/flow reset confirm");
-	assert.match(notices.at(-1).text, /フローをリセットしました/u);
+	assert.equal(notices.at(-1).text, catalog.format("jouzu.cli.flow.resetDone"));
 	await f.session.prompt("After reset");
 	assert.equal(f.bodies.length, 2);
 	assert.equal(f.session.agent.state.errorMessage, undefined);

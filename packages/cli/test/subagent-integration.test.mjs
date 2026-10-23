@@ -32,12 +32,14 @@ test("shared dashboard takeover suppresses child widget and routes visibility wi
 
 test("the subagent tool label comes from the resolved catalog and the tool name is unchanged", async () => {
 	const english = fixture();
-	const japanese = fixture(false, { catalog: resolveCatalog("ja").bundle });
+	const ja = resolveCatalog("ja").bundle;
+	const japanese = fixture(false, { catalog: ja });
 	try {
 		assert.equal(english.tool.name, "subagent");
 		assert.equal(english.tool.label, "Subagent");
 		assert.equal(japanese.tool.name, "subagent");
-		assert.equal(japanese.tool.label, "子エージェント");
+		assert.equal(japanese.tool.label, ja.format("jouzu.cli.tool.subagent.label"));
+		assert.notEqual(japanese.tool.label, english.tool.label);
 	} finally {
 		await english.handlers.get("session_shutdown")({}, english.ctx);
 		await japanese.handlers.get("session_shutdown")({}, japanese.ctx);

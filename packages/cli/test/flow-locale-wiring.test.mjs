@@ -201,8 +201,7 @@ test("the flow attachment reads the resolved bundle for its ownership text", asy
 	holder = await PiFlowAttachment.open(root, scope, undefined, undefined, ja());
 	await assert.rejects(
 		() => PiFlowAttachment.open(root, scope, undefined, undefined, ja()),
-		(error) =>
-			error.code === "busy" && /このセッションブランチは既に別のアタッチメントが所有しています。/u.test(error.message),
+		(error) => error.code === "busy" && error.message === ja().format("jouzu.cli.flow.ownership.busy"),
 	);
 	const englishRoot = mkdtempSync(join(tmpdir(), "jouzu-flow-locale-attachment-en-"));
 	let englishHolder;

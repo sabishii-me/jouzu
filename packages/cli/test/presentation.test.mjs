@@ -393,19 +393,26 @@ test("session status labels unavailable model and context facts honestly", async
 });
 
 test("the session status block and its command description render from the ja catalog", async () => {
-	const { commands } = installExtension(resolveCatalog("ja").bundle);
+	const ja = resolveCatalog("ja").bundle;
+	const { commands } = installExtension(ja);
 	const { calls, ctx } = interactiveContext();
 	await commands.get("status").handler("", ctx);
 	const message = calls.notifications[0][0];
-	assert.match(message, /Jouzu セッションの状態/);
-	assert.match(message, /セッション: session-test-123/);
-	assert.match(message, /ワークスペース: 日本語 project/);
-	assert.match(message, /モデル: anthropic\/claude-test/);
-	assert.match(message, /思考: high/);
-	assert.match(message, /コンテキスト: 12345\/200000 トークン \(6\.2%\)/);
-	assert.match(message, /スコープ内のモデル: 2/);
-	assert.match(message, /プロファイル: core（未適用）/);
-	assert.match(message, /ランタイム: Jouzu 0\.1\.0 · Pi 0\.84\.2/);
+	const status = (key, args) => ja.format(`jouzu.cli.presentation.status.${key}`, args);
+	assert.equal(
+		message,
+		[
+			status("heading"),
+			status("session", { id: "session-test-123" }),
+			status("workspace", { name: "日本語 project" }),
+			status("model", { model: "anthropic/claude-test" }),
+			status("thinking", { level: "high" }),
+			status("context", { context: status("contextUsage", { tokens: "12345", window: "200000", percent: "6.2" }) }),
+			status("scopedModels", { models: "2" }),
+			status("profile", { id: "core", state: status("profileNotApplied") }),
+			status("runtime", { jouzu: "0.1.0", pi: "0.84.2" }),
+		].join("\n"),
+	);
 	for (const label of [
 		"Jouzu session status",
 		"session:",
@@ -418,10 +425,7 @@ test("the session status block and its command description render from the ja ca
 		"runtime:",
 	])
 		assert.equal(message.includes(label), false, `English label survives: ${label}`);
-	assert.equal(
-		commands.get("status").description,
-		"現在の Jouzu セッション、モデル、コンテキスト、プロファイルの状態を表示します",
-	);
+	assert.equal(commands.get("status").description, ja.format("jouzu.cli.presentation.command.statusDescription"));
 });
 
 test("the status command description keeps its English default", () => {

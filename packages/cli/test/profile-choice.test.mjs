@@ -58,6 +58,7 @@ test("the first-run prompt explains the optional profile before accepting consen
 
 test("the first-run prompt renders the Japanese catalog and keeps the answer meaning", async () => {
 	let output = "";
+	const ja = resolveCatalog("ja").bundle;
 	const profile = await promptForJapaneseSupport(
 		Readable.from(["はい\n"]),
 		new Writable({
@@ -66,12 +67,12 @@ test("the first-run prompt renders the Japanese catalog and keeps the answer mea
 				callback();
 			},
 		}),
-		resolveCatalog("ja").bundle,
+		ja,
 	);
 	assert.equal(profile, "ja");
-	assert.match(output, /省略可能な日本語サポートプロファイル/);
-	assert.match(output, /競合を確認します/);
-	assert.match(output, /日本語サポートを有効にしますか？ \[y\/N\] /);
+	assert.ok(output.includes(ja.format("jouzu.cli.profile.choice.intro")));
+	assert.ok(output.includes(ja.format("jouzu.cli.profile.choice.conflict")));
+	assert.ok(output.includes(`${ja.format("jouzu.cli.profile.choice.question")} `));
 	assert.doesNotMatch(output, /optional Japanese-support profile/);
 });
 

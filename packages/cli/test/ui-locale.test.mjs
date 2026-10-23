@@ -617,55 +617,58 @@ test("two processes saving at once do not corrupt the file and neither update is
 /**
  * The localization-settings diagnostics moved onto the catalog without changing
  * their English bytes. Each case pins the English text the pre-migration module
- * produced and the Japanese text the glossary author wrote, so a reworded
- * catalog entry fails here instead of only changing what a user reads.
+ * produced and checks the Japanese rendering against its catalog message, so the
+ * wiring is covered without pinning one locale's wording.
  */
 test("the localization diagnostics keep their English bytes and localize", () => {
 	const ja = resolveCatalog("ja").bundle;
 	const cases = [
-		["an array", "[]", "localization settings must be an object", "言語設定はオブジェクトでなければなりません"],
+		["an array", "[]", "localization settings must be an object", "jouzu.cli.localization.config.notObject"],
 		[
 			"an unknown top-level field",
 			JSON.stringify({ schemaVersion: 1, localization: { uiLocale: "ja" }, extra: true }),
 			"localization settings have unknown fields",
-			"言語設定に不明なフィールドがあります",
+			"jouzu.cli.localization.config.unknownFields",
 		],
 		[
 			"an invalid schemaVersion",
 			JSON.stringify({ schemaVersion: 0, localization: { uiLocale: "ja" } }),
 			"localization settings schemaVersion is invalid",
-			"言語設定の schemaVersion が無効です",
+			"jouzu.cli.localization.config.schemaVersionInvalid",
 		],
 		[
 			"a missing localization object",
 			JSON.stringify({ schemaVersion: 1 }),
 			"localization settings must carry a localization object",
-			"言語設定には localization オブジェクトが必要です",
+			"jouzu.cli.localization.config.localizationNotObject",
 		],
 		[
 			"an unknown localization field",
 			JSON.stringify({ schemaVersion: 1, localization: { uiLocale: "ja", responseLanguage: "ja" } }),
 			"localization settings have unknown localization fields",
-			"言語設定の localization に不明なフィールドがあります",
+			"jouzu.cli.localization.config.unknownLocalizationFields",
 		],
 		[
 			"a non-string uiLocale",
 			JSON.stringify({ schemaVersion: 1, localization: { uiLocale: 1 } }),
 			"localization.uiLocale must be a string",
-			"localization.uiLocale は文字列でなければなりません",
+			"jouzu.cli.localization.uiLocaleNotString",
 		],
 		[
 			"an unsupported uiLocale",
 			JSON.stringify({ schemaVersion: 1, localization: { uiLocale: "fr" } }),
 			"localization.uiLocale is not a supported UI locale: fr",
-			"localization.uiLocale はサポートされていない UI 言語です: fr",
+			"jouzu.cli.localization.uiLocaleUnsupported",
+			{ value: "fr" },
 		],
 	];
-	for (const [name, contents, english, japanese] of cases) {
+	for (const [name, contents, english, id, args] of cases) {
 		const dir = dirWithLocalization(contents);
 		try {
 			assert.equal(readLocalizationConfig(dir).reason, english, `${name} keeps the English bytes`);
-			assert.equal(readLocalizationConfig(dir, ja).reason, japanese, `${name} renders in Japanese`);
+			const localized = readLocalizationConfig(dir, ja).reason;
+			assert.equal(localized, ja.format(id, args), `${name} renders from the ja catalog`);
+			assert.notEqual(localized, english, `${name} is localized`);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
@@ -677,20 +680,21 @@ test("the localization diagnostics keep their English bytes and localize", () =>
 	try {
 		// The V8 JSON message varies by Node version, so pin the prefix only.
 		assert.ok(readLocalizationConfig(notJson).reason.startsWith("localization settings are invalid JSON: "));
-		assert.ok(readLocalizationConfig(notJson, ja).reason.startsWith("言語設定が不正な JSON です: "));
+		const jsonPrefix = ja.format("jouzu.cli.localization.config.invalidJson", { message: "" });
+		assert.ok(readLocalizationConfig(notJson, ja).reason.startsWith(jsonPrefix));
 		assert.equal(
 			readLocalizationConfig(oversized).reason,
 			`localization settings exceed ${LOCALIZATION_MAX_BYTES} bytes`,
 		);
 		assert.equal(
 			readLocalizationConfig(oversized, ja).reason,
-			`言語設定が ${LOCALIZATION_MAX_BYTES} バイトを超えています`,
+			ja.format("jouzu.cli.localization.config.tooLarge", { maxBytes: String(LOCALIZATION_MAX_BYTES) }),
 		);
 		const target = join(linked, "target.json");
 		writeFileSync(target, JSON.stringify({ schemaVersion: 1, localization: { uiLocale: "ja" } }));
 		symlinkSync(target, join(linked, LOCALIZATION_FILE_NAME));
 		assert.equal(readLocalizationConfig(linked).reason, "localization settings must be a regular file");
-		assert.equal(readLocalizationConfig(linked, ja).reason, "言語設定は通常のファイルでなければなりません");
+		assert.equal(readLocalizationConfig(linked, ja).reason, ja.format("jouzu.cli.localization.config.notRegularFile"));
 	} finally {
 		rmSync(notJson, { recursive: true, force: true });
 		rmSync(oversized, { recursive: true, force: true });

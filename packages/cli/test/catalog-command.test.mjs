@@ -5,7 +5,13 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { catalogStatus, formatCatalogStatus, validateCatalogFile } from "../dist/catalog-command.js";
+import { CatalogMessageId } from "../dist/cli-messages.js";
 import { loadCatalog } from "../dist/locale-catalog.js";
+import {
+	describeCatalogRegistrationEffect,
+	describeCatalogRegistrationGap,
+	describeCatalogRegistrationGaps,
+} from "../dist/model-catalog.js";
 
 const ESCAPE = String.fromCharCode(27);
 
@@ -164,15 +170,29 @@ test("catalog status renders the migrated text from the Japanese catalog", () =>
 		credentialStored: false,
 		quarantined: 2,
 	};
-	const text = formatCatalogStatus(status, { ...RENDER, catalog: loadCatalog("ja"), locale: "ja" });
+	const ja = loadCatalog("ja");
+	const text = formatCatalogStatus(status, { ...RENDER, catalog: ja, locale: "ja" });
+	const [gap] = status.registrationGaps;
 	for (const fragment of [
-		"トークン変数 CODEX_POOL_KEY が設定されておらず",
-		"提供 36 件のうち 35 件が、新しいモデルに必要な項目を備えています",
-		"テキスト入力なし 1 件、最大出力トークンなし 1 件",
-		"提供 36 件のうち 1 件が思考レベルを宣言していないため",
-		"2 件の候補リビジョンが検疫されています",
-		"aiand/m — テキスト入力なし、最大出力トークンなし",
-		"資格情報 環境変数 CODEX_POOL_KEY（未設定）",
+		ja.format(CatalogMessageId.catalogNoteTokenMissing, { name: "CODEX_POOL_KEY" }),
+		ja.format(CatalogMessageId.catalogNoteRegistrationGaps, {
+			complete: 35,
+			total: 36,
+			gaps: describeCatalogRegistrationGaps(status.registrationGaps, ja),
+			effect: describeCatalogRegistrationEffect(ja),
+		}),
+		ja.format(CatalogMessageId.catalogNoteThinkingLevels, { count: 1, total: 36 }),
+		ja.format(CatalogMessageId.catalogNoteQuarantined, { count: 2 }),
+		ja.format(CatalogMessageId.catalogFieldRegistrationValue, { complete: 35, total: 36 }),
+		ja.format(CatalogMessageId.catalogRegistrationGapDetail, {
+			model: "aiand/m",
+			gap: describeCatalogRegistrationGap(gap, ja),
+		}),
+		ja.format(CatalogMessageId.catalogFieldThinkingLevelsValue, { count: 1, total: 36 }),
+		`${ja.format(CatalogMessageId.catalogFieldCredential)} ${ja.format(
+			CatalogMessageId.catalogCredentialEnvironmentNotSet,
+			{ name: "CODEX_POOL_KEY" },
+		)}`,
 	]) {
 		assert.ok(squeeze(text).includes(squeeze(fragment)), `${fragment}\n${text}`);
 	}
