@@ -47,12 +47,22 @@ GitHub does not render the HTML comparison as a web page. Download the raw file,
 
 ### Prerequisites
 
-- Linux, macOS, or Windows Subsystem for Linux (WSL). This helper does not run in native Windows Python.
+- Linux, macOS, or Windows Subsystem for Linux (WSL). This helper does not run in native Windows Python; on native Windows without WSL, use [Native Windows or an unpushed checkout](#native-windows-or-an-unpushed-checkout).
 - Python **3.10 or later**, Git, Bash, Node.js **22.19.0 or later**, npm, and Go **1.21 or later** on `PATH`.
 - Network access to download the source, dependencies, and build tools.
 - A new review directory outside any Git checkout.
 
 The helper runs the candidate's `dev-build.sh build`. It does not run `npm link`, install globally, or replace your normal `jz` / `jouzu` command.
+
+**On WSL**, install Node.js and Go inside the Linux distribution. Windows' own Node.js and Go do not work there: WSL adds Windows folders to `PATH`, so `npm` can resolve to `/mnt/c/Program Files/nodejs/npm` and fail with `node: not found`. Check before building:
+
+```bash
+command -v python3 git node npm go   # each path should be under /usr, /home, or /opt, not /mnt/c
+node --version                       # v22.19.0 or later
+go version                           # go1.21 or later; the build downloads its pinned toolchain
+```
+
+Run the commands below from your WSL home directory (for example `~/`), not from a `/mnt/c/...` folder.
 
 ### Get the instructions and build
 
@@ -63,6 +73,8 @@ python3 scripts/ja_review.py build --transport https --directory "$HOME/jouzu-ja
 ```
 
 The helper downloads the exact source commit recorded in this package, not whichever commit happens to be at the branch tip. It creates an isolated source checkout, settings directory, sample project, logs, and `receipt.json` containing the build identity and check outcomes.
+
+Catalog changes made after that commit are not in this build, even on the same branch. Maintainers repin the helper and regenerate the inventory after each catalog change; see [Provenance and regeneration](review/ja-localization/README.md#provenance-and-regeneration). The pinned commit must be pushed to GitHub before anyone can build it.
 
 The build and startup checks do not send model prompts. Downloads require network access. If the helper refuses an existing directory or mismatched commit, use a new review directory. Do not reset, clean, or reinstall dependencies in your normal development checkout to make the review build work.
 
@@ -89,6 +101,31 @@ For a no-color diagnostic:
 NO_COLOR=1 python3 scripts/ja_review.py run --directory "$HOME/jouzu-ja-review" -- doctor
 ```
 
+### Native Windows or an unpushed checkout
+
+Use this path on native Windows, or to review catalog changes that are not yet pinned. It builds and runs the checkout you already have, so it records no pin or receipt. Report its results with the commit from `git rev-parse HEAD` and whether the working tree had uncommitted changes.
+
+Prerequisites: Git, Node.js **22.19.0 or later**, npm, and Go **1.21 or later** on `PATH`. On Windows, some automated tests also need Developer Mode (Settings → System → For developers) to create symbolic links; the review build itself does not.
+
+```bash
+git clone --branch jouzu-ja https://github.com/shisa-ai/jouzu.git jouzu-ja-local
+cd jouzu-ja-local
+npm ci
+npm run build
+```
+
+After editing a catalog, run `npm run build` again before relaunching. If `npm run build` reports `Pi content-policy package identity mismatch`, the installed dependencies are stale; run `npm ci` and build again.
+
+Launch with the same isolation as the helper's `run`: a dedicated home and settings directory, Japanese saved as the initial interface language, the Core profile, updates disabled, and inherited provider credentials removed.
+
+```bash
+node scripts/ja-review-run.mjs -- --version
+node scripts/ja-review-run.mjs -- doctor
+node scripts/ja-review-run.mjs
+```
+
+The default review directory is `jouzu-ja-review-local` in your home directory; use `--directory <path>` before `--` to choose another one outside the checkout. For a no-color diagnostic in PowerShell, run `$env:NO_COLOR=1; node scripts/ja-review-run.mjs -- doctor`.
+
 ## 4. Test the interface
 
 For each row, record **Checked**, **Needs change**, or **Not tested**, plus the operating system, terminal, width, and input method.
@@ -114,7 +151,7 @@ Do not report an existing automated test or someone else's result as a check you
 ## 5. Limits and priority checks
 
 - **Review coverage:** Japanese catalog metadata reports `stale`: source wording has changed since its recorded review. Every exported row starts as unreviewed for this review. Passing automated checks do not establish expert approval; state the IDs and screens you actually reviewed.
-- **English outside Jouzu:** Pi, extensions, and external services can display English. The ownership information in [localization behavior](docs/localization.md) helps classify it; it is not proof that every upstream screen has been tested on this build.
+- **English outside Jouzu:** Pi, extensions, and external services can display English. The ownership information in [localization behavior](docs/localization.md) helps classify it; it is not proof that every upstream screen has been tested on this build. Pi-owned examples on this build: the first-launch `fd` / `ripgrep` download lines, `Warning: No models available` before you sign in, and the descriptions of Pi's built-in slash commands such as `/model`, `/login`, and `/settings`.
 - **Native environments:** Record macOS, native Windows, SSH, Japanese operating-system locales, input-method composition, and screen-reader results individually. A Linux build does not qualify those environments.
 - **Artifact policy:** Check the startup behavior as well as the labels. Project-policy loading and combinations of per-artifact settings need particular attention; do not infer enforcement solely from an available setting.
 - **Launcher versus CLI:** Launcher strings are included for wording review, but these commands build the terminal application. Reviewing launcher source or screenshots is not the same as running the desktop launcher.
