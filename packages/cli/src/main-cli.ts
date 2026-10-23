@@ -133,7 +133,12 @@ export async function runMainCli(args: string[]): Promise<void> {
 	const text = (id: CatalogMessageId, args?: Readonly<Record<string, string | number>>): string =>
 		catalogText(preRuntime.catalog.bundle, id, args);
 	if (parsed.kind === "help") {
-		console.log(formatHelp(preRuntime.catalog.bundle));
+		console.log(
+			formatHelp(preRuntime.catalog.bundle, {
+				stdoutIsTTY: process.stdout.isTTY === true,
+				columns: process.stdout.columns,
+			}),
+		);
 		return;
 	}
 	if (localizationConfig.status === "future") {

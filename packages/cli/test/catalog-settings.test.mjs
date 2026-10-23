@@ -1528,7 +1528,7 @@ test("a failed acknowledgement keeps the warning instead of reporting success", 
 		login: async (callbacks, options) => {
 			options?.onCompletion?.({ acknowledged: false, reason: "failed" });
 			callbacks.onProgress(
-				"Shisa sign-in was saved, but confirmation failed. Sign in again to avoid losing access when the confirmation window expires.",
+				"Shisa sign-in was saved, but confirmation failed. Sign in again to avoid losing access after the confirmation deadline.",
 			);
 		},
 	});

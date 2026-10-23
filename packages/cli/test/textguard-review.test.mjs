@@ -234,10 +234,10 @@ test("an accidental confirm lands on Back and withholds", async (t) => {
 
 test("reports offer dismiss instead of approval and dismissal sticks", async (t) => {
 	const f = await setup(t, infoEvidence);
-	// Findings that blocked nothing stay out of the default list and keep their own view.
+	// Findings that did not block content stay out of the default list and keep their own view.
 	assert.equal((await f.open()).component, undefined);
 	assert.match(f.messages.at(-1), /nothing waiting for a decision/);
-	assert.match(f.messages.at(-1), /1 finding blocked nothing/);
+	assert.match(f.messages.at(-1), /1 finding did not block content/);
 	const { pending, component } = await f.open("reports");
 	assert.match(clean(component.render(48)), /0 withheld · 1 delivered/);
 	component.handleInput(ENTER);

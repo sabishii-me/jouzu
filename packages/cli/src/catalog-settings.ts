@@ -174,8 +174,12 @@ interface SourceForm {
 	field: FormField;
 }
 
-function countLabel(count: number): string {
-	return `${count} model${count === 1 ? "" : "s"}`;
+/** Compose complete sentences using the catalog's spacing, without adding punctuation. */
+export function composeCatalogSaveMessage(catalog: CatalogBundle, base: string, notes: readonly string[]): string {
+	return notes.reduce(
+		(message, note) => catalogText(catalog, CatalogMessageId.settingsSavedWithNotes, { base: message, notes: note }),
+		base,
+	);
 }
 
 function warnHint(styles: SessionUiStyles, value: string, width: number, line: (value?: string) => string): string[] {
@@ -727,21 +731,15 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 					: discovered
 						? catalogText(this.catalog, CatalogMessageId.settingsSavedWithCount, {
 								label: sanitizeTerminalText(source.label),
-								count: countLabel(count),
+								count,
 							})
 						: catalogText(this.catalog, CatalogMessageId.settingsSavedWithoutCheck, {
 								label: sanitizeTerminalText(source.label),
 							});
-			this.message =
-				notes.length > 0
-					? {
-							level: "warning",
-							text: catalogText(this.catalog, CatalogMessageId.settingsSavedWithNotes, {
-								base,
-								notes: notes.join(". "),
-							}),
-						}
-					: { level: "info", text: base };
+			this.message = {
+				level: notes.length > 0 ? "warning" : "info",
+				text: composeCatalogSaveMessage(this.catalog, base, notes),
+			};
 			this.onCatalogsChanged?.();
 		} catch (error) {
 			if (this.disposed || controller.signal.aborted) return;
@@ -2711,7 +2709,7 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 						label: `${expanded ? "▾" : "▸"} ${fitTerminalText(sanitizeTerminalText(view.source.label), SOURCE_LABEL_COLUMN - 2)}`,
 						labelRole: "palette.identity",
 						value: this.styles.apply(sourceStatusRole(view), sourceStatusText(view)),
-						meta: countLabel(count),
+						meta: catalogText(this.catalog, CatalogMessageId.settingsModelCount, { count }),
 						labelWidth: SOURCE_LABEL_COLUMN,
 						innerWidth,
 						selected:

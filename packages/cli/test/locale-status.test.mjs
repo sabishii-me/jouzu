@@ -172,5 +172,5 @@ test("the status record version matches the module constant", () => {
 	// read by the same build, so neither may drift from the constant.
 	const record = readCatalogStatus({ localesRoot: sourceLocales });
 	assert.equal(record.version, CATALOG_STATUS_VERSION);
-	assert.equal(CATALOG_VERSION, "1");
+	assert.equal(CATALOG_VERSION, "2");
 });

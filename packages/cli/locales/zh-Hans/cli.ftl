@@ -58,8 +58,8 @@ jouzu-cli-args-doctorUnexpectedToken = doctor 不接受 { $token }
 jouzu-cli-args-versionHelpArguments = { $command } 不接受参数；Pi 请使用 "jouzu pi { $command }"
 
 # Pre-launch help, version, doctor, and report text.
-# The help prose is split one message per output line so the renderer owns the
-# layout and no value carries a hard wrap or a hand-made column.
+# Help messages are complete semantic units. The renderer owns wrapping and
+# alignment; command and key arguments stay intact.
 
 jouzu-cli-help-title = Jouzu 智能体式 AI 环境
 jouzu-cli-help-usageHeading = 用法：
@@ -71,21 +71,21 @@ jouzu-cli-help-command-profileApply = 应用所选配置档案，并处理冲突
 jouzu-cli-help-command-keybindings = 检查、应用或重置 Jouzu 的 Pi 兼容默认按键
 jouzu-cli-help-command-selfUpdate = 检查、确认、应用或配置 Jouzu 的 npm 更新
 jouzu-cli-help-command-pi = 将所有剩余参数显式传递给固定的 Pi
-jouzu-cli-help-textguard-line1 = 默认情况下，TextGuard 在本地扫描技能和网页内容。被标记的网页结果
-jouzu-cli-help-textguard-line2 = 会以不可信数据的标记送达模型；被标记的技能会一直保留，直到
-jouzu-cli-help-textguard-line3 = 你批准它们。在交互式会话中使用 /textguard 查看检测结果，
-jouzu-cli-help-textguard-line4 = 并使用 /textguard on、strict 或 off 更改该会话的扫描。
+jouzu-cli-help-textguard-scanning = 默认情况下，TextGuard 在本地扫描技能和网页内容。
+jouzu-cli-help-textguard-handling = 被标记的网页结果会以不可信数据的标记送达模型；被标记的技能会一直保留，直到你批准它们。
+jouzu-cli-help-textguard-controls = 在交互式会话中使用 "{ $reviewCommand }" 查看检测结果，并使用 "{ $onCommand }"、"{ $strictCommand }" 或 "{ $offCommand }" 更改该会话的扫描。
 jouzu-cli-help-option-textguardStrict = 保留所有被标记的输入，直到获得批准
 jouzu-cli-help-option-textguardOff = 启动时关闭扫描
 jouzu-cli-help-option-textguardFiles = 同时扫描普通读取工具的内容
 jouzu-cli-help-option-uiLocale = UI 语言；auto 跟随操作系统区域设置
-jouzu-cli-help-footer-line1 = jz 命令是精确的别名。退出时会显示 jz --session 命令，用它
-jouzu-cli-help-footer-line2 = 恢复会话；Jouzu 会解析自己独立的会话根目录。首次交互式启动会在启用
-jouzu-cli-help-footer-line3 = 可选的 JA 配置档案前询问；Core 是安全的回退。交互式启动会清空
-jouzu-cli-help-footer-line4 = 视口并显示 Jouzu 页眉；
-jouzu-cli-help-footer-line5 = 设置 JOUZU_NO_CLEAR=1 可保留现有屏幕。通过 /model 或 Ctrl+L
-jouzu-cli-help-footer-line6 = 打开 Jouzu Palette；/catalogs 直接打开 Settings / Catalogs，在浏览模式下
-jouzu-cli-help-footer-line7 = Tab 或 Shift+Tab 切换 Palette 分区。Pi CLI 帮助请使用 "jouzu pi --help"。
+jouzu-cli-help-footer-alias = "{ $alias }" 命令的行为与 "{ $command }" 完全相同。
+jouzu-cli-help-footer-resume = 使用退出时显示的 "{ $command }" 命令恢复会话；Jouzu 会解析自己独立的会话根目录。
+jouzu-cli-help-footer-profile = 首次交互式启动会在启用可选的 JA 配置档案前询问；Core 是回退选项。
+jouzu-cli-help-footer-startup = 交互式启动会清空视口并显示 Jouzu 页眉；设置 "{ $setting }" 可保留现有屏幕。
+jouzu-cli-help-footer-palette = 通过 "{ $command }" 或 { $key } 打开 Jouzu Palette。
+jouzu-cli-help-footer-catalogs = "{ $command }" 直接打开 Settings / Catalogs。
+jouzu-cli-help-footer-sections = 在浏览模式下，{ $nextKey } 或 { $previousKey } 切换 Palette 分区。
+jouzu-cli-help-footer-pi = Pi CLI 帮助请使用 "{ $command }"。
 
 jouzu-cli-version-jouzu = jouzu { $version }
 jouzu-cli-version-pi = pi { $version }
@@ -1096,7 +1096,7 @@ jouzu-cli-settings-offeringRow = { $provider }/{ $model }
 jouzu-cli-settings-loadFailed = 无法加载目录设置：{ $message }
 jouzu-cli-settings-savedTokensUnreadable = 无法读取已保存的令牌：{ $message }
 jouzu-cli-settings-saving = 正在保存目录…
-jouzu-cli-settings-savedWithNotes = { $base } { $notes }。
+jouzu-cli-settings-savedWithNotes = { $base }{ $notes }
 jouzu-cli-settings-saveCanceled = 目录保存已取消。
 jouzu-cli-settings-refreshing = 正在刷新 { $label }…
 jouzu-cli-settings-contextLimitNotApplied = 未应用上下文上限：{ $message }。模型使用其声明的窗口。
@@ -1136,7 +1136,14 @@ jouzu-cli-settings-hint-scroll = 滚动
 # decision.
 jouzu-cli-settings-warning = 警告：{ $message }
 jouzu-cli-settings-savedQuarantined = 已保存 { $label }。目录修订已隔离：{ $reasons }。
-jouzu-cli-settings-savedWithCount = 已保存 { $label }，包含 { $count }。
+jouzu-cli-settings-savedWithCount = { $count ->
+    [one] 已保存 { $label }，包含 { $count } 个模型。
+   *[other] 已保存 { $label }，包含 { $count } 个模型。
+}
+jouzu-cli-settings-modelCount = { $count ->
+    [one] { $count } 个模型
+   *[other] { $count } 个模型
+}
 jouzu-cli-settings-savedWithoutCheck = 已保存 { $label }，未检查目录。
 jouzu-cli-settings-contextLimitOff = 上下文上限已关闭。模型使用其声明的窗口。
 jouzu-cli-settings-contextLimitSet = 上下文上限为 { $limit } 个令牌。超过它的模型会报告 { $limit } 并更早压缩。
@@ -1226,8 +1233,8 @@ jouzu-cli-profileMigration-conflict = 配置档案迁移计划包含冲突
 # states, the title, and the sign-in reports. The sign-in `report` closure takes
 # a catalog ID, so a literal sentence no longer type-checks there.
 jouzu-cli-settings-warning-tokenNotSet = 警告：令牌变量 { $name } 未设置，且此源未保存令牌。请设置它或保存令牌，然后刷新。
-jouzu-cli-settings-note-tokenNotSet = 令牌变量 { $name } 未设置且未保存令牌；请设置它或保存令牌，然后按 R 刷新
-jouzu-cli-settings-note-tokenPrecedence = { $name } 已在此 Jouzu 进程中设置，优先于已保存的令牌
+jouzu-cli-settings-note-tokenNotSet = 令牌变量 { $name } 未设置且未保存令牌；请设置它或保存令牌，然后按 R 刷新。
+jouzu-cli-settings-note-tokenPrecedence = { $name } 已在此 Jouzu 进程中设置，优先于已保存的令牌。
 jouzu-cli-settings-account-notConnected = 未连接 · $10 额度
 jouzu-cli-settings-heading-modelCatalogs = 模型目录
 jouzu-cli-settings-empty-noSources = 未配置目录源。
@@ -1315,8 +1322,8 @@ jouzu-cli-shisa-onboarding-signedIn = 已登录 Shisa AI。
 jouzu-cli-shisa-onboarding-cancelled = Shisa 登录已取消。
 jouzu-cli-shisa-onboarding-couldNotComplete = Shisa 登录未能完成。
 
-jouzu-cli-shisa-signIn-confirmFailed = Shisa 登录已保存，但确认失败。请再次登录，以免确认窗口过期后失去访问权限。
-jouzu-cli-shisa-signIn-confirmInterrupted = Shisa 登录已保存，但确认被中断。请再次登录，以免确认窗口过期后失去访问权限。
+jouzu-cli-shisa-signIn-confirmFailed = Shisa 登录已保存，但确认失败。请再次登录，以免超过确认期限后失去访问权限。
+jouzu-cli-shisa-signIn-confirmInterrupted = Shisa 登录已保存，但确认被中断。请再次登录，以免超过确认期限后失去访问权限。
 jouzu-cli-shisa-signIn-unexpectedResponse = Shisa 登录返回了意外的响应。请重新开始登录。
 jouzu-cli-shisa-signIn-expired = 登录请求已过期。请重新开始登录。
 jouzu-cli-shisa-signIn-declined = 登录请求在浏览器中被拒绝。请重新开始登录以重试。

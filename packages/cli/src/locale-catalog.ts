@@ -43,7 +43,7 @@ export const CATALOG_LOCALES = ["en", "ja"] as const;
 export type CatalogLocale = (typeof CATALOG_LOCALES)[number];
 
 /** The catalog schema version. Bump it when the ID or argument contract changes. */
-export const CATALOG_VERSION = "1";
+export const CATALOG_VERSION = "2";
 
 /** The catalog manifest file name inside a locales root. */
 export const CATALOG_MANIFEST_FILE_NAME = "catalog.lock.json";

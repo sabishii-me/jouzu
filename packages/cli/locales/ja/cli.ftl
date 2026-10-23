@@ -66,21 +66,21 @@ jouzu-cli-help-command-profileApply = 選択したプロファイルを競合と
 jouzu-cli-help-command-keybindings = Jouzu の Pi 互換キー既定を調べる、適用する、またはリセットします
 jouzu-cli-help-command-selfUpdate = Jouzu の npm 更新を調べる、確認する、適用する、または設定します
 jouzu-cli-help-command-pi = 残りの引数をすべて固定した Pi へ明示的に渡します
-jouzu-cli-help-textguard-line1 = TextGuard は既定でスキルとウェブ内容をローカルで走査します。フラグが付いたウェブ結果は
-jouzu-cli-help-textguard-line2 = 信頼できないデータとしてラベル付けされてモデルに届きます。フラグが付いたスキルは、
-jouzu-cli-help-textguard-line3 = 承認するまで差し止められます。対話セッションで `/textguard` を使うと検出内容を確認でき、
-jouzu-cli-help-textguard-line4 = `/textguard on`、`strict`、`off` でそのセッションの走査を変更できます。
+jouzu-cli-help-textguard-scanning = TextGuard は既定でスキルとウェブ内容をローカルで走査します。
+jouzu-cli-help-textguard-handling = フラグが付いたウェブ結果は信頼できないデータとしてラベル付けされてモデルに届きます。フラグが付いたスキルは、承認するまで差し止められます。
+jouzu-cli-help-textguard-controls = 対話セッションで `{ $reviewCommand }` を使うと検出内容を確認でき、`{ $onCommand }`、`{ $strictCommand }`、`{ $offCommand }` でそのセッションの走査を変更できます。
 jouzu-cli-help-option-textguardStrict = フラグが付いたすべての入力を承認まで差し止めます
 jouzu-cli-help-option-textguardOff = 走査をオフにして開始します
 jouzu-cli-help-option-textguardFiles = 通常の読み取りツールの内容も走査します
 jouzu-cli-help-option-uiLocale = 表示言語。auto は OS ロケールに従います
-jouzu-cli-help-footer-line1 = `jz` は `jouzu` と同じ動作をする別名です。終了時に表示される `jz --session` コマンドで再開します。
-jouzu-cli-help-footer-line2 = Jouzu は分離されたセッションルートを解決します。最初の対話起動では、任意の JA プロファイルを有効にする前に確認します。
-jouzu-cli-help-footer-line3 = Core が安全なフォールバックです。対話起動ではビューポートを消去し、Jouzu ヘッダーを表示します。
-jouzu-cli-help-footer-line4 = `JOUZU_NO_CLEAR=1` を設定すると既存の画面を保持します。`/model` または Ctrl+L で
-jouzu-cli-help-footer-line5 = Jouzu Palette を開きます。`/catalogs` は Settings / Catalogs を直接開き、閲覧モードでは Tab
-jouzu-cli-help-footer-line6 = または Shift+Tab で Palette のセクションを切り替えます。
-jouzu-cli-help-footer-line7 = Pi の CLI ヘルプには `jouzu pi --help` を使用します。
+jouzu-cli-help-footer-alias = `{ $alias }` は `{ $command }` と同じ動作をする別名です。
+jouzu-cli-help-footer-resume = 終了時に表示される `{ $command }` コマンドで再開します。Jouzu は分離されたセッションルートを解決します。
+jouzu-cli-help-footer-profile = 最初の対話起動では、任意の JA プロファイルを有効にする前に確認します。Core がフォールバックです。
+jouzu-cli-help-footer-startup = 対話起動ではビューポートを消去し、Jouzu ヘッダーを表示します。`{ $setting }` を設定すると既存の画面を保持します。
+jouzu-cli-help-footer-palette = `{ $command }` または { $key } で Jouzu Palette を開きます。
+jouzu-cli-help-footer-catalogs = `{ $command }` は Settings / Catalogs を直接開きます。
+jouzu-cli-help-footer-sections = 閲覧モードでは { $nextKey } または { $previousKey } で Palette のセクションを切り替えます。
+jouzu-cli-help-footer-pi = Pi の CLI ヘルプには `{ $command }` を使用します。
 
 jouzu-cli-version-jouzu = jouzu { $version }
 jouzu-cli-version-pi = pi { $version }
@@ -1068,7 +1068,7 @@ jouzu-cli-settings-offeringRow = { $provider }/{ $model }
 jouzu-cli-settings-loadFailed = カタログ設定を読み込めませんでした: { $message }
 jouzu-cli-settings-savedTokensUnreadable = 保存されたトークンを読み取れませんでした: { $message }
 jouzu-cli-settings-saving = カタログを保存しています…
-jouzu-cli-settings-savedWithNotes = { $base } { $notes }。
+jouzu-cli-settings-savedWithNotes = { $base }{ $notes }
 jouzu-cli-settings-saveCanceled = カタログの保存をキャンセルしました。
 jouzu-cli-settings-refreshing = { $label } を更新しています…
 jouzu-cli-settings-contextLimitNotApplied = コンテキスト上限を適用できませんでした: { $message }。モデルは宣言されたコンテキストウィンドウを使用します。
@@ -1107,7 +1107,14 @@ jouzu-cli-settings-hint-scroll = スクロール
 # 製品名として英語のまま置く。
 jouzu-cli-settings-warning = 警告: { $message }
 jouzu-cli-settings-savedQuarantined = { $label } を保存しました。カタログリビジョンは隔離されました: { $reasons }。
-jouzu-cli-settings-savedWithCount = { $label } を { $count } 付きで保存しました。
+jouzu-cli-settings-savedWithCount = { $count ->
+    [one] { $label } をモデル { $count } 件で保存しました。
+   *[other] { $label } をモデル { $count } 件で保存しました。
+}
+jouzu-cli-settings-modelCount = { $count ->
+    [one] { $count } モデル
+   *[other] { $count } モデル
+}
 jouzu-cli-settings-savedWithoutCheck = カタログを確認せずに { $label } を保存しました。
 jouzu-cli-settings-contextLimitOff = コンテキスト上限はオフです。モデルは宣言されたコンテキストウィンドウを使用します。
 jouzu-cli-settings-contextLimitSet = コンテキスト上限は { $limit } トークンです。これを超えるモデルは { $limit } を報告し、より早く圧縮します。

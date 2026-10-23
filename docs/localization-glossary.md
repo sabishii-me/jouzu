@@ -26,7 +26,7 @@ These stay as written in every locale. A translator never renders them in
 another script.
 
 - **Commands and options:** `jz`, `jouzu`, `pi`, `jouzu --help`,
-  `jouzu pi --help`, `jz doctor`, `jz doctor --json`, `jz catalog status`,
+  `jouzu pi --help`, `jz --session`, `jz doctor`, `jz doctor --json`, `jz catalog status`,
   `jz keybindings plan`, `jz keybindings apply`, `jz profile plan`,
   `jz profile apply`, `jz update --extensions`, `--json`, `--jouzu-home`,
   `--jouzu-profile`, `--jouzu-ui-locale`, `--profile`, `--yes`.
@@ -67,6 +67,22 @@ translated; only the exact view names in the list above are protected.
   `書き込み可能なサブエージェント`), so the `/subagents` and Workflow text names
   one kind of agent. Do not reintroduce `子エージェント`; `子セッション` (child
   session) is a separate term.
+
+## Message semantics and composition
+
+- **TextGuard reports:** Findings that did not block content are reports, not
+  an approval or a safety assessment. Pending decisions appear separately.
+- **Sign-in confirmation deadline:** This is a time limit, not a browser window
+  or dialog. Japanese uses `確認期限`.
+- **Command alias:** `jz` behaves identically to `jouzu`; name both commands.
+- **Help prose:** Each message covers a complete topic. Do not split sentences
+  by display width. The renderer wraps prose and keeps command arguments intact,
+  including `jz --session`, `/textguard strict`, and `jouzu pi --help`.
+- **Model counts:** Pass a number, not an English phrase such as `5 models`.
+  The catalog owns the plural form and the model noun.
+- **Save warnings:** Each note is a complete sentence with its own punctuation.
+  The composition message controls spacing between sentences and adds no final
+  punctuation. English uses a space; Japanese and Chinese join sentences directly.
 
 ## Catalog notation
 

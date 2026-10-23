@@ -49,8 +49,8 @@ jouzu-cli-args-doctorUnexpectedToken = doctor does not accept { $token }
 jouzu-cli-args-versionHelpArguments = { $command } does not accept arguments; use "jouzu pi { $command }" for Pi
 
 # Pre-launch help, version, doctor, and report text.
-# The help prose is split one message per output line so the renderer owns the
-# layout and no value carries a hard wrap or a hand-made column.
+# Help messages are complete semantic units. The renderer owns wrapping and
+# alignment; command and key arguments stay intact.
 
 jouzu-cli-help-title = Jouzu agentic AI environment
 jouzu-cli-help-usageHeading = Usage:
@@ -62,21 +62,21 @@ jouzu-cli-help-command-profileApply = Apply the selected profile with conflicts 
 jouzu-cli-help-command-keybindings = Inspect, apply, or reset Jouzu's Pi-compatible key defaults
 jouzu-cli-help-command-selfUpdate = Inspect, check, apply, or configure Jouzu npm updates
 jouzu-cli-help-command-pi = Explicitly pass all remaining arguments to pinned Pi
-jouzu-cli-help-textguard-line1 = TextGuard scans skills and web content locally by default. Flagged web results
-jouzu-cli-help-textguard-line2 = reach the model labelled as untrusted data; flagged skills stay withheld until
-jouzu-cli-help-textguard-line3 = you approve them. Use /textguard in an interactive session to review findings,
-jouzu-cli-help-textguard-line4 = and /textguard on, strict, or off to change scanning for that session.
+jouzu-cli-help-textguard-scanning = TextGuard scans skills and web content locally by default.
+jouzu-cli-help-textguard-handling = Flagged web results reach the model labelled as untrusted data; flagged skills stay withheld until you approve them.
+jouzu-cli-help-textguard-controls = Use { $reviewCommand } in an interactive session to review findings, and { $onCommand }, { $strictCommand }, or { $offCommand } to change scanning for that session.
 jouzu-cli-help-option-textguardStrict = Withhold every flagged input until approved
 jouzu-cli-help-option-textguardOff = Start with scanning off
 jouzu-cli-help-option-textguardFiles = Also scan ordinary read-tool content
 jouzu-cli-help-option-uiLocale = UI language; auto follows the OS locale
-jouzu-cli-help-footer-line1 = The jz command is an exact alias. Resume with the jz --session command printed
-jouzu-cli-help-footer-line2 = on exit; Jouzu resolves its isolated session root. First interactive launch asks before enabling
-jouzu-cli-help-footer-line3 = the optional JA profile; Core is the safe fallback. Interactive launches clear
-jouzu-cli-help-footer-line4 = the viewport and show the Jouzu header;
-jouzu-cli-help-footer-line5 = set JOUZU_NO_CLEAR=1 to preserve the existing screen. Open the Jouzu Palette
-jouzu-cli-help-footer-line6 = through /model or Ctrl+L; /catalogs opens Settings / Catalogs directly, and Tab
-jouzu-cli-help-footer-line7 = or Shift+Tab switches Palette sections in browse mode. Use "jouzu pi --help" for Pi CLI help.
+jouzu-cli-help-footer-alias = The { $alias } command behaves identically to { $command }.
+jouzu-cli-help-footer-resume = Resume with the { $command } command printed on exit; Jouzu resolves its isolated session root.
+jouzu-cli-help-footer-profile = The first interactive launch asks before enabling the optional JA profile; Core is the fallback.
+jouzu-cli-help-footer-startup = Interactive launches clear the viewport and show the Jouzu header; set { $setting } to preserve the existing screen.
+jouzu-cli-help-footer-palette = Open the Jouzu Palette through { $command } or { $key }.
+jouzu-cli-help-footer-catalogs = { $command } opens Settings / Catalogs directly.
+jouzu-cli-help-footer-sections = { $nextKey } or { $previousKey } switches Palette sections in browse mode.
+jouzu-cli-help-footer-pi = Use { $command } for Pi CLI help.
 
 jouzu-cli-version-jouzu = jouzu { $version }
 jouzu-cli-version-pi = pi { $version }
@@ -863,7 +863,7 @@ jouzu-cli-workflow-field-result = Result
 # The TextGuard review view's other-list hints. The command name is a protected
 # value passed as an argument, not catalog text.
 jouzu-cli-textguard-otherView-decisions = items need a decision · { $command }
-jouzu-cli-textguard-otherView-reports = findings blocked nothing · { $command }
+jouzu-cli-textguard-otherView-reports = findings did not block content · { $command }
 # The rest of the TextGuard review overlay: the decision actions, the mode
 # confirmations, the severity and verdict lines, and the notification and
 # approval sentences. The `/textguard` command, the finding kinds, and the
@@ -951,8 +951,8 @@ jouzu-cli-textguard-review-pendingNonInteractive = Content stays withheld. Revie
 jouzu-cli-textguard-review-nothing = TextGuard has nothing waiting for a decision.{ $extra }
 jouzu-cli-textguard-review-incomplete = TextGuard could not identify the complete content. Retry the request; this content cannot be approved.{ $extra }
 jouzu-cli-textguard-review-blockedNothing = { $count ->
-    [one] { $count } finding blocked nothing; see { $command }.
-   *[other] { $count } findings blocked nothing; see { $command }.
+    [one] { $count } finding did not block content; see { $command }.
+   *[other] { $count } findings did not block content; see { $command }.
 }
 jouzu-cli-textguard-approved-persisted = Content approved. Future sessions admit these exact bytes; any change requires a new review. Resources will reload.
 jouzu-cli-textguard-approved-session = Content approved for this session. Retry the request after resources reload.
@@ -969,7 +969,7 @@ jouzu-cli-textguard-review-pendingSummary = TextGuard: { $count } { $count ->
 jouzu-cli-textguard-review-requiresTerminal = TextGuard review requires an interactive terminal. Content stays withheld.
 jouzu-cli-textguard-review-requiresSize = TextGuard review requires at least 48 columns and 24 rows. Resize the terminal and retry /textguard.
 jouzu-cli-textguard-review-unavailable = TextGuard review is unavailable for this session. Content stays withheld.
-jouzu-cli-textguard-reports-empty = TextGuard has no findings that blocked nothing to show.
+jouzu-cli-textguard-reports-empty = TextGuard has no findings to show for content that was not blocked.
 jouzu-cli-textguard-terminalResized = Terminal size changed. Content stays withheld; resize and retry /textguard.
 jouzu-cli-textguard-review-expired = This TextGuard review expired. Run /textguard again.
 jouzu-cli-textguard-reloadFailed = TextGuard changed, but resources could not reload. Run /reload before retrying.
@@ -1086,7 +1086,7 @@ jouzu-cli-settings-offeringRow = { $provider }/{ $model }
 jouzu-cli-settings-loadFailed = Catalog settings could not be loaded: { $message }
 jouzu-cli-settings-savedTokensUnreadable = Saved tokens could not be read: { $message }
 jouzu-cli-settings-saving = Saving catalog…
-jouzu-cli-settings-savedWithNotes = { $base } { $notes }.
+jouzu-cli-settings-savedWithNotes = { $base } { $notes }
 jouzu-cli-settings-saveCanceled = Catalog save canceled.
 jouzu-cli-settings-refreshing = Refreshing { $label }…
 jouzu-cli-settings-contextLimitNotApplied = Context limit was not applied: { $message }. Models use their declared windows.
@@ -1126,7 +1126,14 @@ jouzu-cli-settings-hint-scroll = scroll
 # decision.
 jouzu-cli-settings-warning = Warning: { $message }
 jouzu-cli-settings-savedQuarantined = Saved { $label }. Catalog revision quarantined: { $reasons }.
-jouzu-cli-settings-savedWithCount = Saved { $label } with { $count }.
+jouzu-cli-settings-savedWithCount = { $count ->
+    [one] Saved { $label } with { $count } model.
+   *[other] Saved { $label } with { $count } models.
+}
+jouzu-cli-settings-modelCount = { $count ->
+    [one] { $count } model
+   *[other] { $count } models
+}
 jouzu-cli-settings-savedWithoutCheck = Saved { $label } without checking the catalog.
 jouzu-cli-settings-contextLimitOff = Context limit off. Models use their declared windows.
 jouzu-cli-settings-contextLimitSet = Context limit { $limit } tokens. Models above it report { $limit } and compact sooner.
@@ -1216,8 +1223,8 @@ jouzu-cli-profileMigration-conflict = profile migration plan contains conflicts
 # states, the title, and the sign-in reports. The sign-in `report` closure takes
 # a catalog ID, so a literal sentence no longer type-checks there.
 jouzu-cli-settings-warning-tokenNotSet = Warning: token variable { $name } is not set and no token is saved for this source. Set it or save a token, then refresh.
-jouzu-cli-settings-note-tokenNotSet = token variable { $name } is not set and no token is saved; set it or save a token, then press R to refresh
-jouzu-cli-settings-note-tokenPrecedence = { $name } is set in this Jouzu process and takes precedence over the saved token
+jouzu-cli-settings-note-tokenNotSet = Token variable { $name } is not set and no token is saved; set it or save a token, then press R to refresh.
+jouzu-cli-settings-note-tokenPrecedence = { $name } is set in this Jouzu process and takes precedence over the saved token.
 jouzu-cli-settings-account-notConnected = Not connected · $10 in credits
 jouzu-cli-settings-heading-modelCatalogs = Model Catalogs
 jouzu-cli-settings-empty-noSources = No catalog sources configured.
@@ -1305,8 +1312,8 @@ jouzu-cli-shisa-onboarding-signedIn = Signed in to Shisa AI.
 jouzu-cli-shisa-onboarding-cancelled = Shisa sign-in cancelled.
 jouzu-cli-shisa-onboarding-couldNotComplete = Shisa sign-in could not complete.
 
-jouzu-cli-shisa-signIn-confirmFailed = Shisa sign-in was saved, but confirmation failed. Sign in again to avoid losing access when the confirmation window expires.
-jouzu-cli-shisa-signIn-confirmInterrupted = Shisa sign-in was saved, but confirmation was interrupted. Sign in again to avoid losing access when the confirmation window expires.
+jouzu-cli-shisa-signIn-confirmFailed = Shisa sign-in was saved, but confirmation failed. Sign in again to avoid losing access after the confirmation deadline.
+jouzu-cli-shisa-signIn-confirmInterrupted = Shisa sign-in was saved, but confirmation was interrupted. Sign in again to avoid losing access after the confirmation deadline.
 jouzu-cli-shisa-signIn-unexpectedResponse = Shisa sign-in returned an unexpected response. Start the sign-in again.
 jouzu-cli-shisa-signIn-expired = The sign-in request expired. Start the sign-in again.
 jouzu-cli-shisa-signIn-declined = The sign-in request was declined in the browser. Start the sign-in again to retry.

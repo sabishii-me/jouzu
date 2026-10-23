@@ -1,6 +1,7 @@
 import {
 	CatalogMessageId,
 	type CatalogMessageRef,
+	catalogMessage,
 	catalogMessageText,
 	catalogText,
 	defaultCatalog,
@@ -14,6 +15,7 @@ import {
 	resolveHumanMessage,
 } from "./human-messages.js";
 import type { CatalogBundle } from "./locale-catalog.js";
+import { terminalTextWidth } from "./terminal-layout.js";
 import { UI_LOCALE_PREFERENCES, type UiLocalePreference } from "./ui-locale.js";
 
 export const PROFILE_IDS = ["core", "ja"] as const;
@@ -459,12 +461,16 @@ const HELP_COMMANDS: ReadonlyArray<readonly [string, CatalogMessageId]> = [
 	["pi, --", CatalogMessageId.helpCommandPi],
 ];
 
-/** The TextGuard prose lines, kept one per output line so the bytes do not move. */
-const HELP_TEXTGUARD_LINES: readonly CatalogMessageId[] = [
-	CatalogMessageId.helpTextguardLine1,
-	CatalogMessageId.helpTextguardLine2,
-	CatalogMessageId.helpTextguardLine3,
-	CatalogMessageId.helpTextguardLine4,
+/** Complete TextGuard explanations, independent of terminal width. */
+const HELP_TEXTGUARD_MESSAGES: readonly CatalogMessageRef[] = [
+	catalogMessage(CatalogMessageId.helpTextguardScanning),
+	catalogMessage(CatalogMessageId.helpTextguardHandling),
+	catalogMessage(CatalogMessageId.helpTextguardControls, {
+		reviewCommand: protectedCommand("/textguard"),
+		onCommand: protectedCommand("/textguard on"),
+		strictCommand: protectedCommand("/textguard strict"),
+		offCommand: protectedCommand("/textguard off"),
+	}),
 ];
 
 /** The TextGuard option table: the protected option text and its description ID. */
@@ -474,16 +480,31 @@ const HELP_OPTIONS: ReadonlyArray<readonly [string, CatalogMessageId]> = [
 	["--jouzu-textguard-files", CatalogMessageId.helpOptionTextguardFiles],
 ];
 
-/** The closing prose lines, kept one per output line so the bytes do not move. */
-const HELP_FOOTER_LINES: readonly CatalogMessageId[] = [
-	CatalogMessageId.helpFooterLine1,
-	CatalogMessageId.helpFooterLine2,
-	CatalogMessageId.helpFooterLine3,
-	CatalogMessageId.helpFooterLine4,
-	CatalogMessageId.helpFooterLine5,
-	CatalogMessageId.helpFooterLine6,
-	CatalogMessageId.helpFooterLine7,
+/** Each footer message describes one complete topic; commands stay copyable. */
+const HELP_FOOTER_MESSAGES: readonly CatalogMessageRef[] = [
+	catalogMessage(CatalogMessageId.helpFooterAlias, {
+		alias: protectedCommand("jz"),
+		command: protectedCommand("jouzu"),
+	}),
+	catalogMessage(CatalogMessageId.helpFooterResume, { command: protectedCommand("jz --session") }),
+	catalogMessage(CatalogMessageId.helpFooterProfile),
+	catalogMessage(CatalogMessageId.helpFooterStartup, { setting: protectedCommand("JOUZU_NO_CLEAR=1") }),
+	catalogMessage(CatalogMessageId.helpFooterPalette, {
+		command: protectedCommand("/model"),
+		key: protectedCommand("Ctrl+L"),
+	}),
+	catalogMessage(CatalogMessageId.helpFooterCatalogs, { command: protectedCommand("/catalogs") }),
+	catalogMessage(CatalogMessageId.helpFooterSections, {
+		nextKey: protectedCommand("Tab"),
+		previousKey: protectedCommand("Shift+Tab"),
+	}),
+	catalogMessage(CatalogMessageId.helpFooterPi, { command: protectedCommand("jouzu pi --help") }),
 ];
+
+export interface HelpRenderOptions {
+	stdoutIsTTY?: boolean;
+	columns?: number;
+}
 
 /**
  * The `--help` text.
@@ -493,13 +514,33 @@ const HELP_FOOTER_LINES: readonly CatalogMessageId[] = [
  * message. The alignment is owned by the renderer, so a catalog value never
  * carries a hard wrap or a hand-made column.
  */
-export function formatHelp(catalog: CatalogBundle = defaultCatalog()): string {
+export function formatHelp(catalog: CatalogBundle = defaultCatalog(), options: HelpRenderOptions = {}): string {
+	const tty = options.stdoutIsTTY ?? process.stdout.isTTY === true;
+	const requestedColumns = options.columns ?? process.stdout.columns;
+	const columns =
+		typeof requestedColumns === "number" && Number.isFinite(requestedColumns)
+			? Math.max(1, Math.floor(requestedColumns))
+			: 80;
 	const text = (id: CatalogMessageId): string => catalogText(catalog, id);
-	const commandLines = HELP_COMMANDS.map(([label, id]) => `  ${label.padEnd(14)}${text(id)}`);
-	const optionLines = HELP_OPTIONS.map(([option, id]) => `  ${option.padEnd(42)}${text(id)}`);
+	const render = (message: CatalogMessageRef, indent = 0): string[] => {
+		const prefix = " ".repeat(indent);
+		const lines = tty
+			? catalog.render(message.id, message.args, { columns: Math.max(1, columns - indent) })
+			: [catalogMessageText(catalog, message)];
+		return lines.map((line) => prefix + line);
+	};
+	const tableRow = (label: string, id: CatalogMessageId, gutter: number): string[] => {
+		const prefix = `  ${label.padEnd(gutter - 2)}`;
+		if (!tty) return [prefix + text(id)];
+		if (columns - terminalTextWidth(prefix) < 12) return [`  ${label}`, ...render(catalogMessage(id), 4)];
+		const description = render(catalogMessage(id), terminalTextWidth(prefix));
+		return [prefix + description[0].trimStart(), ...description.slice(1)];
+	};
+	const commandLines = HELP_COMMANDS.flatMap(([label, id]) => tableRow(label, id, 16));
+	const optionLines = HELP_OPTIONS.flatMap(([option, id]) => tableRow(option, id, 44));
 	const uiLocaleOption = "--jouzu-ui-locale <auto|en|ja|zh-Hans|zh-Hant>";
 	const lines = [
-		text(CatalogMessageId.helpTitle),
+		...render(catalogMessage(CatalogMessageId.helpTitle)),
 		"",
 		text(CatalogMessageId.helpUsageHeading),
 		...HELP_USAGE_LINES,
@@ -507,12 +548,12 @@ export function formatHelp(catalog: CatalogBundle = defaultCatalog()): string {
 		text(CatalogMessageId.helpCommandsHeading),
 		...commandLines,
 		"",
-		...HELP_TEXTGUARD_LINES.map((id) => text(id)),
+		...HELP_TEXTGUARD_MESSAGES.flatMap((message) => render(message)),
 		...optionLines,
 		`  ${uiLocaleOption}`,
-		`${" ".repeat(44)}${text(CatalogMessageId.helpOptionUiLocale)}`,
+		...render(catalogMessage(CatalogMessageId.helpOptionUiLocale), tty && columns < 56 ? 4 : 44),
 		"",
-		...HELP_FOOTER_LINES.map((id) => text(id)),
+		...HELP_FOOTER_MESSAGES.flatMap((message) => render(message)),
 	];
 	return lines.join("\n");
 }

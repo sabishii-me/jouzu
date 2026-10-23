@@ -720,8 +720,8 @@ export function createTextGuardReviewExtension(
 				const pending = policy.reviews();
 				const pendingIds = new Set(pending.map((item) => item.id));
 				const reports = policy.scanReports().filter((item) => !pendingIds.has(item.id));
-				// The default view carries only what needs a decision. Findings that blocked nothing
-				// stay one command away instead of burying the items that matter.
+				// The default view carries only what needs a decision. Findings that did not block
+				// content remain available through the reports command.
 				const decisions: ReviewItem[] = [
 					...pending.map((review) => ({ review, withheld: true })),
 					...reports.filter(blocking).map((review) => ({ review, withheld: false })),

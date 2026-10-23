@@ -18,6 +18,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { CATALOG_VERSION } from "../dist/locale-catalog.js";
 import { formatDisplayVersion, parseBuildInfo } from "../dist/metadata.js";
 
 const packageRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -549,7 +550,7 @@ test("shows Jouzu help and leaves Pi help behind the explicit escape", () => {
 	assert.match(jouzuHelp.stdout, /Jouzu agentic AI environment/);
 	assert.match(jouzuHelp.stdout, /Open the Jouzu Palette/);
 	assert.match(jouzuHelp.stdout, /Ctrl\+L/);
-	assert.match(jouzuHelp.stdout, /Tab\nor Shift\+Tab switches Palette sections/u);
+	assert.match(jouzuHelp.stdout, /Tab or Shift\+Tab switches Palette sections in browse mode\./u);
 	assert.match(jouzuHelp.stdout, /--jouzu-ui-locale/);
 
 	const piHelp = run(["pi", "--help"]);
@@ -792,7 +793,7 @@ test("changing the UI locale leaves the response language, profile, model, provi
 			"localization.effective": "ja",
 			"localization.source": "cli",
 			"localization.fallback": "none",
-			"localization.catalogVersion": "1",
+			"localization.catalogVersion": CATALOG_VERSION,
 			"localization.catalogFallback": "none",
 			"localization.catalogState": "stale",
 			"localization.supportStates": "en=complete; ja=stale; zh-Hans=unsupported; zh-Hant=unsupported",
@@ -802,7 +803,7 @@ test("changing the UI locale leaves the response language, profile, model, provi
 			"localization.effective": "en",
 			"localization.source": "cli",
 			"localization.fallback": "none",
-			"localization.catalogVersion": "1",
+			"localization.catalogVersion": CATALOG_VERSION,
 			"localization.catalogFallback": "none",
 			"localization.catalogState": "complete",
 			"localization.supportStates": "en=complete; ja=stale; zh-Hans=unsupported; zh-Hant=unsupported",

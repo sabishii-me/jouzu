@@ -63,21 +63,21 @@ jouzu-cli-help-command-profileApply = 套用所選設定檔，並處理衝突與
 jouzu-cli-help-command-keybindings = 檢查、套用或重設 Jouzu 與 Pi 相容的按鍵預設值
 jouzu-cli-help-command-selfUpdate = 檢查、確認、套用或設定 Jouzu 的 npm 更新
 jouzu-cli-help-command-pi = 將所有剩餘引數明確傳給固定版本的 Pi
-jouzu-cli-help-textguard-line1 = TextGuard 預設會在本機掃描技能與網頁內容。被標記的網頁結果
-jouzu-cli-help-textguard-line2 = 會以不受信任資料的形式標示後送達模型；被標記的技能則會保留不送出，直到
-jouzu-cli-help-textguard-line3 = 你核准為止。在互動式工作階段中使用 /textguard 檢閱發現，
-jouzu-cli-help-textguard-line4 = 並以 /textguard on、strict 或 off 變更該工作階段的掃描設定。
+jouzu-cli-help-textguard-scanning = TextGuard 預設會在本機掃描技能與網頁內容。
+jouzu-cli-help-textguard-handling = 被標記的網頁結果會以不受信任資料的形式標示後送達模型；被標記的技能則會保留不送出，直到你核准為止。
+jouzu-cli-help-textguard-controls = 在互動式工作階段中使用 `{ $reviewCommand }` 檢閱發現，並以 `{ $onCommand }`、`{ $strictCommand }` 或 `{ $offCommand }` 變更該工作階段的掃描設定。
 jouzu-cli-help-option-textguardStrict = 保留所有被標記的輸入，直到核准為止
 jouzu-cli-help-option-textguardOff = 啟動時關閉掃描
 jouzu-cli-help-option-textguardFiles = 同時掃描一般讀取工具內容
 jouzu-cli-help-option-uiLocale = UI 語言；auto 會跟隨作業系統地區設定
-jouzu-cli-help-footer-line1 = jz 命令是精確的別名。結束時會印出 jz --session 命令以繼續工作階段；
-jouzu-cli-help-footer-line2 = Jouzu 會解析其隔離的工作階段根目錄。首次互動啟動時會先詢問是否啟用
-jouzu-cli-help-footer-line3 = 選用的 JA 設定檔；Core 是安全的備援。互動啟動會清除
-jouzu-cli-help-footer-line4 = 檢視區並顯示 Jouzu 標題；
-jouzu-cli-help-footer-line5 = 設定 JOUZU_NO_CLEAR=1 可保留現有畫面。透過 /model 或 Ctrl+L 開啟 Jouzu Palette；
-jouzu-cli-help-footer-line6 = /catalogs 會直接開啟 Settings / Catalogs，在瀏覽模式中 Tab
-jouzu-cli-help-footer-line7 = 或 Shift+Tab 可切換 Palette 區段。Pi CLI 說明請使用`jouzu pi --help`。
+jouzu-cli-help-footer-alias = `{ $alias }` 命令的行為與 `{ $command }` 完全相同。
+jouzu-cli-help-footer-resume = 使用結束時顯示的 `{ $command }` 命令繼續工作階段；Jouzu 會解析其隔離的工作階段根目錄。
+jouzu-cli-help-footer-profile = 首次互動啟動時會先詢問是否啟用選用的 JA 設定檔；Core 是備援選項。
+jouzu-cli-help-footer-startup = 互動啟動會清除檢視區並顯示 Jouzu 標題；設定 `{ $setting }` 可保留現有畫面。
+jouzu-cli-help-footer-palette = 透過 `{ $command }` 或 { $key } 開啟 Jouzu Palette。
+jouzu-cli-help-footer-catalogs = `{ $command }` 會直接開啟 Settings / Catalogs。
+jouzu-cli-help-footer-sections = 在瀏覽模式中，{ $nextKey } 或 { $previousKey } 可切換 Palette 區段。
+jouzu-cli-help-footer-pi = Pi CLI 說明請使用 `{ $command }`。
 
 jouzu-cli-version-jouzu = jouzu { $version }
 jouzu-cli-version-pi = pi { $version }
@@ -977,7 +977,7 @@ jouzu-cli-settings-offeringRow = { $provider }/{ $model }
 jouzu-cli-settings-loadFailed = 無法載入目錄設定: { $message }
 jouzu-cli-settings-savedTokensUnreadable = 無法讀取已儲存的權杖: { $message }
 jouzu-cli-settings-saving = 正在儲存目錄…
-jouzu-cli-settings-savedWithNotes = { $base } { $notes }。
+jouzu-cli-settings-savedWithNotes = { $base }{ $notes }
 jouzu-cli-settings-saveCanceled = 已取消目錄儲存。
 jouzu-cli-settings-refreshing = 正在重新整理 { $label }…
 jouzu-cli-settings-contextLimitNotApplied = 未套用內容限制: { $message }。模型會使用其宣告的視窗。
@@ -1013,7 +1013,14 @@ jouzu-cli-settings-hint-scroll = 捲動
 
 jouzu-cli-settings-warning = 警告: { $message }
 jouzu-cli-settings-savedQuarantined = 已儲存 { $label }。目錄修訂已隔離: { $reasons }。
-jouzu-cli-settings-savedWithCount = 已儲存 { $label }，共 { $count } 個。
+jouzu-cli-settings-savedWithCount = { $count ->
+    [one] 已儲存 { $label }，共 { $count } 個模型。
+   *[other] 已儲存 { $label }，共 { $count } 個模型。
+}
+jouzu-cli-settings-modelCount = { $count ->
+    [one] { $count } 個模型
+   *[other] { $count } 個模型
+}
 jouzu-cli-settings-savedWithoutCheck = 已儲存 { $label }，但未檢查目錄。
 jouzu-cli-settings-contextLimitOff = 內容限制已關閉。模型會使用其宣告的視窗。
 jouzu-cli-settings-contextLimitSet = 內容限制為 { $limit } 個權杖。超過此限制的模型會回報 { $limit }，並更早壓縮。
@@ -1090,8 +1097,8 @@ jouzu-cli-profileMigration-temporary = 設定檔選擇是暫時的；不會變�
 jouzu-cli-profileMigration-conflict = 設定檔移轉計畫含有衝突
 
 jouzu-cli-settings-warning-tokenNotSet = 警告: 未設定權杖變數 { $name }，且此來源沒有儲存的權杖。請設定它或儲存權杖，然後重新整理。
-jouzu-cli-settings-note-tokenNotSet = 未設定權杖變數 { $name }，且沒有儲存的權杖；請設定它或儲存權杖，然後按 R 重新整理
-jouzu-cli-settings-note-tokenPrecedence = 此 Jouzu 處理程序中已設定 { $name }，其優先順序高於已儲存的權杖
+jouzu-cli-settings-note-tokenNotSet = 未設定權杖變數 { $name }，且沒有儲存的權杖；請設定它或儲存權杖，然後按 R 重新整理。
+jouzu-cli-settings-note-tokenPrecedence = 此 Jouzu 處理程序中已設定 { $name }，其優先順序高於已儲存的權杖。
 jouzu-cli-settings-account-notConnected = 未連線 · $10 額度
 jouzu-cli-settings-heading-modelCatalogs = Model Catalogs
 jouzu-cli-settings-empty-noSources = 未設定任何目錄來源。
@@ -1170,8 +1177,8 @@ jouzu-cli-shisa-onboarding-signedIn = 已登入 Shisa AI。
 jouzu-cli-shisa-onboarding-cancelled = 已取消 Shisa 登入。
 jouzu-cli-shisa-onboarding-couldNotComplete = Shisa 登入無法完成。
 
-jouzu-cli-shisa-signIn-confirmFailed = Shisa 登入已儲存，但確認失敗。請再次登入，以免確認視窗到期時失去存取權。
-jouzu-cli-shisa-signIn-confirmInterrupted = Shisa 登入已儲存，但確認遭到中斷。請再次登入，以免確認視窗到期時失去存取權。
+jouzu-cli-shisa-signIn-confirmFailed = Shisa 登入已儲存，但確認失敗。請再次登入，以免超過確認期限後失去存取權。
+jouzu-cli-shisa-signIn-confirmInterrupted = Shisa 登入已儲存，但確認遭到中斷。請再次登入，以免超過確認期限後失去存取權。
 jouzu-cli-shisa-signIn-unexpectedResponse = Shisa 登入傳回未預期的回應。請重新開始登入。
 jouzu-cli-shisa-signIn-expired = 登入要求已過期。請重新開始登入。
 jouzu-cli-shisa-signIn-declined = 登入要求在瀏覽器中遭到拒絕。請重新開始登入以重試。
