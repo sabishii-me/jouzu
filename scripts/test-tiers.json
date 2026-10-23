@@ -44,6 +44,7 @@
 		"packages/cli/test/cli.test.mjs :: profile plan is non-mutating and profile apply converges": "integration",
 		"packages/cli/test/cli.test.mjs :: self-update avoids loading Pi runtime modules before package replacement": "integration",
 		"packages/cli/test/cli.test.mjs :: shows Jouzu help and leaves Pi help behind the explicit escape": "integration",
+		"packages/cli/test/flow-assembly-holds.test.mjs :: a composed wake is recorded as notification-only": "child-process",
 		"packages/cli/test/flow-assembly-pair.test.mjs :: a live wait blocks lane continuations and delivers its decision once": "integration",
 		"packages/cli/test/flow-assembly-reopen.test.mjs :: a shutdown-terminated dependency delivers one decision after reopen and never replays": "integration",
 		"packages/cli/test/flow-assembly-status.test.mjs :: a lane from an earlier session in the same process does not break the next one": "integration",
