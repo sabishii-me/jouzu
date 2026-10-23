@@ -514,6 +514,59 @@ test("a command does not start when disposal fences the ingress during its recov
 	);
 });
 
+test("a command does not start after its branch was replaced during the recovery read", async (t) => {
+	const entered = deferred();
+	const release = deferred();
+	let calls = 0;
+	const f = await assembledSession(t, {
+		producerExtensions: [
+			{
+				name: "local-control",
+				factory: (pi) =>
+					pi.registerCommand("fixture-status", {
+						handler: () => {
+							calls++;
+						},
+					}),
+			},
+		],
+	});
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(f.ingress.pauseAutomated("held before replacement"), true);
+	const original = f.ingress.branch();
+	// Pi's own navigation cannot reach this window: the host boundary refuses a handoff while a
+	// command holds its frame (`pi-host-boundary.ts`, `handoffNavigation` requires `active === 1`), so
+	// `navigateTree` during this read rejects with `busy`. The replacement is therefore applied at the
+	// boundary `runCommand` revalidates, and this contract test pins the comparison itself.
+	let replacement;
+	t.mock.method(f.ingress, "branch", () => replacement ?? original);
+	// The read is mocked too: the production read is disposal-joined, so a real one keeps the ingress
+	// fence set until it settles and hides the window between the read and the handler.
+	t.mock.method(f.ingress, "recoveryHold", async () => {
+		entered.resolve();
+		await release.promise;
+		return undefined;
+	});
+	const reported = [];
+	f.session.extensionRunner.onError((error) => reported.push(error));
+	const command = f.session.prompt("/fixture-status").then(
+		() => "resolved",
+		(error) => error,
+	);
+	await entered.promise;
+	assert.equal(f.session.isIdle, true);
+	replacement = { ...original };
+	release.resolve();
+	const outcome = await command;
+	assert.deepEqual(
+		[calls, f.ingress.automatedPause()],
+		[0, "held before replacement"],
+		"a command must not start against a replaced branch, and the pause must survive the read",
+	);
+	assert.equal(outcome, "resolved", "the refusal reports through Pi's command path instead of becoming model input");
+	assert.match(reported.map((entry) => entry.error).join("\n"), /branch changed during its recovery read/);
+});
+
 test("a local command reads recovery state only when a pause is set", async (t) => {
 	let calls = 0;
 	let reads = 0;

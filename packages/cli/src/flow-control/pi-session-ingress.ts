@@ -913,7 +913,7 @@ export class PiSessionFlowIngress implements Ingress {
 	}
 	async runCommand(submission: Submission, run: () => Promise<void>): Promise<void> {
 		if (this.suspended) return run();
-		this.branch();
+		const branch = this.branch();
 		try {
 			// User priority covers every await and parse below, so its release cannot be skipped by a read
 			// or parse failure.
@@ -929,10 +929,11 @@ export class PiSessionFlowIngress implements Ingress {
 			const revision = this.pauseRevision;
 			const held = paused && (await this.recoveryHolds());
 			if (paused) {
-				// The read above is asynchronous. Disposal or a branch change during it invalidates the
+				// The read above is asynchronous. A replaced branch or a disposed ingress invalidates the
 				// session this command would use, and a pause requested meanwhile is a newer instruction
 				// than this command. Neither may be overridden by a decision taken before the read.
-				this.branch();
+				if (this.branch() !== branch)
+					throw new FlowLedgerError("stale", "Flow command branch changed during its recovery read.");
 				if (!held && this.pauseRevision === revision) this.resumeAutomated();
 			}
 			// The handler stays outside the ingress's own operations: Pi's command path owns its lifetime,
