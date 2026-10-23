@@ -61,6 +61,12 @@ export class PiSessionFlowIngress implements Ingress {
 	private service?: PiFlowSessionService;
 	private session?: AgentSession;
 	private automatedPauseReason?: string;
+	/**
+	 * Counts pause requests and releases, not just the current reason: a repeated pause with the same
+	 * text is still a newer instruction than a decision made before it, and an asynchronous decision
+	 * may only end the pause it saw. Kept apart from the reason so no caller has to compare text.
+	 */
+	private pauseRevision = 0;
 	private opening?: Promise<void>;
 	private closing?: Promise<void>;
 	private disposed = false;
@@ -452,6 +458,7 @@ export class PiSessionFlowIngress implements Ingress {
 	}
 	/** Returns whether this changed anything, so a caller can report it only when it did. */
 	pauseAutomated(reason: string): boolean {
+		this.pauseRevision++;
 		if (this.automatedPauseReason !== undefined) return false;
 		this.automatedPauseReason = reason;
 		return true;
@@ -459,6 +466,7 @@ export class PiSessionFlowIngress implements Ingress {
 	resumeAutomated(): boolean {
 		if (this.automatedPauseReason === undefined) return false;
 		this.automatedPauseReason = undefined;
+		this.pauseRevision++;
 		// Releasing is the caller's business; producers are woken by the ordinary boundary.
 		return true;
 	}
@@ -674,7 +682,7 @@ export class PiSessionFlowIngress implements Ingress {
 	clearFlow() {
 		return this.manage(async (service) => {
 			const result = await service.clearFlow();
-			this.automatedPauseReason = undefined;
+			this.resumeAutomated();
 			return result;
 		});
 	}
@@ -691,7 +699,7 @@ export class PiSessionFlowIngress implements Ingress {
 					if (context.branch === branch) this.waitContexts.delete(id);
 				this.replayIds?.clear();
 			});
-			this.automatedPauseReason = undefined;
+			this.resumeAutomated();
 			return result;
 		});
 	}
@@ -906,15 +914,29 @@ export class PiSessionFlowIngress implements Ingress {
 	async runCommand(submission: Submission, run: () => Promise<void>): Promise<void> {
 		if (this.suspended) return run();
 		this.branch();
-		this.activeUserInput++;
-		// Control commands retain user priority without owning input or a disposal join. Inspection
-		// commands leave an explicit automation pause in place, and starting a local command is not
-		// consent to resume automated work while recovery still holds model admission: the pause keeps
-		// automated turns out of a state the user has not resolved yet. Explicit recovery actions and
-		// model-bound sends end it through their own paths.
-		const inspection = /^\/(?:flow|about)(?:\s|$)/.test((submission.args[0] as string).trim());
-		if (!inspection && !(await this.recoveryHolds())) this.resumeAutomated();
 		try {
+			// User priority covers every await and parse below, so its release cannot be skipped by a read
+			// or parse failure.
+			this.activeUserInput++;
+			// Control commands retain user priority without owning input or a disposal join. Inspection
+			// commands leave an explicit automation pause in place, and starting a local command is not
+			// consent to resume automated work while recovery still holds model admission: the pause keeps
+			// automated turns out of a state the user has not resolved yet. Explicit recovery actions and
+			// model-bound sends end it through their own paths.
+			const inspection = /^\/(?:flow|about)(?:\s|$)/.test((submission.args[0] as string).trim());
+			// Only an existing pause is this command's to end, so an unpaused session pays for no read.
+			const paused = !inspection && this.automatedPause() !== undefined;
+			const revision = this.pauseRevision;
+			const held = paused && (await this.recoveryHolds());
+			if (paused) {
+				// The read above is asynchronous. Disposal or a branch change during it invalidates the
+				// session this command would use, and a pause requested meanwhile is a newer instruction
+				// than this command. Neither may be overridden by a decision taken before the read.
+				this.branch();
+				if (!held && this.pauseRevision === revision) this.resumeAutomated();
+			}
+			// The handler stays outside the ingress's own operations: Pi's command path owns its lifetime,
+			// including a handler that replaces or disposes this session.
 			await run();
 		} finally {
 			this.activeUserInput--;

@@ -431,6 +431,145 @@ test("literal command-looking input is delivered as model text once recovery cle
 	assert.deepEqual(f.errors, []);
 });
 
+test("a command's recovery read cannot clear a pause requested while it runs", async (t) => {
+	const entered = deferred();
+	const release = deferred();
+	let calls = 0;
+	const f = await assembledSession(t, {
+		producerExtensions: [
+			{
+				name: "local-control",
+				factory: (pi) =>
+					pi.registerCommand("fixture-status", {
+						handler: () => {
+							calls++;
+						},
+					}),
+			},
+		],
+	});
+	// Let session-start advisory reads settle before one recovery read is gated.
+	await new Promise((resolve) => setImmediate(resolve));
+	await f.session.prompt("/flow pause");
+	const pause = f.ingress.automatedPause();
+	assert.equal(pause, "held from /flow");
+	t.mock.method(f.ingress, "recoveryHold", async () => {
+		entered.resolve();
+		await release.promise;
+		return undefined;
+	});
+	const command = f.session.prompt("/fixture-status");
+	await entered.promise;
+	// The same explicit pause, requested again while the earlier command is still reading.
+	await f.session.prompt("/flow pause");
+	assert.equal(f.ingress.automatedPause(), pause);
+	release.resolve();
+	await command;
+	assert.equal(calls, 1, "the command still runs");
+	assert.equal(f.ingress.automatedPause(), pause, "a pause requested after the read started survives");
+});
+
+test("a command does not start when disposal fences the ingress during its recovery read", async (t) => {
+	const entered = deferred();
+	const release = deferred();
+	let calls = 0;
+	const f = await assembledSession(t, {
+		producerExtensions: [
+			{
+				name: "local-control",
+				factory: (pi) =>
+					pi.registerCommand("fixture-status", {
+						handler: () => {
+							calls++;
+						},
+					}),
+			},
+		],
+	});
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(f.ingress.pauseAutomated("held before disposal"), true);
+	const reported = [];
+	f.session.extensionRunner.onError((error) => reported.push(error));
+	t.mock.method(f.ingress, "recoveryHold", async () => {
+		entered.resolve();
+		await release.promise;
+		return undefined;
+	});
+	const command = f.session.prompt("/fixture-status").then(
+		() => "resolved",
+		(error) => error,
+	);
+	await entered.promise;
+	const disposing = f.session.dispose();
+	release.resolve();
+	await disposing;
+	const outcome = await command;
+	assert.equal(calls, 0, "a command must not start after disposal fenced its session");
+	assert.equal(f.ingress.automatedPause(), "held before disposal", "disposal during the read does not clear the pause");
+	assert.equal(outcome, "resolved", "the refusal reports through Pi's command path instead of becoming model input");
+	assert.match(
+		reported.map((entry) => entry.error).join("\n"),
+		/not attached to an active branch/,
+		"the refused command names the stale session",
+	);
+});
+
+test("a local command reads recovery state only when a pause is set", async (t) => {
+	let calls = 0;
+	let reads = 0;
+	const f = await assembledSession(t, {
+		producerExtensions: [
+			{
+				name: "local-control",
+				factory: (pi) =>
+					pi.registerCommand("fixture-status", {
+						handler: () => {
+							calls++;
+						},
+					}),
+			},
+		],
+	});
+	await new Promise((resolve) => setImmediate(resolve));
+	t.mock.method(f.ingress, "recoveryHold", async () => {
+		reads++;
+		return undefined;
+	});
+	await f.session.prompt("/fixture-status");
+	assert.equal(calls, 1);
+	assert.equal(reads, 0, "no pause means no recovery read");
+	assert.equal(f.ingress.automatedPause(), undefined);
+});
+
+test("an unreadable recovery state keeps the pause and still runs the command", async (t) => {
+	let calls = 0;
+	const f = await assembledSession(t, {
+		producerExtensions: [
+			{
+				name: "local-control",
+				factory: (pi) =>
+					pi.registerCommand("fixture-status", {
+						handler: () => {
+							calls++;
+						},
+					}),
+			},
+		],
+	});
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(f.ingress.pauseAutomated("held for a fixture"), true);
+	const unavailable = t.mock.method(f.ingress, "recoveryHold", async () => {
+		throw new Error("recovery state is unavailable");
+	});
+	await f.session.prompt("/fixture-status");
+	assert.equal(calls, 1, "the command stays reachable");
+	assert.equal(f.ingress.automatedPause(), "held for a fixture", "an unreadable hold is kept");
+	unavailable.mock.restore();
+	await f.session.prompt("/fixture-status");
+	assert.equal(calls, 2);
+	assert.equal(f.ingress.automatedPause(), undefined, "a readable state ends the pause");
+});
+
 test("input held before clear does not race a new prompt for the work invocation", async (t) => {
 	const f = await withheldSession(t);
 	await f.session.prompt("Message held behind recovery");
