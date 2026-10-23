@@ -12,6 +12,7 @@ interface Frame {
 	kind: "operation" | "command" | "navigation" | "boundary";
 	active: boolean;
 	nested: number;
+	command?: Frame;
 }
 export type PiBoundaryResult<T> = { kind: "busy" } | { kind: "idle"; value: T };
 export type PiSettlement = { kind: "inactive" | "waiting" | "cancelled" | "uncertain" | "settled"; attemptId?: string };
@@ -28,6 +29,7 @@ export class PiHostBoundary {
 	private stoppingPromise?: Promise<void>;
 	private drained?: () => void;
 	private navigated = false;
+	private navigationPreparing = false;
 	private navigationReleased = false;
 	private barrier?: Promise<void>;
 	private readonly sessionId: string;
@@ -68,10 +70,14 @@ export class PiHostBoundary {
 			session,
 			"navigateTree",
 			this.wrap(async (...args: Parameters<AgentSession["navigateTree"]>) => {
+				// Reserve before extension callbacks or summary preparation can change state.
+				this.navigationFrame();
+				this.navigationPreparing = true;
 				const leaf = session.sessionManager.getLeafId();
 				try {
 					return await navigate(...args);
 				} finally {
+					this.navigationPreparing = false;
 					if (session.sessionManager.getLeafId() !== leaf) this.navigated = true;
 				}
 			}, "navigation"),
@@ -80,6 +86,8 @@ export class PiHostBoundary {
 			const enqueue = agent[name].bind(agent);
 			this.hooks.set(agent, name, (message) => {
 				this.assertWritable();
+				if (this.navigationPreparing)
+					throw new FlowLedgerError("busy", "Native queue mutation must wait for branch navigation.");
 				if (this.barrier) throw new FlowLedgerError("busy", "Native queue mutation must wait for idle reconciliation.");
 				return enqueue(message);
 			});
@@ -89,6 +97,8 @@ export class PiHostBoundary {
 			this.hooks.set(agent, name, ((...args: Parameters<typeof change>) => {
 				if (name === "editQueuedMessage") this.assertWritable();
 				else this.assertActive();
+				if (this.navigationPreparing)
+					throw new FlowLedgerError("busy", "Native queue mutation must wait for branch navigation.");
 				if (this.barrier && !(this.frames.getStore()?.active && this.frames.getStore()?.kind === "boundary"))
 					throw new FlowLedgerError("busy", "Native queue mutation must wait for reconciliation.");
 				return (change as (...args: Parameters<typeof change>) => ReturnType<typeof change>)(...args);
@@ -136,6 +146,10 @@ export class PiHostBoundary {
 		this.assertActive();
 		if (this.stopping) throw new FlowLedgerError("stale", "Host boundary is stopping.");
 	}
+	private assertOperationAvailable(): void {
+		this.assertWritable();
+		if (this.navigationPreparing) throw new FlowLedgerError("busy", "Host operations must wait for branch navigation.");
+	}
 	/** Deferred notification; listeners must revalidate admission before starting work. */
 	onIdle(listener: (cause: "operation" | "maintenance") => void): () => void {
 		this.assertWritable();
@@ -169,14 +183,15 @@ export class PiHostBoundary {
 			}
 		}
 	}
-	/** Call only from ingress beforeBranchChange, after Pi has finished preparing navigation. */
-	handoffNavigation(): void {
+	private navigationFrame(): Frame {
 		this.assertWritable();
 		const frame = this.frames.getStore();
 		if (
 			frame?.kind !== "navigation" ||
 			!frame.active ||
-			this.active !== 1 ||
+			frame.nested !== 0 ||
+			(frame.command && frame.command.nested !== 1) ||
+			this.active !== (frame.command?.active ? 2 : 1) ||
 			this.barrier ||
 			!this.session.isIdle ||
 			this.session.agent.state.isStreaming ||
@@ -185,12 +200,20 @@ export class PiHostBoundary {
 			this.session.agent.hasQueuedMessages() ||
 			this.session.pendingMessageCount
 		)
-			throw new FlowLedgerError(
-				"busy",
-				"Navigation handoff requires prepared navigation with no other active host work.",
-			);
+			throw new FlowLedgerError("busy", "Tree navigation requires an idle session with no other active host work.");
+		return frame;
+	}
+	/** Call only from ingress beforeBranchChange, after Pi has finished preparing navigation. */
+	handoffNavigation(): void {
+		const frame = this.navigationFrame();
 		this.stopping = true;
 		this.navigationReleased = true;
+		// The navigation may be awaited by one local command. Release those exact
+		// frames, not independent work; their finally blocks must not release twice.
+		if (frame.command?.active) {
+			frame.command.active = false;
+			this.active--;
+		}
 		frame.active = false;
 		this.active--;
 		this.notifyDrained();
@@ -227,23 +250,30 @@ export class PiHostBoundary {
 		run: () => Promise<T>,
 		kind: "operation" | "command" | "navigation" = "operation",
 	): Promise<T> {
-		this.assertWritable();
+		this.assertOperationAvailable();
 		const parent = this.frames.getStore();
 		if (parent?.kind === "boundary")
 			throw new FlowLedgerError("busy", "Idle reconciliation cannot start a host operation.");
 		if (parent?.active) {
 			parent.nested++;
+			const frame: Frame | undefined =
+				kind === "navigation" && parent.kind === "command"
+					? { kind, active: true, nested: 0, command: parent }
+					: undefined;
 			this.active++;
 			try {
-				return await run();
+				return await (frame ? this.frames.run(frame, run) : run());
 			} finally {
 				parent.nested--;
-				this.active--;
+				if (!frame || frame.active) {
+					if (frame) frame.active = false;
+					this.active--;
+				}
 				this.notifyDrained(true);
 			}
 		}
 		while (this.barrier) await this.barrier;
-		this.assertWritable();
+		this.assertOperationAvailable();
 		const frame: Frame = { kind, active: true, nested: 0 };
 		this.active++;
 		try {
