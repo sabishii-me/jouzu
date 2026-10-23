@@ -850,6 +850,15 @@ export class PiSessionFlowIngress implements Ingress {
 			this.recoveryHoldReason(branch, this.options.policy(), await branch.attachment.ledger.snapshot()),
 		);
 	}
+	/** Whether a recovery decision still holds model admission; a hold that cannot be read is kept. */
+	private async recoveryHolds(): Promise<boolean> {
+		try {
+			return (await this.recoveryHold()) !== undefined;
+		} catch {
+			// A branch whose recovery state cannot be read is not evidence that recovery finished.
+			return true;
+		}
+	}
 	private recoveryHoldReason(
 		branch: PiFlowBranchResources,
 		policy: { recoveryBlocked: boolean },
@@ -898,9 +907,13 @@ export class PiSessionFlowIngress implements Ingress {
 		if (this.suspended) return run();
 		this.branch();
 		this.activeUserInput++;
-		// Control commands retain user priority without owning input or a disposal join.
-		// Inspection commands leave an explicit automation pause in place.
-		if (!/^\/(?:flow|about)(?:\s|$)/.test((submission.args[0] as string).trim())) this.resumeAutomated();
+		// Control commands retain user priority without owning input or a disposal join. Inspection
+		// commands leave an explicit automation pause in place, and starting a local command is not
+		// consent to resume automated work while recovery still holds model admission: the pause keeps
+		// automated turns out of a state the user has not resolved yet. Explicit recovery actions and
+		// model-bound sends end it through their own paths.
+		const inspection = /^\/(?:flow|about)(?:\s|$)/.test((submission.args[0] as string).trim());
+		if (!inspection && !(await this.recoveryHolds())) this.resumeAutomated();
 		try {
 			await run();
 		} finally {
@@ -915,31 +928,16 @@ export class PiSessionFlowIngress implements Ingress {
 		// A command's own send is the user's instruction arriving through a command, so it takes the same
 		// priority as typed input: it releases an interrupt's hold and holds automated work behind it.
 		const user = isUserInstruction(captured);
-		// Local flow inspection and repair must remain reachable while provider admission is blocked.
-		const localFlowCommand =
-			user && typeof captured.args[0] === "string" && /^\/flow(?:\s|$)/.test(captured.args[0].trim());
-		const localAboutCommand =
-			user && typeof captured.args[0] === "string" && /^\/about(?: |$)/.test(captured.args[0].trim());
 		if (user) this.activeUserInput++;
 		// Every send passes through here, so this is where the user speaking again releases an
 		// interrupt's hold. Automated work still waits for an idle boundary, which is what keeps it
-		// out of the very turn being submitted: the hold ends, the queue does not jump.
-		const flowCommand = typeof captured.args[0] === "string" && /^\/flow(?:\s|$)/.test(captured.args[0].trim());
-		// Inspection must not release a hold. Flow commands perform their own explicit state changes.
-		if (user && !flowCommand && !localAboutCommand) this.resumeAutomated();
+		// out of the very turn being submitted: the hold ends, the queue does not jump. A registered
+		// host command already ran before this point, so text that arrives here is model input, not a
+		// control: leading whitespace, an invalid separator, an unregistered name, a steer or follow-up,
+		// an extension's own message, or a prompt with template expansion off.
+		if (user) this.resumeAutomated();
 		return this.track(async () => {
 			const branch = this.branch();
-			if (
-				localAboutCommand ||
-				(localFlowCommand &&
-					(branch.host.gate().recoveryBlocked ||
-						/^\/flow(?:\s+(?:details(?:\s+[1-9]\d{0,5})?|runtime|reset(?:\s+confirm)?|clear))?$/.test(
-							(captured.args[0] as string).trim(),
-						)))
-			) {
-				await dispatch();
-				return;
-			}
 			const [previous] = await branch.attachment.submissions.forIds([captured.id]);
 			if (previous) {
 				if (!isDeepStrictEqual(previous.submission, captured))
