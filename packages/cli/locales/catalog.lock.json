@@ -2,7 +2,7 @@
   "version": "1",
   "locales": {
     "en": "d46c15365295a30beb6590bd07838d5a02fcd35b96c51c88267ced6e926e0028",
-    "ja": "a276f5d6d777975862c6c5d57ed2123aeecbfac223bd11ea81389b10caa30cfc",
+    "ja": "86482b6e033161910be1143e4ecc600a66978dbd764b6e677b46c74666e8446d",
     "zh-Hans": "3055b9da36f8a7ed3f9922ddabca258d0006b2ef95662555695f613678f970ad",
     "zh-Hant": "bcd7255c581f10a3f1b46f39a2a1948a33cdf097adc8170d7ea0e8e5b0b0d058"
   },
@@ -12,9 +12,9 @@
     "en/profile-migration-command.ftl": "3e1ed9789c9f80c9f9c4d8076b3115425a5e82a5a975e1d1cea6397e7d1166e9",
     "en/runtime.ftl": "d49b400423cfc04a8405b6ec66a0678dbc929a8f5255d4ce132bb0db722add52",
     "ja/localization-deferral.ftl": "5d1ff4ae935ece7c906119bbd45a6e4a87727b25132e8965d5e4b68671940179",
-    "ja/localization-settings.ftl": "9699d550c87414b1efb5d234e6f05a1a3ae59e89c2d70d1314ff2a912bb9976c",
+    "ja/localization-settings.ftl": "f6bd2f470bce56d6a55d4d2fe559b0d45bc4ad57e97e6fc4254826b9fdfcecff",
     "ja/profile-migration-command.ftl": "6b5683a0923c48a69d1521e0d1d7bfda8b0b734a921133a2f33563ee80aa496e",
-    "ja/runtime.ftl": "bdbd7530946670c4ac60b1ef1b0b6707e7ad37156a3f1fa795c49f235c2a7361",
+    "ja/runtime.ftl": "70b495087ea56094dd8f0a0bf76fecb2bb71818fb9161c47ae8c634de6469824",
     "zh-Hans/localization-deferral.ftl": "8aad4d0690a7c1863c34c150916fcc2f8e5bba1fa09e660f3777cc3d7c5123c7",
     "zh-Hans/localization-settings.ftl": "9f5f8c17553d1ac8e64cdff6693c65053a858bb2203f0149fb999ea7f0341cf6",
     "zh-Hans/profile-migration-command.ftl": "0f4746c4435a9235317e4c9c844a1cea5dd6099569012daa4daff1cdb89f17ff",
