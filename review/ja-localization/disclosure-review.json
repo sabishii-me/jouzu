@@ -6,7 +6,7 @@
       "line": 9,
       "path": "apps/launcher/src-tauri/tauri.conf.json",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/apps/launcher/src-tauri/tauri.conf.json#L9",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/apps/launcher/src-tauri/tauri.conf.json#L9",
       "text": "    \"devUrl\": \"http://localhost:1420\","
     },
     {
@@ -14,7 +14,7 @@
       "line": 29,
       "path": "apps/launcher/src-tauri/tauri.conf.json",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/apps/launcher/src-tauri/tauri.conf.json#L29",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/apps/launcher/src-tauri/tauri.conf.json#L29",
       "text": "      \"csp\": \"default-src 'self'; connect-src ipc: http://ipc.localhost; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data:\""
     },
     {
@@ -22,7 +22,7 @@
       "line": 78,
       "path": "docs/evaluation/per-language-eval-criteria.md",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/docs/evaluation/per-language-eval-criteria.md#L78",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/docs/evaluation/per-language-eval-criteria.md#L78",
       "text": "- Prompt digest: the SHA-256 of the composed prompt."
     },
     {
@@ -30,7 +30,7 @@
       "line": 66,
       "path": "docs/profiles.md",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/docs/profiles.md#L66",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/docs/profiles.md#L66",
       "text": "Files in CP932/Shift-JIS report an `unsupported-encoding` conflict. Jouzu leaves them byte-for-byte unchanged and does not convert them."
     },
     {
@@ -38,7 +38,7 @@
       "line": 504,
       "path": "packages/cli/locales/en/cli.ftl",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/locales/en/cli.ftl#L504",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/locales/en/cli.ftl#L504",
       "text": "jouzu-cli-selfUpdate-integrityMismatch = downloaded update failed SHA-512 verification"
     },
     {
@@ -46,23 +46,23 @@
       "line": 1021,
       "path": "packages/cli/locales/en/cli.ftl",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/locales/en/cli.ftl#L1021",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/locales/en/cli.ftl#L1021",
       "text": "jouzu-cli-textguard-review-fingerprint = Content fingerprint (SHA-256): { $digest }"
     },
     {
       "category": "work-item-or-milestone-reference",
-      "line": 1761,
+      "line": 1768,
       "path": "packages/cli/locales/en/cli.ftl",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/locales/en/cli.ftl#L1761",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/locales/en/cli.ftl#L1768",
       "text": "# package name, a path, a version, a start timestamp, and a SHA-256 hash are"
     },
     {
       "category": "work-item-or-milestone-reference",
-      "line": 1772,
+      "line": 1779,
       "path": "packages/cli/locales/en/cli.ftl",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/locales/en/cli.ftl#L1772",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/locales/en/cli.ftl#L1779",
       "text": "jouzu-cli-runtime-reportHeading = Package paths and SHA-256 hashes captured at startup:"
     },
     {
@@ -70,7 +70,7 @@
       "line": 501,
       "path": "packages/cli/locales/ja/cli.ftl",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/locales/ja/cli.ftl#L501",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/locales/ja/cli.ftl#L501",
       "text": "jouzu-cli-selfUpdate-integrityMismatch = ダウンロードした更新は SHA-512 の検証に失敗しました"
     },
     {
@@ -78,23 +78,23 @@
       "line": 1005,
       "path": "packages/cli/locales/ja/cli.ftl",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/locales/ja/cli.ftl#L1005",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/locales/ja/cli.ftl#L1005",
       "text": "jouzu-cli-textguard-review-fingerprint = 内容のフィンガープリント（SHA-256）: { $digest }"
     },
     {
       "category": "work-item-or-milestone-reference",
-      "line": 1714,
+      "line": 1721,
       "path": "packages/cli/locales/ja/cli.ftl",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/locales/ja/cli.ftl#L1714",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/locales/ja/cli.ftl#L1721",
       "text": "# バージョン、開始時刻、SHA-256 ハッシュは保護値として引数で渡す。"
     },
     {
       "category": "work-item-or-milestone-reference",
-      "line": 1724,
+      "line": 1731,
       "path": "packages/cli/locales/ja/cli.ftl",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/locales/ja/cli.ftl#L1724",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/locales/ja/cli.ftl#L1731",
       "text": "jouzu-cli-runtime-reportHeading = 起動時に取得したパッケージのパスと SHA-256 ハッシュ:"
     },
     {
@@ -102,7 +102,7 @@
       "line": 513,
       "path": "packages/cli/locales/zh-Hans/cli.ftl",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/locales/zh-Hans/cli.ftl#L513",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/locales/zh-Hans/cli.ftl#L513",
       "text": "jouzu-cli-selfUpdate-integrityMismatch = 下载的更新未通过 SHA-512 验证"
     },
     {
@@ -110,23 +110,23 @@
       "line": 1030,
       "path": "packages/cli/locales/zh-Hans/cli.ftl",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/locales/zh-Hans/cli.ftl#L1030",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/locales/zh-Hans/cli.ftl#L1030",
       "text": "jouzu-cli-textguard-review-fingerprint = 内容指纹（SHA-256）：{ $digest }"
     },
     {
       "category": "work-item-or-milestone-reference",
-      "line": 1771,
+      "line": 1778,
       "path": "packages/cli/locales/zh-Hans/cli.ftl",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/locales/zh-Hans/cli.ftl#L1771",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/locales/zh-Hans/cli.ftl#L1778",
       "text": "# package name, a path, a version, a start timestamp, and a SHA-256 hash are"
     },
     {
       "category": "work-item-or-milestone-reference",
-      "line": 1782,
+      "line": 1789,
       "path": "packages/cli/locales/zh-Hans/cli.ftl",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/locales/zh-Hans/cli.ftl#L1782",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/locales/zh-Hans/cli.ftl#L1789",
       "text": "jouzu-cli-runtime-reportHeading = 启动时捕获的包路径和 SHA-256 哈希："
     },
     {
@@ -134,7 +134,7 @@
       "line": 466,
       "path": "packages/cli/locales/zh-Hant/cli.ftl",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/locales/zh-Hant/cli.ftl#L466",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/locales/zh-Hant/cli.ftl#L466",
       "text": "jouzu-cli-selfUpdate-integrityMismatch = 下載的更新未通過 SHA-512 驗證"
     },
     {
@@ -142,23 +142,23 @@
       "line": 921,
       "path": "packages/cli/locales/zh-Hant/cli.ftl",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/locales/zh-Hant/cli.ftl#L921",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/locales/zh-Hant/cli.ftl#L921",
       "text": "jouzu-cli-textguard-review-fingerprint = 內容指紋（SHA-256）: { $digest }"
     },
     {
       "category": "work-item-or-milestone-reference",
-      "line": 1601,
+      "line": 1608,
       "path": "packages/cli/locales/zh-Hant/cli.ftl",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/locales/zh-Hant/cli.ftl#L1601",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/locales/zh-Hant/cli.ftl#L1608",
       "text": "jouzu-cli-runtime-reportHeading = 啟動時擷取的套件路徑與 SHA-256 雜湊:"
     },
     {
       "category": "work-item-or-milestone-reference",
-      "line": 55,
+      "line": 57,
       "path": "packages/cli/src/args.ts",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/args.ts#L55",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/args.ts#L57",
       "text": " * milestone localizes the inner text without touching the call sites."
     },
     {
@@ -166,7 +166,7 @@
       "line": 266,
       "path": "packages/cli/src/catalog-sources.ts",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/catalog-sources.ts#L266",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/catalog-sources.ts#L266",
       "text": "\tconst local = host === \"localhost\" || host === \"127.0.0.1\" || host === \"[::1]\";"
     },
     {
@@ -174,7 +174,7 @@
       "line": 271,
       "path": "packages/cli/src/catalog-sources.ts",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/catalog-sources.ts#L271",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/catalog-sources.ts#L271",
       "text": "\treturn parsed.hostname === \"localhost\" || parsed.hostname === \"127.0.0.1\" || parsed.hostname === \"[::1]\";"
     },
     {
@@ -182,7 +182,7 @@
       "line": 8,
       "path": "packages/cli/src/human-messages.ts",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/human-messages.ts#L8",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/human-messages.ts#L8",
       "text": " * is resolved only for the human stream. A later localization milestone replaces"
     },
     {
@@ -190,7 +190,7 @@
       "line": 51,
       "path": "packages/cli/src/language-choice.ts",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/language-choice.ts#L51",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/language-choice.ts#L51",
       "text": "\t/** The BCP-47 tag, shared by the interface and response language sets. */"
     },
     {
@@ -198,7 +198,7 @@
       "line": 89,
       "path": "packages/cli/src/language-choice.ts",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/language-choice.ts#L89",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/language-choice.ts#L89",
       "text": " * Parse an answer as a candidate: a one-based number, a BCP-47 tag, or a"
     },
     {
@@ -206,7 +206,7 @@
       "line": 23,
       "path": "packages/cli/src/locale-catalog.ts",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/locale-catalog.ts#L23",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/locale-catalog.ts#L23",
       "text": " * `catalog.lock.json` records the catalog schema version and the SHA-256 of"
     },
     {
@@ -214,7 +214,7 @@
       "line": 98,
       "path": "packages/cli/src/locale-catalog.ts",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/locale-catalog.ts#L98",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/locale-catalog.ts#L98",
       "text": "\t/** SHA-256 of the catalog file bytes, lowercase hex. */"
     },
     {
@@ -222,7 +222,7 @@
       "line": 6,
       "path": "packages/cli/src/locale-status.ts",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/locale-status.ts#L6",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/locale-status.ts#L6",
       "text": " * against, the SHA-256 of the source `cli.ftl` at that time, and whether a"
     },
     {
@@ -230,7 +230,7 @@
       "line": 70,
       "path": "packages/cli/src/locale-status.ts",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/locale-status.ts#L70",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/locale-status.ts#L70",
       "text": "\t/** SHA-256 of the source `cli.ftl` when the translation was made, lowercase hex. */"
     },
     {
@@ -238,7 +238,7 @@
       "line": 128,
       "path": "packages/cli/src/locale-status.ts",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/locale-status.ts#L128",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/locale-status.ts#L128",
       "text": "\t\t\tthrow new Error(`catalog status sourceDigest for ${locale} must be a lowercase SHA-256`);"
     },
     {
@@ -246,7 +246,7 @@
       "line": 866,
       "path": "packages/cli/src/model-catalog.ts",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/model-catalog.ts#L866",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/model-catalog.ts#L866",
       "text": "\t\t\t\t\t\"must be lowercase SHA-256 hex\","
     },
     {
@@ -254,7 +254,7 @@
       "line": 120,
       "path": "packages/cli/src/profiles.ts",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/profiles.ts#L120",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/profiles.ts#L120",
       "text": "\t\tif (!SHA256_RE.test(asset.sha256)) throw new ProfileManifestError(`profile ${id} asset has invalid SHA-256`);"
     },
     {
@@ -262,7 +262,7 @@
       "line": 35,
       "path": "packages/cli/src/shisa-link/logout.ts",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/shisa-link/logout.ts#L35",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/shisa-link/logout.ts#L35",
       "text": "\t\tconst local = [\"localhost\", \"127.0.0.1\", \"[::1]\"].includes(url.hostname);"
     },
     {
@@ -270,7 +270,7 @@
       "line": 28,
       "path": "packages/cli/src/ui-locale.ts",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/ui-locale.ts#L28",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/ui-locale.ts#L28",
       "text": " *    any `Intl` object). Returns the runtime's default BCP-47 locale, e.g."
     },
     {
@@ -278,7 +278,7 @@
       "line": 51,
       "path": "packages/cli/src/ui-locale.ts",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/ui-locale.ts#L51",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/ui-locale.ts#L51",
       "text": " *    a BCP-47 tag and would need `LCIDToLocaleName` before normalization. NOT"
     },
     {
@@ -286,7 +286,7 @@
       "line": 657,
       "path": "packages/cli/src/ui-locale.ts",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/ui-locale.ts#L657",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/ui-locale.ts#L657",
       "text": " * The input may be a POSIX locale (`ja_JP.UTF-8`), a BCP-47 tag (`ja-JP`), or"
     },
     {
@@ -294,7 +294,7 @@
       "line": 426,
       "path": "packages/cli/src/updater.ts",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/updater.ts#L426",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/updater.ts#L426",
       "text": "\t\tthrow new UpdateError(\"npm update metadata is missing version or SHA-512 integrity\", \"invalid-registry-metadata\");"
     },
     {
@@ -302,7 +302,7 @@
       "line": 22,
       "path": "packages/cli/test/protected-values.test.mjs",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/test/protected-values.test.mjs#L22",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/test/protected-values.test.mjs#L22",
       "text": "\t\tpath: protectedPath(\"/home/user/.config/jouzu\"),"
     },
     {
@@ -310,7 +310,7 @@
       "line": 37,
       "path": "packages/cli/test/protected-values.test.mjs",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/test/protected-values.test.mjs#L37",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/test/protected-values.test.mjs#L37",
       "text": "\t\t\t\"/home/user/.config/jouzu\","
     },
     {
@@ -318,7 +318,7 @@
       "line": 90,
       "path": "packages/cli/test/protected-values.test.mjs",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/test/protected-values.test.mjs#L90",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/test/protected-values.test.mjs#L90",
       "text": "\t\tconfigDir: \"/home/user/.config/jouzu\","
     },
     {
@@ -326,7 +326,7 @@
       "line": 91,
       "path": "packages/cli/test/protected-values.test.mjs",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/test/protected-values.test.mjs#L91",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/test/protected-values.test.mjs#L91",
       "text": "\t\tagentDir: \"/home/user/.config/jouzu/agent\","
     },
     {
@@ -334,7 +334,7 @@
       "line": 92,
       "path": "packages/cli/test/protected-values.test.mjs",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/test/protected-values.test.mjs#L92",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/test/protected-values.test.mjs#L92",
       "text": "\t\tstateDir: \"/home/user/.local/state/jouzu\","
     },
     {
@@ -342,7 +342,7 @@
       "line": 93,
       "path": "packages/cli/test/protected-values.test.mjs",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/test/protected-values.test.mjs#L93",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/test/protected-values.test.mjs#L93",
       "text": "\t\tcacheDir: \"/home/user/.cache/jouzu\","
     },
     {
@@ -350,7 +350,7 @@
       "line": 94,
       "path": "packages/cli/test/protected-values.test.mjs",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/test/protected-values.test.mjs#L94",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/test/protected-values.test.mjs#L94",
       "text": "\t\tsessionDir: \"/home/user/.local/state/jouzu/sessions\","
     },
     {
@@ -358,7 +358,7 @@
       "line": 95,
       "path": "packages/cli/test/protected-values.test.mjs",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/test/protected-values.test.mjs#L95",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/test/protected-values.test.mjs#L95",
       "text": "\t\tprofileStatePath: \"/home/user/.local/state/jouzu/profile-state.json\","
     },
     {
@@ -366,7 +366,7 @@
       "line": 96,
       "path": "packages/cli/test/protected-values.test.mjs",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/test/protected-values.test.mjs#L96",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/test/protected-values.test.mjs#L96",
       "text": "\t\tbackupDir: \"/home/user/.local/state/jouzu/backups\","
     },
     {
@@ -374,7 +374,7 @@
       "line": 7,
       "path": "scripts/catalog-digest.mjs",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/scripts/catalog-digest.mjs#L7",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/scripts/catalog-digest.mjs#L7",
       "text": " * records the catalog schema version, the SHA-256 of each `cli.ftl`, and the"
     },
     {
@@ -382,7 +382,7 @@
       "line": 8,
       "path": "scripts/catalog-digest.mjs",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/scripts/catalog-digest.mjs#L8",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/scripts/catalog-digest.mjs#L8",
       "text": " * SHA-256 of every additional `*.ftl` file as `<locale>/<file>`. A locale may"
     },
     {
@@ -390,7 +390,7 @@
       "line": 25,
       "path": "scripts/check-locales.mjs",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/scripts/check-locales.mjs#L25",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/scripts/check-locales.mjs#L25",
       "text": " * 6. `catalog.lock.json` records this build's `CATALOG_VERSION` and the SHA-256"
     },
     {
@@ -398,7 +398,7 @@
       "line": 298,
       "path": "scripts/check-locales.mjs",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/scripts/check-locales.mjs#L298",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/scripts/check-locales.mjs#L298",
       "text": "\t\t\tfail(`${path}: ${locale} sourceDigest must be a lowercase SHA-256`);"
     },
     {
@@ -406,7 +406,7 @@
       "line": 607,
       "path": "scripts/ja_review.py",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/scripts/ja_review.py#L607",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/scripts/ja_review.py#L607",
       "text": "  python3 scripts/ja_review.py build --directory /tmp/jouzu-ja-review"
     },
     {
@@ -414,7 +414,7 @@
       "line": 608,
       "path": "scripts/ja_review.py",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/scripts/ja_review.py#L608",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/scripts/ja_review.py#L608",
       "text": "  python3 scripts/ja_review.py check --directory /tmp/jouzu-ja-review"
     },
     {
@@ -422,7 +422,7 @@
       "line": 609,
       "path": "scripts/ja_review.py",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/scripts/ja_review.py#L609",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/scripts/ja_review.py#L609",
       "text": "  python3 scripts/ja_review.py run --directory /tmp/jouzu-ja-review -- doctor"
     },
     {
@@ -430,7 +430,7 @@
       "line": 610,
       "path": "scripts/ja_review.py",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/scripts/ja_review.py#L610",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/scripts/ja_review.py#L610",
       "text": "  python3 scripts/ja_review.py run --directory /tmp/jouzu-ja-review -- --help"
     },
     {
@@ -438,7 +438,7 @@
       "line": 611,
       "path": "scripts/ja_review.py",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/scripts/ja_review.py#L611",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/scripts/ja_review.py#L611",
       "text": "  python3 scripts/ja_review.py run --directory /tmp/jouzu-ja-review"
     },
     {
@@ -446,7 +446,7 @@
       "line": 612,
       "path": "scripts/ja_review.py",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/scripts/ja_review.py#L612",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/scripts/ja_review.py#L612",
       "text": "  python3 scripts/ja_review.py run --directory /tmp/jouzu-ja-review --ui-locale en -- --help"
     },
     {
@@ -454,7 +454,7 @@
       "line": 36,
       "path": "scripts/ja_review_inventory.py",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/scripts/ja_review_inventory.py#L36",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/scripts/ja_review_inventory.py#L36",
       "text": "    \"personal-or-temporary-path\": re.compile(r\"/home/[^\\s/]+|/Users/[^\\s/]+|/tmp/|[A-Z]:\\\\Users\\\\\", re.I),"
     },
     {
@@ -462,7 +462,7 @@
       "line": 37,
       "path": "scripts/ja_review_inventory.py",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/scripts/ja_review_inventory.py#L37",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/scripts/ja_review_inventory.py#L37",
       "text": "    \"work-item-or-milestone-reference\": re.compile(r\"\\b[A-Z]{2,8}-?\\d{2,6}\\b|\\bmilestone\\b\"),"
     },
     {
@@ -470,7 +470,7 @@
       "line": 38,
       "path": "scripts/ja_review_inventory.py",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/scripts/ja_review_inventory.py#L38",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/scripts/ja_review_inventory.py#L38",
       "text": "    \"local-hostname\": re.compile(r\"\\b(?:localhost|[\\w.-]+\\.(?:local|internal|lan))\\b\"),"
     },
     {
@@ -478,7 +478,7 @@
       "line": 39,
       "path": "scripts/ja_review_inventory.py",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/scripts/ja_review_inventory.py#L39",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/scripts/ja_review_inventory.py#L39",
       "text": "    \"internal-operation-reference\": re.compile(r\"outside this repository|internal[- ]only|private (?:repository|runbook)|not for publication\", re.I),"
     },
     {
@@ -486,7 +486,7 @@
       "line": 557,
       "path": "scripts/ja_review_inventory.py",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/scripts/ja_review_inventory.py#L557",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/scripts/ja_review_inventory.py#L557",
       "text": "        \"boundary\": \"Heuristic flags only; examples and localhost are not necessarily private. No automatic redaction or publication approval. Source content remains unchanged.\","
     },
     {
@@ -494,7 +494,7 @@
       "line": 664,
       "path": "scripts/ja_review_inventory.py",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/scripts/ja_review_inventory.py#L664",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/scripts/ja_review_inventory.py#L664",
       "text": "                     f'<p>SHA-256: <code>{record[\"sha256\"]}</code> · {record[\"lines\"]} lines</p>')"
     },
     {
@@ -502,7 +502,7 @@
       "line": 841,
       "path": "scripts/ja_review_inventory.py",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/scripts/ja_review_inventory.py#L841",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/scripts/ja_review_inventory.py#L841",
       "text": "milestone naming conventions, local hostnames, and internal-operation references"
     },
     {
@@ -510,7 +510,7 @@
       "line": 851,
       "path": "scripts/ja_review_inventory.py",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/scripts/ja_review_inventory.py#L851",
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/scripts/ja_review_inventory.py#L851",
       "text": "[manifest.json](manifest.json) records the pin, source-file SHA-256 digests, source"
     }
   ],

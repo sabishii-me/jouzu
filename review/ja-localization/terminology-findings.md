@@ -1,6 +1,8 @@
 # Japanese Localization Terminology Findings (`catalogs.csv`)
 
-Source inventory: [`review/ja-localization/catalogs.csv`](https://github.com/shisa-ai/jouzu/blob/jouzu-ja/review/ja-localization/catalogs.csv) (1,576 Fluent message entries across `cli.ftl`, `runtime.ftl`, `localization-settings.ftl`, `profile-migration-command.ftl`, and `localization-deferral.ftl`).
+This is a historical review of source `2884de8`, not a list of unresolved defects in the current candidate. Its recommendations and the accompanying `proposed-changes.csv` record the proposals from that review, not independent language approval. Consult the [current inventory](README.md) and [current glossary](../../docs/localization-glossary.md) for the text and terminology now in use.
+
+Source inventory: [`review/ja-localization/catalogs.csv`](https://github.com/shisa-ai/jouzu/blob/46fa16a84621afaa3226e9b17e30cb93911a0e79/review/ja-localization/catalogs.csv) (1,576 Fluent message entries across `cli.ftl`, `runtime.ftl`, `localization-settings.ftl`, `profile-migration-command.ftl`, and `localization-deferral.ftl`).
 Reference glossary: [`docs/localization-glossary.md`](https://github.com/shisa-ai/jouzu/blob/2884de8cee8560810cfc29b235cd08c428469659/docs/localization-glossary.md).
 
 This document lists translations in `catalogs.csv` that violate the repository's protected-value rules, produce ungrammatical or unintelligible Japanese nominalizations, use overly literal calques for internal architecture terms, or collide across distinct product concepts.

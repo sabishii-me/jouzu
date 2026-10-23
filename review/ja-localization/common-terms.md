@@ -1,6 +1,8 @@
 # Common English Technical and Repository-Specific Terms (`catalogs.csv`)
 
-Source inventory: [`review/ja-localization/catalogs.csv`](https://github.com/shisa-ai/jouzu/blob/jouzu-ja/review/ja-localization/catalogs.csv) (1,576 Fluent message entries across `cli.ftl`, `runtime.ftl`, `localization-settings.ftl`, `profile-migration-command.ftl`, and `localization-deferral.ftl`).
+This is a historical snapshot of source `2884de8`, not the current catalog. Counts and wording below have not been recomputed. Use the [current inventory](README.md) and [current glossary](../../docs/localization-glossary.md) when reviewing a new candidate.
+
+Source inventory: [`review/ja-localization/catalogs.csv`](https://github.com/shisa-ai/jouzu/blob/46fa16a84621afaa3226e9b17e30cb93911a0e79/review/ja-localization/catalogs.csv) (1,576 Fluent message entries across `cli.ftl`, `runtime.ftl`, `localization-settings.ftl`, `profile-migration-command.ftl`, and `localization-deferral.ftl`).
 
 Untranslated identifiers—such as product/brand names (`Jouzu`, `Shisa`, `Pi`, `Camoufox`, `TextGuard`), CLI subcommands and flags, JSON keys, and Fluent `{ $variables }`—are excluded, except where an English term is translated in prose and kept in English as a UI view name.
 

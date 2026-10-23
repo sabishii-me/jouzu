@@ -27,7 +27,7 @@ import uuid
 
 # Repin these four values together when selecting a new review candidate.
 # Tests derive their fake repository identity from these constants.
-PIN = "e8da5c1c740fa66932eec9c6356218a8096e0f0b"
+PIN = "e0e3014d4855d32ba93975a834dd953c05d7e494"
 REPOSITORY = "shisa-ai/jouzu"
 VERSION = "0.2.1"
 PI_VERSION = "1.4.0"

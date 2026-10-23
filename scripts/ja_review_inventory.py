@@ -20,7 +20,7 @@ from typing import Mapping
 from urllib.parse import quote
 
 # Repin this commit and PIN_COUNTS together after validating the candidate source.
-PIN = "e8da5c1c740fa66932eec9c6356218a8096e0f0b"
+PIN = "e0e3014d4855d32ba93975a834dd953c05d7e494"
 REPOSITORY = "https://github.com/shisa-ai/jouzu"
 DEFAULT_SOURCE_MODE = "links"
 LOCALES = ("en", "ja", "zh-Hans", "zh-Hant")
@@ -159,7 +159,7 @@ class CountContract:
 # Keep all candidate count expectations here; totals and tests derive from them.
 PIN_COUNTS = CountContract(
     file_counts={
-        "cli.ftl": 1492,
+        "cli.ftl": 1493,
         "localization-deferral.ftl": 9,
         "localization-settings.ftl": 19,
         "profile-migration-command.ftl": 15,

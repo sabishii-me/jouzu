@@ -1,30 +1,30 @@
 {
-  "catalog_lock_version": "1",
-  "commit": "e8da5c1c740fa66932eec9c6356218a8096e0f0b",
+  "catalog_lock_version": "2",
+  "commit": "e0e3014d4855d32ba93975a834dd953c05d7e494",
   "counts": {
     "en": {
-      "cli.ftl": 1492,
+      "cli.ftl": 1493,
       "localization-deferral.ftl": 9,
       "localization-settings.ftl": 19,
       "profile-migration-command.ftl": 15,
       "runtime.ftl": 41
     },
     "ja": {
-      "cli.ftl": 1492,
+      "cli.ftl": 1493,
       "localization-deferral.ftl": 9,
       "localization-settings.ftl": 19,
       "profile-migration-command.ftl": 15,
       "runtime.ftl": 41
     },
     "zh-Hans": {
-      "cli.ftl": 1492,
+      "cli.ftl": 1493,
       "localization-deferral.ftl": 9,
       "localization-settings.ftl": 19,
       "profile-migration-command.ftl": 15,
       "runtime.ftl": 41
     },
     "zh-Hant": {
-      "cli.ftl": 1492,
+      "cli.ftl": 1493,
       "localization-deferral.ftl": 9,
       "localization-settings.ftl": 19,
       "profile-migration-command.ftl": 15,
@@ -34,10 +34,10 @@
   "coverage_boundaries": {
     "direct_strings": {
       "allowlist_entries": 165,
-      "checker": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/scripts/check-direct-strings.mjs",
+      "checker": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/scripts/check-direct-strings.mjs",
       "detector_executed_by_exporter": false,
       "limitation": "allowlist keys can cover multiple sites; detector shapes do not cover all hardcoded strings",
-      "source": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/scripts/direct-strings-allowlist.json",
+      "source": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/scripts/direct-strings-allowlist.json",
       "source_files": 53
     },
     "excluded": [
@@ -48,17 +48,17 @@
       "binary files",
       "vendored Unicode/security data"
     ],
-    "fluent": "all 1576 IDs in each of four locale sets; not all hardcoded UI strings",
+    "fluent": "all 1577 IDs in each of four locale sets; not all hardcoded UI strings",
     "non_fluent": "complete source links at the pinned commit; not a flattened string table",
-    "residual_english": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/release-surface-record.ts"
+    "residual_english": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/release-surface-record.ts"
   },
   "digest_boundary": "manifest excludes its own digest and SHA256SUMS; SHA256SUMS covers the manifest and all other files except itself",
   "disclosure_status": "requires disclosure review before publication; see disclosure-review.json",
   "exporter": {
     "path": "scripts/ja_review_inventory.py",
-    "sha256": "3d14722539ec580d6ecad099aea1f06e174a40ada79b658a719f0c3804bbebef"
+    "sha256": "37d21ebd2ce682a4d75dedb04f43e08a5a1bb4545bad02d7b4cbacf2a68871fb"
   },
-  "ids_per_locale": 1576,
+  "ids_per_locale": 1577,
   "locales": [
     "en",
     "ja",
@@ -71,26 +71,26 @@
     "docs/localization-zh-hant-review.md"
   ],
   "output_sha256": {
-    "README.md": "ef5c6ca93baf34d63524e3a62670497155aed2bb4ce1aa6a5295240fa5ec9d9f",
-    "catalogs.csv": "2137fcaf6ca4a6cc15306ab868b2303645d65b4426f8b92aeb3ea98b91a63b05",
-    "catalogs.html": "f934340ebe21a95cbff03b78b75d09bd8775377c720ccfc5d473a797be55a58a",
-    "catalogs.json": "9eef3b346b21c35b23c49afa80cab68eb8a1d26489c6f49f5899ee7577fe38d0",
-    "direct-strings.csv": "21bcf5052cb287b93f5e876155eee9af3aa40f9de46f6ed40ceed50aa3e4c23b",
-    "disclosure-review.json": "00269520a1cd3ce7e2ba016cefe85e0a6e003bc2d5eebd65b113ac9ecebcf27f",
-    "discovery.json": "6ccad9b85fd8e2a828697e355f291ff0782e4e6d1afd424bbc644c9fe77738ca",
-    "non-fluent.csv": "2e31dde11f3bd72cbd0a053aa51c98ad8be8de74d027452ef9e40e8dfc31088f",
-    "sources.html": "4a8d1a92a034456cd1ad26f55f3ccf5c1ae4ca6c07be6edf4df274c842b3b52f"
+    "README.md": "f85fba4080acb856c0af9590a316cf3b59d8a88a1fc55df4b8a9857141c9ca34",
+    "catalogs.csv": "62a5452e005c67f3c24f33551596b3faab657607c225807a00e6256ac3263699",
+    "catalogs.html": "5f39664b8eeb11c48c58699035cb3aa253f5c3213ec25856f6fdc96e98a9fba8",
+    "catalogs.json": "da5cae03f51f4e2c3dce5cb339e7d6e052c9eeefeded2243a540da4056beb946",
+    "direct-strings.csv": "2088dd06a7e4aa1fe4e4098368469c762e4d4919dd5dd141a26428d47372d3f7",
+    "disclosure-review.json": "f0245e71935bba8f96b7f2f8418b96282fc136d4619cbc69221d852cead414bd",
+    "discovery.json": "7186e9b749346a5a8b8e26c98635f76d70121d402cd30038c03c286a51503db4",
+    "non-fluent.csv": "b3fd505b630d744bcd09a7709ef98da39d2c5f2be05ccb503f40735a40d82122",
+    "sources.html": "b4598f84ce4f4dabebdb37036295027706f3aa350a1dff713a409e29ca321dcc"
   },
   "pin_count_contract": {
     "allowlist_entries": 165,
     "file_counts": {
-      "cli.ftl": 1492,
+      "cli.ftl": 1493,
       "localization-deferral.ftl": 9,
       "localization-settings.ftl": 19,
       "profile-migration-command.ftl": 15,
       "runtime.ftl": 41
     },
-    "ids_per_locale": 1576
+    "ids_per_locale": 1577
   },
   "repository": "https://github.com/shisa-ai/jouzu",
   "review_status": "unreviewed-in-this-review",
@@ -103,15 +103,15 @@
   "source_files": [
     {
       "anchor": "source-4cca94c202f9806d",
-      "bytes": 12470,
+      "bytes": 15346,
       "category": "additional-localization-source",
       "coverage": "exact-source-link-not-flattened",
-      "lines": 144,
+      "lines": 181,
       "path": "JA-REVIEW.md",
       "review_status": "unreviewed-in-this-review",
-      "sha256": "78e24eea58d7ad6920a080cd6ff15e493f4abc11c841858d8299c71fdb3d028b",
+      "sha256": "62358774e69fd005aeae84325c17eb58339c63f79a4c410616c954097989f8be",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/JA-REVIEW.md"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/JA-REVIEW.md"
     },
     {
       "anchor": "source-1346921f386a231c",
@@ -123,7 +123,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "3554fd3cc59309e6ce5b3a562e0149b3d1d664b626c7db67922214c6e10fdc78",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/apps/launcher/src-tauri/tauri.conf.json"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/apps/launcher/src-tauri/tauri.conf.json"
     },
     {
       "anchor": "source-7faf1db714ec5077",
@@ -135,7 +135,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "807ff38a90d0a3f90d4caa79f039d8b4c82943ae43f9d5a968b6a9d608662d97",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/apps/launcher/src/i18n.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/apps/launcher/src/i18n.ts"
     },
     {
       "anchor": "source-650b32477d6fd7a7",
@@ -147,7 +147,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "101cf924bde9c299a4072bbaf69f99dc1a885f7c26c5944c20b2dd2701ecee76",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/apps/launcher/src/recovery-text.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/apps/launcher/src/recovery-text.ts"
     },
     {
       "anchor": "source-5c8d395a64d7cebc",
@@ -159,7 +159,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "1318f3b2229deb917d74879e13a830c82a30c2749cd732e782d39aefb89fe271",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/apps/launcher/src/update-preview.tsx"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/apps/launcher/src/update-preview.tsx"
     },
     {
       "anchor": "source-17ed18489a956f32",
@@ -171,7 +171,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "8ed0c679b3a486022e0cab6c0a59df8580f8198c62e68710685ec296bdbc4a73",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/docs/configuration.md"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/docs/configuration.md"
     },
     {
       "anchor": "source-1857491a84b1cce6",
@@ -183,7 +183,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "600e16e52bd1401af1e3fdbe53a6d0e1ebe3a70d0a1d9c3237278b926c5ca369",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/docs/evaluation/per-language-eval-criteria.md"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/docs/evaluation/per-language-eval-criteria.md"
     },
     {
       "anchor": "source-2e9e022351ffe41e",
@@ -195,19 +195,19 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "fb999765b0859597ead13400c737536e9c9c4a3a60f29ff50dee7b6ffd6fa247",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/docs/localization-cjk-verification.md"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/docs/localization-cjk-verification.md"
     },
     {
       "anchor": "source-5560aaebb1a8b909",
-      "bytes": 4083,
+      "bytes": 5098,
       "category": "language-review-context",
       "coverage": "exact-source-link-not-flattened",
-      "lines": 79,
+      "lines": 95,
       "path": "docs/localization-glossary.md",
       "review_status": "unreviewed-in-this-review",
-      "sha256": "04eb67e3f483ec5b9e3699da870a7d1e0c60959b65ff56661210decdfc59f09e",
+      "sha256": "3d085d0f83c87599462e993afda2ad4f40b190f8f90f148b56f81abcbb440bc2",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/docs/localization-glossary.md"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/docs/localization-glossary.md"
     },
     {
       "anchor": "source-b40fe56a1d15d80a",
@@ -219,7 +219,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "03d5fb40951fc5241e0accc0b3e1aa36bbd897b5670e2895eafa005f2b2ef7bf",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/docs/localization-zh-hans-glossary.md"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/docs/localization-zh-hans-glossary.md"
     },
     {
       "anchor": "source-71e21ff59b7120c5",
@@ -231,7 +231,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "501bdb1c2226c98d39b62a6222e22038e2564a5d408ce8a68118db6eb6c73997",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/docs/localization-zh-hant-glossary.md"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/docs/localization-zh-hant-glossary.md"
     },
     {
       "anchor": "source-40076c7e45eea9f1",
@@ -243,7 +243,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "b0b1ddb78af0783a042d27f7928e580bb89ea7bf66ee61452f502f39b675e7f6",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/docs/localization.md"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/docs/localization.md"
     },
     {
       "anchor": "source-d63e00c4fecc9710",
@@ -255,7 +255,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "e01ce392473e1ab19993e55d8f1c64ec7d25ae723140bb9c73e20e74e9e95a5c",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/docs/palette-ux.md"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/docs/palette-ux.md"
     },
     {
       "anchor": "source-662c46e284b76f45",
@@ -267,7 +267,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "18b8d252fad1eed77320067b0b765ee238803cce953555a460318cbe7dedccc4",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/docs/profiles.md"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/docs/profiles.md"
     },
     {
       "anchor": "source-044c76ea5d4c1049",
@@ -277,9 +277,9 @@
       "lines": 27,
       "path": "packages/cli/locales/catalog-status.json",
       "review_status": "unreviewed-in-this-review",
-      "sha256": "dfae54b58f040c8c4c56e6317e2c366ec2ab4e01c623d7285c45dde620551a2d",
+      "sha256": "2bae43f393163275977591ab92e06f3fcd768d84f2ffa4ec496e6621fdb4f76e",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/locales/catalog-status.json"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/locales/catalog-status.json"
     },
     {
       "anchor": "source-4399c077b729746d",
@@ -289,21 +289,21 @@
       "lines": 27,
       "path": "packages/cli/locales/catalog.lock.json",
       "review_status": "unreviewed-in-this-review",
-      "sha256": "c8a786fe4abeb97a8f7a14230fe8d1e46040bb16580fedc5a3ba887c6179e941",
+      "sha256": "db61f3bd30ff6186d1b4276be6a320152bcfc3e9df20f2d8822eaa142f28fcb0",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/locales/catalog.lock.json"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/locales/catalog.lock.json"
     },
     {
       "anchor": "source-58c554c5ee1a910f",
-      "bytes": 134512,
+      "bytes": 134791,
       "category": "fluent-catalog",
       "coverage": "full-Fluent-file",
-      "lines": 1785,
+      "lines": 1792,
       "path": "packages/cli/locales/en/cli.ftl",
       "review_status": "unreviewed-in-this-review",
-      "sha256": "d46c15365295a30beb6590bd07838d5a02fcd35b96c51c88267ced6e926e0028",
+      "sha256": "5d9b32bc11e8dc0656759e39b4096558119f57e490c22f6243e5f1094dbc2043",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/locales/en/cli.ftl"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/locales/en/cli.ftl"
     },
     {
       "anchor": "source-1fb1e279181ecf47",
@@ -315,7 +315,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "8a609fcd4f5bfe420f0f399cbe5cca1dab3d1617c46c26a8ba29308508febece",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/locales/en/localization-deferral.ftl"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/locales/en/localization-deferral.ftl"
     },
     {
       "anchor": "source-4981011e400dfc21",
@@ -327,7 +327,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "e9feb2ef6342a2283a92f39e0509a3447cfc6328852b55a2bec9d9068b052b51",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/locales/en/localization-settings.ftl"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/locales/en/localization-settings.ftl"
     },
     {
       "anchor": "source-9dc4966d6d9eb07c",
@@ -339,7 +339,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "3e1ed9789c9f80c9f9c4d8076b3115425a5e82a5a975e1d1cea6397e7d1166e9",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/locales/en/profile-migration-command.ftl"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/locales/en/profile-migration-command.ftl"
     },
     {
       "anchor": "source-ea90e3da49b29ad3",
@@ -351,19 +351,19 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "d49b400423cfc04a8405b6ec66a0678dbc929a8f5255d4ce132bb0db722add52",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/locales/en/runtime.ftl"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/locales/en/runtime.ftl"
     },
     {
       "anchor": "source-86ae06242b16ad96",
-      "bytes": 169273,
+      "bytes": 169567,
       "category": "fluent-catalog",
       "coverage": "full-Fluent-file",
-      "lines": 1759,
+      "lines": 1766,
       "path": "packages/cli/locales/ja/cli.ftl",
       "review_status": "unreviewed-in-this-review",
-      "sha256": "2c06c077140d822ced9c7d0c705712fe020d790421fdc688afe0d1847d8909ca",
+      "sha256": "18b5963eee6264157a2786cd95c4c0e7ff4d22bca5063371328b4a55eb72df0e",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/locales/ja/cli.ftl"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/locales/ja/cli.ftl"
     },
     {
       "anchor": "source-a102547db4598a72",
@@ -375,7 +375,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "5d1ff4ae935ece7c906119bbd45a6e4a87727b25132e8965d5e4b68671940179",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/locales/ja/localization-deferral.ftl"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/locales/ja/localization-deferral.ftl"
     },
     {
       "anchor": "source-486f069ff00d8dc9",
@@ -387,7 +387,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "f6bd2f470bce56d6a55d4d2fe559b0d45bc4ad57e97e6fc4254826b9fdfcecff",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/locales/ja/localization-settings.ftl"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/locales/ja/localization-settings.ftl"
     },
     {
       "anchor": "source-a01e597997345726",
@@ -399,7 +399,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "6b5683a0923c48a69d1521e0d1d7bfda8b0b734a921133a2f33563ee80aa496e",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/locales/ja/profile-migration-command.ftl"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/locales/ja/profile-migration-command.ftl"
     },
     {
       "anchor": "source-88f662589bbd8a7f",
@@ -411,19 +411,19 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "70b495087ea56094dd8f0a0bf76fecb2bb71818fb9161c47ae8c634de6469824",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/locales/ja/runtime.ftl"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/locales/ja/runtime.ftl"
     },
     {
       "anchor": "source-fe0407df05f37070",
-      "bytes": 133408,
+      "bytes": 133719,
       "category": "fluent-catalog",
       "coverage": "full-Fluent-file",
-      "lines": 1795,
+      "lines": 1802,
       "path": "packages/cli/locales/zh-Hans/cli.ftl",
       "review_status": "unreviewed-in-this-review",
-      "sha256": "3055b9da36f8a7ed3f9922ddabca258d0006b2ef95662555695f613678f970ad",
+      "sha256": "427bdead9d56e3f04ca27335ce1311204243f4be2c63a984eabcc3d01967ddf5",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/locales/zh-Hans/cli.ftl"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/locales/zh-Hans/cli.ftl"
     },
     {
       "anchor": "source-f656825069976c99",
@@ -435,7 +435,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "8aad4d0690a7c1863c34c150916fcc2f8e5bba1fa09e660f3777cc3d7c5123c7",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/locales/zh-Hans/localization-deferral.ftl"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/locales/zh-Hans/localization-deferral.ftl"
     },
     {
       "anchor": "source-f2f36b70f99aa169",
@@ -447,7 +447,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "9f5f8c17553d1ac8e64cdff6693c65053a858bb2203f0149fb999ea7f0341cf6",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/locales/zh-Hans/localization-settings.ftl"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/locales/zh-Hans/localization-settings.ftl"
     },
     {
       "anchor": "source-0f8edf019bca8f6a",
@@ -459,7 +459,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "0f4746c4435a9235317e4c9c844a1cea5dd6099569012daa4daff1cdb89f17ff",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/locales/zh-Hans/profile-migration-command.ftl"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/locales/zh-Hans/profile-migration-command.ftl"
     },
     {
       "anchor": "source-d28d9e05845d9c3f",
@@ -471,19 +471,19 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "c09948bcd7e15c1c1df9d74a4067483edd9e692e803304128bbb2493782a89af",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/locales/zh-Hans/runtime.ftl"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/locales/zh-Hans/runtime.ftl"
     },
     {
       "anchor": "source-54e7adbc7c45b786",
-      "bytes": 123153,
+      "bytes": 123479,
       "category": "fluent-catalog",
       "coverage": "full-Fluent-file",
-      "lines": 1614,
+      "lines": 1621,
       "path": "packages/cli/locales/zh-Hant/cli.ftl",
       "review_status": "unreviewed-in-this-review",
-      "sha256": "bcd7255c581f10a3f1b46f39a2a1948a33cdf097adc8170d7ea0e8e5b0b0d058",
+      "sha256": "fe90960f56f2926bd5d36290cb3a655b817676433b2add87de8a37e7943894bc",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/locales/zh-Hant/cli.ftl"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/locales/zh-Hant/cli.ftl"
     },
     {
       "anchor": "source-352a9378e484cb83",
@@ -495,7 +495,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "5bafb9887c7970e76b29d3f2c7440060a8da464bb1abaffdd56640aa712e72f8",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/locales/zh-Hant/localization-deferral.ftl"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/locales/zh-Hant/localization-deferral.ftl"
     },
     {
       "anchor": "source-3477b1c51341bee1",
@@ -507,7 +507,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "d75f0c70a898a69eed20026cebe37060f152f9d78cafe0f5012173156abd8bb1",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/locales/zh-Hant/localization-settings.ftl"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/locales/zh-Hant/localization-settings.ftl"
     },
     {
       "anchor": "source-298f7b9094598e11",
@@ -519,7 +519,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "860619721097f5fcd659a06c403be9fca529625dfba62db3ab9685ee6d836fb0",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/locales/zh-Hant/profile-migration-command.ftl"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/locales/zh-Hant/profile-migration-command.ftl"
     },
     {
       "anchor": "source-c306221a72d85c38",
@@ -531,7 +531,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "657b8d954fc4d4286138524fcc3fcecde1e88f5e14d435c537785665ffe13eb7",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/locales/zh-Hant/runtime.ftl"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/locales/zh-Hant/runtime.ftl"
     },
     {
       "anchor": "source-04cfc84c0d10d14e",
@@ -543,7 +543,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "9459290ae8705bada5b802673f980ea19e5d636a9bed16168e4a3a7f005e5eae",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/profiles/core/assets/jouzu-anti-slop-skill.md"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/profiles/core/assets/jouzu-anti-slop-skill.md"
     },
     {
       "anchor": "source-279fe9a2827c2f9a",
@@ -555,7 +555,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "0ba681784f73a32c64226debb2ca8859684b5456ad3c3b4bdb8eb01be740d126",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/profiles/core/assets/jouzu-clear-writing-skill.md"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/profiles/core/assets/jouzu-clear-writing-skill.md"
     },
     {
       "anchor": "source-c478a5e19420f144",
@@ -567,7 +567,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "ee41f8206a797efbb364cf70d32d9dfd8b3622ae3b260c8571667a29803ac678",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/profiles/core/assets/jouzu-delegation-skill.md"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/profiles/core/assets/jouzu-delegation-skill.md"
     },
     {
       "anchor": "source-cf44e6420d8baae4",
@@ -579,7 +579,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "80c2f09bdb7f6fc10c1c3987e2307aa6c391b393ffdb0c1dbad0ed9db0d05ad6",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/profiles/core/assets/jouzu-review.md"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/profiles/core/assets/jouzu-review.md"
     },
     {
       "anchor": "source-83ea97793477dc0f",
@@ -591,7 +591,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "88b0e76ca8df7d6a36b6749f248cb51ffcd532a2ae482d3f0bb4cdf69794f3cb",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/profiles/core/assets/jouzu-source-check-skill.md"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/profiles/core/assets/jouzu-source-check-skill.md"
     },
     {
       "anchor": "source-80f68484bb38f5f3",
@@ -603,7 +603,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "cbd21435254a33045c85ccf7f9c82ea5cea43ebcb0d91fc572fa7fa20a931a9d",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/profiles/core/manifest.json"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/profiles/core/manifest.json"
     },
     {
       "anchor": "source-e7c4d88c71807c49",
@@ -615,7 +615,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "31a4e6380e2d56b637f0626f592e833fe38321feef9ada6a0b225f8173d0b8e6",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/profiles/ja/assets/APPEND_SYSTEM.md"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/profiles/ja/assets/APPEND_SYSTEM.md"
     },
     {
       "anchor": "source-84a009f4f7b98ed7",
@@ -627,7 +627,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "d3cdb9b9f4b1c7afe08647a850739edf4de7da68e4890fd98b456bf5d867c221",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/profiles/ja/manifest.json"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/profiles/ja/manifest.json"
     },
     {
       "anchor": "source-18961a41fd2be761",
@@ -639,19 +639,19 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "913458cb04d4ee596c2edd22f04afe3a06c5efe59da6aa27ad8ad3964a9b265b",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/release-extensions.json"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/release-extensions.json"
     },
     {
       "anchor": "source-cd00d2733f84f463",
-      "bytes": 19458,
+      "bytes": 21587,
       "category": "allowlisted-direct-string-source",
       "coverage": "exact-source-link-not-flattened",
-      "lines": 518,
+      "lines": 559,
       "path": "packages/cli/src/args.ts",
       "review_status": "unreviewed-in-this-review",
-      "sha256": "16a0a8cb82d50bd5c3276feb3ff134c13941a70ee7234c148a0c9eef7e6cc918",
+      "sha256": "6faf3ad1118aa0c8ecb8f3fe5abca76ca5e080d5d80c56359f8fa40ef594bbab",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/args.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/args.ts"
     },
     {
       "anchor": "source-e4643d115ea3659b",
@@ -663,7 +663,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "5b66f32d9b0bacb88bc7a97cf7972cd1b20e931505e2ebae7eab8dd828b615b2",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/camoufox-adapter.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/camoufox-adapter.ts"
     },
     {
       "anchor": "source-1f92b491bed9596c",
@@ -675,7 +675,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "17dffb64279038d8c0f3c88b24975d48073f56b1b7d9b240c1cf19e83e1fe83e",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/catalog-command.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/catalog-command.ts"
     },
     {
       "anchor": "source-ea2355c75a8cc9cd",
@@ -687,7 +687,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "7b71f89131ec9cd17e553133f4c1598e0a2e31c6edb5008cc488cdd11d23ea2f",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/catalog-sources.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/catalog-sources.ts"
     },
     {
       "anchor": "source-a8354f6e6a4f1cff",
@@ -699,19 +699,19 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "53181fdf481113b5e2eae162cc6e9f440650e87f55a03dc921baadeab0e2f367",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/classic-host-policy.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/classic-host-policy.ts"
     },
     {
       "anchor": "source-14acd65c485eafe2",
-      "bytes": 78123,
+      "bytes": 78209,
       "category": "catalog-contract-and-protected-values",
       "coverage": "exact-source-link-not-flattened",
-      "lines": 1246,
+      "lines": 1247,
       "path": "packages/cli/src/cli-messages.ts",
       "review_status": "unreviewed-in-this-review",
-      "sha256": "9745401256ccbbe68e9f6375d4cbe8606cb75493123a87293236f8df4f036ca8",
+      "sha256": "dd64e5cba34588038df6edeceefae236abf74ab9b69a11341d480eb1cb330731",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/cli-messages.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/cli-messages.ts"
     },
     {
       "anchor": "source-37b041dd38a5a1bd",
@@ -723,7 +723,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "fc184615e363ed37fa8a5443cd4ebe3bd1a07cb3c65c237a8125edb52c1eff74",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/command-report.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/command-report.ts"
     },
     {
       "anchor": "source-c42ee4c8dd0cf8e0",
@@ -735,7 +735,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "f62c742dc29a7db0bfe57f27d4d148e2e41df01c843772e7c6c1609eecfa674f",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/compaction-request.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/compaction-request.ts"
     },
     {
       "anchor": "source-29920d96f11eeaa9",
@@ -747,7 +747,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "3f2a0c714ce22c0b0946ff47d63a8d1a60cf183ffc74c7ee8b9eef6610233e7d",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/flow-control/flow-off-message.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/flow-control/flow-off-message.ts"
     },
     {
       "anchor": "source-27556aa24db196da",
@@ -759,7 +759,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "df3a96d4bd47d27d099d73ef1130af4520b9809e8bc6a1717e9f3487ee875b7b",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/flow-control/flow-pause.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/flow-control/flow-pause.ts"
     },
     {
       "anchor": "source-cc04f2f140f634f8",
@@ -771,7 +771,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "c059b4f1a222986e8078fcd050a87799dbc7981072f950a27524d561ab511b62",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/flow-control/model-input.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/flow-control/model-input.ts"
     },
     {
       "anchor": "source-975a9ea5d4f4b907",
@@ -783,7 +783,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "0efeff5e31f9b03884084fdd0cac583979e0dc5db272376101fb510dce73e090",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/flow-control/no-reply-tool.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/flow-control/no-reply-tool.ts"
     },
     {
       "anchor": "source-c3082dd02522647b",
@@ -795,7 +795,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "aec9f9a9cd966382b40b54e7e62a3ce7d9c59a1ef623c9e14279739814179278",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/flow-control/no-reply.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/flow-control/no-reply.ts"
     },
     {
       "anchor": "source-25c4077bb4b3094f",
@@ -807,7 +807,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "bbd30a7d24be9532534c887001a210d4a7f25822ff1be1a53813242632962122",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/flow-control/pi-session-ingress.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/flow-control/pi-session-ingress.ts"
     },
     {
       "anchor": "source-60b57168cf4f5abd",
@@ -819,7 +819,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "2646f8b45f888af7c219343b256937bc17ca5dc04aee0dd0f9fdc4afe2a4f6a9",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/flow-control/result-envelope.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/flow-control/result-envelope.ts"
     },
     {
       "anchor": "source-75b0e3d15367df30",
@@ -831,7 +831,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "5be1ab80baffd8dc380ca4f274f245e8e2a5fe40246b99bc4c3c488bf20738bd",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/flow-control/schedule-waits.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/flow-control/schedule-waits.ts"
     },
     {
       "anchor": "source-3a3f06cdc8d05787",
@@ -843,7 +843,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "d36af0f6a15ac31393c2d8c725db7b7fd888ce827dc88d8e7bc3ab246608c4ad",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/flow-control/subagent-waits.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/flow-control/subagent-waits.ts"
     },
     {
       "anchor": "source-3d6a868a22da906a",
@@ -855,7 +855,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "1ad4c5c746ae5625baeaa2e40d71af8f5f7000578bcc71f143181e47f147b3bb",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/flow-control/submission-store.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/flow-control/submission-store.ts"
     },
     {
       "anchor": "source-c1e3b83513c136a8",
@@ -867,7 +867,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "da0c56b020660c766c8a0ec2ce3d981ff86a8652362e3297e76d17759de398d8",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/flow-control/tool-history.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/flow-control/tool-history.ts"
     },
     {
       "anchor": "source-f97785450236aac7",
@@ -879,7 +879,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "cbe48d2a33c52ef10724b61eaed2afb6bb75b5fbf4b48d0e1125c4960a745838",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/flow-control/wait-health.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/flow-control/wait-health.ts"
     },
     {
       "anchor": "source-b630687985d85213",
@@ -891,7 +891,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "72b2cd32ad29a42ab7f16012893faf6dd5e8e147dbd3e52b43cfbed350fb92ef",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/flow-control/wait-tool-response.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/flow-control/wait-tool-response.ts"
     },
     {
       "anchor": "source-994630bb28742bc0",
@@ -903,7 +903,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "3e6e2bcc8c416fb12318a68cedc29057e940ee92ac7af8ef39359c58dafe378d",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/human-messages.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/human-messages.ts"
     },
     {
       "anchor": "source-dea7c2f28411654d",
@@ -915,7 +915,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "cc25f9fdeb38e044fca3717be5a11d367d9ba84b04ca098e5730bfe597c76dbb",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/keybinding-hints.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/keybinding-hints.ts"
     },
     {
       "anchor": "source-8f94681270dffc2e",
@@ -927,7 +927,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "2150088e4dab7dc68a1c565d0629c58ef0b2ea45404b5918940a87b0ad72b4da",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/keybindings.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/keybindings.ts"
     },
     {
       "anchor": "source-4af082217948cf31",
@@ -939,7 +939,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "c69c9a44e727144dcc5c5fc9a4e926f57109f9d34d19e05812508b12843a7ff1",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/language-choice.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/language-choice.ts"
     },
     {
       "anchor": "source-1bfe039af9ea3432",
@@ -951,7 +951,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "9f23fc40e84fc05e5ffa8ca6cdffb5ebc7ad65427774d9ee010291014922972a",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/language-contract.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/language-contract.ts"
     },
     {
       "anchor": "source-ac3d954923a7c214",
@@ -963,7 +963,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "543e8b15e4150c78b9ed2d4e35e4321bd8a662f177287ec0c79be0caa1982a14",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/language-settings.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/language-settings.ts"
     },
     {
       "anchor": "source-dc84c5add51edf8f",
@@ -973,9 +973,9 @@
       "lines": 590,
       "path": "packages/cli/src/locale-catalog.ts",
       "review_status": "unreviewed-in-this-review",
-      "sha256": "3c1efd91c3e1d889b6cb28cbc3daa9c9cbbee056bcf75e5747fbb62d6713bd55",
+      "sha256": "9fd058c1837e56ccbcb6f2ab94a4b2d7305cdb229e5047b5bf84be4d8cf49111",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/locale-catalog.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/locale-catalog.ts"
     },
     {
       "anchor": "source-18c5672cddab6b72",
@@ -987,7 +987,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "a467d513fbe95f766ec8ea7cc227740a90508d1249c43808aaece1c6eb1c2d40",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/locale-status.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/locale-status.ts"
     },
     {
       "anchor": "source-cb8b959370a1b420",
@@ -999,7 +999,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "c366e0133e0a7ccc5bdb38c2f930a3b5c1f25f51fe6253d0d432a3afd1960be4",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/localization-deferral.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/localization-deferral.ts"
     },
     {
       "anchor": "source-2725fb337a09a3ab",
@@ -1011,19 +1011,19 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "6645ee08d3187ae3a7d6ded70d16f261dfe47505943b719e3497a5de3ce1ad08",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/localization-ops.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/localization-ops.ts"
     },
     {
       "anchor": "source-94c99d714c8b06a7",
-      "bytes": 34224,
+      "bytes": 34325,
       "category": "language-contract-and-wiring",
       "coverage": "exact-source-link-not-flattened",
-      "lines": 823,
+      "lines": 828,
       "path": "packages/cli/src/main-cli.ts",
       "review_status": "unreviewed-in-this-review",
-      "sha256": "e18cef012ecf5bc67251479a10a71652fd51badc2380c323d38fd4eeff5b026a",
+      "sha256": "f8f60524fd90e206e58375c184958533cdb5d38313978f1521cb89709737737c",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/main-cli.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/main-cli.ts"
     },
     {
       "anchor": "source-30d145bdad6bbcc4",
@@ -1035,7 +1035,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "b79b271b5b321b26d5a19936c07d345e1293c87c140e847950a594adaf5bc0b0",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/model-catalog-sync.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/model-catalog-sync.ts"
     },
     {
       "anchor": "source-613e5a2d22c6c0a7",
@@ -1047,7 +1047,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "e675651f07dbc691061ad189a1cd85322bf3e2f585006eb7f97f699726d3bd7d",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/model-catalog.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/model-catalog.ts"
     },
     {
       "anchor": "source-7cc6054c8b3d5da5",
@@ -1059,7 +1059,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "ed50db7f28d0208ab52d1e2f04b6d4daef21de7884f658c7f5daf9f0e522055b",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/model-picker-state.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/model-picker-state.ts"
     },
     {
       "anchor": "source-eb6fa9f9c0b995a6",
@@ -1071,7 +1071,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "3924b9326237ad26ff1577d68f649090ad7f699bcefd871d5d41b14770c96f20",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/model-picker.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/model-picker.ts"
     },
     {
       "anchor": "source-ddb5e2ff728a10f5",
@@ -1083,7 +1083,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "9cd2328e8827917768a4221045daf7f754c7d3013c58697904cbf1038e088548",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/notifications/inbox.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/notifications/inbox.ts"
     },
     {
       "anchor": "source-c7fcd1386a430f27",
@@ -1095,7 +1095,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "5a9f3de6b99e2876eef84d0aea5a6e3402ebbb3d80df9a89e7cf3b802bb4e768",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/palette.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/palette.ts"
     },
     {
       "anchor": "source-90ccefac11036b4c",
@@ -1107,7 +1107,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "310e15c8eb30fdbe55f84f33cc503eaa70d57e4dfb67240131e29ed8bf183d8e",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/pi-import.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/pi-import.ts"
     },
     {
       "anchor": "source-3c5ccc6498ca9d45",
@@ -1119,7 +1119,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "c85c5b7eb27997292f7b333d67b11d326b97114e0cb7fb0a8f32f1745998f516",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/presentation.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/presentation.ts"
     },
     {
       "anchor": "source-c16038f4cdaefde5",
@@ -1131,7 +1131,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "5ddb753cbc89b91d2d84d28b2e8433498ba5647e5040cc32cd0940fcd304c7d1",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/profile-choice.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/profile-choice.ts"
     },
     {
       "anchor": "source-112de73ab2f17f10",
@@ -1143,7 +1143,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "8d15a461dd8a3b8243891eb6ce1e7ded581a9639d71dd3179ad1c1feac766aae",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/profile-manager.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/profile-manager.ts"
     },
     {
       "anchor": "source-0532548c33de86f6",
@@ -1155,7 +1155,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "14b01b8f4c2856958501c64e69a81dddb1f0dbaac9d35f6da849a5bd254c184e",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/profile-migration-command.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/profile-migration-command.ts"
     },
     {
       "anchor": "source-9269ee42e7d2c9f1",
@@ -1167,7 +1167,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "5827c1d9f6df818fb88895a18239a331cbf1714b53a08c2adeb3f2bb4e98eb31",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/profile-migration.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/profile-migration.ts"
     },
     {
       "anchor": "source-8a0f843c07363824",
@@ -1179,7 +1179,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "852b0b1374bca8a86add88599ee06911617663bccc0bf6e65faf1c19a054fce9",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/profiles.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/profiles.ts"
     },
     {
       "anchor": "source-0f7aac227dff27af",
@@ -1191,7 +1191,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "97925bf47ab6eea4d15c845cd9437b2966c94e76f900687ae0bb9788ebe06a24",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/release-extensions.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/release-extensions.ts"
     },
     {
       "anchor": "source-5d987737ce0ed918",
@@ -1203,7 +1203,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "7aec2d3af4fbca8ede0e7f16f26e9beba5fb5a44a52629e5c15c2cdc9cdfd976",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/release-surface-record.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/release-surface-record.ts"
     },
     {
       "anchor": "source-4d32428306a591e4",
@@ -1215,7 +1215,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "b7c16e4afb28b45a3293d630fe48880a3c23d20d34bbc3fb8d3b5cf8092f0ae6",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/runtime-output.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/runtime-output.ts"
     },
     {
       "anchor": "source-af545562501e4d33",
@@ -1227,7 +1227,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "98fae9aa4fac1a5190de97a9d4f96f77f61670a9cdab6a7c096456ebbeafdb03",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/session-labels.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/session-labels.ts"
     },
     {
       "anchor": "source-e2a67381e2831223",
@@ -1239,7 +1239,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "7b3a47e796b8b70eb7fb166fd5913f22d1a18953d4f6bad7a1f827e01a255f39",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/shisa-link/device-flow.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/shisa-link/device-flow.ts"
     },
     {
       "anchor": "source-6d925d2e5eed2d2e",
@@ -1251,7 +1251,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "90244d0097046839feab1c50c94bda474a6f6fe17fb66f51747aea5cf91f3be0",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/shisa-link/logout.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/shisa-link/logout.ts"
     },
     {
       "anchor": "source-3ba82c684a011418",
@@ -1263,7 +1263,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "57c087aacfe1167b464acf129506df51a9ba0d78bf4e8561716fd7b7b0878fcd",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/startup-settings.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/startup-settings.ts"
     },
     {
       "anchor": "source-7f19e153115f51c4",
@@ -1275,7 +1275,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "aa5c44bdbd285dbd95e73b7b95df62718a11a357481a0e7e0632e4a9141d2ef2",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/state-lock.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/state-lock.ts"
     },
     {
       "anchor": "source-2ee5eba0098e089f",
@@ -1287,7 +1287,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "455f5b6b546d08ccf12e51a028dc87cb0054bffcec5f7d57c940c1c4196f19b1",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/subagents/completion.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/subagents/completion.ts"
     },
     {
       "anchor": "source-5cd788eaaf968fc7",
@@ -1299,7 +1299,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "9e967e973faf6d6fb9b7b11d99c7166477fb1762e286aba5cbd66282bc875e81",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/subagents/context.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/subagents/context.ts"
     },
     {
       "anchor": "source-d039a72c0a06bd19",
@@ -1311,7 +1311,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "a33601c70e0dd0a79b9a38d6753d3424ed0ea01c2b1e7cb8cbe36dab92a46ef0",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/subagents/language.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/subagents/language.ts"
     },
     {
       "anchor": "source-db0ef79099726531",
@@ -1323,7 +1323,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "e90f8e709740feb33b3af3b3270e812bb8cdb7b5dbe2fdf9cafbae6d6bfa2be5",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/subagents/manager.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/subagents/manager.ts"
     },
     {
       "anchor": "source-84edf3e0551feb57",
@@ -1335,7 +1335,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "38206a8e0c8ac63cbf32bcaa9bd2bf0ea30014c96847f87dadfb0d376b564830",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/subagents/protocol.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/subagents/protocol.ts"
     },
     {
       "anchor": "source-9ebe5d057a703b7c",
@@ -1347,7 +1347,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "a8afad8e681317dfffa02c613f5222ef35f1e04418f5335da817639eb0df2ae8",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/subagents/resources.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/subagents/resources.ts"
     },
     {
       "anchor": "source-91ef2fbc9cad94cb",
@@ -1359,7 +1359,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "402c6f6710e1ac3d1ec11393154207fd7a69aebc0dbb7798a002fdf61526de56",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/subagents/roles.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/subagents/roles.ts"
     },
     {
       "anchor": "source-04da04534d6f18f9",
@@ -1371,7 +1371,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "a200d03f7e43b5240700518df9829139fe94611fb38d0e38378588437b311e0b",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/subagents/tool-policy.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/subagents/tool-policy.ts"
     },
     {
       "anchor": "source-2c106eb1315cc565",
@@ -1383,7 +1383,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "8dce4189792e4b6c9d7abdd0b7897367c3cf65642cc86155cefba594d437944e",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/subagents/worker.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/subagents/worker.ts"
     },
     {
       "anchor": "source-14856ee28bfc5fd7",
@@ -1395,7 +1395,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "16322c507662368353a312b0ce0c777ee7325e7e438aab107ef3a37b8fabdbac",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/textguard-policy.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/textguard-policy.ts"
     },
     {
       "anchor": "source-8968d91d190b743e",
@@ -1407,7 +1407,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "18fb71c2aa4899977a8cb3c15fe5bcc906a2366783d791dca91dd808f773e9e9",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/ui-locale.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/ui-locale.ts"
     },
     {
       "anchor": "source-75cc15ccd9fd9c50",
@@ -1419,7 +1419,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "f2ebc2cb68b5272ee2cf95f7f74d533325661d74c9b2b54b4a3a160f495c63a0",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/updater.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/updater.ts"
     },
     {
       "anchor": "source-f67c9be10e5a01dc",
@@ -1431,7 +1431,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "6c82ff2f7421b34197bc5c1d27af4d3fd16dad85d84383012e1102bae287b240",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/voice/realtime.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/voice/realtime.ts"
     },
     {
       "anchor": "source-3122e19d529437bd",
@@ -1443,7 +1443,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "d5cc443cc6c106ed01f2a8ea3a02e6508dadda07a554ed653400af7165bc4e0e",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/workflow.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/workflow.ts"
     },
     {
       "anchor": "source-6a04f2b9c90987e0",
@@ -1455,7 +1455,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "dd8cfb3b347711a952d1b0cfec1a813842d4fabbe871689a2653c124464e31c2",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/test/direct-strings.test.mjs"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/test/direct-strings.test.mjs"
     },
     {
       "anchor": "source-61b49416da95eafd",
@@ -1467,7 +1467,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "bca9c44ce045ecab94510f694f16bda0e8e81234e51a3ba61957b13af821baef",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/test/protected-values.test.mjs"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/test/protected-values.test.mjs"
     },
     {
       "anchor": "source-6dd889aec9a37bc9",
@@ -1479,7 +1479,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "381f2e32b50846bcf2443b1c13c24502bcc965c4b8f3d9588ab22c1e1f3b6baa",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/session-ui/src/session-line.ts"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/session-ui/src/session-line.ts"
     },
     {
       "anchor": "source-412d287e7d56c5ce",
@@ -1491,7 +1491,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "4eeac0e060fdf0777e0129bc960e759cf92173ab0a72b0f1d298463b3bd268df",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packaging/launcher/installer-messages.nsh"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packaging/launcher/installer-messages.nsh"
     },
     {
       "anchor": "source-535180433062b4a6",
@@ -1503,7 +1503,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "f85a447dad56b9fae3f01531c8179ab1c87f7d32b72bcd3c9d0a67f9aa44b0c8",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packaging/launcher/installer.nsi"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packaging/launcher/installer.nsi"
     },
     {
       "anchor": "source-e07d1e603c573cac",
@@ -1515,7 +1515,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "66bc1908fdd42185afca025de97fd9035e28b955c067a20408d15ff8f87db5db",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packaging/launcher/network-acceptance.mjs"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packaging/launcher/network-acceptance.mjs"
     },
     {
       "anchor": "source-5d740ce87f36e6a8",
@@ -1527,7 +1527,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "50f5d6fcdc078131d2be43406b364d462c4d5a49b38cb20ee1970c8ce960f435",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/scripts/catalog-digest.mjs"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/scripts/catalog-digest.mjs"
     },
     {
       "anchor": "source-3b461fb8a9112c25",
@@ -1539,7 +1539,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "0b0df095c746cef95302cdbd3e2d744b2e76ccc2cdffb13001a5177d6abea929",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/scripts/check-direct-strings.mjs"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/scripts/check-direct-strings.mjs"
     },
     {
       "anchor": "source-02d611ef8b57fc81",
@@ -1551,7 +1551,7 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "359821dcd4f45be30cae8b4800272c23907a14f35c631be804c172edffae8da2",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/scripts/check-locales.mjs"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/scripts/check-locales.mjs"
     },
     {
       "anchor": "source-135336c3c24174fc",
@@ -1563,7 +1563,19 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "d1b857a2ffe175a8754970b4dfcc0d3815f7e0574bef8c3591d8dbc75f489bf3",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/scripts/direct-strings-allowlist.json"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/scripts/direct-strings-allowlist.json"
+    },
+    {
+      "anchor": "source-63917739ecfb4c1c",
+      "bytes": 3996,
+      "category": "additional-localization-source",
+      "coverage": "exact-source-link-not-flattened",
+      "lines": 124,
+      "path": "scripts/ja-review-run.mjs",
+      "review_status": "unreviewed-in-this-review",
+      "sha256": "a36fc357f0c014371ed79bad88080899ec31c65c277ed64edd8462e9c9db7426",
+      "snapshot": null,
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/scripts/ja-review-run.mjs"
     },
     {
       "anchor": "source-a4b56171e4a75e31",
@@ -1573,9 +1585,9 @@
       "lines": 674,
       "path": "scripts/ja_review.py",
       "review_status": "unreviewed-in-this-review",
-      "sha256": "7fc13d7c4232543b90888ecca96648a79e08d65ec59e1af68f79c5bf00811421",
+      "sha256": "e9ea36dcddf013002d78f9cc6c64ede93b6ccf2959a7fe8725d5476b94a2cf87",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/scripts/ja_review.py"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/scripts/ja_review.py"
     },
     {
       "anchor": "source-a72df910bc4c320a",
@@ -1585,9 +1597,9 @@
       "lines": 1043,
       "path": "scripts/ja_review_inventory.py",
       "review_status": "unreviewed-in-this-review",
-      "sha256": "60b6966bc46fc58aa169aadc24981e351c82fe39b6bc13001544ca7ca7fb7020",
+      "sha256": "3d14722539ec580d6ecad099aea1f06e174a40ada79b658a719f0c3804bbebef",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/scripts/ja_review_inventory.py"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/scripts/ja_review_inventory.py"
     },
     {
       "anchor": "source-96acacc6fe335c28",
@@ -1599,10 +1611,10 @@
       "review_status": "unreviewed-in-this-review",
       "sha256": "670d3c8bb6cd7b7d93f3cd3122b8971b15e64767837d8fdcf13f96bff8f01d90",
       "snapshot": null,
-      "source_url": "https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/upstream/pi.lock.json"
+      "source_url": "https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/upstream/pi.lock.json"
     }
   ],
   "source_mode": "links",
   "source_requirement": "exact HEAD; clean tracked and untracked worktree before and after export",
-  "total_locale_entries": 6304
+  "total_locale_entries": 6308
 }

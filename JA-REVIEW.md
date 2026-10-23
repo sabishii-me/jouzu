@@ -43,6 +43,15 @@ GitHub does not render the HTML comparison as a web page. Download the raw file,
 - Are variables such as `{ $name }` and all selection branches preserved? Commands, paths, URLs, API names, and exact source errors must not be translated.
 - When English remains, can you identify whether Jouzu, Pi, an extension, or an external service displays it?
 
+### Focused checks for this candidate
+
+- **Help:** Check complete topic messages at 48, 80, and 120 columns. Prose should wrap without splitting commands such as `jz --session` or `/textguard strict`. Copyable usage examples may exceed the terminal width. Piped help keeps each topic on one line.
+- **Catalog saves:** Check zero, one, and several models, including the count in the source list. Japanese should not contain an English count such as `5 models`. Token warnings should read as complete sentences without doubled punctuation; do not include token values in feedback.
+- **TextGuard:** Reports describe findings that did not block content, not a safety verdict or approval. Check the empty state as well as lists with findings.
+- **Sign-in:** Confirmation messages describe a deadline, not a window or dialog. Review the catalog text without deliberately interrupting authentication.
+
+The [terminology findings](review/ja-localization/terminology-findings.md), [term counts](review/ja-localization/common-terms.md), and [proposed changes](review/ja-localization/proposed-changes.csv) preserve an earlier review snapshot. They are not the current catalog or a list of unresolved defects. Use the pinned inventory above for current text.
+
 ## 3. Build and run the review candidate
 
 ### Prerequisites

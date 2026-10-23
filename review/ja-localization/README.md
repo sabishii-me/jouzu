@@ -5,9 +5,9 @@ approve a release or a translation.
 
 Source repository: `shisa-ai/jouzu`.
 
-Candidate: [`e8da5c1c740fa66932eec9c6356218a8096e0f0b`](https://github.com/shisa-ai/jouzu/tree/e8da5c1c740fa66932eec9c6356218a8096e0f0b).
-All 1,576 Fluent IDs in all four locales are included: `en`, `ja`,
-`zh-Hans`, and `zh-Hant` (6,304 locale entries). Every row
+Candidate: [`e0e3014d4855d32ba93975a834dd953c05d7e494`](https://github.com/shisa-ai/jouzu/tree/e0e3014d4855d32ba93975a834dd953c05d7e494).
+All 1,577 Fluent IDs in all four locales are included: `en`, `ja`,
+`zh-Hans`, and `zh-Hant` (6,308 locale entries). Every row
 starts with `unreviewed-in-this-review`.
 The candidate's existing review claims are retained as source evidence; they do
 not approve any row in this review. The Chinese drafts are included for reference,
@@ -40,12 +40,12 @@ not as a claim that the CLI offers them.
 
 | Source file (per locale) | IDs |
 | --- | ---: |
-| `cli.ftl` | 1492 |
+| `cli.ftl` | 1493 |
 | `localization-deferral.ftl` | 9 |
 | `localization-settings.ftl` | 19 |
 | `profile-migration-command.ftl` | 15 |
 | `runtime.ftl` | 41 |
-| **Total per locale** | **1576** |
+| **Total per locale** | **1577** |
 
 The exporter rejects duplicate IDs within or across files, missing or extra locale
 keys, mismatched file namespaces, attribute keys, placeholder names, lock digests,
@@ -61,8 +61,8 @@ Preceding comment blocks are included with each message. All comments (including
 standalone, file-level, and trailing comments) and blank lines are also retained in
 [catalogs.json](catalogs.json). The source index also provides immutable links to complete source files.
 Comments on protected values remain source evidence. Read the
-[shared glossary](https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/docs/localization-glossary.md) and
-[protected-value checks](https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/test/protected-values.test.mjs)
+[shared glossary](https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/docs/localization-glossary.md) and
+[protected-value checks](https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/test/protected-values.test.mjs)
 before proposing changes to commands, identifiers, paths, or placeholders.
 
 `same_as_en` flags exact source-value and attribute equality: `ja` 29,
@@ -73,7 +73,7 @@ complete English-language detector or a translation-quality judgment.
 
 ## Non-Fluent boundary
 
-There are 125 indexed source files, including all 20 Fluent files.
+There are 126 indexed source files, including all 20 Fluent files.
 Outside Fluent, the inventory provides **immutable links to complete source files, not a complete
 flattened string table**. TypeScript dictionaries, inline arrays, generated prompt
 text, NSIS installer syntax, and runtime language choices are not executed or
@@ -87,7 +87,7 @@ The manifest records these omissions; an absent review record is not evidence of
 
 | Source category | Files |
 | --- | ---: |
-| additional-localization-source | 5 |
+| additional-localization-source | 6 |
 | allowlisted-direct-string-source | 45 |
 | catalog-contract-and-protected-values | 8 |
 | desktop-localization | 3 |
@@ -132,23 +132,23 @@ read the linked complete source file for exact executable syntax. All 53 files
 named by the allowlist are indexed. The allowlist is an ownership/exception
 record, not a Japanese translation table or reviewer approval.
 
-Read the [exact allowlist](https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/scripts/direct-strings-allowlist.json),
-[checker and its stated detection limits](https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/scripts/check-direct-strings.mjs),
-and [checker tests](https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/test/direct-strings.test.mjs).
+Read the [exact allowlist](https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/scripts/direct-strings-allowlist.json),
+[checker and its stated detection limits](https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/scripts/check-direct-strings.mjs),
+and [checker tests](https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/test/direct-strings.test.mjs).
 One allowlist entry can cover multiple locations. This exporter validates the
 165-entry record and indexes its source
 files; it does **not** rerun the TypeScript-based detector or claim that its
 syntactic detection shapes find all hardcoded UI strings. In a built candidate,
 `node scripts/check-direct-strings.mjs --all` prints its matching file/line locations.
 
-The 1,576 Fluent rows are **not all hardcoded UI strings**. Desktop/installer
+The 1,577 Fluent rows are **not all hardcoded UI strings**. Desktop/installer
 localization, prompt prose, direct-string exceptions, dependency English, and
 dynamic/error text have separate source and ownership boundaries here.
 
 ## Residual English and ownership
 
-Read the [residual-English guide](https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/docs/localization.md) and
-[ownership record](https://github.com/shisa-ai/jouzu/blob/e8da5c1c740fa66932eec9c6356218a8096e0f0b/packages/cli/src/release-surface-record.ts).
+Read the [residual-English guide](https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/docs/localization.md) and
+[ownership record](https://github.com/shisa-ai/jouzu/blob/e0e3014d4855d32ba93975a834dd953c05d7e494/packages/cli/src/release-surface-record.ts).
 Use that commit's guide and source record for its surface counts; these count
 surfaces, not individual strings. This is a bounded ownership record, not a
 complete desktop/installer audit or a new reviewer sign-off. Upstream Pi/extension English, protected identifiers, and service-owned
@@ -180,7 +180,7 @@ can run the exporter from its repository against a clean source checkout:
 
 ```sh
 python3 -m unittest discover -s scripts -p 'test_ja_review_inventory.py' -v
-python3 scripts/ja_review_inventory.py --source /path/to/clean/candidate --repository https://github.com/shisa-ai/jouzu --expected-commit e8da5c1c740fa66932eec9c6356218a8096e0f0b --expected-ids 1576 --source-mode links --output /path/to/new/inventory
+python3 scripts/ja_review_inventory.py --source /path/to/clean/candidate --repository https://github.com/shisa-ai/jouzu --expected-commit e0e3014d4855d32ba93975a834dd953c05d7e494 --expected-ids 1577 --source-mode links --output /path/to/new/inventory
 ```
 
 Add `--check` with the same source, pin, options, and output path to compare the
