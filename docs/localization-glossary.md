@@ -38,7 +38,7 @@ another script.
 - **Product names:** `Jouzu`, `Pi`, `Shisa`, `TextGuard`, `Camoufox`.
 - **Palette product nouns:** `Jouzu Palette`, `Palette`, `Settings`,
   `Catalogs`, `Models`, `About`, `Dashboard`, `Workflow`, `Session UI`,
-  `Jouzu Help`, `Parent Context`, `Subagent`, `Fetch URL`, `Search web`.
+  `Jouzu Help`.
 - **Profile ids:** `core`, `ja`.
 - **Locale tags:** `en`, `ja`, `zh-Hans`, `zh-Hant`.
 - **Settings keys and file names:** `schemaVersion`, `uiLocale`,
@@ -59,6 +59,14 @@ A `Palette` product noun stays English even inside a translated sentence,
 because it names a view the user sees in the Palette. A term such as
 `catalog`, `session`, or `workflow` is vocabulary, not a product noun, and is
 translated; only the exact view names in the list above are protected.
+
+## Japanese terminology
+
+- **Subagent and child agent:** Japanese uses `サブエージェント` for both
+  `subagent` and `child` / `child agent` (`サブエージェントの実行`,
+  `書き込み可能なサブエージェント`), so the `/subagents` and Workflow text names
+  one kind of agent. Do not reintroduce `子エージェント`; `子セッション` (child
+  session) is a separate term.
 
 ## Catalog notation
 

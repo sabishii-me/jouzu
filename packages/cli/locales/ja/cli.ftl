@@ -526,7 +526,7 @@ jouzu-cli-help-overlay-allShortcuts = { $command }{" "} すべてのキーバイ
 jouzu-cli-help-overlay-sessionDetails = { $command }{" "} セッションの詳細
 jouzu-cli-help-overlay-runtimeBuilds = { $command }{" "} 実行環境とインストール済みビルド
 jouzu-cli-help-overlay-agentsRuns = { $command }{" "} エージェントと実行
-jouzu-cli-help-overlay-childDashboard = { $command }{" "} 子エージェントの実行ダッシュボード
+jouzu-cli-help-overlay-childDashboard = { $command }{" "} サブエージェントの実行ダッシュボード
 jouzu-cli-help-overlay-close = { $key } 閉じる
 jouzu-cli-help-overlay-shortcutSeparator = {" "}または{" "}
 jouzu-cli-help-overlay-shortcutDescription = Jouzu ヘルプを開く
@@ -738,14 +738,14 @@ jouzu-cli-modelPicker-runtimeDiagnosticsUnavailable = 実行環境の診断を�
 # The Workflow view's rows and confirmations.
 jouzu-cli-workflow-row-subagents = サブエージェント
 jouzu-cli-workflow-row-concurrency = 同時実行数
-jouzu-cli-workflow-row-childWriters = 書き込み可能な子エージェント
+jouzu-cli-workflow-row-childWriters = 書き込み可能なサブエージェント
 jouzu-cli-workflow-row-addAgent = + エージェントを追加
 jouzu-cli-workflow-row-roleId = ロール ID
 jouzu-cli-workflow-row-description = 説明
 jouzu-cli-workflow-row-model = モデル
 jouzu-cli-workflow-row-placement = 配置
 jouzu-cli-workflow-row-reviewOnly = レビューのみ
-jouzu-cli-workflow-row-childTools = 子エージェントのツール
+jouzu-cli-workflow-row-childTools = サブエージェントのツール
 jouzu-cli-workflow-row-thinking = 思考
 jouzu-cli-workflow-row-timeoutSeconds = タイムアウト（秒）
 jouzu-cli-workflow-row-maximumTurns = 最大ターン数
@@ -813,12 +813,12 @@ jouzu-cli-workflow-action-resumeAgent = エージェントを再開
 jouzu-cli-workflow-message-operationFailed = 操作に失敗しました。
 jouzu-cli-workflow-message-operationFailedRetry = 操作に失敗しました。再試行してください。
 jouzu-cli-workflow-message-couldNotLoad = Workflow を読み込めませんでした。
-jouzu-cli-workflow-message-childWritersParallel = 書き込み可能な子エージェントが同じワークスペースを共有する場合、同じファイルへの同時編集が競合することがあります。
-jouzu-cli-workflow-message-childWritersSerial = 書き込み可能な子エージェントはワークスペースごとに 1 つずつ実行されます。
+jouzu-cli-workflow-message-childWritersParallel = 書き込み可能なサブエージェントが同じワークスペースを共有する場合、同じファイルへの同時編集が競合することがあります。
+jouzu-cli-workflow-message-childWritersSerial = 書き込み可能なサブエージェントはワークスペースごとに 1 つずつ実行されます。
 jouzu-cli-workflow-hint-editAgent = エージェントを編集
 jouzu-cli-workflow-hint-inspectRun = 実行を確認
 jouzu-cli-workflow-empty-noMatchingModels = 一致するモデルがありません。検索条件を編集してください。
-jouzu-cli-workflow-empty-noChildRuns = このセッションに子エージェントの実行はありません。
+jouzu-cli-workflow-empty-noChildRuns = このセッションにサブエージェントの実行はありません。
 
 # issue #53 で `perform`、`openText`、`detail` の各 API から移したワークフロー
 # の文言。これらの引数はカタログ ID を取るため、呼び出し側のリテラル文は型検査
@@ -1308,7 +1308,7 @@ jouzu-cli-shisa-logout-envKeyRemains = { $message } SHISA_API_KEY は設定さ�
 jouzu-cli-shisa-refreshFailed = Shisa のモデル可用性を更新できませんでした。`/reload` を実行してください。
 jouzu-cli-shisa-signOutFailed = Shisa のサインアウトを完了できませんでした。サインインまたはサインアウトの完了を待ってから、`/logout shisa` を再試行してください。
 jouzu-cli-shisa-signedOutReconnect = Shisa からサインアウトしました。再接続するには `/login shisa` を実行してください。
-# 子エージェントの結果レンダラー。状態表は内部の実行状態を表示語へ対応付け、
+# サブエージェントの結果レンダラー。状態表は内部の実行状態を表示語へ対応付け、
 # 状態値は表のキーであり変更しない。実行 ID、パス、モデル ID、ツール名、
 # 件数、オフセットは引数として渡す。
 jouzu-cli-subagent-status-queued = 待機中
@@ -1331,7 +1331,7 @@ jouzu-cli-subagent-candidateIdentityLabel = 候補の識別:
 jouzu-cli-subagent-candidateHeadLabel = 候補の HEAD:
 jouzu-cli-subagent-identityStability = 識別の安定性はレビューの承認ではありません。
 jouzu-cli-subagent-moreRuns = 他に { $count } 件の実行があります。展開するか list を使用してください
-jouzu-cli-subagent-noChildRuns = 子エージェントの実行はありません。
+jouzu-cli-subagent-noChildRuns = サブエージェントの実行はありません。
 jouzu-cli-subagent-nextOffset = 次のオフセット: { $offset }
 jouzu-cli-subagent-enabled-on = サブエージェント: オン
 jouzu-cli-subagent-enabled-off = サブエージェント: オフ
@@ -1359,9 +1359,9 @@ jouzu-cli-subagent-moreOutput = さらに出力があります。
 jouzu-cli-subagent-nextByteOffset = 次のバイトオフセット: { $offset }
 jouzu-cli-subagent-endOfOutput = 利用可能な出力の終わりです。
 jouzu-cli-subagent-messageAccepted = メッセージはコントローラーに受け付けられました
-jouzu-cli-subagent-deliveryUnconfirmed = 子エージェントへの配信はまだ確認されていません。
+jouzu-cli-subagent-deliveryUnconfirmed = サブエージェントへの配信はまだ確認されていません。
 jouzu-cli-subagent-receiptLabel = 受付記録:
-jouzu-cli-subagent-cancellationRequested = 子エージェントのキャンセルを要求しました
+jouzu-cli-subagent-cancellationRequested = サブエージェントのキャンセルを要求しました
 jouzu-cli-subagent-noResult = 結果なし
 jouzu-cli-subagent-operationFailed = サブエージェントの操作に失敗しました
 
@@ -1392,13 +1392,13 @@ jouzu-cli-session-dashboard-elapsed-seconds = { $count }秒
 jouzu-cli-session-dashboard-elapsed-minutes = { $count }分
 jouzu-cli-session-dashboard-elapsed-hours = { $count }時間
 jouzu-cli-session-dashboard-elapsed-hoursMinutes = { $hours }時間{ $minutes }分
-# 子エージェントのコマンド、ワークフロー、ダッシュボードの通知。コマンド名、
+# サブエージェントのコマンド、ワークフロー、ダッシュボードの通知。コマンド名、
 # オプション語、JSON 操作の断片、実行 ID、パス、件数は引数として渡し、
 # ここには文だけを置く。
 jouzu-cli-subagent-commandHint = `/subagents`、`/subagents show`、`/subagents hide` のいずれかを使用してください。
 jouzu-cli-subagent-dashboardRestored = ダッシュボードを保存された表示モードに戻しました。
 jouzu-cli-subagent-dashboardHidden = このセッションではダッシュボードを非表示にしました。戻すには `/subagents show` を使用してください。
-jouzu-cli-subagent-paneEnabled = サブエージェントのペインを有効にしました。このセッションに子エージェントの実行があると表示されます。
+jouzu-cli-subagent-paneEnabled = サブエージェントのペインを有効にしました。このセッションにサブエージェントの実行があると表示されます。
 jouzu-cli-subagent-paneHidden = サブエージェントのペインを非表示にしました。表示するには `/subagents show` を使用してください。
 jouzu-cli-subagent-enabledNotice = このセッションではサブエージェントをオンにしました。
 jouzu-cli-subagent-disabledNotice = このセッションではサブエージェントをオフにしました。待機中および実行中のサブエージェントは停止しましたが、既存の変更は残ります。
@@ -1409,7 +1409,7 @@ jouzu-cli-subagent-workflowAgentsUnreadable = Workflow: `agents.json` を読み�
 jouzu-cli-subagent-notificationDeliveryFailed = エージェント通知の配信に失敗しました。保持されている結果は `subagent` の list と read で読んでください。待機状態になったら再読み込みして再試行してください。
 jouzu-cli-subagent-rolesDisabledReason = このセッションではユーザーがサブエージェントを無効にしています。直接作業してください。再度有効にできるのはユーザーだけです。
 jouzu-cli-subagent-fieldRequired = subagent { $op } には空でない { $field } が必要です。{ $hint } 無関係なフィールドは省略してください。インターフェースが要求する場合に限り null を使用してください。
-jouzu-cli-subagent-fieldHint-role = { $command } を呼び出し、返された子エージェントとして実行可能なロールを使用してください。
+jouzu-cli-subagent-fieldHint-role = { $command } を呼び出し、返されたサブエージェントとして実行可能なロールを使用してください。
 jouzu-cli-subagent-fieldHint-runId = { $command } を呼び出し、返された実行 ID を使用してください。
 jouzu-cli-subagent-fieldHint-batchId = この実行で配信された完了通知の batchId を使用してください。
 jouzu-cli-subagent-fieldHint-task = task に割り当てまたは追加指示を指定してください。
@@ -1426,7 +1426,7 @@ jouzu-cli-subagent-modelAmbiguous = モデル: { $selector } は { $count } 件�
 jouzu-cli-subagent-modelAmbiguousMore = 、ほか { $count } 件
 jouzu-cli-subagent-validationLength = 検証: { $label } は 1–{ $max } 文字でなければなりません。
 jouzu-cli-subagent-validationLengthMax = 検証: { $label } は最大 { $max } 文字でなければなりません。
-# 検出器が到達できない子エージェントの起動・再開・読み取り・トレースの失敗と
+# 検出器が到達できないサブエージェントの起動・再開・読み取り・トレースの失敗と
 # 復旧の文面、およびコマンドの説明と呼び出しのプレビュー。モデル、プロバイダー、
 # ロール、ワークスペース、実行 ID、バイトオフセット、JSON 操作の断片は引数と
 # して渡し、ここには文だけを置く。
@@ -1434,12 +1434,12 @@ jouzu-cli-subagent-workflowRequiresSession = Workflow にはアクティブな�
 jouzu-cli-subagent-sameModelNoSession = モデル: ロールのモデルは "{ $model }" ですが、このセッションにはモデルが選択されていません。モデルを選択するか、ロールに明示的な provider/model を指定してください。
 jouzu-cli-subagent-agentDefinitionNotFound = エージェント定義が見つかりませんでした。
 jouzu-cli-subagent-disabledForSession = このセッションではサブエージェントがオフです。ユーザーは Workflow または `/workflow on` で有効にできます。
-jouzu-cli-subagent-providerInProcess = モデル: このプロバイダーはインプロセス拡張を使用します。子エージェント用に組み込み API を持つプロバイダーを選んでください。
+jouzu-cli-subagent-providerInProcess = モデル: このプロバイダーはインプロセス拡張を使用します。サブエージェント用に組み込み API を持つプロバイダーを選んでください。
 jouzu-cli-subagent-sessionChangedBeforeStart = エージェントを起動する前にセッションが変わりました。このセッションで再試行してください。
 jouzu-cli-subagent-settingChangedBeforeLaunch = 起動前にサブエージェントの設定が変わりました。割り当てを再試行してください。
 jouzu-cli-subagent-authenticationSignIn = 認証: 選択したエージェントプロバイダーにサインインして再試行してください。
-jouzu-cli-subagent-authenticationApiKeyProvider = 認証: 子エージェントには API キーまたはトークンのプロバイダーを選んでください。
-jouzu-cli-subagent-cacheWarmingSettingsUnreadable = 子エージェントのキャッシュウォーミング設定を読み込めませんでした。再試行する前に `settings.json` を確認してください。
+jouzu-cli-subagent-authenticationApiKeyProvider = 認証: サブエージェントには API キーまたはトークンのプロバイダーを選んでください。
+jouzu-cli-subagent-cacheWarmingSettingsUnreadable = サブエージェントのキャッシュウォーミング設定を読み込めませんでした。再試行する前に `settings.json` を確認してください。
 jouzu-cli-subagent-settingChangeInProgress = サブエージェントの設定変更が終わるまで待ってください。
 jouzu-cli-subagent-parentTranscriptUnavailable = トレース: 親セッションにはまだ保存された会話記録がありません。
 jouzu-cli-subagent-mainPlacementRequired = メインセッションでの使用を許可する定義を選んでください。
@@ -1450,7 +1450,7 @@ jouzu-cli-subagent-resumeContextOmit = 再開は元のコンテキストを維�
 jouzu-cli-subagent-resumeWorkspaceKeep = 再開は元のワークスペースを維持します。別のディレクトリを使うには新しいエージェントを起動してください。
 jouzu-cli-subagent-offsetNonnegative = offset は 0 以上の整数でなければなりません。
 jouzu-cli-subagent-operationUnsupported = サポートされているサブエージェント操作を選んでください。
-jouzu-cli-subagent-commandDescription = 子エージェントの実行を開く。ダッシュボードには show または hide を使用
+jouzu-cli-subagent-commandDescription = サブエージェントの実行を開く。ダッシュボードには show または hide を使用
 jouzu-cli-subagent-workflowCommandDescription = エージェントと実行を開く。on/off/toggle でこのセッションのサブエージェントを制御
 jouzu-cli-subagent-callLabel = サブエージェント · { $operation }
 jouzu-cli-subagent-callPreparing = 準備中
@@ -1467,7 +1467,7 @@ jouzu-cli-subagent-readPastEnd = 読み取りオフセットがエージェン�
 jouzu-cli-subagent-readCharacterBoundary = 読み取りオフセットは UTF-8 文字の境界から始める必要があります。前のページの nextOffset を使用してください。
 jouzu-cli-subagent-childSessionUnavailable = トレース: 保存された子セッションを利用できません。
 jouzu-cli-subagent-taskLength = タスク: 1–32000 文字で入力してください。
-jouzu-cli-subagent-childPlacementRequired = 子エージェントとして実行できるロールを選んでください。
+jouzu-cli-subagent-childPlacementRequired = サブエージェントとして実行できるロールを選んでください。
 jouzu-cli-subagent-queueFull = エージェントのキューが満杯です。作業の終了を待ってください。
 jouzu-cli-subagent-resumeParentContextKeep = 再開は元の親コンテキストを維持します。変更するには新しいエージェントを起動してください。
 jouzu-cli-subagent-resumeActiveRun = 再開する前にこのエージェントを停止または終了してください。
