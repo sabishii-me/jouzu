@@ -35,6 +35,9 @@ export class PiNativeDispatch {
 	private readonly held = new Map<string, { id: string; revision: number; reason: string }>();
 	private readonly sessionId: string;
 	private readonly contextWrites = new Set<Promise<void>>();
+	/** Queue-removal evidence this observation owes the journal. */
+	private readonly queueWrites = new Set<Promise<void>>();
+	private queueFailure = false;
 	private contextFailure = false;
 	private active = 0;
 	private closed = false;
@@ -97,6 +100,35 @@ export class PiNativeDispatch {
 				return queue;
 			});
 		}
+		// The host clears queued input by identity-free native call, so its removal leaves no journal
+		// evidence. Record the exact identities it removed: without a newer journal revision the receipt
+		// stays `queued` at the revision the sender already accepted, and ordering drops the correction.
+		const clearQueue = session.clearQueue.bind(session);
+		this.hooks.set(session, "clearQueue", () => {
+			const before = new Map(session.agent.inspectQueuedMessages().map((item) => [item.id, item.revision]));
+			const result = clearQueue();
+			const after = new Set(session.agent.inspectQueuedMessages().map((item) => `${item.id}\u0000${item.revision}`));
+			for (const [id, observed] of [...this.queued]) {
+				// Only identities this call removed: the synchronous bracket cannot hide a claim, and an
+				// edited entry is reconciled by its own path.
+				if (before.get(id) !== observed.revision || after.has(`${id}\u0000${observed.revision}`)) continue;
+				this.queued.delete(id);
+				this.held.delete(id);
+				const write = (async () => {
+					await observed.write;
+					await this.store.recordQueueClaim(observed.operationId, { id, revision: observed.revision }, false);
+				})();
+				this.queueWrites.add(write);
+				void write.then(
+					() => this.queueWrites.delete(write),
+					() => {
+						this.queueWrites.delete(write);
+						this.queueFailure = true;
+					},
+				);
+			}
+			return result;
+		});
 		const nextTurn = session.flowNextTurn;
 		this.hooks.set(session, "flowNextTurn", async (message, cancel) => {
 			const frame = this.frame();
@@ -289,9 +321,10 @@ export class PiNativeDispatch {
 			throw new FlowLedgerError("stale", "Native dispatch observation is closed or replaced.");
 	}
 	private async drainContext(): Promise<void> {
-		await Promise.all([...this.contextWrites]);
+		await Promise.all([...this.contextWrites, ...this.queueWrites]);
 		if (this.contextFailure)
 			throw new FlowLedgerError("identity", "Non-waking context requires receipt reconciliation.");
+		if (this.queueFailure) throw new FlowLedgerError("identity", "Queue removal requires receipt reconciliation.");
 	}
 
 	async consumedSources() {
@@ -444,12 +477,14 @@ export class PiNativeDispatch {
 		this.assertActive();
 		if (this.active || this.contextWrites.size)
 			throw new FlowLedgerError("busy", "Native reset requires drained dispatch.");
+		// Reset discards the journal and the queue together, so the clear is not a removal to record.
+		this.queued.clear();
 		this.session.clearQueue();
 		for (const pending of this.deferred.values()) pending.cancel();
-		this.queued.clear();
 		this.deferred.clear();
 		this.held.clear();
 		this.contextFailure = false;
+		this.queueFailure = false;
 		this.history.reset();
 	}
 	private frame(): Frame | undefined {
@@ -556,6 +591,8 @@ export class PiNativeDispatch {
 					})
 				: Promise.resolve()
 		).then(async () => {
+			// Queue-removal evidence still owed must land before the hooks are released.
+			await Promise.allSettled([...this.queueWrites]);
 			const pending = this.session.agent.inspectQueuedMessages().filter((item) => this.queued.has(item.id));
 			for (const item of pending) {
 				const observed = this.queued.get(item.id);
