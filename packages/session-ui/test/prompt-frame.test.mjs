@@ -3,7 +3,12 @@ import { test } from "node:test";
 import { CustomEditor } from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager, stripTerminalSequences } from "@earendil-works/pi-tui";
 
-import { renderPromptFrameLines, SessionPromptEditor, terminalTextWidth } from "../dist/index.js";
+import {
+	formatSlashCommandDescription,
+	renderPromptFrameLines,
+	SessionPromptEditor,
+	terminalTextWidth,
+} from "../dist/index.js";
 
 const style = {
 	border: (value) => `\u001b[38;5;240m${value}\u001b[39m`,
@@ -325,4 +330,61 @@ test("exact Pi autocomplete rows stay outside the prompt leader", async () => {
 	assert.ok(suggestion);
 	assert.doesNotMatch(suggestion, /<leader>/);
 	assert.equal(rows.filter((line) => line.includes("<leader>")).length, 1);
+});
+
+test("localizes slash-command autocomplete descriptions while preserving argument hints and source tags", async () => {
+	assert.equal(
+		formatSlashCommandDescription("<provider> — Configure provider authentication", "プロバイダー認証を設定"),
+		"<provider> — プロバイダー認証を設定",
+	);
+	assert.equal(
+		formatSlashCommandDescription("[u] Look up Jouzu settings", "Jouzu の設定を参照"),
+		"[u] Jouzu の設定を参照",
+	);
+	assert.equal(
+		formatSlashCommandDescription("Save project trust decision for future sessions", "プロジェクトの信頼設定を保存"),
+		"プロジェクトの信頼設定を保存",
+	);
+
+	let capturedProvider;
+	const editor = new SessionPromptEditor(tui, editorTheme, { matches: editorKeybindings }, plainStyles, {
+		slashCommands: {
+			trust: "今後のセッション用にプロジェクトの信頼設定を保存",
+			login: "プロバイダー認証を設定",
+			"skill:jouzu-reference": "Jouzu の設定を参照",
+		},
+	});
+	editor.setAutocompleteProvider({
+		triggerCharacters: ["/"],
+		async getSuggestions() {
+			return {
+				prefix: "/",
+				items: [
+					{ value: "trust", label: "trust", description: "Save project trust decision for future sessions" },
+					{ value: "login", label: "login", description: "<provider> — Configure provider authentication" },
+					{
+						value: "skill:jouzu-reference",
+						label: "skill:jouzu-reference",
+						description: "[u] Look up Jouzu settings",
+					},
+					{ value: "custom-cmd", label: "custom-cmd", description: "Untouched custom command" },
+				],
+			};
+		},
+		applyCompletion(lines, cursorLine, cursorCol) {
+			return { lines, cursorLine, cursorCol };
+		},
+	});
+	capturedProvider = editor.autocompleteProvider;
+	const result = await capturedProvider.getSuggestions(["/"], 0, 1, { signal: new AbortController().signal });
+	assert.deepEqual(result.items, [
+		{ value: "trust", label: "trust", description: "今後のセッション用にプロジェクトの信頼設定を保存" },
+		{ value: "login", label: "login", description: "<provider> — プロバイダー認証を設定" },
+		{
+			value: "skill:jouzu-reference",
+			label: "skill:jouzu-reference",
+			description: "[u] Jouzu の設定を参照",
+		},
+		{ value: "custom-cmd", label: "custom-cmd", description: "Untouched custom command" },
+	]);
 });

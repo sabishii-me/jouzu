@@ -44,9 +44,21 @@ export type ModelCycleDirection = "forward" | "backward";
 export interface SessionPromptEditorOptions {
 	/** A line drawn directly above the frame, so it stays attached to the prompt whatever widgets do. */
 	topLine?: (width: number) => string | undefined;
+	/** Localized slash-command descriptions keyed by command name. */
+	slashCommands?: Readonly<Record<string, string>>;
 	onModelPicker?: (query?: string) => Promise<boolean>;
 	onModelCycle?: (direction: ModelCycleDirection) => Promise<boolean>;
 	onScopedModelsCommand?: () => Promise<boolean>;
+}
+
+/**
+ * Preserve any leading argument hint (`<provider> — `) or source tag (`[u] `)
+ * while replacing the command's description text with its localized string.
+ */
+export function formatSlashCommandDescription(current: string | undefined, localized: string): string {
+	if (!current) return localized;
+	const prefixMatch = /^(?:<[^>]+>\s+—\s+|\[[^\]]+\]\s+)/u.exec(current);
+	return prefixMatch ? `${prefixMatch[0]}${localized}` : localized;
 }
 
 /** Keep the one private Pi-TUI compatibility read isolated until a frame partition API exists. */
@@ -95,7 +107,16 @@ export class SessionPromptEditor extends CustomEditor {
 			getSuggestions: async (lines, cursorLine, cursorCol, options) => {
 				const suggestions = await provider.getSuggestions(lines, cursorLine, cursorCol, options);
 				if (!suggestions?.prefix.startsWith("/")) return suggestions;
-				const items = suggestions.items.filter((item) => item.value !== "scoped-models");
+				const items = suggestions.items
+					.filter((item) => item.value !== "scoped-models")
+					.map((item) => {
+						const localized = this.options.slashCommands?.[item.value];
+						if (!localized) return item;
+						return {
+							...item,
+							description: formatSlashCommandDescription(item.description, localized),
+						};
+					});
 				return items.length > 0 ? { ...suggestions, items } : null;
 			},
 			applyCompletion: (lines, cursorLine, cursorCol, item, prefix) =>

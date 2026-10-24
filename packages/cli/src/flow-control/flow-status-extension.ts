@@ -142,7 +142,7 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 				if (ctx) announce = (text) => ctx.ui.notify(text, "info");
 			});
 			pi.registerCommand("flow", {
-				description: "Show held, withheld, and waiting flow-control work, and repair a hold",
+				description: catalogText(catalog, "jouzu.cli.session.slash.flow"),
 				handler: async (args, ctx) => {
 					const [verb, target, choice, ...rest] = args.trim().split(/\s+/).filter(Boolean);
 					const notify = (text: string, level: "info" | "error" = "info") => ctx.ui.notify(text, level);

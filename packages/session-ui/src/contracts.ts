@@ -64,6 +64,64 @@ export const SESSION_UI_MESSAGE_IDS = Object.freeze({
 	dashboardElapsedHoursMinutes: "jouzu.cli.session.dashboard.elapsed.hoursMinutes",
 });
 
+/**
+ * The stable catalog IDs for slash-command autocomplete descriptions, keyed by
+ * the autocomplete suggestion `value` (the command name without a leading `/`).
+ */
+export const SESSION_UI_SLASH_COMMAND_IDS: Readonly<Record<string, string>> = Object.freeze({
+	settings: "jouzu.cli.session.slash.settings",
+	model: "jouzu.cli.session.slash.model",
+	tree: "jouzu.cli.session.slash.tree",
+	thinking: "jouzu.cli.session.slash.thinking",
+	export: "jouzu.cli.session.slash.export",
+	import: "jouzu.cli.session.slash.import",
+	share: "jouzu.cli.session.slash.share",
+	bug: "jouzu.cli.session.slash.bug",
+	copy: "jouzu.cli.session.slash.copy",
+	name: "jouzu.cli.session.slash.name",
+	session: "jouzu.cli.session.slash.session",
+	changelog: "jouzu.cli.session.slash.changelog",
+	hotkeys: "jouzu.cli.session.slash.hotkeys",
+	fork: "jouzu.cli.session.slash.fork",
+	clone: "jouzu.cli.session.slash.clone",
+	trust: "jouzu.cli.session.slash.trust",
+	login: "jouzu.cli.session.slash.login",
+	logout: "jouzu.cli.session.slash.logout",
+	new: "jouzu.cli.session.slash.new",
+	compact: "jouzu.cli.session.slash.compact",
+	resume: "jouzu.cli.session.slash.resume",
+	reload: "jouzu.cli.session.slash.reload",
+	quit: "jouzu.cli.session.slash.quit",
+	catalogs: "jouzu.cli.session.slash.catalogs",
+	about: "jouzu.cli.session.slash.about",
+	fast: "jouzu.cli.session.slash.fast",
+	scrollback: "jouzu.cli.session.slash.scrollback",
+	flow: "jouzu.cli.session.slash.flow",
+	mcp: "jouzu.cli.session.slash.mcp",
+	llama: "jouzu.cli.session.slash.llama",
+	tasks: "jouzu.cli.session.slash.tasks",
+	goal: "jouzu.cli.session.slash.goal",
+	multiloop: "jouzu.cli.session.slash.multiloop",
+	"schedule-prompt": "jouzu.cli.session.slash.schedulePrompt",
+	bg: "jouzu.cli.session.slash.bg",
+	"bg:list": "jouzu.cli.session.slash.bgList",
+	"bg:next": "jouzu.cli.session.slash.bgNext",
+	"bg:clear": "jouzu.cli.session.slash.bgClear",
+	"bg:run": "jouzu.cli.session.slash.bgRun",
+	"bg:stop": "jouzu.cli.session.slash.bgStop",
+	"pi-vcc": "jouzu.cli.session.slash.piVcc",
+	"pi-vcc-recall": "jouzu.cli.session.slash.piVccRecall",
+	"code-preview-health": "jouzu.cli.session.slash.codePreviewHealth",
+	"code-preview-settings": "jouzu.cli.session.slash.codePreviewSettings",
+	"jouzu-review": "jouzu.cli.session.slash.jouzuReview",
+	"skill:jouzu-reference": "jouzu.cli.session.slash.skillJouzuReference",
+	"skill:jouzu-clear-writing": "jouzu.cli.session.slash.skillJouzuClearWriting",
+	"skill:jouzu-anti-slop": "jouzu.cli.session.slash.skillJouzuAntiSlop",
+	"skill:jouzu-delegation": "jouzu.cli.session.slash.skillJouzuDelegation",
+	"skill:jouzu-source-check": "jouzu.cli.session.slash.skillJouzuSourceCheck",
+	"skill:multiloop": "jouzu.cli.session.slash.skillMultiloop",
+});
+
 export type SessionUiMessageId = (typeof SESSION_UI_MESSAGE_IDS)[keyof typeof SESSION_UI_MESSAGE_IDS];
 
 /**
@@ -120,6 +178,20 @@ export interface SessionUiText {
 	readonly statusDetached: string;
 	/** The work dashboard's section titles, attention phrases, and composed patterns. */
 	readonly dashboard: SessionUiWorkDashboardText;
+	/** Slash-command autocomplete descriptions keyed by command name. */
+	readonly slashCommands?: Readonly<Record<string, string>>;
+}
+
+/** Resolve slash-command autocomplete descriptions from a catalog. */
+export function resolveSlashCommandDescriptions(catalog: SessionUiCatalog): Readonly<Record<string, string>> {
+	const descriptions: Record<string, string> = {};
+	for (const [command, id] of Object.entries(SESSION_UI_SLASH_COMMAND_IDS)) {
+		const value = catalog.format(id);
+		if (typeof value === "string" && value.length > 0 && value !== id) {
+			descriptions[command] = value;
+		}
+	}
+	return Object.freeze(descriptions);
 }
 
 /** Resolve the Session UI display text from a catalog. */
@@ -132,6 +204,7 @@ export function sessionUiText(catalog: SessionUiCatalog): SessionUiText {
 		statusHealth: catalog.format(ids.statusHealth),
 		statusContextUnknown: catalog.format(ids.statusContextUnknown),
 		statusDetached: catalog.format(ids.statusDetached),
+		slashCommands: resolveSlashCommandDescriptions(catalog),
 		dashboard: {
 			sections: {
 				agent: catalog.format(ids.dashboardSectionAgent),

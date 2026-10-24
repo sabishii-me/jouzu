@@ -887,7 +887,7 @@ export function createScrollbackExtension(overrides: Partial<ScrollbackDependenc
 			pi.on("user_bash", () => closeActive("agent"));
 
 			pi.registerCommand("scrollback", {
-				description: "Export the active transcript to the terminal scrollback",
+				description: catalogText(deps.catalog, "jouzu.cli.session.slash.scrollback"),
 				handler: async (_args, ctx) => {
 					const notify = (message: string, type: NoticeType) => {
 						try {

@@ -5,7 +5,9 @@ import { loadCatalog } from "../dist/locale-catalog.js";
 import { renderScrollbackTranscript } from "../dist/scrollback.js";
 import {
 	createSessionUiStyles,
+	formatSlashCommandDescription,
 	renderSessionLine,
+	SESSION_UI_SLASH_COMMAND_IDS,
 	sessionUiText,
 	terminalTextWidth,
 } from "../dist/session-ui/index.js";
@@ -95,4 +97,27 @@ test("Japanese transcript export localizes labels without translating stored too
 		assert.match(text, /session-id/u);
 		assert.doesNotMatch(text, /Tool result:/u);
 	}
+});
+
+test("every built-in Pi slash command and bundled command has a localized Japanese autocomplete description", async () => {
+	const { BUILTIN_SLASH_COMMANDS } = await import(
+		"../node_modules/@earendil-works/pi-coding-agent/dist/core/slash-commands.js"
+	);
+	const jaText = sessionUiText(catalog);
+	const enText = sessionUiText(loadCatalog("en"));
+	for (const command of BUILTIN_SLASH_COMMANDS) {
+		if (command.name === "scoped-models") continue;
+		assert.ok(command.name in SESSION_UI_SLASH_COMMAND_IDS, `missing slash command ID for /${command.name}`);
+		const jaDesc = jaText.slashCommands[command.name];
+		const enDesc = enText.slashCommands[command.name];
+		assert.ok(jaDesc, `missing Japanese description for /${command.name}`);
+		assert.ok(enDesc, `missing English description for /${command.name}`);
+		assert.notEqual(jaDesc, enDesc, `/${command.name} should be localized in Japanese`);
+	}
+	assert.equal(enText.slashCommands.quit, "Quit Jouzu");
+	assert.equal(jaText.slashCommands.quit, "Jouzu を終了");
+	assert.equal(
+		formatSlashCommandDescription("<provider> — Configure provider authentication", jaText.slashCommands.login),
+		"<provider> — プロバイダー認証を設定",
+	);
 });

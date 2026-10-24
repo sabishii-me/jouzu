@@ -37,7 +37,7 @@ export function createFastModeExtension(catalog: CatalogBundle = defaultCatalog(
 				else ctx.ui.notify(message, type);
 			};
 			pi.registerCommand("fast", {
-				description: "Show Fast mode; on/off changes it for this session",
+				description: catalogText(catalog, "jouzu.cli.session.slash.fast"),
 				getArgumentCompletions: (prefix) =>
 					["on", "off"].filter((value) => value.startsWith(prefix)).map((value) => ({ value, label: value })),
 				handler: async (args, ctx) => {

@@ -1276,7 +1276,7 @@ export function createJouzuModelPicker(
 				if (activeCtx) catalogProjection.sync(pi, activeCtx, catalogs);
 			};
 			pi.registerCommand?.("catalogs", {
-				description: "Open Jouzu catalog settings",
+				description: catalogText(messageCatalog, "jouzu.cli.session.slash.catalogs"),
 				handler: async (_args, ctx) => {
 					if (ctx.mode !== "tui" || !(await openSettings())) {
 						ctx.ui.notify(
@@ -1288,7 +1288,7 @@ export function createJouzuModelPicker(
 			});
 			if (options.runtime)
 				pi.registerCommand?.("about", {
-					description: "Show Jouzu runtime and installed builds",
+					description: catalogText(messageCatalog, "jouzu.cli.session.slash.about"),
 					handler: async (_args, ctx) => {
 						activeCtx = ctx;
 						if (ctx.mode !== "tui") {

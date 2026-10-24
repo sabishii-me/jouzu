@@ -136,6 +136,7 @@ export function createSessionUiExtension(options: SessionUiExtensionOptions): In
 						(tui, theme, keybindings) =>
 							new SessionPromptEditor(tui, theme, keybindings, stylesFor(ctx.ui.theme), {
 								topLine: (width) => sessionLine?.render(width)[0],
+								...(text.slashCommands ? { slashCommands: text.slashCommands } : {}),
 								...(options.onModelPicker ? { onModelPicker: options.onModelPicker } : {}),
 								...(options.onModelCycle ? { onModelCycle: options.onModelCycle } : {}),
 								...(options.onScopedModelsCommand ? { onScopedModelsCommand: options.onScopedModelsCommand } : {}),
