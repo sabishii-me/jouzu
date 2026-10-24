@@ -25,6 +25,7 @@ import {
 	type LanguageContractArtifactLanguage,
 	type LanguageContractPreserveExact,
 	type LanguageContractReturnLanguage,
+	languageContractId,
 } from "../language-contract.js";
 import type { AgentRole } from "./roles.js";
 import { DEFAULT_ROLE_LANGUAGE_CONTRACTS, defaultLanguageContract } from "./roles.js";
@@ -163,7 +164,15 @@ export function hasLanguageLimitation(text: string | undefined): boolean {
 	return parseLanguageLimitation(text) !== undefined;
 }
 
-/** Resolve a role to a frozen contract snapshot. */
-export function roleLanguageContract(role: Pick<AgentRole, "id" | "judging">): LanguageContract {
-	return snapshotLanguageContract(defaultLanguageContract(role));
+/** Resolve a role's return language from the active parent contract, then freeze it. */
+export function roleLanguageContract(
+	role: Pick<AgentRole, "id" | "judging">,
+	parent?: LanguageContract,
+): LanguageContract {
+	const contract = defaultLanguageContract(role);
+	if (contract.returnLanguage !== "parent-response-language" || !parent || parent.taskLanguage === "preserve") {
+		return snapshotLanguageContract(contract);
+	}
+	const content = { ...contract, returnLanguage: parent.taskLanguage };
+	return snapshotLanguageContract({ ...content, contractId: languageContractId(content) });
 }

@@ -13,6 +13,7 @@ import {
 	subagentReadReceiptKey,
 } from "../flow-control/subagent-observation-extension.js";
 import { SUBAGENT_WAIT_SOURCE, type SubagentWaitSourceRequest } from "../flow-control/subagent-waits.js";
+import { readStoredLanguageContractState } from "../language-contract.js";
 import type { CatalogBundle } from "../locale-catalog.js";
 import { preferCatalogModels } from "../model-catalog-projection.js";
 import { createNotificationInbox } from "../notifications/inbox.js";
@@ -27,6 +28,7 @@ import {
 } from "./completion.js";
 import { captureChildContext, type LaunchOptions } from "./context.js";
 import { SubagentDashboard } from "./dashboard.js";
+import { roleLanguageContract } from "./language.js";
 import { type AgentRun, isActiveRun, SubagentManager, type WorkerFactory } from "./manager.js";
 import { agentModelSelectorLabel } from "./model-display.js";
 import { parseSubagentResult, runPresentation, subagentComponent } from "./render.js";
@@ -36,7 +38,6 @@ import {
 	AgentRoleStore,
 	DEFAULT_WORKSPACE_WRITERS,
 	defaultAgentConfig,
-	defaultLanguageContract,
 	digest,
 	isSameModelSelector,
 	parseAgentConfig,
@@ -212,9 +213,9 @@ export function createWorkflowIntegration(
 				userAgentDir: paths.agentDir,
 				runtimeStateDir: paths.stateDir,
 				profile: options.profile?.() ?? "core",
-				// The role's language contract travels on the launch and is snapshotted
-				// when the child starts; the parent's later language change cannot reach it.
-				languageContract: defaultLanguageContract(role),
+				// Resolve the parent's active response language, not a staged Settings change.
+				// The manager freezes this launch contract; later parent changes cannot reach it.
+				languageContract: roleLanguageContract(role, readStoredLanguageContractState(active)?.contract),
 				context: childContext,
 				task,
 				textguardFiles: options.textguardFiles === true,

@@ -18,9 +18,12 @@ import { test } from "node:test";
 import {
 	buildLanguageContract,
 	buildResponseLanguageSection,
+	createLanguageContractExtension,
 	LANGUAGE_CONTRACT_PRESERVE_EXACT,
+	languageContractId,
 } from "../dist/language-contract.js";
 import { resolveArtifactPolicy, resolveResponseLanguage } from "../dist/language-settings.js";
+import { createWorkflowIntegration } from "../dist/subagents/integration.js";
 import {
 	BACKGROUND_MONITOR_LANGUAGE_CONTRACT,
 	buildLanguageLimitationReport,
@@ -91,6 +94,29 @@ test("every default role resolves to its own family's frozen language contract",
 		assert.equal(roleLanguageContract(role).contractId, contract.contractId);
 		assert.ok(Object.isFrozen(contract), `${role.id} contract is frozen`);
 		assert.ok(Object.isFrozen(contract.preserveExact), `${role.id} preserveExact is frozen`);
+	}
+});
+
+test("parent response inheritance changes only return language and preserves role-specific contracts", () => {
+	for (const response of ["auto", "en", "ja", "zh-Hans", "zh-Hant"]) {
+		const parent = buildLanguageContract({
+			responseLanguage: resolveResponseLanguage({ config: response }),
+			artifactPolicy: resolveArtifactPolicy({ config: { comments: "ja" } }),
+		});
+		for (const role of [byId("coder"), byId("reviewer"), researcher, { id: "compactor" }, { id: "monitor" }]) {
+			const base = defaultLanguageContract(role);
+			const resolved = roleLanguageContract(role, parent);
+			assert.equal(resolved.contractId, languageContractId(resolved));
+			assert.ok(Object.isFrozen(resolved));
+			assert.equal(resolved.taskLanguage, base.taskLanguage);
+			assert.equal(resolved.artifactLanguage, base.artifactLanguage);
+			assert.equal(resolved.artifactPolicy, base.artifactPolicy);
+			assert.deepEqual(resolved.preserveExact, base.preserveExact);
+			assert.equal(
+				resolved.returnLanguage,
+				response !== "auto" && base.returnLanguage === "parent-response-language" ? response : base.returnLanguage,
+			);
+		}
 	}
 });
 
@@ -209,6 +235,85 @@ test("a parent change after launch does not reach a running child", async () => 
 		await f.manager.dispose();
 		rmSync(f.root, { recursive: true, force: true });
 	}
+});
+
+test("production child dispatch snapshots the active parent response language after next-turn Apply", async (t) => {
+	const root = mkdtempSync(join(tmpdir(), "jouzu-child-parent-language-"));
+	const paths = { agentDir: join(root, "agent"), configDir: join(root, "config"), stateDir: join(root, "state") };
+	const children = [];
+	const entries = [];
+	const handlers = new Map();
+	const api = {
+		on: (event, handler) => handlers.set(event, [...(handlers.get(event) ?? []), handler]),
+		appendEntry: (customType, data) => entries.push({ type: "custom", customType, data: structuredClone(data) }),
+		registerTool() {},
+		registerCommand() {},
+		registerMessageRenderer() {},
+		sendMessage() {},
+		getThinkingLevel: () => "off",
+	};
+	const ctx = {
+		cwd: root,
+		mode: "rpc",
+		model,
+		isIdle: () => true,
+		hasPendingMessages: () => false,
+		sessionManager: {
+			getEntries: () => entries,
+			getBranch: () => [],
+			getSessionId: () => "parent-language",
+			getLeafId: () => "leaf",
+		},
+		modelRegistry: {
+			getAvailable: () => [model],
+			getRegisteredProviderConfig: () => undefined,
+			getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "fixture-only" }),
+		},
+		ui: { notify() {} },
+	};
+	const emit = async (event, data = {}) => {
+		for (const handler of handlers.get(event) ?? []) await handler(data, ctx);
+	};
+	const language = createLanguageContractExtension({
+		responseLanguage: resolveResponseLanguage({ config: "en" }),
+		artifactPolicy: resolveArtifactPolicy({}),
+	});
+	language.extension.factory(api);
+	const integration = createWorkflowIntegration(
+		paths,
+		(launch, _emit, exit) => {
+			const child = {
+				launch,
+				send() {},
+				async stop() {
+					exit(false);
+				},
+			};
+			children.push(child);
+			return child;
+		},
+		{ dashboardVisibility() {} },
+	);
+	integration.register(api, async () => true);
+	t.after(async () => {
+		await emit("session_shutdown");
+		rmSync(root, { recursive: true, force: true });
+	});
+	await emit("session_start", { reason: "startup" });
+	language.applyLanguage(resolveResponseLanguage({ session: "ja" }));
+	const first = await integration.service.launch("coder", "Inspect the assigned source.");
+	assert.equal(children[0].launch.profile, "core");
+	assert.equal(children[0].launch.languageContract.returnLanguage, "en", "staged language is not active yet");
+	await integration.service.stop(first.id);
+	await emit("before_agent_start", { systemPromptOptions: { sections: {} } });
+	await integration.service.launch("coder", "Inspect the assigned source.");
+	const contract = children[1].launch.languageContract;
+	assert.equal(contract.returnLanguage, "ja");
+	assert.equal(contract.taskLanguage, "preserve");
+	assert.equal(contract.artifactLanguage, "project");
+	assert.ok(Object.isFrozen(contract));
+	assert.match(buildRoleLanguageSection(contract), /Return your result in Japanese\./u);
+	assert.equal(children[0].launch.languageContract.returnLanguage, "en", "the earlier launch keeps its snapshot");
 });
 
 // --- T17: workerEnvironment is independent of the UI locale -----------------
