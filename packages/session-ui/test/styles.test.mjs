@@ -8,7 +8,9 @@ const taggedTheme = {
 };
 
 test("maps Jouzu semantic roles to the retained Session UI color baseline", () => {
-	const styles = createSessionUiStyles(taggedTheme, { colorEnabled: true });
+	// The 24-bit escapes are the mapping under test, so the color mode is pinned
+	// rather than detected from TERM and COLORTERM.
+	const styles = createSessionUiStyles(taggedTheme, { colorEnabled: true, colorMode: "truecolor" });
 	assert.equal(styles.apply("prompt.border", "border"), "<borderMuted>border</borderMuted>");
 	assert.equal(styles.apply("prompt.leader", "❯"), "\u001b[38;2;103;232;249m❯\u001b[39m");
 	assert.equal(styles.apply("session.provider", "Codex"), "<dim>Codex</dim>");
@@ -45,6 +47,18 @@ test("maps custom RGB roles to the selected terminal color mode", () => {
 	const indexed = createSessionUiStyles(taggedTheme, { colorEnabled: true, colorMode: "256" });
 	assert.equal(indexed.apply("status.workspace", "work"), "\u001b[38;5;189mwork\u001b[39m");
 	const basic = createSessionUiStyles(taggedTheme, { colorEnabled: true, colorMode: "16" });
+	assert.equal(basic.apply("prompt.leader", "❯"), "\u001b[96m❯\u001b[39m");
+});
+
+test("detects the terminal color mode from the injected environment", () => {
+	const truecolor = createSessionUiStyles(taggedTheme, {
+		env: { COLORTERM: "truecolor", TERM: "xterm" },
+		stdoutIsTTY: false,
+	});
+	assert.equal(truecolor.apply("prompt.leader", "❯"), "\u001b[38;2;103;232;249m❯\u001b[39m");
+	const indexed = createSessionUiStyles(taggedTheme, { env: { TERM: "tmux-256color" }, stdoutIsTTY: false });
+	assert.equal(indexed.apply("prompt.leader", "❯"), "\u001b[38;5;81m❯\u001b[39m");
+	const basic = createSessionUiStyles(taggedTheme, { env: { TERM: "xterm" }, stdoutIsTTY: false });
 	assert.equal(basic.apply("prompt.leader", "❯"), "\u001b[96m❯\u001b[39m");
 });
 

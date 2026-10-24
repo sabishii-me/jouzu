@@ -6,6 +6,8 @@ import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
+import { seedModelCatalog } from "./live-model-catalog.mjs";
+import { packedTarballEntry } from "./pack-output.mjs";
 
 if (process.env.JOUZU_LIVE_SMOKE !== "1") {
 	throw new Error("live smoke is opt-in; set JOUZU_LIVE_SMOKE=1");
@@ -52,9 +54,9 @@ try {
 	let tarball = process.env.JOUZU_PACKED_TARBALL;
 	if (!tarball) {
 		run("npm", ["run", "build"]);
-		const packed = JSON.parse(
+		const packed = packedTarballEntry(
 			run("npm", ["pack", "--workspace", "jouzu", "--ignore-scripts", "--json", "--pack-destination", temp]).stdout,
-		)[0];
+		);
 		tarball = resolve(temp, packed.filename);
 	}
 	tarball = resolve(tarball);
@@ -70,6 +72,9 @@ try {
 	]);
 	const cli = resolve(temp, "consumer", "node_modules", "jouzu", "dist", "cli.js");
 	const jouzuHome = resolve(temp, "jouzu-home");
+	// The provider id names a catalog-backed provider, and a fresh home has no
+	// catalog. Refresh it into the run's home before the run.
+	seedModelCatalog({ cli, home: jouzuHome, env: { ...scrubbedHarnessEnv(), JOUZU_NO_UPDATE: "1" }, run });
 	const prompt = [
 		"write ツールを使い、作業ディレクトリに「確認-結果.txt」を作成してください。",
 		"内容は次の2行だけにしてください。",

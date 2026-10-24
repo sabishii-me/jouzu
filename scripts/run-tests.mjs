@@ -2,7 +2,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, globSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { availableParallelism, release } from "node:os";
-import { join, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -17,6 +17,7 @@ function limit(env, name, fallback) {
 }
 
 export function testInvocation(args, env = process.env, cwd = process.cwd()) {
+	cwd = resolve(cwd);
 	const options = [];
 	const patterns = [];
 	for (let i = 0; i < args.length; i++) {
@@ -66,6 +67,7 @@ export function testInvocation(args, env = process.env, cwd = process.cwd()) {
 	if (timingsDir && !/^[A-Za-z0-9._-]{1,80}$/.test(label))
 		throw new Error("JOUZU_TEST_TIMINGS_LABEL must be 1-80 letters, digits, dots, underscores, or hyphens.");
 	return {
+		cwd,
 		files: [...files].sort(),
 		options,
 		testTimeout: limit(env, "JOUZU_TEST_TIMEOUT_MS", 120_000),
@@ -130,7 +132,7 @@ function terminate(child) {
 }
 
 export async function runTests(invocation) {
-	const { files, options, testTimeout, suiteTimeout, timings } = invocation;
+	const { files, options, testTimeout, suiteTimeout, timings, cwd = process.cwd() } = invocation;
 	console.error(
 		`[tests] ${files.length} test files; test timeout ${testTimeout}ms; suite deadline ${suiteTimeout}ms; TAP output`,
 	);
@@ -152,10 +154,17 @@ export async function runTests(invocation) {
 		);
 	}
 	const context = timings ? timingContext(invocation) : null;
+	// Keep the checkout prefix out of each argument to stay below Windows' command-line limit.
+	const testFiles = files.map((file) => {
+		const path = relative(cwd, file);
+		// Node normalizes './' and reparses paths in test workers; keep leading '-' paths absolute.
+		return path.startsWith("-") ? file : path;
+	});
 	const child = spawn(
 		process.execPath,
-		["--test", ...reporters, `--test-timeout=${testTimeout}`, ...options, ...files],
+		["--test", ...reporters, `--test-timeout=${testTimeout}`, ...options, ...testFiles],
 		{
+			cwd,
 			env,
 			stdio: ["ignore", "inherit", "inherit"],
 			detached: process.platform !== "win32",

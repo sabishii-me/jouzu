@@ -1,8 +1,10 @@
 import type { InlineExtension } from "@earendil-works/pi-coding-agent";
+import { CatalogMessageId, catalogText, defaultCatalog } from "../cli-messages.js";
+import type { CatalogBundle } from "../locale-catalog.js";
 import { renderFlowMessage } from "./flow-message-renderer.js";
 import { COMMAND_PAUSE, INTERRUPTED_PAUSE, isProviderPause, REOPENED_PAUSE } from "./flow-pause.js";
 import { type FlowUnaccountableWork, formatFlowStatus, projectFlowStatus } from "./flow-status.js";
-import { captureFlowStatusContext, flowDisplayText } from "./flow-status-context.js";
+import { captureFlowStatusContext, flowDisplayText, FlowStatusMessageId as Id } from "./flow-status-context.js";
 import { nativeHoldHash, nativeHoldPending } from "./native-request-store.js";
 import type { PiSessionFlowIngress } from "./pi-session-ingress.js";
 import { FlowLedgerError } from "./receipt-ledger.js";
@@ -19,6 +21,8 @@ export interface FlowStatusOptions {
 	now?(): number;
 	runtimeReport?(): string;
 	tasks?(): FlowTask[];
+	/** The resolved catalog the status text is read from. Absent means the English bundle. */
+	catalog?: CatalogBundle;
 }
 
 /** Flow control is on unless the host says otherwise; a host without the switch never turns it off. */
@@ -63,6 +67,7 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 	announceHeldInput(input: { id: string; reason: string }): void;
 } {
 	const now = () => options.now?.() ?? Date.now();
+	const catalog = options.catalog ?? defaultCatalog();
 	let announce: ((text: string) => void) | undefined;
 	// A hold is reported once per reason. Re-admission runs on every release pass, so without this a
 	// single blocked message would notify for as long as it stays blocked. The set is bounded because
@@ -102,9 +107,7 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 			const holding = inspected.submissions.some((submission) => submission.admission === "held");
 			if (!holding) return;
 			announce(
-				reason === INTERRUPTED_PAUSE
-					? "Flow control paused after an interrupt. Automated work resumes on your next message. Run /flow for details."
-					: "Flow control paused after an admission failure. Pending work is held. Run /flow for details, /flow clear to release the hold, or /flow reset to reset delivery.",
+				catalogText(catalog, reason === INTERRUPTED_PAUSE ? Id.pauseAfterInterrupt : Id.pauseAfterAdmissionFailure),
 			);
 		},
 		/**
@@ -119,16 +122,17 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 			announce(heldInputNotice(input.reason));
 		},
 		factory(pi) {
-			pi.registerMessageRenderer("jouzu-flow", renderFlowMessage);
+			// The renderer takes the resolved catalog as a trailing argument, so the registered
+			// callback supplies it rather than falling back to the English default.
+			pi.registerMessageRenderer("jouzu-flow", (message, options, theme) =>
+				renderFlowMessage(message, options, theme, catalog),
+			);
 			pi.on("session_start", (_event, ctx) => {
 				if (!ctx.hasUI || !flowOn(options)) return;
 				// Kept fresh here as well as on every turn end: a refusal can arrive before the first turn.
 				announce = (text) => ctx.ui.notify(text, "info");
 				if (options.ingress().automatedPause() === REOPENED_PAUSE)
-					ctx.ui.notify(
-						"Flow control is paused after reopening this session. Inspect with /flow; resume automation with /flow resume or your next message.",
-						"info",
-					);
+					ctx.ui.notify(catalogText(catalog, Id.pausedAfterReopen), "info");
 				// A reopened session behind a recovery decision looks idle until the user runs /flow. The
 				// notice is advisory, so a failure to read the hold must not fail session start.
 				setImmediate(() => void announceRecoveryHold().catch(() => {}));
@@ -144,7 +148,9 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 					const notify = (text: string, level: "info" | "error" = "info") => ctx.ui.notify(text, level);
 					try {
 						if (verb === "runtime" && !target && !choice && !rest.length) {
-							notify(options.runtimeReport?.() ?? "Runtime diagnostics are unavailable in this session.");
+							notify(
+								options.runtimeReport?.() ?? catalogText(catalog, CatalogMessageId.flowRuntimeDiagnosticsUnavailable),
+							);
 							return;
 						}
 						if (verb === "reset") {
@@ -153,9 +159,7 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 								return;
 							}
 							if (!target) {
-								notify(
-									"Flow reset discards all queued messages, flow receipts, and waits, and releases native holds. Running jobs keep running. Try /flow clear first; it repairs a stuck reservation without discarding anything. Use reset only if /flow clear does not fix the problem: run /flow reset confirm while the session is idle.",
-								);
+								notify(catalogText(catalog, "jouzu.cli.flow.resetConfirm"));
 								return;
 							}
 							let result: Awaited<ReturnType<PiSessionFlowIngress["resetFlow"]>>;
@@ -163,23 +167,13 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 								result = await options.ingress().resetFlow();
 							} catch (error) {
 								if (error instanceof FlowLedgerError && error.code === "busy") {
-									notify(
-										"Flow reset needs an idle session. Interrupt the running turn, then run /flow reset confirm again.",
-										"error",
-									);
+									notify(catalogText(catalog, "jouzu.cli.flow.resetBusy"), "error");
 									return;
 								}
 								throw error;
 							}
-							if (result.recoveryHeld)
-								notify(
-									"Flow reset released the active reservation, but recovery evidence remains. Run /flow for the remaining decision.",
-									"error",
-								);
-							else
-								notify(
-									"Flow reset completed. Destructive flow state was discarded; jobs continue running. Continue with a new message.",
-								);
+							if (result.recoveryHeld) notify(catalogText(catalog, "jouzu.cli.flow.resetRecovery"), "error");
+							else notify(catalogText(catalog, "jouzu.cli.flow.resetDone"));
 							return;
 						}
 						// Off and on are the only controls that work in both states, so they come first.
@@ -209,14 +203,11 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 								...(off.flushed ? [`${off.flushed} retained send${off.flushed === 1 ? "" : "s"} ran natively`] : []),
 								...(off.waits ? [`${off.waits} wait${off.waits === 1 ? "" : "s"} ended`] : []),
 							];
-							const headline = verb === "off" ? "Flow control is off." : "Flow control is on again.";
-							const tail =
-								verb === "off"
-									? "Jobs, tasks, and lanes now run and report through their own delivery paths."
-									: "Held results and waits are live and run from the next idle boundary.";
+							const headline = catalogText(catalog, verb === "off" ? Id.flowOffHeadline : Id.flowOnHeadline);
+							const tail = catalogText(catalog, verb === "off" ? Id.flowOffTail : Id.flowOnTail);
 							// Off and on do not release a withheld request: that stays an explicit decision.
 							const held = options.ingress().branch().attachment.nativeRequests.recoveryBlocked
-								? " A withheld request still needs /flow clear."
+								? ` ${catalogText(catalog, Id.withheldRequestNeedsClear)}`
 								: "";
 							notify(`${headline} ${did.length ? `${did.join("; ")}. ` : ""}${tail}${held}`);
 							return;
@@ -225,7 +216,9 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 						if (!flowOn(options)) {
 							const read = verb === undefined || verb === "details";
 							notify(
-								read ? FLOW_OFF_NOTICE : `${FLOW_OFF_NOTICE}\n/flow ${verb} works again after /flow on.`,
+								read
+									? FLOW_OFF_NOTICE
+									: `${FLOW_OFF_NOTICE}\n${catalogText(catalog, Id.flowOffCommandUnavailable, { verb: verb ?? "" })}`,
 								read ? "info" : "error",
 							);
 							return;
@@ -307,7 +300,11 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 										unaccountable,
 										inspected.uncertain,
 										ingress.automatedPause(),
-										{ ...captureFlowStatusContext(submissions, requests, tasks, recovery), warnings, turnActive },
+										{
+											...captureFlowStatusContext(submissions, requests, tasks, recovery, catalog),
+											warnings,
+											turnActive,
+										},
 									),
 									now(),
 									{
@@ -315,6 +312,7 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 										page: target ? Number(target) : 1,
 										columns: process.stdout.columns ?? 100,
 									},
+									catalog,
 								),
 							);
 							return;
@@ -332,9 +330,9 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 								return;
 							}
 							notify(
-								choice === "retry"
-									? `Resolved ${target} as undelivered. Its work is eligible again and may repeat a turn the provider already answered.`
-									: `Resolved ${target} as spent. Its work will not run again for this attempt.`,
+								catalogText(catalog, choice === "retry" ? Id.resolvedUndelivered : Id.resolvedSpent, {
+									target: target ?? "",
+								}),
 							);
 							return;
 						}
@@ -362,8 +360,19 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 									"error",
 								);
 							} else if (result.releasedRequests) {
+								const releasedId =
+									result.releasedRequests === 1
+										? result.attemptId
+											? Id.flowClearReleasedOneReservation
+											: Id.flowClearReleasedOne
+										: result.attemptId
+											? Id.flowClearReleasedManyReservation
+											: Id.flowClearReleasedMany;
 								notify(
-									`Flow clear released ${result.releasedRequests} request hold${result.releasedRequests === 1 ? "" : "s"}${result.attemptId ? ` and cleared reservation ${result.attemptId}` : ""}. Receipt evidence was preserved. Continue with a new message.`,
+									catalogText(catalog, releasedId, {
+										count: result.releasedRequests,
+										...(result.attemptId ? { attemptId: result.attemptId } : {}),
+									}),
 								);
 							} else if (result.kind === "inactive") {
 								notify("Flow clear completed. No active reservation was found; continue with a new message.");
@@ -403,8 +412,8 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 							if (verb === "pause") {
 								notify(
 									ingress.pauseAutomated(COMMAND_PAUSE)
-										? "Paused every automated turn in this session. Release it with /flow resume."
-										: `Already paused: ${ingress.automatedPause()}. Release it with /flow resume.`,
+										? catalogText(catalog, Id.pausedEveryTurn)
+										: catalogText(catalog, Id.alreadyPaused, { reason: ingress.automatedPause() ?? "" }),
 								);
 								return;
 							}
@@ -429,11 +438,11 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 								return;
 							}
 							notify(
-								status === "stopped"
-									? `Stopped ${target}. Its waits are cancelled and no further automated turn runs for it. Any job it started keeps running.`
-									: status === "paused"
-										? `Paused ${target}. Its automated turns are held until /flow resume ${target}.`
-										: `Resumed ${target}. Its automated turns can run again.`,
+								catalogText(
+									catalog,
+									status === "stopped" ? Id.stoppedWork : status === "paused" ? Id.pausedWork : Id.resumedWork,
+									{ target: target ?? "" },
+								),
 							);
 							return;
 						}

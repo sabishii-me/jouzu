@@ -187,7 +187,7 @@ Run the focused interaction tests while iterating, then run `npm run check` and 
 
 ## Settings
 
-Settings has a **View: ‹ Catalogs › / ‹ About ›** choice. Move to it with `↑` from the Shisa AI row, then use `←`, `→`, or `Enter` to change the view. `/catalogs` opens Catalogs; `/about` opens About. `Tab` and `Shift+Tab` remain top-level navigation and preserve the selected Settings view. A catalog edit or confirmation blocks external routes.
+Settings has a **View: ‹ Catalogs › / ‹ About › / ‹ Language ›** choice. Move to it with `↑` from the Shisa AI row, then use `←`, `→`, or `Enter` to change the view. `/catalogs` opens Catalogs; `/about` opens About. `Tab` and `Shift+Tab` remain top-level navigation and preserve the selected Settings view. A catalog edit or confirmation blocks external routes.
 
 Catalogs includes a **Shisa AI** row above the context-limit row and the catalog list. Signed out, the row reports `Not connected` with the signup credits, and `Enter` runs device sign-in inside the panel: the verification URL and code appear in the message area, and `Esc` cancels sign-in rather than closing Settings. With a saved sign-in, the row reports its organization and dashboard address. An environment key shows `Connected · SHISA_API_KEY` without borrowing the saved sign-in's organization. `Enter` reports the dashboard address, and `D` signs out after confirmation.
 
@@ -205,6 +205,14 @@ The account row scrolls out of view when the catalog source window moves past it
 After sign-in, Jouzu refreshes authenticated catalogs and model availability in the same session. If credentials were saved but server confirmation failed or was interrupted, the panel retains the warning and asks the user to sign in again. Signup offers are not displayed as an account balance.
 
 About shows the running and installed Jouzu builds, Pi version, and process startup time. Running identity is captured at startup; a changed installation is reported separately with a restart notice. `↑`/`↓` and semantic paging controls scroll a report taller than the available area. `Esc` closes the Palette without writing settings. Outside the TUI, `/about` reports the same information as text.
+
+Language shows **Display language**, **Response language**, and **Artifact policy**, with their values and resolution sources. Move into the items with `↓`; `←` or `→` cycles the focused item's candidate as a preview. A preview changes only the Settings panel and writes nothing. `Esc` cancels it and restores the effective value; a second `Esc` closes Settings.
+
+`Enter` opens a confirmation for the previewed changes. Use `←` or `→` to choose the session or environment scope, then `Enter` to apply or `Esc` to cancel. Environment scope saves the UI locale for future launches; response and artifact choices remain session-scoped. The panel reports the result of the save. Successfully saved response and artifact choices apply on the next agent turn, without changing a reply already in progress. Display-language preview and refresh affect the Settings panel; restart after an environment-scope save to use the new language throughout the session.
+
+Display-language choices are `auto`, `English`, and `日本語`. Response-language choices also include `简体中文` and `繁體中文`; their presence does not offer Chinese UI catalogs. To set persistent response and artifact preferences, use [Configuration](configuration.md#language).
+
+The view must preserve input, selection, scroll position, and running work when it defers a change during text composition, a destructive confirmation, a streaming reply, a running tool, or an update. A language change must never answer a destructive confirmation. Changing Jouzu's display language does not translate a screen owned by Pi, a third-party extension, or a service.
 
 ## Workflow
 

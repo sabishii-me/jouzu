@@ -1,3 +1,5 @@
+import { CatalogMessageId, catalogText, defaultCatalog } from "../cli-messages.js";
+import type { CatalogBundle } from "../locale-catalog.js";
 import {
 	type FlowAdmissionChoice,
 	type FlowAdmissionState,
@@ -197,12 +199,14 @@ export class FlowReceiptLedger {
 		readonly scope: FlowScope,
 		readonly generation: number,
 		private readonly limits: { maxAttempts: number; maxBytes: number },
+		private readonly catalog: CatalogBundle,
 	) {}
 
 	static async attach(
 		store: FlowLedgerStore,
 		scope: FlowScope,
 		limits = { maxAttempts: 1024, maxBytes: 1024 * 1024 },
+		catalog: CatalogBundle = defaultCatalog(),
 	): Promise<FlowReceiptLedger> {
 		requireIdentity(scope.sessionId);
 		requireIdentity(scope.branchId);
@@ -218,7 +222,7 @@ export class FlowReceiptLedger {
 				revision: 0,
 				attempts: [],
 			};
-			FlowReceiptLedger.validate(state, captured, limits, false);
+			FlowReceiptLedger.validate(state, captured, limits, false, false, catalog);
 			if (store.archivesRequests) for (const attempt of state.attempts) consolidateFlowRequests(attempt);
 			state.admission ??= initialFlowAdmission();
 			state.generation++;
@@ -228,14 +232,14 @@ export class FlowReceiptLedger {
 				attempt.phase = hasFlowHandoff(attempt) ? "uncertain" : "cancelled";
 				attempt.reason =
 					attempt.phase === "uncertain"
-						? "Request outcome unknown after attachment loss."
-						: "Unsent handoff cancelled on reattachment.";
+						? catalogText(catalog, CatalogMessageId.flowLedgerOutcomeUnknown)
+						: catalogText(catalog, CatalogMessageId.flowLedgerHandoffCancelled);
 			}
 			delete state.activeAttemptId;
-			FlowReceiptLedger.validate(state, captured, limits, true, !!store.retired);
+			FlowReceiptLedger.validate(state, captured, limits, true, !!store.retired, catalog);
 			return { state, result: state.generation };
 		});
-		return new FlowReceiptLedger(store, captured, generation, { ...limits });
+		return new FlowReceiptLedger(store, captured, generation, { ...limits }, catalog);
 	}
 
 	private static validate(
@@ -244,6 +248,7 @@ export class FlowReceiptLedger {
 		limits: { maxAttempts: number; maxBytes: number },
 		enforceCapacity = true,
 		indexedRetirement = false,
+		catalog: CatalogBundle = defaultCatalog(),
 	) {
 		if (state.admission !== undefined) validateFlowAdmission(state.admission);
 		if (state.schemaVersion !== 1) throw new FlowLedgerError("schema", "Unsupported flow ledger schema.");
@@ -356,7 +361,12 @@ export class FlowReceiptLedger {
 			try {
 				validateFlowRequestSummary(attempt);
 			} catch (error) {
-				throw new FlowLedgerError("schema", error instanceof Error ? error.message : "Invalid request summary.");
+				throw new FlowLedgerError(
+					"schema",
+					error instanceof Error
+						? error.message
+						: catalogText(catalog, CatalogMessageId.flowLedgerInvalidRequestSummary),
+				);
 			}
 			if (
 				attempt.consumed === false &&
@@ -378,7 +388,12 @@ export class FlowReceiptLedger {
 			try {
 				validateRetiredAttempts(state.retiredAttempts);
 			} catch (error) {
-				throw new FlowLedgerError("schema", error instanceof Error ? error.message : "Invalid retired attempts.");
+				throw new FlowLedgerError(
+					"schema",
+					error instanceof Error
+						? error.message
+						: catalogText(catalog, CatalogMessageId.flowLedgerInvalidRetiredAttempts),
+				);
 			}
 		const operational =
 			indexedRetirement && state.retiredAttempts
@@ -409,7 +424,7 @@ export class FlowReceiptLedger {
 	async snapshot(): Promise<FlowLedgerState> {
 		const state = await this.store.read();
 		if (!state) throw new FlowLedgerError("schema", "Flow ledger is missing.");
-		FlowReceiptLedger.validate(state, this.scope, this.limits);
+		FlowReceiptLedger.validate(state, this.scope, this.limits, true, false, this.catalog);
 		return structuredClone(state);
 	}
 	async contextSnapshot(attemptIds: readonly string[]): Promise<FlowLedgerState> {
@@ -419,7 +434,7 @@ export class FlowReceiptLedger {
 		const state = await this.store.readContext(ids);
 		if (!state) throw new FlowLedgerError("schema", "Flow ledger is missing.");
 		// Context can reference more archived attempts than the active retention window.
-		FlowReceiptLedger.validate(state, this.scope, this.limits, false);
+		FlowReceiptLedger.validate(state, this.scope, this.limits, false, false, this.catalog);
 		return structuredClone(state);
 	}
 
@@ -435,13 +450,13 @@ export class FlowReceiptLedger {
 	private mutate<T>(update: (state: FlowLedgerState) => T, beforeCommit?: () => void): Promise<T> {
 		return this.store.transact((state) => {
 			if (!state) throw new FlowLedgerError("schema", "Flow ledger is missing.");
-			FlowReceiptLedger.validate(state, this.scope, this.limits);
+			FlowReceiptLedger.validate(state, this.scope, this.limits, true, false, this.catalog);
 			if (state.generation !== this.generation)
 				throw new FlowLedgerError("stale", "Flow attachment has been replaced.");
 			const result = update(state);
 			if (this.store.archivesRequests) for (const attempt of state.attempts) consolidateFlowRequests(attempt);
 			state.revision++;
-			FlowReceiptLedger.validate(state, this.scope, this.limits, true, !!this.store.retired);
+			FlowReceiptLedger.validate(state, this.scope, this.limits, true, !!this.store.retired, this.catalog);
 			return { state, result, beforeCommit };
 		});
 	}
@@ -600,8 +615,8 @@ export class FlowReceiptLedger {
 			}
 			if (attempt.phase === "withheld") {
 				attempt.reason = rejected
-					? "Required input or intact aggregate metadata was filtered."
-					: "No composed input survived filtering.";
+					? catalogText(this.catalog, CatalogMessageId.flowLedgerRequiredFiltered)
+					: catalogText(this.catalog, CatalogMessageId.flowLedgerNoComposedInput);
 				if (hasFlowHandoff(attempt)) attempt.phase = "running";
 				else delete state.activeAttemptId;
 			}

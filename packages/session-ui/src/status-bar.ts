@@ -1,4 +1,5 @@
 import type { Component } from "@earendil-works/pi-tui";
+import type { SessionUiText } from "./contracts.js";
 import type { SessionStatusController } from "./controller.js";
 import { fitTerminalText, padTerminalText, sanitizeTerminalText, terminalTextWidth } from "./layout.js";
 import type { SessionStatusSnapshot } from "./snapshot.js";
@@ -82,7 +83,7 @@ function runtimeStyle(id: string): SessionUiStyleRole {
 	}
 }
 
-export function buildStatusBarSegments(snapshot: SessionStatusSnapshot): StatusBarSegment[] {
+export function buildStatusBarSegments(snapshot: SessionStatusSnapshot, text: SessionUiText): StatusBarSegment[] {
 	const segments: StatusBarSegment[] = [];
 	if (snapshot.git.status === "error" || snapshot.runtime.status === "error") {
 		segments.push({
@@ -91,7 +92,7 @@ export function buildStatusBarSegments(snapshot: SessionStatusSnapshot): StatusB
 			order: 0,
 			priority: 1000,
 			style: "status.health",
-			value: "! status",
+			value: text.statusHealth,
 			compactValue: "!",
 			required: true,
 		});
@@ -106,7 +107,7 @@ export function buildStatusBarSegments(snapshot: SessionStatusSnapshot): StatusB
 	});
 	if (snapshot.git.value) {
 		const flags = gitFlags(snapshot);
-		const branch = sanitizeTerminalText(snapshot.git.value.branch ?? "detached");
+		const branch = sanitizeTerminalText(snapshot.git.value.branch ?? text.statusDetached);
 		const changes = flags ? ` [${flags}]` : "";
 		segments.push({
 			id: "git",
@@ -150,7 +151,9 @@ export function buildStatusBarSegments(snapshot: SessionStatusSnapshot): StatusB
 				: percent !== undefined && percent >= 70
 					? "status.context.warning"
 					: "status.context.normal",
-		value: context ? `${percent === undefined ? "?" : Math.round(percent)}%/${compactCount(context.window)}` : "ctx ?",
+		value: context
+			? `${percent === undefined ? "?" : Math.round(percent)}%/${compactCount(context.window)}`
+			: text.statusContextUnknown,
 		compactValue: context ? `${percent === undefined ? "?" : Math.round(percent)}%` : "?",
 		required: true,
 	});
@@ -294,8 +297,13 @@ export function renderStatusBarSegments(
 	return `${left}${" ".repeat(width - terminalTextWidth(left) - terminalTextWidth(right))}${right}`;
 }
 
-export function renderStatusBar(snapshot: SessionStatusSnapshot, width: number, styles: SessionUiStyles): string {
-	return renderStatusBarSegments(buildStatusBarSegments(snapshot), width, styles);
+export function renderStatusBar(
+	snapshot: SessionStatusSnapshot,
+	width: number,
+	styles: SessionUiStyles,
+	text: SessionUiText,
+): string {
+	return renderStatusBarSegments(buildStatusBarSegments(snapshot, text), width, styles);
 }
 
 export class StatusBarComponent implements Component {
@@ -305,6 +313,7 @@ export class StatusBarComponent implements Component {
 	constructor(
 		controller: SessionStatusController,
 		private readonly styles: SessionUiStyles,
+		private readonly text: SessionUiText,
 		requestRender: () => void,
 	) {
 		this.unsubscribe = controller.subscribe((snapshot) => {
@@ -314,7 +323,7 @@ export class StatusBarComponent implements Component {
 	}
 
 	render(width: number): string[] {
-		return [this.snapshot ? renderStatusBar(this.snapshot, width, this.styles) : ""];
+		return [this.snapshot ? renderStatusBar(this.snapshot, width, this.styles, this.text) : ""];
 	}
 
 	invalidate(): void {}

@@ -1,5 +1,6 @@
 import WebSocket from "ws";
-import { VoiceError } from "./errors.js";
+import { CatalogMessageId, catalogMessage } from "../cli-messages.js";
+import { voiceError } from "./errors.js";
 import { type VoiceSnapshot, VoiceTranscript } from "./transcript.js";
 
 export const VOICE_ENDPOINT = "wss://api.shisa.ai/ws/asr/realtime";
@@ -70,12 +71,12 @@ export function connectVoice(options: VoiceConnectionOptions): Promise<VoiceConn
 		const send = (value: unknown) => {
 			if (terminal || socket.readyState !== WebSocket.OPEN) throw new Error("Voice connection is closed.");
 			if (socket.bufferedAmount > MAX_AUDIO_BUFFER_BYTES) {
-				const error = new VoiceError("Voice network upload is too slow. Check your connection and try again.");
+				const error = voiceError(catalogMessage(CatalogMessageId.voiceUploadSlow));
 				fail(error);
 				throw error;
 			}
 			socket.send(JSON.stringify(value), (error) => {
-				if (error) fail(new VoiceError("Voice network upload failed. Check your connection and try again."));
+				if (error) fail(voiceError(catalogMessage(CatalogMessageId.voiceUploadFailed)));
 			});
 		};
 		options.signal.addEventListener("abort", cancel, { once: true });
@@ -83,13 +84,13 @@ export function connectVoice(options: VoiceConnectionOptions): Promise<VoiceConn
 			response.resume();
 			const message =
 				response.statusCode === 401
-					? "Voice authentication failed. Run /login shisa again or check SHISA_API_KEY."
+					? catalogMessage(CatalogMessageId.voiceAuthFailed)
 					: response.statusCode === 403
-						? "Voice access denied. Your Shisa key needs shisa/asr-realtime access."
-						: "Voice connection was rejected. Check service availability and try again.";
-			fail(new VoiceError(message));
+						? catalogMessage(CatalogMessageId.voiceAccessDenied)
+						: catalogMessage(CatalogMessageId.voiceConnectionRejected);
+			fail(voiceError(message));
 		});
-		socket.on("error", () => fail(new VoiceError("Voice connection failed. Check your network and Shisa access.")));
+		socket.on("error", () => fail(voiceError(catalogMessage(CatalogMessageId.voiceConnectionFailed))));
 		socket.on("message", (data, binary) => {
 			if (terminal) return;
 			try {
@@ -99,7 +100,7 @@ export function connectVoice(options: VoiceConnectionOptions): Promise<VoiceConn
 				const record = event as Record<string, unknown>;
 				if (record.type === "error" && !(record.fatal === false && typeof record.utterance_id === "string")) {
 					// Never echo remote error bodies: they may contain credentials or terminal controls.
-					fail(new VoiceError("Voice transcription failed. Check Shisa service access and try again."));
+					fail(voiceError(catalogMessage(CatalogMessageId.voiceTranscriptionFailed)));
 					return;
 				}
 				if (options.apiKey && typeof record.text === "string") {
@@ -111,13 +112,13 @@ export function connectVoice(options: VoiceConnectionOptions): Promise<VoiceConn
 					options.onPreview(transcript.preview);
 				}
 			} catch {
-				fail(new VoiceError("Voice returned an invalid or oversized transcript. Try a shorter recording."));
+				fail(voiceError(catalogMessage(CatalogMessageId.voiceTranscriptInvalid)));
 			}
 		});
 		socket.on("close", (code) => {
 			if (terminal) return;
 			if (!finishing || code !== 1000) {
-				fail(new VoiceError("Voice connection ended before transcription finished. Try recording again."));
+				fail(voiceError(catalogMessage(CatalogMessageId.voiceConnectionEnded)));
 				return;
 			}
 			terminal = true;
@@ -170,7 +171,7 @@ export function connectVoice(options: VoiceConnectionOptions): Promise<VoiceConn
 					cancel,
 				});
 			} catch {
-				fail(new VoiceError("Voice connection could not start. Try again."));
+				fail(voiceError(catalogMessage(CatalogMessageId.voiceConnectionStartFailed)));
 			}
 		});
 	});

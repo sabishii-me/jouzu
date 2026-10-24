@@ -1,7 +1,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { CommandReport, commandReportKey, pluralize, wrapTerminalWords } from "../dist/command-report.js";
+import {
+	CommandReport,
+	commandReportKey,
+	pluralize,
+	resolveDisplayContext,
+	wrapHumanText,
+	wrapTerminalWords,
+} from "../dist/command-report.js";
+import { protectedDigest, protectedModelId, protectedPath } from "../dist/human-messages.js";
+import { terminalTextWidth } from "../dist/terminal-layout.js";
 
 const PLAIN = { colorEnabled: false, columns: 60 };
 const ESCAPE = String.fromCharCode(27);
@@ -123,4 +132,118 @@ test("counts read naturally in a summary line", () => {
 	assert.equal(pluralize(0, "problem"), "0 problems");
 	assert.equal(pluralize(1, "warning"), "1 warning");
 	assert.equal(pluralize(2, "entry", "entries"), "2 entries");
+});
+
+// Display-seam tests: human text wrapping, protected values, and the
+// display context. The English expectations above must stay byte-identical.
+
+const JAPANESE_SENTENCE =
+	"日本語の自然文は、空白がなくても文字の境界で折り返される必要があります。この文は折り返しの確認のための十分に長い例文であり、行頭禁則と行末禁則の両方を確かめるための文章でもあります。";
+
+const LINE_START_PROHIBITED =
+	"、。，．：；？！）］｝〕〉》」』】〙〗〟｠»ぁぃぅぇぉっゃゅょゎゕゖァィゥェォッャュョヮヵヶゝゞヽヾ々ー";
+const LINE_END_PROHIBITED = "（［｛〔〈《「『【〘〖〝｟«";
+
+function firstCharacter(value) {
+	return [...value][0];
+}
+
+function lastCharacter(value) {
+	return [...value].at(-1);
+}
+
+test("human text wrapping matches the terminal word wrapper for English", () => {
+	const cases = [
+		"",
+		"State root /home/user/.local/state/jouzu/sessions/2026-09-13",
+		"one two three four five six seven eight nine ten eleven twelve",
+		"a  b   c d",
+		"line one\nline two",
+		"trailing spaces   ",
+		"   leading spaces",
+		"日本語 path /tmp/端末　上手/agent",
+	];
+	for (const value of cases) {
+		for (const columns of [12, 40, 60, 100]) {
+			assert.deepEqual(
+				wrapHumanText(value, { columns }),
+				wrapTerminalWords(value, columns),
+				`${JSON.stringify(value)} @ ${columns}`,
+			);
+		}
+	}
+});
+
+test("Japanese natural text wraps at 48, 80, and 120 columns", () => {
+	for (const columns of [48, 80, 120]) {
+		const lines = wrapHumanText(JAPANESE_SENTENCE, { columns, locale: "ja" });
+		assert.ok(lines.length > 1, `expected a wrap at ${columns} columns`);
+		for (const line of lines) {
+			assert.ok(
+				terminalTextWidth(line) <= columns,
+				`${JSON.stringify(line)} is ${terminalTextWidth(line)} columns, over ${columns}`,
+			);
+		}
+		assert.equal(lines.join(""), JAPANESE_SENTENCE);
+	}
+});
+
+test("a protected value is never split, even wider than the column", () => {
+	const path = "/home/user/.local/state/jouzu/sessions/2026-09-13/long-session-name";
+	const digest = "a".repeat(64);
+	const modelId = "shisa/deepseek-v4-flash-preview-2026-09-13";
+	for (const [value, segment] of [
+		[path, protectedPath(path)],
+		[digest, protectedDigest(digest)],
+		[modelId, protectedModelId(modelId)],
+	]) {
+		const lines = wrapHumanText(["State root ", segment], { columns: 20, locale: "ja" });
+		assert.ok(lines.includes(value), `${value} was split: ${JSON.stringify(lines)}`);
+		const fromOptions = wrapHumanText("", { columns: 20, locale: "ja", segments: [segment] });
+		assert.deepEqual(fromOptions, [value]);
+	}
+});
+
+test("Japanese prohibitions keep closing marks off line starts and opening marks off line ends", () => {
+	for (const columns of [20, 33, 48, 80]) {
+		const lines = wrapHumanText(JAPANESE_SENTENCE, { columns, locale: "ja" });
+		for (const line of lines) {
+			assert.ok(
+				!LINE_START_PROHIBITED.includes(firstCharacter(line)),
+				`${JSON.stringify(line)} begins with a prohibited character`,
+			);
+			assert.ok(
+				!LINE_END_PROHIBITED.includes(lastCharacter(line)),
+				`${JSON.stringify(line)} ends with a prohibited character`,
+			);
+		}
+	}
+});
+
+test("a closing mark is pushed onto the previous line instead of starting a new one", () => {
+	const lines = wrapHumanText(`${"あ".repeat(10)}。`, { columns: 10, locale: "ja" });
+	assert.deepEqual(lines, ["あああああ", "ああああ", "あ。"]);
+	for (const line of lines) assert.notEqual(firstCharacter(line), "。");
+});
+
+test("an opening mark is pushed onto the next line instead of ending one", () => {
+	const lines = wrapHumanText(`${"あ".repeat(4)}「${"い".repeat(4)}`, { columns: 10, locale: "ja" });
+	for (const line of lines) assert.notEqual(lastCharacter(line), "「");
+	assert.ok(
+		lines.some((line) => line.startsWith("「")),
+		JSON.stringify(lines),
+	);
+});
+
+test("a display context resolves width, color, and locale from one options object", () => {
+	const context = resolveDisplayContext({ columns: 48, colorEnabled: false, locale: "ja" });
+	assert.equal(context.columns, 48);
+	assert.equal(context.colorEnabled, false);
+	assert.equal(context.locale, "ja");
+	assert.equal(resolveDisplayContext({ columns: 48 }).locale, "en");
+});
+
+test("the report reads display state from the resolved context", () => {
+	const text = new CommandReport({ columns: 48, colorEnabled: false, locale: "en" }).title("Jouzu example").toString();
+	assert.equal(text, "Jouzu example");
 });

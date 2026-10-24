@@ -16,6 +16,7 @@ import {
 	resolveCatalogSources,
 	SHISA_API_CATALOG_SOURCE,
 } from "../dist/catalog-sources.js";
+import { resolveCatalog } from "../dist/locale-catalog.js";
 import { MODEL_CATALOG_MEDIA_TYPE } from "../dist/model-catalog.js";
 import { refreshCatalogSource } from "../dist/model-catalog-sync.js";
 import { createJouzuModelPicker } from "../dist/model-picker.js";
@@ -181,7 +182,7 @@ test("an in-progress login excludes logout before any destructive work", async (
 	assert.equal(JSON.parse(readFileSync(h.authPath, "utf8")).shisa.access, credential.access);
 });
 
-async function extensionHarness(t, h, fetchImpl, env = {}) {
+async function extensionHarness(t, h, fetchImpl, env = {}, extra = {}) {
 	const runtime = await ModelRuntime.create({
 		authPath: h.authPath,
 		modelsPath: null,
@@ -200,6 +201,7 @@ async function extensionHarness(t, h, fetchImpl, env = {}) {
 		jouzuVersion: "0.1.8",
 		env: { ...env, JOUZU_SHISA_PLATFORM_URL: "https://changed.example.test" },
 		fetchImpl,
+		...extra,
 	}).factory({
 		registerProvider: (id, config) => runtime.registerProvider(id, config),
 		registerCommand: (name, command) => commands.set(name, command),
@@ -345,6 +347,22 @@ test("the Pi logout path surfaces local deletion failure instead of success", as
 	assert.equal(readFileSync(h.authPath, "utf8"), "{broken");
 	assert.equal(existsSync(shisaLinkStatePath(h.paths)), false);
 	assert.ok(e.messages.some(([message, level]) => level === "error" && message.includes("Could not remove")));
+});
+
+test("a Japanese catalog renders the logout message and extension notification", async (t) => {
+	const ja = resolveCatalog("ja").bundle;
+	assert.match(
+		shisaLogoutMessage({ revocation: "confirmed", localCleared: true }, false, ja),
+		/Shisa からサインアウトしました。/,
+	);
+	assert.match(
+		shisaLogoutMessage({ revocation: "unconfirmed", localCleared: true }, true, ja),
+		/SHISA_API_KEY は設定されたままですが/,
+	);
+	const h = await setup(t);
+	const e = await extensionHarness(t, h, async () => new Response(null, { status: 204 }), {}, { catalog: ja });
+	await e.runtime.logout("shisa");
+	assert.ok(e.messages.some(([message]) => message.includes("Shisa からサインアウトしました。")));
 });
 
 test("input routing leaves the native menu, other providers, and ordinary text untouched", async (t) => {

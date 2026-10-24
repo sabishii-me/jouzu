@@ -154,7 +154,7 @@ export function transformMultiloopAutonomy(source) {
 	);
 	source = replace(
 		source,
-		'    `Acceptance mode: ${state.acceptanceMode}`,',
+		"    `Acceptance mode: ${state.acceptanceMode}`,",
 		'    `Acceptance mode: ${state.acceptanceMode}`,\n    "Autonomous task policy: do not create user-wait or paused task gates; resolve routine ambiguity and continue.",',
 	);
 	source = replace(
@@ -223,7 +223,7 @@ export function transformMultiloopFlow(source) {
 	);
 	source = replace(
 		source,
-		'    `Acceptance mode: ${state.acceptanceMode}`,',
+		"    `Acceptance mode: ${state.acceptanceMode}`,",
 		'    `Acceptance mode: ${state.acceptanceMode}`,\n    "Autonomous task policy: do not create user-wait or paused task gates; resolve routine ambiguity and continue.",',
 	);
 	source = replace(

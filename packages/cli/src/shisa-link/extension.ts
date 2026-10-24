@@ -1,5 +1,7 @@
 import type { OAuthCredentials, OAuthLoginCallbacks } from "@earendil-works/pi-ai";
 import type { ExtensionContext, InlineExtension } from "@earendil-works/pi-coding-agent";
+import { CatalogMessageId, catalogText, defaultCatalog } from "../cli-messages.js";
+import type { CatalogBundle } from "../locale-catalog.js";
 import type { JouzuPaths } from "../paths.js";
 import { isShisaSignedOut, onShisaAuthChange, setShisaSignedOut } from "./credentials.js";
 import { resolveShisaGatewayUrl } from "./device-flow.js";
@@ -15,6 +17,8 @@ export interface ShisaExtensionOptions {
 	jouzuVersion: string;
 	env?: NodeJS.ProcessEnv;
 	gatewayUrl?: string;
+	/** The resolved locale catalog for account notifications. Defaults to English. */
+	catalog?: CatalogBundle;
 	/** Test seams forwarded to device login and revocation. */
 	fetchImpl?: typeof fetch;
 	sleep?: (ms: number) => Promise<void>;
@@ -24,6 +28,7 @@ export interface ShisaExtensionOptions {
 
 export function createShisaExtension(options: ShisaExtensionOptions): InlineExtension {
 	const env = options.env ?? process.env;
+	const catalog = options.catalog ?? defaultCatalog();
 	const gatewayUrl = options.gatewayUrl ?? resolveShisaGatewayUrl(env);
 	const statePath = shisaLinkStatePath(options.paths);
 	return {
@@ -45,7 +50,8 @@ export function createShisaExtension(options: ShisaExtensionOptions): InlineExte
 					return credentials;
 				},
 				getApiKey(credentials: OAuthCredentials): string {
-					if (isShisaSignedOut(options.paths)) throw new Error("Signed out of Shisa. Run /login shisa to reconnect.");
+					if (isShisaSignedOut(options.paths))
+						throw new Error(catalogText(catalog, CatalogMessageId.shisaSignedOutReconnect));
 					return credentials.access;
 				},
 			};
@@ -69,12 +75,12 @@ export function createShisaExtension(options: ShisaExtensionOptions): InlineExte
 				} catch {
 					refreshFailed = true;
 				}
-				const message = shisaLogoutMessage(result, Boolean(env.SHISA_API_KEY?.trim()));
+				const message = shisaLogoutMessage(result, Boolean(env.SHISA_API_KEY?.trim()), catalog);
 				activeCtx?.ui.notify(
 					message,
 					!result.localCleared ? "error" : result.revocation === "unconfirmed" ? "warning" : "info",
 				);
-				if (refreshFailed) activeCtx?.ui.notify("Shisa model availability could not refresh. Run /reload.", "warning");
+				if (refreshFailed) activeCtx?.ui.notify(catalogText(catalog, CatalogMessageId.shisaRefreshFailed), "warning");
 				if (!result.localCleared && clearCredential) throw new Error(message);
 			};
 			let removeHook: (() => void) | undefined = installShisaLogoutHook(ModelRuntime, oauth, signOut);
@@ -88,10 +94,7 @@ export function createShisaExtension(options: ShisaExtensionOptions): InlineExte
 				try {
 					await signOut();
 				} catch {
-					ctx.ui.notify(
-						"Shisa sign-out could not complete. Wait for any sign-in or sign-out to finish, then retry /logout shisa.",
-						"error",
-					);
+					ctx.ui.notify(catalogText(catalog, CatalogMessageId.shisaSignOutFailed), "error");
 				}
 				return { action: "handled" };
 			});

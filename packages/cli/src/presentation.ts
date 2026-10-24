@@ -1,7 +1,10 @@
 import { basename } from "node:path";
 import type { BuildSystemPromptOptions, InlineExtension, Theme } from "@earendil-works/pi-coding-agent";
+import { CatalogMessageId, catalogText, defaultCatalog } from "./cli-messages.js";
 import { COMPACTION_TOOL_NAME, registerCompactionRequest } from "./compaction-request.js";
+import { protectedCommand } from "./human-messages.js";
 import { type InteractiveStartupContext, isInteractivePiStartup } from "./interactive-startup.js";
+import type { CatalogBundle } from "./locale-catalog.js";
 import type { JouzuMetadata } from "./metadata.js";
 import { buildModelGuidance } from "./model-guidance.js";
 import type { ProfileSelection } from "./runtime.js";
@@ -11,7 +14,41 @@ export { isInteractivePiStartup } from "./interactive-startup.js";
 
 export const CLEAR_SCREEN_SEQUENCE = "\u001b[2J\u001b[H";
 export const CLEAR_CURRENT_LINE_SEQUENCE = "\r\u001b[2K";
-export const CATALOG_STARTUP_NOTICE = "Fetching model catalog…";
+
+/**
+ * The catalog IDs this module renders. They stay local rather than joining the
+ * shared `CatalogMessageId` table so a parallel surface migration does not
+ * conflict on that file; `scripts/check-locales.mjs` allows a catalog-only ID
+ * that is present in both locales.
+ */
+const PRESENTATION_IDS = {
+	windowTitle: "jouzu.cli.presentation.windowTitle",
+	windowTitleSession: "jouzu.cli.presentation.windowTitle.session",
+	bannerVersionJouzu: "jouzu.cli.presentation.bannerVersion.jouzu",
+	bannerVersionPi: "jouzu.cli.presentation.bannerVersion.pi",
+	statusModelNotSelected: "jouzu.cli.presentation.status.modelNotSelected",
+	statusProfileNotApplied: "jouzu.cli.presentation.status.profileNotApplied",
+	statusScopedModelsAll: "jouzu.cli.presentation.status.scopedModelsAll",
+	statusContextUsage: "jouzu.cli.presentation.status.contextUsage",
+	// The `/status` block's heading and field labels. The session, workspace,
+	// model, thinking level, context usage, scoped-model count, profile id, and
+	// version values are protected values passed as arguments; only the label and
+	// the `applied` state word move here.
+	statusHeading: "jouzu.cli.presentation.status.heading",
+	statusSession: "jouzu.cli.presentation.status.session",
+	statusWorkspace: "jouzu.cli.presentation.status.workspace",
+	statusModel: "jouzu.cli.presentation.status.model",
+	statusThinking: "jouzu.cli.presentation.status.thinking",
+	statusContext: "jouzu.cli.presentation.status.context",
+	statusScopedModels: "jouzu.cli.presentation.status.scopedModels",
+	statusProfile: "jouzu.cli.presentation.status.profile",
+	statusRuntime: "jouzu.cli.presentation.status.runtime",
+	statusProfileApplied: "jouzu.cli.presentation.status.profileApplied",
+	commandStatusDescription: "jouzu.cli.presentation.command.statusDescription",
+} as const;
+
+/** The banner's own separator between the two version parts; it stays out of the catalog. */
+const BANNER_VERSION_SEPARATOR = "  \u00b7  ";
 
 export type BannerColorMode = TerminalColorMode;
 
@@ -38,6 +75,16 @@ export interface BannerRenderOptions {
 	colorDepth?: number;
 	env?: NodeJS.ProcessEnv;
 	palette?: BannerPalette;
+	/** The resolved catalog for the banner labels. Defaults to English. */
+	catalog?: CatalogBundle;
+	/**
+	 * The runtime response-language section for the active contract, or a getter
+	 * that returns `undefined` for `auto`. Read on each turn, so a language change
+	 * that applies from the next user turn reaches the prompt without rebuilding
+	 * the extension. The section is composed after the capability routing; the
+	 * existing guidance is unchanged.
+	 */
+	responseLanguageSection?: () => string | undefined;
 }
 
 function envFlagIsTrue(value: string | undefined): boolean {
@@ -53,6 +100,18 @@ export function clearInteractiveStartup(args: string[], context: InteractiveStar
 	if (!shouldClearInteractiveStartup(args, context)) return false;
 	process.stdout.write(CLEAR_SCREEN_SEQUENCE);
 	return true;
+}
+
+/**
+ * The startup notice the model-catalog refresh shows before the TUI starts.
+ *
+ * It renders from the resolved catalog, so a damaged locale catalog falls back
+ * to the English text instead of stopping the launch. The caller keeps the
+ * write and the erase separate, so the displayed width and the erase sequence
+ * do not depend on the catalog.
+ */
+export function catalogStartupNotice(catalog: CatalogBundle = defaultCatalog()): string {
+	return catalogText(catalog, CatalogMessageId.startupNotice);
 }
 
 /**
@@ -205,14 +264,27 @@ export function buildCapabilityRoutingGuidance(options: BuildSystemPromptOptions
 	].join("\n");
 }
 
+/**
+ * Brand Pi's default prompt and append Jouzu guidance.
+ *
+ * The composition order is fixed: the default identity, the default guidance,
+ * the capability routing, then the response-language section. The last two are
+ * optional; omitting them produces exactly the pre-language-contract output, so
+ * `JOUZU_DEFAULT_GUIDANCE` and `buildCapabilityRoutingGuidance` are unchanged.
+ * A user-owned `customPrompt` is left alone, and so is a prompt that is not
+ * Pi's default.
+ */
 export function brandDefaultSystemPrompt(
 	systemPrompt: string,
 	customPrompt?: string,
 	capabilityRouting?: string,
+	responseLanguageSection?: string,
 ): string {
 	if (customPrompt || !systemPrompt.startsWith(PI_DEFAULT_IDENTITY)) return systemPrompt;
-	const guidance = capabilityRouting ? `${JOUZU_DEFAULT_GUIDANCE}\n\n${capabilityRouting}` : JOUZU_DEFAULT_GUIDANCE;
-	return `${JOUZU_DEFAULT_IDENTITY}\n\n${guidance}${systemPrompt.slice(PI_DEFAULT_IDENTITY.length)}`;
+	const sections = [JOUZU_DEFAULT_GUIDANCE];
+	if (capabilityRouting) sections.push(capabilityRouting);
+	if (responseLanguageSection) sections.push(responseLanguageSection);
+	return `${JOUZU_DEFAULT_IDENTITY}\n\n${sections.join("\n\n")}${systemPrompt.slice(PI_DEFAULT_IDENTITY.length)}`;
 }
 
 function fitPresentationText(text: string, width: number): string {
@@ -289,8 +361,18 @@ function colorizeVersion(
 	return value;
 }
 
-function versionLine(metadata: JouzuMetadata, width: number, mode: BannerColorMode, palette: BannerPalette): string {
-	const plain = `jouzu ${metadata.displayVersion}  ·  pi ${metadata.piVersion}`;
+function versionLine(
+	metadata: JouzuMetadata,
+	width: number,
+	mode: BannerColorMode,
+	palette: BannerPalette,
+	catalog: CatalogBundle,
+): string {
+	const versionText = (id: string, version: string): string => catalogText(catalog, id, { version });
+	const plain = [
+		versionText(PRESENTATION_IDS.bannerVersionJouzu, metadata.displayVersion),
+		versionText(PRESENTATION_IDS.bannerVersionPi, metadata.piVersion),
+	].join(BANNER_VERSION_SEPARATOR);
 	if (fitPresentationText(plain, width) !== plain || mode === "none") return fitPresentationText(plain, width);
 	const jouzu = colorizeVersion(
 		metadata.displayVersion,
@@ -306,7 +388,24 @@ function versionLine(metadata: JouzuMetadata, width: number, mode: BannerColorMo
 		palette.version256.pi,
 		palette.version16.pi,
 	);
-	return `jouzu ${jouzu}  ·  pi ${pi}`;
+	return [
+		versionText(PRESENTATION_IDS.bannerVersionJouzu, jouzu),
+		versionText(PRESENTATION_IDS.bannerVersionPi, pi),
+	].join(BANNER_VERSION_SEPARATOR);
+}
+
+/** The banner hint labels: the command stays a protected value, the label is catalog text. */
+const BANNER_HINTS: ReadonlyArray<readonly [string, CatalogMessageId]> = [
+	["/model", CatalogMessageId.bannerHintModel],
+	["/hotkeys", CatalogMessageId.bannerHintHotkeys],
+	["/status", CatalogMessageId.bannerHintStatus],
+];
+
+/** Render the hint labels and join them with the banner's own separator. */
+function bannerHints(catalog: CatalogBundle): string {
+	return BANNER_HINTS.map(([command, id]) => catalogText(catalog, id, { command: protectedCommand(command) })).join(
+		"  ·  ",
+	);
 }
 
 export function renderBannerLines(
@@ -315,17 +414,20 @@ export function renderBannerLines(
 	width: number,
 	colorMode: BannerColorMode,
 	palette: BannerPalette = DEFAULT_BANNER_PALETTE,
+	catalog: CatalogBundle = defaultCatalog(),
 ): string[] {
-	const versions = versionLine(metadata, width, colorMode, palette);
-	const hints = fitPresentationText("/model choose  ·  /hotkeys shortcuts  ·  /status session", width);
+	const versions = versionLine(metadata, width, colorMode, palette, catalog);
+	const hints = fitPresentationText(bannerHints(catalog), width);
 	const details = colorMode === "none" ? [versions, hints] : [versions, theme.fg("dim", hints)];
 	if (width < BRAILLE_MIN_WIDTH) return [fitPresentationText("J O U Z U", width), ...details];
 	return [...BRAILLE_MARK.map((line) => renderBrandGradient(line, colorMode, palette)), ...details];
 }
 
-function jouzuWindowTitle(sessionName: string | undefined, cwd: string): string {
+function jouzuWindowTitle(sessionName: string | undefined, cwd: string, catalog: CatalogBundle): string {
 	const cwdBase = basename(cwd) || "workspace";
-	return sessionName ? `Jouzu - ${sessionName} - ${cwdBase}` : `Jouzu - ${cwdBase}`;
+	return sessionName
+		? catalogText(catalog, PRESENTATION_IDS.windowTitleSession, { session: sessionName, workspace: cwdBase })
+		: catalogText(catalog, PRESENTATION_IDS.windowTitle, { workspace: cwdBase });
 }
 
 export function createJouzuPresentationExtension(
@@ -336,6 +438,7 @@ export function createJouzuPresentationExtension(
 	return {
 		name: "jouzu",
 		factory: (pi) => {
+			const catalog = options.catalog ?? defaultCatalog();
 			pi.on("before_agent_start", (event, ctx) => {
 				const capabilityRouting = [
 					buildCapabilityRoutingGuidance(event.systemPromptOptions),
@@ -347,6 +450,7 @@ export function createJouzuPresentationExtension(
 					event.systemPrompt,
 					event.systemPromptOptions.customPrompt,
 					capabilityRouting,
+					options.responseLanguageSection?.(),
 				);
 				if (systemPrompt === event.systemPrompt) return;
 				return { systemPrompt };
@@ -355,7 +459,7 @@ export function createJouzuPresentationExtension(
 			pi.on("session_start", (_event, ctx) => {
 				if (ctx.mode !== "tui") return;
 				const colorMode = options.colorMode ?? detectBannerColorMode(options);
-				ctx.ui.setTitle(jouzuWindowTitle(undefined, ctx.cwd));
+				ctx.ui.setTitle(jouzuWindowTitle(undefined, ctx.cwd, catalog));
 				ctx.ui.setWorkingIndicator({
 					frames: [
 						ctx.ui.theme.fg("dim", "·"),
@@ -366,7 +470,7 @@ export function createJouzuPresentationExtension(
 					intervalMs: 120,
 				});
 				ctx.ui.setHeader((_tui, theme) => ({
-					render: (width) => renderBannerLines(theme, metadata, width, colorMode, options.palette),
+					render: (width) => renderBannerLines(theme, metadata, width, colorMode, options.palette, options.catalog),
 					invalidate() {},
 				}));
 			});
@@ -375,32 +479,48 @@ export function createJouzuPresentationExtension(
 			// session info changes; re-assert Jouzu branding on the same event so it wins.
 			pi.on("session_info_changed", (event, ctx) => {
 				if (ctx.mode !== "tui") return;
-				ctx.ui.setTitle(jouzuWindowTitle(event.name, ctx.cwd));
+				ctx.ui.setTitle(jouzuWindowTitle(event.name, ctx.cwd, catalog));
 			});
 
-			registerCompactionRequest(pi);
+			registerCompactionRequest(pi, undefined, options.catalog);
 
 			pi.registerCommand("status", {
-				description: "Show the current Jouzu session, model, context, and profile status",
+				description: catalogText(catalog, PRESENTATION_IDS.commandStatusDescription),
 				handler: async (_args, ctx) => {
-					const model = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "not selected";
+					const model = ctx.model
+						? `${ctx.model.provider}/${ctx.model.id}`
+						: catalogText(catalog, PRESENTATION_IDS.statusModelNotSelected);
 					const usage = ctx.getContextUsage();
 					const context = usage
-						? `${usage.tokens ?? "unknown"}/${usage.contextWindow} tokens (${usage.percent ?? "unknown"}%)`
+						? catalogText(catalog, PRESENTATION_IDS.statusContextUsage, {
+								tokens: String(usage.tokens ?? "unknown"),
+								window: String(usage.contextWindow),
+								percent: String(usage.percent ?? "unknown"),
+							})
 						: "unknown";
-					const scopedModels = ctx.scopedModels.length === 0 ? "all available" : String(ctx.scopedModels.length);
-					const applied = profile.appliedManifestSha256 ? "applied" : "not applied";
+					const scopedModels =
+						ctx.scopedModels.length === 0
+							? catalogText(catalog, PRESENTATION_IDS.statusScopedModelsAll)
+							: String(ctx.scopedModels.length);
+					const applied = profile.appliedManifestSha256
+						? catalogText(catalog, PRESENTATION_IDS.statusProfileApplied)
+						: catalogText(catalog, PRESENTATION_IDS.statusProfileNotApplied);
 					ctx.ui.notify(
 						[
-							"Jouzu session status",
-							`session: ${ctx.sessionManager.getSessionId()}`,
-							`workspace: ${basename(ctx.cwd) || "workspace"}`,
-							`model: ${model}`,
-							`thinking: ${ctx.thinkingLevel ?? "off"}`,
-							`context: ${context}`,
-							`scoped models: ${scopedModels}`,
-							`profile: ${profile.id} (${applied})`,
-							`runtime: Jouzu ${metadata.displayVersion} · Pi ${metadata.piVersion}`,
+							catalogText(catalog, PRESENTATION_IDS.statusHeading),
+							catalogText(catalog, PRESENTATION_IDS.statusSession, {
+								id: ctx.sessionManager.getSessionId(),
+							}),
+							catalogText(catalog, PRESENTATION_IDS.statusWorkspace, { name: basename(ctx.cwd) || "workspace" }),
+							catalogText(catalog, PRESENTATION_IDS.statusModel, { model }),
+							catalogText(catalog, PRESENTATION_IDS.statusThinking, { level: ctx.thinkingLevel ?? "off" }),
+							catalogText(catalog, PRESENTATION_IDS.statusContext, { context }),
+							catalogText(catalog, PRESENTATION_IDS.statusScopedModels, { models: scopedModels }),
+							catalogText(catalog, PRESENTATION_IDS.statusProfile, { id: profile.id, state: applied }),
+							catalogText(catalog, PRESENTATION_IDS.statusRuntime, {
+								jouzu: metadata.displayVersion,
+								pi: metadata.piVersion,
+							}),
 						].join("\n"),
 						"info",
 					);

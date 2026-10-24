@@ -7,9 +7,19 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { AgentToolResult, ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { catalogText, defaultCatalog } from "./cli-messages.js";
+import type { CatalogBundle } from "./locale-catalog.js";
 import { ensurePrivateDirectory, validatePrivateDirectory } from "./private-fs.js";
 import { acquireStateLock, type StateLockInspection } from "./state-lock.js";
 import { omitDeclinedArguments } from "./tool-arguments.js";
+
+/** The catalog IDs the browser tool labels and result lines read their text from. */
+const CamoufoxCatalogId = {
+	fetchUrlLabel: "jouzu.cli.tool.fetchUrl.label",
+	searchWebLabel: "jouzu.cli.tool.searchWeb.label",
+	screenshotOmitted: "jouzu.cli.camoufox.result.screenshotOmitted",
+	screenshotAttached: "jouzu.cli.camoufox.result.screenshotAttached",
+} as const;
 
 const RUNTIME_NAME = "@shisa-ai/jouzu-camoufox-runtime";
 const RUNTIME_VERSION = "1.0.0";
@@ -581,7 +591,7 @@ interface ScreenshotProjection {
 // or renderer reads it. Attach it to `content`, which pi-ai converts for image
 // models and replaces with a placeholder for models without image support, and
 // report the size instead when it exceeds the attachment bound.
-function screenshotProjection(details: Record<string, unknown>): ScreenshotProjection {
+function screenshotProjection(details: Record<string, unknown>, catalog: CatalogBundle): ScreenshotProjection {
 	const screenshot = details.screenshot;
 	if (!screenshot || typeof screenshot !== "object") return {};
 	const { data, mimeType, bytes } = screenshot as Record<string, unknown>;
@@ -589,12 +599,18 @@ function screenshotProjection(details: Record<string, unknown>): ScreenshotProje
 	const size = typeof bytes === "number" ? bytes : Math.floor((data.length * 3) / 4);
 	if (size > CAMOUFOX_SCREENSHOT_BYTE_LIMIT) {
 		return {
-			line: `screenshot omitted: ${formatBytes(size)} exceeds the ${formatBytes(CAMOUFOX_SCREENSHOT_BYTE_LIMIT)} attachment limit. Retry with screenshot.full_page=false, or lower screenshot.quality.`,
+			line: catalogText(catalog, CamoufoxCatalogId.screenshotOmitted, {
+				size: formatBytes(size),
+				limit: formatBytes(CAMOUFOX_SCREENSHOT_BYTE_LIMIT),
+			}),
 		};
 	}
 	return {
 		block: { type: "image", data, mimeType },
-		line: `screenshot: ${mimeType}, ${formatBytes(size)} attached to this result.`,
+		line: catalogText(catalog, CamoufoxCatalogId.screenshotAttached, {
+			mimeType,
+			size: formatBytes(size),
+		}),
 	};
 }
 
@@ -628,6 +644,7 @@ function preferJpegScreenshot(params: unknown): unknown {
 export function projectCamoufoxToolResult(
 	toolName: string,
 	result: AgentToolResult<unknown>,
+	catalog: CatalogBundle = defaultCatalog(),
 ): AgentToolResult<unknown> {
 	const details = (result.details ?? {}) as Record<string, unknown>;
 	const header = result.content
@@ -640,7 +657,7 @@ export function projectCamoufoxToolResult(
 			: toolName === "tff-fetch_url"
 				? fetchedBodyText(details)
 				: "";
-	const screenshot = toolName === "tff-fetch_url" ? screenshotProjection(details) : {};
+	const screenshot = toolName === "tff-fetch_url" ? screenshotProjection(details, catalog) : {};
 	const parts = [header, screenshot.line ?? "", payload].filter((part) => part.length > 0);
 	// Preserve any non-text block, such as an image, that the tool returned.
 	const nonText = result.content.filter((block) => block.type !== "text");
@@ -667,6 +684,7 @@ export function lazyTool(
 	definition: Omit<ToolDefinition, "execute">,
 	getDelegate: (signal?: AbortSignal) => Promise<ToolDefinition>,
 	hooks?: LazyToolHooks,
+	catalog: CatalogBundle = defaultCatalog(),
 ): ToolDefinition {
 	return {
 		...definition,
@@ -676,7 +694,7 @@ export function lazyTool(
 				const delegate = await getDelegate(signal);
 				const delegateParams = definition.name === "tff-fetch_url" ? preferJpegScreenshot(params) : params;
 				const result = await delegate.execute(toolCallId, delegateParams, signal, onUpdate, context);
-				return projectCamoufoxToolResult(definition.name, result);
+				return projectCamoufoxToolResult(definition.name, result, catalog);
 			} finally {
 				hooks?.onCallSettled?.();
 			}
@@ -803,6 +821,8 @@ export interface CreateJouzuCamoufoxExtensionOptions {
 	scheduleIdleStop?: CamoufoxIdleStopScheduler["schedule"];
 	/** How long session_shutdown waits for an idle-stop close that is still in flight. */
 	closeGraceMs?: number;
+	/** The resolved catalog the tool labels and result lines read their display text from. */
+	catalog?: CatalogBundle;
 }
 
 /** Register browser tools without installing or importing the Camoufox runtime during startup. */
@@ -814,6 +834,7 @@ export function createJouzuCamoufoxExtension(
 	let basePath: string | null = null;
 	let runtime: Promise<InstalledCamoufoxRuntime> | undefined;
 	const delegates = new Map<string, ToolDefinition>();
+	const catalog = options.catalog ?? defaultCatalog();
 	const stoppingCloses = new Set<Promise<void>>();
 	// Reset the runtime synchronously and close the client afterwards, so a
 	// call that starts at the stop instant loads a fresh client instead of
@@ -879,7 +900,7 @@ export function createJouzuCamoufoxExtension(
 		lazyTool(
 			{
 				name: "tff-fetch_url",
-				label: "Fetch URL",
+				label: catalogText(catalog, CamoufoxCatalogId.fetchUrlLabel),
 				description:
 					"Fetch a URL via a stealth Firefox browser. Returns HTML (or markdown), optionally scoped to a CSS selector, optionally with a screenshot.",
 				promptSnippet:
@@ -908,13 +929,14 @@ export function createJouzuCamoufoxExtension(
 			},
 			(signal) => getTool("tff-fetch_url", signal),
 			idleStop,
+			catalog,
 		),
 	);
 	pi.registerTool(
 		lazyTool(
 			{
 				name: "tff-search_web",
-				label: "Search web",
+				label: catalogText(catalog, CamoufoxCatalogId.searchWebLabel),
 				description:
 					"Web search via Google with automatic DuckDuckGo fallback. Auto-mode tries Google first; if Google blocks (captcha, rate-limit, selector drift), the search transparently falls back to DuckDuckGo. Pin a specific engine via the `engine` option if needed.",
 				promptSnippet: "Search the web via Camoufox. Returns structured results.",
@@ -934,6 +956,7 @@ export function createJouzuCamoufoxExtension(
 			},
 			(signal) => getTool("tff-search_web", signal),
 			idleStop,
+			catalog,
 		),
 	);
 	const closeGraceMs = options.closeGraceMs ?? CAMOUFOX_CLOSE_GRACE_MS;

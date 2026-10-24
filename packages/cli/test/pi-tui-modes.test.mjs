@@ -130,6 +130,16 @@ async function mountSessionUi(tui, cwd) {
 	const handlers = new Map();
 	const calls = { footers: [], editors: [] };
 	const extension = createSessionUiExtension({
+		catalog: {
+			format: (id) =>
+				({
+					"jouzu.cli.session.line.noModel": "no model",
+					"jouzu.cli.session.line.attention": "attention",
+					"jouzu.cli.session.status.health": "! status",
+					"jouzu.cli.session.status.contextUnknown": "ctx ?",
+					"jouzu.cli.session.status.detached": "detached",
+				})[id],
+		},
 		colorEnabled: false,
 		getHints: () => [{ id: "palette", text: "/model choose", priority: 10, role: "muted" }],
 	});

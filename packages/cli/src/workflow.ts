@@ -1,5 +1,15 @@
 import { Editor, type Focusable, Input, matchesKey, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import {
+	CatalogError,
+	CatalogMessageId,
+	type CatalogMessageRef,
+	catalogMessage,
+	catalogMessageText,
+	catalogText,
+	defaultCatalog,
+} from "./cli-messages.js";
 import { formatEffectiveKeybinding, formatEffectiveKeyPair } from "./keybinding-hints.js";
+import type { CatalogBundle } from "./locale-catalog.js";
 import {
 	compactNumber,
 	type PaletteComponent,
@@ -40,24 +50,29 @@ import {
 } from "./terminal-layout.js";
 
 function required<T>(value: T | undefined): T {
-	if (value === undefined) throw new Error("Workflow form is unavailable. Cancel and reopen it.");
+	if (value === undefined) throw new CatalogError(catalogMessage(CatalogMessageId.workflowErrorFormUnavailable));
 	return value;
 }
 
 type Mode = "browse" | "role" | "models" | "text" | "task" | "run" | "output" | "confirm" | "limit";
-const MODE_TITLES: Record<Mode, string> = {
-	browse: "",
-	role: " · Edit agent",
-	models: " · Choose model",
-	text: " · Edit text",
-	task: " · Assignment",
-	run: " · Run",
-	output: " · Output",
-	confirm: " · Confirm",
-	limit: " · Concurrency",
+/**
+ * The title suffix for each form stage, as a catalog ID. The text stage names
+ * the field it is editing in render, so it has no entry here. `browse` carries
+ * no suffix, so it is absent.
+ */
+const MODE_TITLE_IDS: Partial<Record<Exclude<Mode, "text">, CatalogMessageId>> = {
+	role: CatalogMessageId.workflowStageEditAgent,
+	models: CatalogMessageId.workflowStageChooseModel,
+	task: CatalogMessageId.workflowRowAssignment,
+	run: CatalogMessageId.workflowStageRun,
+	output: CatalogMessageId.workflowStageOutput,
+	confirm: CatalogMessageId.workflowStageConfirm,
+	limit: CatalogMessageId.workflowRowConcurrency,
 };
 interface Row {
 	label: string;
+	/** Stable identity for a row whose action logic must survive translation. */
+	id?: string;
 	/** Override the shared label column, for a control that is not a list row. */
 	labelWidth?: number;
 	/** Override the label color, for a row whose label is its identity. */
@@ -135,6 +150,7 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 	private message = "";
 	private messageLevel: "info" | "error" = "info";
 	private readonly wordmark: string;
+	private readonly catalog: CatalogBundle;
 	private _focused = false;
 	private closed = false;
 	private unsubscribe: () => void;
@@ -152,6 +168,9 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 				? "runs"
 				: "agents";
 		this.wordmark = renderBrandGradient("JOUZU", detectBannerColorMode());
+		// A caller without a resolved catalog (a unit test, for example) renders
+		// English rather than a second copy of the text.
+		this.catalog = context.catalog ?? defaultCatalog();
 		this.unsubscribe = service.subscribe(() => {
 			if (this.closed) return;
 			if (this.mode === "browse" && this.section === "runs" && this.selected >= 2) {
@@ -168,6 +187,29 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 	private listedRuns(): AgentRun[] {
 		const runs = this.service.runs();
 		return [...runs.filter(isActiveRun), ...runs.filter((run) => !isActiveRun(run))];
+	}
+	/** One catalog message for this view. */
+	private msg(id: CatalogMessageId, args?: Record<string, string | number>): string {
+		return catalogText(this.catalog, id, args);
+	}
+	/**
+	 * Render a caught error. A `required` invariant throws a `CatalogError`, whose
+	 * `Error.message` is the English default; resolve it from this view's bundle
+	 * instead so the Workflow message area localizes.
+	 */
+	private errorText(error: unknown, fallback: CatalogMessageId): string {
+		if (error instanceof CatalogError) return catalogMessageText(this.catalog, error.catalogMessage);
+		return error instanceof Error ? error.message : this.msg(fallback);
+	}
+	/** The title suffix for the current stage, or an empty string for browse. */
+	private stageSuffix(): string {
+		const id =
+			this.mode === "text"
+				? this.textReturn === "task"
+					? CatalogMessageId.workflowStageEditAssignment
+					: CatalogMessageId.workflowStageEditInstructions
+				: MODE_TITLE_IDS[this.mode];
+		return id ? ` · ${this.msg(id)}` : "";
 	}
 	get focused(): boolean {
 		return this._focused;
@@ -207,17 +249,18 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 		this.messageLevel = "info";
 		this.context.tui.requestRender();
 	}
-	private async perform(label: string, action: () => Promise<void>): Promise<void> {
+	private async perform(label: CatalogMessageRef, action: () => Promise<void>): Promise<void> {
 		if (this.busy) return;
 		this.busy = true;
-		this.message = `${label}…`;
+		const labelText = catalogMessageText(this.catalog, label);
+		this.message = this.msg(CatalogMessageId.workflowMessageRunning, { label: labelText });
 		this.context.tui.requestRender();
 		try {
 			await action();
-			this.message = `${label} complete.`;
+			this.message = this.msg(CatalogMessageId.workflowMessageComplete, { label: labelText });
 			this.messageLevel = "info";
 		} catch (error) {
-			this.message = sanitizeTerminalText(error instanceof Error ? error.message : "Operation failed. Retry.");
+			this.message = sanitizeTerminalText(this.errorText(error, CatalogMessageId.workflowMessageOperationFailedRetry));
 			this.messageLevel = "error";
 		} finally {
 			this.busy = false;
@@ -259,7 +302,7 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 	private requireSaved(): void {
 		const saved = this.snapshot?.config.roles.find((role) => role.id === this.originalId);
 		if (JSON.stringify(saved) !== JSON.stringify(this.draftValue()))
-			throw new Error("Save or cancel your edits before using this definition.");
+			throw new Error(catalogText(this.catalog, CatalogMessageId.workflowErrorSaveOrCancelEdits));
 	}
 	private save(): void {
 		const role = this.draftValue();
@@ -270,7 +313,7 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 		else config.roles.push(role);
 		this.service.save({ config, revision: snapshot.revision });
 		this.setMode("browse");
-		this.message = `Saved ${role.id}.`;
+		this.message = this.msg(CatalogMessageId.workflowMessageSaved, { agent: role.id });
 		this.messageLevel = "info";
 	}
 	/**
@@ -289,7 +332,7 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 		const value = Number(required(this.concurrencyInput).getValue().trim());
 		this.service.save({ ...snapshot, config: { ...snapshot.config, maxConcurrent: value } });
 		this.setMode("browse");
-		this.message = `Concurrency set to ${value}.`;
+		this.message = this.msg(CatalogMessageId.workflowMessageConcurrencySet, { value });
 		this.messageLevel = "info";
 	}
 	private toggleWorkspaceWriters(): void {
@@ -298,11 +341,16 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 		this.service.save({ ...snapshot, config: { ...snapshot.config, workspaceWriters: next } });
 		this.message =
 			next === "parallel"
-				? "Child writers may share a workspace; concurrent edits to the same files can conflict."
-				: "Child writers run one at a time per workspace.";
+				? this.msg(CatalogMessageId.workflowMessageChildWritersParallel)
+				: this.msg(CatalogMessageId.workflowMessageChildWritersSerial);
 		this.messageLevel = "info";
 	}
-	private openText(title: string, text: string, back: "role" | "task", commit: (text: string) => void): void {
+	private openText(
+		title: CatalogMessageRef,
+		text: string,
+		back: "role" | "task",
+		commit: (text: string) => void,
+	): void {
 		const identity = (value: string) => value;
 		this.editor = new Editor(this.context.tui, {
 			borderColor: identity,
@@ -320,13 +368,16 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 		this.textReturn = back;
 		this.textCommit = commit;
 		this.setMode("text");
-		this.message = title;
+		this.message = catalogMessageText(this.catalog, title);
 		this.messageLevel = "info";
 	}
 	private toggleSubagents(): void {
 		const enabled = !this.service.subagentsEnabled();
 		const apply = () => {
-			void this.perform(enabled ? "Enabling subagents" : "Disabling subagents", async () => {
+			const label = catalogMessage(
+				enabled ? CatalogMessageId.workflowActionEnablingSubagents : CatalogMessageId.workflowActionDisablingSubagents,
+			);
+			void this.perform(label, async () => {
 				await this.service.setSubagentsEnabled(enabled);
 				this.setMode("browse");
 				this.selected = 1;
@@ -334,8 +385,7 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 		};
 		if (!enabled && this.service.runs().some(isActiveRun)) {
 			this.confirmation = {
-				label:
-					"Disable subagents and stop all queued and running children in this session? Changes already made remain.",
+				label: this.msg(CatalogMessageId.workflowConfirmDisableSubagents),
 				back: "browse",
 				action: apply,
 			};
@@ -344,7 +394,7 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 	}
 	private startTask(action: "launch" | "steer" | "resume", role?: AgentRole): void {
 		if (!this.service.subagentsEnabled())
-			throw new Error("Subagents are off. Enable them in Workflow before assigning work.");
+			throw new Error(catalogText(this.catalog, CatalogMessageId.workflowErrorSubagentsOff));
 		if (role) this.draft = role;
 		this.task = "";
 		this.workspace = "";
@@ -353,16 +403,20 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 	}
 	private run(): AgentRun {
 		const run = this.service.runs().find((item) => item.id === this.runId);
-		if (!run) throw new Error("Agent run was not found.");
+		if (!run) throw new Error(catalogText(this.catalog, CatalogMessageId.workflowErrorRunNotFound));
 		return run;
 	}
 	private rows(): Row[] {
 		if (this.mode === "browse") {
 			const rows: Row[] = [
 				{
-					label: "View",
+					label: this.msg(CatalogMessageId.paletteActionView),
 					labelWidth: CONTROL_LABEL_COLUMN,
-					value: paletteChoice(this.section === "agents" ? "Agents" : "Runs"),
+					value: paletteChoice(
+						this.section === "agents"
+							? this.msg(CatalogMessageId.workflowLabelAgents)
+							: this.msg(CatalogMessageId.workflowLabelRuns),
+					),
 					choice: () => {
 						this.section = this.section === "agents" ? "runs" : "agents";
 						this.selected = 0;
@@ -372,10 +426,15 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 					},
 				},
 				{
-					label: "Subagents",
+					id: "subagents",
+					label: this.msg(CatalogMessageId.workflowRowSubagents),
 					labelWidth: 9,
-					value: paletteChoice(this.service.subagentsEnabled() ? "On" : "Off"),
-					meta: "this session",
+					value: paletteChoice(
+						this.service.subagentsEnabled()
+							? this.msg(CatalogMessageId.workflowValueOn)
+							: this.msg(CatalogMessageId.workflowValueOff),
+					),
+					meta: this.msg(CatalogMessageId.workflowMetaThisSession),
 					choice: () => this.toggleSubagents(),
 				},
 			];
@@ -384,29 +443,42 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 				const roles = snapshot.config.roles;
 				rows.push(
 					{
-						label: "Concurrency",
+						label: this.msg(CatalogMessageId.workflowRowConcurrency),
 						labelWidth: SETTINGS_LABEL_COLUMN,
 						value: String(snapshot.config.maxConcurrent),
 						meta: `${CONCURRENCY_BOUNDS.minimum}–${CONCURRENCY_BOUNDS.maximum}`,
-						hint: "edit",
+						hint: this.msg(CatalogMessageId.paletteActionEdit),
 						run: () => this.openConcurrency(),
 					},
 					{
-						label: "Child writers",
+						label: this.msg(CatalogMessageId.workflowRowChildWriters),
 						labelWidth: SETTINGS_LABEL_COLUMN,
-						value: paletteChoice(snapshot.config.workspaceWriters === "parallel" ? "In parallel" : "One at a time"),
+						value: paletteChoice(
+							snapshot.config.workspaceWriters === "parallel"
+								? this.msg(CatalogMessageId.workflowValueInParallel)
+								: this.msg(CatalogMessageId.workflowValueOneAtATime),
+						),
 						choice: () => this.toggleWorkspaceWriters(),
 					},
 					...roles.map((role, index) => ({
 						label: role.id,
 						labelRole: "palette.identity" as const,
 						value: agentModelSelectorLabel(role.model, this.service.models()),
-						...(this.service.activeRole() === role.id ? { meta: "in session" } : {}),
-						...(index === 0 ? { heading: "Agents", headingMeta: `${roles.length} defined` } : {}),
+						...(this.service.activeRole() === role.id
+							? { meta: this.msg(CatalogMessageId.workflowMetaInSession) }
+							: {}),
+						...(index === 0
+							? {
+									heading: this.msg(CatalogMessageId.workflowLabelAgents),
+									headingMeta: this.msg(CatalogMessageId.workflowHeadingMetaDefined, {
+										count: String(roles.length),
+									}),
+								}
+							: {}),
 						run: () => this.edit(role),
 					})),
 				);
-				rows.push({ label: "+ Add agent", run: () => this.edit() });
+				rows.push({ label: this.msg(CatalogMessageId.workflowRowAddAgent), run: () => this.edit() });
 			} else {
 				const runs = this.listedRuns();
 				const active = runs.filter(isActiveRun).length;
@@ -419,8 +491,11 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 						meta: run.currentTool ?? run.task.replace(/\s+/g, " "),
 						...(index === 0
 							? {
-									heading: "Runs",
-									headingMeta: `${active ? `${active} running · ` : ""}${runs.length} in session`,
+									heading: this.msg(CatalogMessageId.workflowLabelRuns),
+									headingMeta: this.msg(CatalogMessageId.workflowHeadingMetaRuns, {
+										active,
+										count: String(runs.length),
+									}),
 								}
 							: {}),
 						run: () => {
@@ -437,10 +512,14 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 			const cycle = <T>(values: readonly T[], current: T, delta: number) =>
 				values[(values.indexOf(current) + delta + values.length) % values.length];
 			const rows: Row[] = [
-				{ label: "Role ID", heading: "Definition", input: this.fields.get("id") },
-				{ label: "Description", input: this.fields.get("description") },
 				{
-					label: "Model",
+					label: this.msg(CatalogMessageId.workflowRowRoleId),
+					heading: this.msg(CatalogMessageId.workflowLabelDefinition),
+					input: this.fields.get("id"),
+				},
+				{ label: this.msg(CatalogMessageId.workflowRowDescription), input: this.fields.get("description") },
+				{
+					label: this.msg(CatalogMessageId.workflowRowModel),
 					value: agentModelSelectorLabel(role.model, this.service.models()),
 					meta: "›",
 					run: () => {
@@ -449,15 +528,17 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 					},
 				},
 				{
-					label: "Placement",
+					label: this.msg(CatalogMessageId.workflowRowPlacement),
 					value: paletteChoice(role.placement),
 					choice: (delta) => {
 						role.placement = cycle(["main", "child", "both"], role.placement, delta);
 					},
 				},
 				{
-					label: "Review only",
-					value: paletteChoice(role.judging ? "Yes" : "No"),
+					label: this.msg(CatalogMessageId.workflowRowReviewOnly),
+					value: paletteChoice(
+						role.judging ? this.msg(CatalogMessageId.workflowValueYes) : this.msg(CatalogMessageId.workflowValueNo),
+					),
 					choice: () => {
 						role.judging = !role.judging;
 						if (role.judging) {
@@ -466,34 +547,45 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 						}
 					},
 				},
-				{ label: "Child tools", input: this.fields.get("tools") },
+				{ label: this.msg(CatalogMessageId.workflowRowChildTools), input: this.fields.get("tools") },
 				{
-					label: "Thinking",
-					value: paletteChoice(role.thinking === "same" ? "Same as main" : role.thinking),
+					label: this.msg(CatalogMessageId.workflowRowThinking),
+					value: paletteChoice(
+						role.thinking === "same" ? catalogText(this.catalog, "jouzu.cli.workflow.sameAsMain") : role.thinking,
+					),
 					choice: (delta) => {
 						role.thinking = cycle(ROLE_THINKING_LEVELS, role.thinking, delta);
 					},
 				},
-				{ label: "Timeout (seconds)", input: this.fields.get("timeoutSeconds") },
-				{ label: "Maximum turns", input: this.fields.get("maxTurns") },
+				{ label: this.msg(CatalogMessageId.workflowRowTimeoutSeconds), input: this.fields.get("timeoutSeconds") },
+				{ label: this.msg(CatalogMessageId.workflowRowMaximumTurns), input: this.fields.get("maxTurns") },
 				{
-					label: "Instructions",
-					value: `${role.instructions.length} characters`,
+					label: this.msg(CatalogMessageId.workflowRowInstructions),
+					value: this.msg(CatalogMessageId.workflowValueCharacters, { count: String(role.instructions.length) }),
 					meta: "›",
 					run: () =>
-						this.openText("Edit instructions", role.instructions, "role", (text) => {
-							role.instructions = text;
-						}),
+						this.openText(
+							catalogMessage(CatalogMessageId.workflowStageEditInstructions),
+							role.instructions,
+							"role",
+							(text) => {
+								role.instructions = text;
+							},
+						),
 				},
-				{ label: "Save", heading: "Actions", run: () => this.save() },
+				{
+					label: this.msg(CatalogMessageId.workflowRowSave),
+					heading: this.msg(CatalogMessageId.workflowLabelActions),
+					run: () => this.save(),
+				},
 			];
 			if (this.originalId) {
 				if (role.placement !== "child")
 					rows.push({
-						label: "Use in main session",
+						label: this.msg(CatalogMessageId.workflowRowUseInMainSession),
 						run: () => {
 							this.requireSaved();
-							void this.perform("Applying agent", async () => {
+							void this.perform(catalogMessage(CatalogMessageId.workflowActionApplyingAgent), async () => {
 								await this.service.activate(required(this.originalId));
 								this.setMode("browse");
 							});
@@ -501,8 +593,10 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 					});
 				if (role.placement !== "main")
 					rows.push({
-						label: "Launch agent…",
-						...(!this.service.subagentsEnabled() ? { value: "Unavailable: subagents off" } : {}),
+						label: this.msg(CatalogMessageId.workflowRowLaunchAgent),
+						...(!this.service.subagentsEnabled()
+							? { value: this.msg(CatalogMessageId.workflowValueUnavailableSubagentsOff) }
+							: {}),
 						run: () => {
 							this.requireSaved();
 							this.startTask(
@@ -512,7 +606,7 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 						},
 					});
 				rows.push({
-					label: "Duplicate as new agent",
+					label: this.msg(CatalogMessageId.workflowRowDuplicateAsNewAgent),
 					run: () => {
 						const copy = this.draftValue();
 						copy.id = `${copy.id}-copy`;
@@ -521,11 +615,11 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 					},
 				});
 				rows.push({
-					label: "Delete definition…",
+					label: this.msg(CatalogMessageId.workflowRowDeleteDefinition),
 					run: () => {
 						this.requireSaved();
 						this.confirmation = {
-							label: `Delete ${this.originalId}? Existing runs remain.`,
+							label: this.msg(CatalogMessageId.workflowRowDeleteConfirm, { agent: required(this.originalId) }),
 							back: "role",
 							action: () => {
 								const snapshot = required(this.snapshot);
@@ -543,19 +637,23 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 					},
 				});
 			}
-			rows.push({ label: "Cancel", run: () => this.setMode("browse") });
+			rows.push({ label: this.msg(CatalogMessageId.workflowRowCancel), run: () => this.setMode("browse") });
 			return rows;
 		}
 		if (this.mode === "limit")
 			return [
 				{
-					label: "Concurrency",
-					heading: "Setting",
+					label: this.msg(CatalogMessageId.workflowRowConcurrency),
+					heading: this.msg(CatalogMessageId.workflowLabelSetting),
 					input: required(this.concurrencyInput),
 					meta: `${CONCURRENCY_BOUNDS.minimum}–${CONCURRENCY_BOUNDS.maximum}`,
 				},
-				{ label: "Save", heading: "Actions", run: () => this.saveConcurrency() },
-				{ label: "Cancel", run: () => this.setMode("browse") },
+				{
+					label: this.msg(CatalogMessageId.workflowRowSave),
+					heading: this.msg(CatalogMessageId.workflowLabelActions),
+					run: () => this.saveConcurrency(),
+				},
+				{ label: this.msg(CatalogMessageId.workflowRowCancel), run: () => this.setMode("browse") },
 			];
 		if (this.mode === "models") {
 			const query = this.modelSearch.getValue().toLowerCase();
@@ -568,11 +666,11 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 			// The literal value stays visible in the value column so the saved selector is unambiguous.
 			if (`${SAME_MODEL} same as this session`.includes(query))
 				rows.push({
-					label: "Same as this session",
+					label: this.msg(CatalogMessageId.workflowRowSameAsThisSession),
 					labelRole: "palette.identity",
 					value: SAME_MODEL,
-					heading: "Models",
-					headingMeta: "follows the session model",
+					heading: this.msg(CatalogMessageId.workflowLabelModels),
+					headingMeta: this.msg(CatalogMessageId.workflowHeadingMetaFollowsSessionModel),
 					run: () => choose(SAME_MODEL),
 				});
 			rows.push(
@@ -583,7 +681,7 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 						label: agentModelDisplay(model).name,
 						labelRole: "palette.identity" as const,
 						value: agentModelDisplay(model).source,
-						...(index === 0 && rows.length === 0 ? { heading: "Models" } : {}),
+						...(index === 0 && rows.length === 0 ? { heading: this.msg(CatalogMessageId.workflowLabelModels) } : {}),
 						run: () => choose(`${model.provider}/${model.id}`),
 					})),
 			);
@@ -592,12 +690,14 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 		if (this.mode === "task")
 			return [
 				{
-					label: "Assignment",
-					heading: "Task",
-					value: this.task.length ? `${this.task.length} characters` : "Write a task",
+					label: this.msg(CatalogMessageId.workflowRowAssignment),
+					heading: this.msg(CatalogMessageId.workflowLabelTask),
+					value: this.task.length
+						? this.msg(CatalogMessageId.workflowValueCharacters, { count: String(this.task.length) })
+						: this.msg(CatalogMessageId.workflowValueWriteTask),
 					meta: "›",
 					run: () =>
-						this.openText("Edit assignment", this.task, "task", (text) => {
+						this.openText(catalogMessage(CatalogMessageId.workflowStageEditAssignment), this.task, "task", (text) => {
 							this.task = text;
 						}),
 				},
@@ -605,15 +705,20 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 				...(this.taskAction === "launch"
 					? [
 							{
-								label: "Workspace",
+								label: this.msg(CatalogMessageId.workflowRowWorkspace),
 								value: this.workspace || this.service.cwd(),
 								meta: this.workspace ? undefined : "default",
 								run: () => {
 									const current = this.workspace || this.service.cwd();
-									this.openText("Edit workspace", current, "task", (text) => {
-										const next = text.trim();
-										this.workspace = next === this.service.cwd() ? "" : next;
-									});
+									this.openText(
+										catalogMessage(CatalogMessageId.workflowStageEditWorkspace),
+										current,
+										"task",
+										(text) => {
+											const next = text.trim();
+											this.workspace = next === this.service.cwd() ? "" : next;
+										},
+									);
 								},
 							},
 						]
@@ -621,14 +726,15 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 				{
 					label:
 						this.taskAction === "launch"
-							? "Launch agent"
+							? this.msg(CatalogMessageId.workflowActionLaunchAgent)
 							: this.taskAction === "steer"
-								? "Send message"
-								: "Resume agent",
-					heading: "Actions",
+								? this.msg(CatalogMessageId.workflowActionSendMessage)
+								: this.msg(CatalogMessageId.workflowActionResumeAgent),
+					heading: this.msg(CatalogMessageId.workflowLabelActions),
 					run: () => {
-						void this.perform("Sending task", async () => {
-							if (!this.task.trim()) throw new Error("Write an assignment before sending it.");
+						void this.perform(catalogMessage(CatalogMessageId.workflowActionSendingTask), async () => {
+							if (!this.task.trim())
+								throw new Error(catalogText(this.catalog, CatalogMessageId.workflowErrorWriteAssignment));
 							if (this.taskAction === "steer") this.service.steer(required(this.runId), this.task);
 							else {
 								const run =
@@ -645,14 +751,14 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 						});
 					},
 				},
-				{ label: "Cancel", run: () => this.setMode(this.runId ? "run" : "browse") },
+				{ label: this.msg(CatalogMessageId.workflowRowCancel), run: () => this.setMode(this.runId ? "run" : "browse") },
 			];
 		if (this.mode === "run") {
 			const run = this.run();
 			return [
 				{
-					label: "Read output",
-					heading: "Actions",
+					label: this.msg(CatalogMessageId.workflowRowReadOutput),
+					heading: this.msg(CatalogMessageId.workflowLabelActions),
 					run: () => {
 						this.outputOffset = 0;
 						this.outputLine = 0;
@@ -662,15 +768,15 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 				},
 				...(isActiveRun(run)
 					? [
-							{ label: "Send a message…", run: () => this.startTask("steer") },
+							{ label: this.msg(CatalogMessageId.workflowRowSendMessage), run: () => this.startTask("steer") },
 							{
-								label: "Stop agent…",
+								label: this.msg(CatalogMessageId.workflowRowStopAgent),
 								run: () => {
 									this.confirmation = {
-										label: `Stop ${run.role.id}? Changes already made remain.`,
+										label: this.msg(CatalogMessageId.workflowRowStopConfirm, { agent: run.role.id }),
 										back: "run",
 										action: () => {
-											void this.perform("Stopping agent", async () => {
+											void this.perform(catalogMessage(CatalogMessageId.workflowActionStoppingAgent), async () => {
 												await this.service.stop(run.id);
 												this.setMode("run");
 											});
@@ -682,13 +788,15 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 						]
 					: [
 							{
-								label: "Resume with a task…",
-								...(!this.service.subagentsEnabled() ? { value: "Unavailable: subagents off" } : {}),
+								label: this.msg(CatalogMessageId.workflowRowResumeWithTask),
+								...(!this.service.subagentsEnabled()
+									? { value: this.msg(CatalogMessageId.workflowValueUnavailableSubagentsOff) }
+									: {}),
 								run: () => this.startTask("resume"),
 							},
 						]),
 				{
-					label: "Back to runs",
+					label: this.msg(CatalogMessageId.workflowRowBackToRuns),
 					run: () => {
 						this.section = "runs";
 						this.setMode("browse");
@@ -767,14 +875,14 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 				this.modelSearch.handleInput(data);
 				this.selected = 0;
 			} else if (rows[this.selected]?.input) rows[this.selected].input?.handleInput(data);
-			else if (this.mode === "browse" && rows[this.selected]?.label === "Subagents" && matchesKey(data, "space"))
+			else if (this.mode === "browse" && rows[this.selected]?.id === "subagents" && matchesKey(data, "space"))
 				this.toggleSubagents();
 			else if (matchesKey(data, "left")) rows[this.selected]?.choice?.(-1);
 			else if (matchesKey(data, "right")) rows[this.selected]?.choice?.(1);
 			else if (matchesKey(data, "home")) this.selected = 0;
 			else if (matchesKey(data, "end")) this.selected = Math.max(0, rows.length - 1);
 		} catch (error) {
-			this.message = sanitizeTerminalText(error instanceof Error ? error.message : "Operation failed.");
+			this.message = sanitizeTerminalText(this.errorText(error, CatalogMessageId.workflowMessageOperationFailed));
 			this.messageLevel = "error";
 		}
 		this.context.tui.requestRender();
@@ -786,19 +894,25 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 		const move = formatEffectiveKeyPair(keybindings, "tui.select.up", "tui.select.down");
 		if (this.mode === "text")
 			return [
-				{ key: cancel, label: "return to form" },
-				{ key: "Enter", label: "newline" },
+				{ key: cancel, label: this.msg(CatalogMessageId.paletteActionReturnToForm) },
+				{ key: "Enter", label: this.msg(CatalogMessageId.paletteActionNewline) },
 			];
 		if (this.mode === "output")
 			return [
-				{ key: formatEffectiveKeybinding(keybindings, "tui.select.pageDown"), label: "next" },
-				{ key: formatEffectiveKeybinding(keybindings, "tui.select.pageUp"), label: "previous" },
-				{ key: cancel, label: "back" },
+				{
+					key: formatEffectiveKeybinding(keybindings, "tui.select.pageDown"),
+					label: this.msg(CatalogMessageId.paletteActionNext),
+				},
+				{
+					key: formatEffectiveKeybinding(keybindings, "tui.select.pageUp"),
+					label: this.msg(CatalogMessageId.paletteActionPrevious),
+				},
+				{ key: cancel, label: this.msg(CatalogMessageId.paletteActionBack) },
 			];
 		if (this.mode === "confirm")
 			return [
-				{ key: confirm, label: "confirm" },
-				{ key: cancel, label: "cancel" },
+				{ key: confirm, label: this.msg(CatalogMessageId.paletteActionConfirm) },
+				{ key: cancel, label: this.msg(CatalogMessageId.paletteActionCancel) },
 			];
 		let selected: Row | undefined;
 		try {
@@ -807,17 +921,18 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 		const fallback =
 			this.mode === "browse"
 				? this.section === "agents"
-					? "edit agent"
-					: "inspect run"
+					? this.msg(CatalogMessageId.workflowHintEditAgent)
+					: this.msg(CatalogMessageId.workflowHintInspectRun)
 				: (selected?.label.replace(/[…›]/g, "").trim().toLowerCase() ?? "select");
 		const primary = selected?.input ? "save" : selected?.choice ? "change" : (selected?.hint ?? fallback);
 		const hints: PaletteKeyHint[] = [
 			{ key: confirm, label: primary },
-			{ key: move, label: "move" },
+			{ key: move, label: this.msg(CatalogMessageId.paletteActionMove) },
 		];
-		if (selected?.choice) hints.push({ key: "←→", label: "change" });
-		if (this.mode === "browse" && selected?.label === "Subagents") hints.push({ key: "Space", label: "toggle" });
-		if (this.mode === "browse") hints.push({ key: "Tab", label: "section" });
+		if (selected?.choice) hints.push({ key: "←→", label: this.msg(CatalogMessageId.paletteActionChange) });
+		if (this.mode === "browse" && selected?.id === "subagents")
+			hints.push({ key: "Space", label: this.msg(CatalogMessageId.paletteActionToggle) });
+		if (this.mode === "browse") hints.push({ key: "Tab", label: this.msg(CatalogMessageId.paletteActionSection) });
 		hints.push({ key: cancel, label: this.mode === "browse" ? "close" : "cancel" });
 		return hints;
 	}
@@ -830,14 +945,9 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 		const row = (value = "") => renderTerminalFrameRow(value, width, frame);
 		const heading = (label: string, meta = "") => row(renderPaletteHeading(label, inner, theme, styles, meta));
 		// The text editor serves two fields, so its title names the one in hand.
-		const stage =
-			this.mode === "text"
-				? this.textReturn === "task"
-					? " · Edit assignment"
-					: " · Edit instructions"
-				: MODE_TITLES[this.mode];
-		const title = `${this.wordmark} ${theme.bold(styles.apply("palette.title", `· Workflow${stage}`))}${
-			this.busy ? ` ${styles.apply("palette.count", "· Busy")}` : ""
+		const stage = this.stageSuffix();
+		const title = `${this.wordmark} ${theme.bold(styles.apply("palette.title", this.msg(CatalogMessageId.workflowTitle, { stage })))}${
+			this.busy ? ` ${styles.apply("palette.count", this.msg(CatalogMessageId.workflowTitleBusy))}` : ""
 		}`;
 		const lines = [renderTerminalFrameTitle(title, width, frame)];
 		if (this.mode === "browse") {
@@ -849,9 +959,15 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 		this.rowsVisible = available;
 		try {
 			if (this.mode === "text") {
-				lines.push(heading(this.textReturn === "task" ? "Assignment" : "Instructions"));
+				lines.push(
+					heading(
+						this.textReturn === "task"
+							? this.msg(CatalogMessageId.workflowRowAssignment)
+							: this.msg(CatalogMessageId.workflowRowInstructions),
+					),
+				);
 				lines.push(...required(this.editor).render(inner).map(row));
-				lines.push(row(styles.apply("palette.hint", "Changes are saved only with Save in the form.")));
+				lines.push(row(styles.apply("palette.hint", this.msg(CatalogMessageId.workflowHintSaveInForm))));
 			} else if (this.mode === "confirm") {
 				lines.push(heading("Confirm"));
 				lines.push(
@@ -884,7 +1000,7 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 					heading(
 						"Output",
 						`${Math.min(this.outputLine + 1, this.outputLines.length)}/${this.outputLines.length}${
-							this.outputNext === null ? "" : " · more"
+							this.outputNext === null ? "" : ` · ${this.msg(CatalogMessageId.workflowHeadingMetaMore)}`
 						}`,
 					),
 				);
@@ -903,10 +1019,10 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 				if (this.mode === "run") {
 					const run = this.run();
 					const tokens = run.usage.input + run.usage.output + run.usage.cacheRead + run.usage.cacheWrite;
-					const detail = (label: string, value: string) =>
+					const detail = (label: CatalogMessageRef, value: string) =>
 						row(
 							renderPaletteField({
-								label,
+								label: catalogMessageText(this.catalog, label),
 								value,
 								labelWidth: 10,
 								innerWidth: inner,
@@ -916,22 +1032,40 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 							}),
 						);
 					lines.push(heading("Run", sanitizeTerminalText(run.status)));
-					lines.push(detail("Agent", sanitizeTerminalText(run.role.id)));
-					lines.push(detail("Model", agentModelDisplay(run.model).label));
-					lines.push(detail("Thinking", run.thinkingLevel ?? run.role.thinking));
-					lines.push(detail("Workspace", sanitizeTerminalText(run.cwd)));
-					if (run.context)
-						lines.push(
-							detail("Context", `${run.context.mode} · parent lookup ${run.context.parentLookup ? "on" : "off"}`),
-						);
-					lines.push(detail("Model ID", `${run.model.provider}/${run.model.id}`));
+					lines.push(detail(catalogMessage(CatalogMessageId.workflowFieldAgent), sanitizeTerminalText(run.role.id)));
+					lines.push(detail(catalogMessage(CatalogMessageId.workflowFieldModel), agentModelDisplay(run.model).label));
+					const thinking = run.thinkingLevel ?? run.role.thinking;
 					lines.push(
 						detail(
-							"Usage",
-							`${compactNumber(tokens)} tokens · ${run.usage.cost === null ? "cost unknown" : `$${run.usage.cost.toFixed(4)}`}`,
+							catalogMessage(CatalogMessageId.workflowRowThinking),
+							thinking === "same" ? catalogText(this.catalog, "jouzu.cli.workflow.sameAsMain") : thinking,
 						),
 					);
-					if (run.result) lines.push(detail("Result", sanitizeTerminalText(run.result)));
+					lines.push(detail(catalogMessage(CatalogMessageId.workflowFieldWorkspace), sanitizeTerminalText(run.cwd)));
+					if (run.context)
+						lines.push(
+							detail(
+								catalogMessage(CatalogMessageId.workflowFieldContext),
+								catalogText(
+									this.catalog,
+									run.context.parentLookup
+										? CatalogMessageId.workflowFieldContextLookupOn
+										: CatalogMessageId.workflowFieldContextLookupOff,
+									{ mode: run.context.mode },
+								),
+							),
+						);
+					lines.push(
+						detail(catalogMessage(CatalogMessageId.workflowFieldModelId), `${run.model.provider}/${run.model.id}`),
+					);
+					lines.push(
+						detail(
+							catalogMessage(CatalogMessageId.workflowFieldUsage),
+							`${compactNumber(tokens, this.catalog)} tokens · ${run.usage.cost === null ? this.msg(CatalogMessageId.workflowValueCostUnknown) : `$${run.usage.cost.toFixed(4)}`}`,
+						),
+					);
+					if (run.result)
+						lines.push(detail(catalogMessage(CatalogMessageId.workflowFieldResult), sanitizeTerminalText(run.result)));
 				}
 				const rows = this.rows();
 				this.selected = Math.max(0, Math.min(this.selected, rows.length - 1));
@@ -977,13 +1111,15 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 						row(
 							styles.apply(
 								"palette.empty",
-								this.mode === "models" ? "No matching models. Edit the search." : "No child runs in this session.",
+								this.mode === "models"
+									? this.msg(CatalogMessageId.workflowEmptyNoMatchingModels)
+									: this.msg(CatalogMessageId.workflowEmptyNoChildRuns),
 							),
 						),
 					);
 			}
 		} catch (error) {
-			this.message = sanitizeTerminalText(error instanceof Error ? error.message : "Could not load Workflow.");
+			this.message = sanitizeTerminalText(this.errorText(error, CatalogMessageId.workflowMessageCouldNotLoad));
 			this.messageLevel = "error";
 		}
 		if (this.message) {

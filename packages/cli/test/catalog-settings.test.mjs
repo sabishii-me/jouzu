@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -15,6 +15,7 @@ import {
 	setCatalogSourceToken,
 } from "../dist/catalog-sources.js";
 import { createLabelPolicy, labelPolicyPath } from "../dist/label-policy.js";
+import { resolveResponseLanguage } from "../dist/language-settings.js";
 import { parseAndValidateModelCatalog } from "../dist/model-catalog.js";
 import { loadActiveCatalogForSource, refreshCatalogSource } from "../dist/model-catalog-sync.js";
 import { resolveJouzuPaths } from "../dist/paths.js";
@@ -24,6 +25,7 @@ import { setShisaSignedOut, writeShisaLoginCredential } from "../dist/shisa-link
 import { newShisaInstallId, shisaLinkStatePath, writeShisaLinkState } from "../dist/shisa-link/state.js";
 import { acquireStateLock } from "../dist/state-lock.js";
 import { terminalTextWidth } from "../dist/terminal-layout.js";
+import { readLocalizationSettings } from "../dist/ui-locale.js";
 
 const fixture = parseAndValidateModelCatalog(
 	readFileSync(join(import.meta.dirname, "..", "catalog", "fixtures", "account-snapshot-v1.json"), "utf8"),
@@ -1526,7 +1528,7 @@ test("a failed acknowledgement keeps the warning instead of reporting success", 
 		login: async (callbacks, options) => {
 			options?.onCompletion?.({ acknowledged: false, reason: "failed" });
 			callbacks.onProgress(
-				"Shisa sign-in was saved, but confirmation failed. Sign in again to avoid losing access when the confirmation window expires.",
+				"Shisa sign-in was saved, but confirmation failed. Sign in again to avoid losing access after the confirmation deadline.",
 			);
 		},
 	});
@@ -1724,4 +1726,139 @@ test("without a client version the account row names the login command", (t) => 
 	component.handleInput("enter");
 	assert.match(component.render(84).join("\n"), /Run \/login shisa to connect/u);
 	assert.equal(DEFAULT_SHISA_DASHBOARD_URL, "https://platform.shisa.ai/en/dashboard");
+});
+
+/** A recursive `path:content` snapshot, so a no-write assertion covers the whole tree. */
+function snapshotTree(dir) {
+	const entries = [];
+	const walk = (current, prefix) => {
+		for (const entry of readdirSync(current, { withFileTypes: true })) {
+			const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+			if (entry.isDirectory()) {
+				entries.push(`${rel}/`);
+				walk(join(current, entry.name), rel);
+			} else {
+				entries.push(`${rel}:${readFileSync(join(current, entry.name)).toString("base64")}`);
+			}
+		}
+	};
+	if (existsSync(dir)) walk(dir, "");
+	return entries.sort();
+}
+
+function localizationFile(paths, settings) {
+	mkdirSync(paths.configDir, { recursive: true });
+	const file = join(paths.configDir, "localization.json");
+	writeFileSync(file, `${JSON.stringify({ schemaVersion: 2, localization: settings })}\n`);
+	return file;
+}
+
+test("the Language view resolves each item's effective value and source", () => {
+	const { root, paths, context } = setup({ rows: 32 });
+	try {
+		const component = new CatalogSettingsComponent({ context, paths, env: {} });
+		component.route({ view: "settings", query: "language" });
+		const rowFor = (label) => component.render(90).find((value) => value.includes(label));
+		assert.match(component.render(90).join("\n"), /Settings \/ Language/u);
+		assert.ok(rowFor("Display language")?.includes("English"), "built-in display language");
+		assert.ok(rowFor("Display language")?.includes("builtin"), "built-in display source");
+		assert.ok(rowFor("Response language")?.includes("Automatic"), "built-in response language");
+		assert.ok(rowFor("Response language")?.includes("builtin"), "built-in response source");
+		assert.ok(rowFor("Artifact policy")?.includes("builtin"), "built-in artifact source");
+
+		localizationFile(paths, {
+			uiLocale: "ja",
+			responseLanguage: "ja",
+			artifactPolicy: { comments: "preserve" },
+		});
+		assert.ok(rowFor("Display language")?.includes("日本語"), "configured display language");
+		assert.ok(rowFor("Display language")?.includes("config"), "configured display source");
+		assert.ok(rowFor("Response language")?.includes("日本語"), "configured response language");
+		assert.ok(rowFor("Response language")?.includes("config"), "configured response source");
+		assert.ok(rowFor("Artifact policy")?.includes("comments=preserve"), "configured artifact policy");
+		assert.ok(rowFor("Artifact policy")?.includes("config"), "configured artifact source");
+
+		// A launch option and an environment variable outrank the saved setting.
+		const viaCli = new CatalogSettingsComponent({ context, paths, env: {}, uiLocaleCli: "en" });
+		viaCli.route({ view: "settings", query: "language" });
+		const cliRow = viaCli.render(90).find((value) => value.includes("Display language"));
+		assert.ok(cliRow?.includes("English"), "the launch option supplies the display language");
+		assert.ok(cliRow?.includes("cli"), "the launch option is reported as the source");
+		const viaEnv = new CatalogSettingsComponent({ context, paths, env: { JOUZU_UI_LOCALE: "en" } });
+		viaEnv.route({ view: "settings", query: "language" });
+		const envRow = viaEnv.render(90).find((value) => value.includes("Display language"));
+		assert.ok(envRow?.includes("env"), "the environment variable is reported as the source");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("a language preview is confined to Settings and a cancel writes nothing", () => {
+	const { root, paths, context, closes } = setup({ rows: 32 });
+	try {
+		const file = localizationFile(paths, { uiLocale: "ja", responseLanguage: "ja" });
+		const before = readFileSync(file, "utf8");
+		const beforeTree = snapshotTree(join(root, "jouzu"));
+		const component = new CatalogSettingsComponent({ context, paths, env: {} });
+		component.route({ view: "settings", query: "language" });
+		component.handleInput("down");
+		const rowFor = (label) => component.render(90).find((value) => value.includes(label));
+		assert.ok(rowFor("Display language")?.includes("日本語"), "the saved value shows before the preview");
+
+		// Preview a different interface language: only this view's text changes.
+		component.handleInput("\u001b[C");
+		let rendered = component.render(90);
+		assert.ok(rowFor("Display language")?.includes("English"), "the preview shows the candidate");
+		assert.ok(rowFor("Display language")?.includes("preview"), "the preview marks its source");
+		assert.match(rendered.join("\n"), /Preview · not saved/u);
+		assert.equal(readFileSync(file, "utf8"), before, "the preview wrote the settings");
+		assert.deepEqual(snapshotTree(join(root, "jouzu")), beforeTree, "the preview changed the state tree");
+
+		// Cancel: the saved value, the file, and the tree are restored untouched.
+		component.handleInput("escape");
+		rendered = component.render(90);
+		assert.ok(rowFor("Display language")?.includes("日本語"), "cancel restores the saved value");
+		assert.ok(rowFor("Display language")?.includes("config"), "cancel restores the saved source");
+		assert.match(rendered.join("\n"), /Preview canceled\. Nothing was saved\./u);
+		assert.equal(readFileSync(file, "utf8"), before, "the cancel wrote the settings");
+		assert.deepEqual(snapshotTree(join(root, "jouzu")), beforeTree, "the cancel changed the state tree");
+		// The composed response language is derived from the file, so it is unchanged.
+		assert.equal(
+			resolveResponseLanguage({ config: readLocalizationSettings(paths.configDir).settings?.responseLanguage })
+				.effective,
+			"ja",
+		);
+
+		// A second cancel has no preview left to drop, so it closes Settings.
+		component.handleInput("escape");
+		assert.equal(closes.length, 1, "the second cancel closed Settings");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("a canceled response-language preview does not change the composed instruction", () => {
+	const { root, paths, context } = setup({ rows: 32 });
+	try {
+		localizationFile(paths, { uiLocale: "en", responseLanguage: "en" });
+		const component = new CatalogSettingsComponent({ context, paths, env: {} });
+		component.route({ view: "settings", query: "language" });
+		component.handleInput("down");
+		component.handleInput("down");
+		const rowFor = (label) => component.render(90).find((value) => value.includes(label));
+		assert.ok(rowFor("Response language")?.includes("English"), "the saved response language shows");
+
+		component.handleInput("\u001b[C");
+		assert.ok(rowFor("Response language")?.includes("preview"), "the response preview marks its source");
+		component.handleInput("escape");
+		assert.ok(rowFor("Response language")?.includes("English"), "cancel restores the response language");
+		assert.ok(rowFor("Response language")?.includes("config"), "cancel restores the response source");
+		assert.equal(
+			resolveResponseLanguage({ config: readLocalizationSettings(paths.configDir).settings?.responseLanguage })
+				.effective,
+			"en",
+		);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
 });

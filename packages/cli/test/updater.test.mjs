@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { catalogMessageText, defaultCatalog } from "../dist/cli-messages.js";
 import {
 	classifyInstallChannel,
 	compareSemver,
@@ -274,7 +275,8 @@ test("a failed install leaves a still-verified current version running without r
 		});
 		const result = updater.startup();
 		assert.equal(result.action, "continue");
-		assert.match(result.message, /update-not-installed/);
+		assert.ok(result.message);
+		assert.match(catalogMessageText(defaultCatalog(), result.message), /update-not-installed/);
 		assert.equal(npm.installedVersion(), "0.1.0");
 		assert.equal(npm.calls.filter((args) => args[0] === "install").length, 1);
 	} finally {
@@ -443,7 +445,10 @@ test("notify and off policies never install during startup", () => {
 			updater.setPolicy(policy);
 			const result = updater.startup();
 			assert.equal(result.action, "continue");
-			if (policy === "notify") assert.match(result.message, /is available/);
+			if (policy === "notify") {
+				assert.ok(result.message);
+				assert.match(catalogMessageText(defaultCatalog(), result.message), /is available/);
+			}
 			assert.equal(
 				npm.calls.some((args) => args[0] === "install"),
 				false,

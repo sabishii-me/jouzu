@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-
+import { assertInstalledCatalogLock, computeCatalogDigests } from "./catalog-lock.mjs";
 import {
 	configureReleasePacklists,
 	isPrunedDependencyMetadata,
@@ -12,12 +12,16 @@ import {
 import {
 	assertDefaultPackagesAbsent,
 	assertExternalWebTransport,
+	assertForbiddenPublicContent,
 	assertLicenseFilesPresent,
+	assertLocaleCatalogsConsistent,
+	assertLocaleFilesPresent,
 	assertNoPrunedDependencyMetadata,
 	assertPiNativeHelpersPresent,
 	assertProfileFilesPresent,
 	assertTerminalClipboardBundlePresent,
 	deriveRequiredLicenseFiles,
+	deriveRequiredLocaleFiles,
 	deriveRequiredProfileFiles,
 	forbiddenPublicContent,
 	publicContentForScan,
@@ -77,6 +81,123 @@ test("all declared assets present in the tarball passes the presence check", () 
 		const required = deriveRequiredProfileFiles(dir);
 		const packed = required.map((path) => ({ path }));
 		assert.doesNotThrow(() => assertProfileFilesPresent(packed, required));
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+function makeFixtureCatalogs() {
+	const dir = mkdtempSync(join(tmpdir(), "pack-check-locales-"));
+	const locales = join(dir, "dist", "locales");
+	for (const locale of ["en", "ja"]) {
+		mkdirSync(join(locales, locale), { recursive: true });
+		writeFileSync(join(locales, locale, "cli.ftl"), `${locale}-greeting = hello\n`);
+		writeFileSync(join(locales, locale, "localization-settings.ftl"), `${locale}-settings = settings\n`);
+	}
+	writeFileSync(join(locales, "catalog-status.json"), '{"version":"1","locales":{}}\n');
+	const { locales: digests, extra } = computeCatalogDigests(locales);
+	writeFileSync(
+		join(locales, "catalog.lock.json"),
+		`${JSON.stringify({ version: "1", locales: digests, extra }, null, 2)}\n`,
+	);
+	writeFileSync(join(dir, "dist", "locale-catalog.js"), 'export const CATALOG_VERSION = "1";\n');
+	return { dir, locales, loader: join(dir, "dist", "locale-catalog.js") };
+}
+
+test("deriveRequiredLocaleFiles lists the lock, the status file, and every catalog file", () => {
+	const fixture = makeFixtureCatalogs();
+	try {
+		const required = deriveRequiredLocaleFiles(fixture.locales);
+		for (const path of [
+			"dist/locales/catalog.lock.json",
+			"dist/locales/catalog-status.json",
+			"dist/locale-catalog.js",
+			"dist/locales/en/cli.ftl",
+			"dist/locales/en/localization-settings.ftl",
+			"dist/locales/ja/cli.ftl",
+			"dist/locales/ja/localization-settings.ftl",
+		]) {
+			assert.ok(required.includes(path), `expected ${path} in ${required.join(", ")}`);
+		}
+	} finally {
+		rmSync(fixture.dir, { recursive: true, force: true });
+	}
+});
+
+test("a catalog dropped from the tarball fails the presence check", () => {
+	const fixture = makeFixtureCatalogs();
+	try {
+		const required = deriveRequiredLocaleFiles(fixture.locales);
+		const packed = required.filter((path) => path !== "dist/locales/ja/cli.ftl").map((path) => ({ path }));
+		assert.throws(() => assertLocaleFilesPresent(packed, required), /dist\/locales\/ja\/cli\.ftl/);
+	} finally {
+		rmSync(fixture.dir, { recursive: true, force: true });
+	}
+});
+
+test("a catalog whose bytes no longer match the lock fails the consistency check", () => {
+	const fixture = makeFixtureCatalogs();
+	try {
+		assert.doesNotThrow(() => assertLocaleCatalogsConsistent(fixture.locales, fixture.loader));
+		writeFileSync(join(fixture.locales, "ja", "cli.ftl"), "ja-greeting = こんにちは\n");
+		assert.throws(
+			() => assertLocaleCatalogsConsistent(fixture.locales, fixture.loader),
+			/catalog digest for ja does not match the lock/,
+		);
+	} finally {
+		rmSync(fixture.dir, { recursive: true, force: true });
+	}
+});
+
+test("a lock version that disagrees with the loader fails the consistency check", () => {
+	const fixture = makeFixtureCatalogs();
+	try {
+		writeFileSync(fixture.loader, 'export const CATALOG_VERSION = "2";\n');
+		assert.throws(
+			() => assertLocaleCatalogsConsistent(fixture.locales, fixture.loader),
+			/does not match CATALOG_VERSION 2/,
+		);
+	} finally {
+		rmSync(fixture.dir, { recursive: true, force: true });
+	}
+});
+
+test("the installed-package lock check fails on a version or digest mismatch", () => {
+	const fixture = makeFixtureCatalogs();
+	try {
+		assert.doesNotThrow(() => assertInstalledCatalogLock(fixture.dir, "fixture install"));
+		const lockPath = join(fixture.locales, "catalog.lock.json");
+		const lock = JSON.parse(readFileSync(lockPath, "utf8"));
+		writeFileSync(lockPath, `${JSON.stringify({ ...lock, version: "2" }, null, 2)}\n`);
+		assert.throws(
+			() => assertInstalledCatalogLock(fixture.dir, "fixture install"),
+			/fixture install: catalog lock version "2" does not match CATALOG_VERSION 1/,
+		);
+		writeFileSync(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
+		writeFileSync(join(fixture.locales, "ja", "cli.ftl"), "ja-greeting = こんにちは\n");
+		assert.throws(
+			() => assertInstalledCatalogLock(fixture.dir, "fixture install"),
+			/fixture install: catalog digest for ja does not match the lock/,
+		);
+	} finally {
+		rmSync(fixture.dir, { recursive: true, force: true });
+	}
+});
+
+test("the forbidden-content scan covers shipped catalogs", () => {
+	const dir = mkdtempSync(join(tmpdir(), "pack-check-scan-"));
+	try {
+		const locale = join(dir, "dist", "locales", "ja");
+		mkdirSync(locale, { recursive: true });
+		const catalog = join(locale, "cli.ftl");
+		const packed = [{ path: "dist/locales/ja/cli.ftl" }];
+		writeFileSync(catalog, "jouzu-greeting = こんにちは\n");
+		assert.doesNotThrow(() => assertForbiddenPublicContent(packed, dir, ["jouzu-dev"]));
+		writeFileSync(catalog, "jouzu-greeting = jouzu-dev\n");
+		assert.throws(
+			() => assertForbiddenPublicContent(packed, dir, ["jouzu-dev"]),
+			/dist\/locales\/ja\/cli\.ftl contains forbidden public content/,
+		);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}

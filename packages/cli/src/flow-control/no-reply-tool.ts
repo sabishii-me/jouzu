@@ -1,4 +1,6 @@
 import type { InlineExtension, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { CatalogMessageId, catalogText, defaultCatalog } from "../cli-messages.js";
+import type { CatalogBundle } from "../locale-catalog.js";
 import { FLOW_OFF_MESSAGE } from "./flow-off-message.js";
 import { checkFlowNoReply, NO_REPLY_REFUSALS } from "./no-reply.js";
 import type { PiSessionFlowIngress } from "./pi-session-ingress.js";
@@ -19,6 +21,8 @@ const schema = {
 export interface FlowNoReplyOptions {
 	ingress(): PiSessionFlowIngress;
 	enabled?(): boolean;
+	/** The resolved catalog the tool label reads its display text from. */
+	catalog?: CatalogBundle;
 }
 
 /**
@@ -30,13 +34,14 @@ export interface FlowNoReplyOptions {
  * work keeps the turn alive without any special handling here.
  */
 export function createFlowNoReplyExtension(options: FlowNoReplyOptions): InlineExtension {
+	const catalog = options.catalog ?? defaultCatalog();
 	return {
 		name: "jouzu-flow-no-reply",
 		factory(pi) {
 			pi.registerTool({
 				name: "agent_no_reply",
 				exposure: "model-only",
-				label: "End the turn without replying",
+				label: catalogText(catalog, CatalogMessageId.flowNoReplyLabel),
 				description:
 					"End this turn without a reply, for a delivered result that needs no answer. Requires the exact permission that result carried. Refused for any run carrying user input, requested work, or a wait decision.",
 				promptSnippet: "agent_no_reply: end a notification-only turn without replying.",

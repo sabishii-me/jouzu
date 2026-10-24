@@ -7,11 +7,11 @@ A profile is a set of instructions, skills, and prompts that Jouzu installs into
 | `core` (default) | Default instructions, four optional skills, and the `jouzu-review` prompt. Selects no provider or response language. |
 | `ja` (preview) | Everything in `core`, plus Japanese responses. Code, commands, identifiers, paths, URLs, logs, and error messages stay unchanged. |
 
-Jouzu never picks a response language from branding, locale, terminal settings, repository text, or paths.
+The UI locale does not select a response language. The `responseLanguage` setting in [Configuration](configuration.md#language) supplies a separate response-language instruction. To use language settings without the `ja` profile's Japanese instruction, select `core`.
 
 ## Choose a profile
 
-The first interactive launch asks whether to enable the `ja` profile. Only a yes selects `ja`; anything else selects `core`. Non-interactive first runs use `core`.
+The first interactive launch asks for the interface language and then the response language. It uses `core` for either interface language, so the response choice is not overridden by a profile default. The Chinese interface choices are unavailable. Skipping the interface choice or running non-interactively writes no language choice and uses `core`.
 
 To change the profile, run:
 

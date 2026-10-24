@@ -38,6 +38,54 @@ A successful tmux buffer write or terminal request cannot confirm that the deskt
 
 When multiple clients are attached to the pane's session, Jouzu selects the most recently active client. Client selection and forwarding are separate tmux commands: moving a pane or switching a client to another session during a copy can change where the request arrives.
 
+## Language
+
+The UI locale, the response language, and the artifact policy are stored in `localization.json` in the Jouzu configuration directory, the parent of the `agent` directory listed in the README's [State and isolation](../README.md#state-and-isolation) table:
+
+| Platform | `localization.json` |
+| --- | --- |
+| Linux | `${XDG_CONFIG_HOME:-~/.config}/jouzu/localization.json` |
+| macOS | `~/Library/Application Support/Jouzu/localization.json` |
+| Windows | `%APPDATA%\Jouzu\localization.json` |
+
+```json
+{
+  "schemaVersion": 2,
+  "localization": {
+    "uiLocale": "ja",
+    "responseLanguage": "auto",
+    "artifactPolicy": {
+      "comments": "preserve",
+      "documentation": "project",
+      "commits": "project",
+      "reviews": "project"
+    }
+  }
+}
+```
+
+- `uiLocale` accepts `auto`, `en`, `ja`, `zh-Hans`, or `zh-Hant`. The interface offers only English and Japanese; a Chinese locale request falls back to English. `auto` resolves from the locale environment variables and falls back to English when no offered catalog matches.
+- `responseLanguage` sets the language of the agent's user-facing explanations: `auto`, `en`, `ja`, `zh-Hans`, or `zh-Hant`. `auto` adds no fixed conversational-language instruction; the separate artifact policy still applies.
+- `artifactPolicy` sets the language for each artifact kind. Each field takes `preserve`, `project`, `en`, `ja`, `zh-Hans`, or `zh-Hant`. `preserve` keeps existing text; `project` follows the project's existing language.
+
+The UI locale, response language, and artifact policy are separate settings. Changing `uiLocale` does not change `responseLanguage` or `artifactPolicy`, and no language setting selects a model, provider, or region.
+
+The first interactive launch offers `English` and `日本語` as interface choices, then asks for the response language separately. The Chinese names (`简体中文`, `繁體中文`) appear as unavailable interface choices; they remain valid response-language preferences. Skipping the interface choice or running non-interactively writes no language choice. Settings **Language** can preview a candidate inside the panel without saving it; see [Palette](palette-ux.md#settings). To set persistent response and artifact preferences, edit `localization.json` and start a new session.
+
+### Startup resolution
+
+| Setting | Order, highest first |
+| --- | --- |
+| `uiLocale` | `--jouzu-ui-locale`, `JOUZU_UI_LOCALE`, saved setting, locale environment, English fallback |
+| `responseLanguage` | saved setting, built-in `auto` |
+| `artifactPolicy` (per field) | saved setting, built-in default |
+
+For `auto`, the first non-empty value of `LC_ALL`, `LC_MESSAGES`, or `LANG` supplies the locale candidate. These variables do not set the response language. `jz doctor` reports the resolved values and their sources.
+
+A `schemaVersion: 1` file is read as the version 2 shape in memory. Its `uiLocale` is kept, and `responseLanguage` and `artifactPolicy` fall through to their built-in values until the file is saved in the version 2 schema.
+
+The CLI does not load a repository's `.jouzu/localization.json` as a trusted artifact policy. Use the saved `artifactPolicy` in the Jouzu configuration directory; `jz doctor` reports the project policy as `untrusted`.
+
 ## Importing from Pi
 
 On the first interactive setup, Jouzu looks for Pi files in `PI_CODING_AGENT_DIR`, then `~/.pi/agent`.
@@ -65,6 +113,7 @@ Jouzu still uses these Pi resources:
 | --- | --- |
 | `JOUZU_HOME` | Root for all Jouzu configuration, state, and cache |
 | `JOUZU_PROFILE` | Profile for this launch: `core` or `ja`. The selection is saved. See [Profiles](profiles.md). |
+| `JOUZU_UI_LOCALE` | UI locale for this launch; overridden by `--jouzu-ui-locale`. See [Language](#language). |
 | `SHISA_API_KEY` | Shisa API key; overrides the saved login. See [Shisa AI account](shisa.md). |
 | `JOUZU_MODEL_CATALOG_URL`, `JOUZU_MODEL_CATALOG_TOKEN` | Single catalog source when `catalogs.json` does not exist. See [Model catalogs](catalogs.md). |
 | `JOUZU_FLOW_CONTROL=0` | Disable flow control. See [Flow control](flow-control.md). |

@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { resolveCatalog } from "../dist/locale-catalog.js";
 import {
 	brandDefaultSystemPrompt,
 	buildCapabilityRoutingGuidance,
-	CATALOG_STARTUP_NOTICE,
+	catalogStartupNotice,
 	clearStartupNotice,
 	createJouzuPresentationExtension,
 	detectBannerColorMode,
@@ -53,7 +54,7 @@ function interactiveContext() {
 	return { calls, ctx };
 }
 
-function installExtension() {
+function installExtension(catalog) {
 	const handlers = new Map();
 	const commands = new Map();
 	const tools = new Map();
@@ -66,7 +67,10 @@ function installExtension() {
 			sent.push({ message, options });
 		},
 	};
-	createJouzuPresentationExtension(metadata, profile, { colorMode: "none" }).factory(pi);
+	createJouzuPresentationExtension(metadata, profile, {
+		colorMode: "none",
+		...(catalog ? { catalog } : {}),
+	}).factory(pi);
 	return { handlers, commands, tools, sent };
 }
 
@@ -218,12 +222,44 @@ test("startup notices are written, then erased in place", () => {
 		return true;
 	};
 	try {
-		writeStartupNotice(CATALOG_STARTUP_NOTICE);
+		writeStartupNotice(catalogStartupNotice());
 		clearStartupNotice();
 	} finally {
 		process.stdout.write = original;
 	}
 	assert.deepEqual(written, ["Fetching model catalog…", "\r\u001b[2K"]);
+});
+
+test("the startup notice and the erase do not change width", () => {
+	// The write carries only the notice text and the erase only the clear
+	// sequence, so the displayed width and the erase sequence are the same as
+	// the pre-catalog build regardless of the catalog that renders the text.
+	const en = catalogStartupNotice(resolveCatalog("en").bundle);
+	const ja = catalogStartupNotice(resolveCatalog("ja").bundle);
+	assert.equal(en, "Fetching model catalog…");
+	assert.equal(ja, "モデルカタログを取得しています…");
+	for (const notice of [en, ja]) assert.ok(!notice.includes("\u001b"));
+	const written = [];
+	const original = process.stdout.write;
+	process.stdout.write = (chunk) => {
+		written.push(typeof chunk === "string" ? chunk : "");
+		return true;
+	};
+	try {
+		writeStartupNotice(ja);
+		clearStartupNotice();
+	} finally {
+		process.stdout.write = original;
+	}
+	assert.deepEqual(written, [ja, "\r\u001b[2K"]);
+});
+
+test("a damaged locale catalog falls back to the English startup notice", () => {
+	// `resolveCatalog` never throws for a damaged catalog; it returns the English
+	// bundle, so the model-catalog fetch failure path still shows the notice.
+	const resolution = resolveCatalog("not a locale");
+	assert.equal(resolution.bundle.locale, "en");
+	assert.equal(catalogStartupNotice(resolution.bundle), "Fetching model catalog…");
 });
 
 test("installs a compact width-safe Jouzu header and working indicator", async () => {
@@ -245,6 +281,19 @@ test("installs a compact width-safe Jouzu header and working indicator", async (
 	]);
 	assert.equal(component.render(12)[0], "J O U Z U");
 	for (const line of component.render(12)) assert.ok(line.length <= 12, line);
+});
+
+test("renders the banner labels from the catalog without changing the decoration", () => {
+	// The braille mark and the version line are decoration and protected values;
+	// only the hint labels are catalog text, and the separator stays in code.
+	const ja = resolveCatalog("ja").bundle;
+	const lines = renderBannerLines(identityTheme, metadata, 80, "none", undefined, ja);
+	assert.deepEqual(lines, [
+		"⠈⢹ ⡎⢱ ⡇⢸ ⢉⠝ ⡇⢸",
+		"⠣⠜ ⠣⠜ ⠣⠜ ⠮⠤ ⠣⠜",
+		"jouzu 0.1.0  ·  pi 0.84.2",
+		"/model 選択  ·  /hotkeys キーバインド  ·  /status セッション",
+	]);
 });
 
 test("shares the teal-purple-pink banner gradient with compact wordmarks", () => {
@@ -341,4 +390,48 @@ test("session status labels unavailable model and context facts honestly", async
 	assert.match(message, /thinking: off/);
 	assert.match(message, /context: unknown\/128000 tokens \(unknown%\)/);
 	assert.match(message, /scoped models: all available/);
+});
+
+test("the session status block and its command description render from the ja catalog", async () => {
+	const ja = resolveCatalog("ja").bundle;
+	const { commands } = installExtension(ja);
+	const { calls, ctx } = interactiveContext();
+	await commands.get("status").handler("", ctx);
+	const message = calls.notifications[0][0];
+	const status = (key, args) => ja.format(`jouzu.cli.presentation.status.${key}`, args);
+	assert.equal(
+		message,
+		[
+			status("heading"),
+			status("session", { id: "session-test-123" }),
+			status("workspace", { name: "日本語 project" }),
+			status("model", { model: "anthropic/claude-test" }),
+			status("thinking", { level: "high" }),
+			status("context", { context: status("contextUsage", { tokens: "12345", window: "200000", percent: "6.2" }) }),
+			status("scopedModels", { models: "2" }),
+			status("profile", { id: "core", state: status("profileNotApplied") }),
+			status("runtime", { jouzu: "0.1.0", pi: "0.84.2" }),
+		].join("\n"),
+	);
+	for (const label of [
+		"Jouzu session status",
+		"session:",
+		"workspace:",
+		"model:",
+		"thinking:",
+		"context:",
+		"scoped models:",
+		"profile:",
+		"runtime:",
+	])
+		assert.equal(message.includes(label), false, `English label survives: ${label}`);
+	assert.equal(commands.get("status").description, ja.format("jouzu.cli.presentation.command.statusDescription"));
+});
+
+test("the status command description keeps its English default", () => {
+	const { commands } = installExtension();
+	assert.equal(
+		commands.get("status").description,
+		"Show the current Jouzu session, model, context, and profile status",
+	);
 });

@@ -2,6 +2,8 @@ import { existsSync, lstatSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { readBoundedResponseText } from "./bounded-response.js";
 import { describeCatalogFailure, safeCatalogMessage } from "./catalog-failure.js";
+import { CatalogMessageId, catalogText, defaultCatalog } from "./cli-messages.js";
+import type { CatalogBundle } from "./locale-catalog.js";
 import {
 	MODEL_CATALOG_MAX_BYTES,
 	MODEL_CATALOG_MEDIA_TYPE,
@@ -22,6 +24,87 @@ const LABEL_MAX_BYTES = 256;
 const SOURCE_ID_PATTERN = /^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$/u;
 const ENV_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/u;
 const DISCOVERY_TIMEOUT_MS = 10_000;
+
+/**
+ * The catalog IDs for the catalog-source configuration diagnostics and the
+ * source-store operations a user reads. A source index, a source id, a field
+ * name, an endpoint, a token variable name, and an HTTP status are protected
+ * values passed as arguments; the sentence and the context label resolve from
+ * the session bundle. The IDs stay local to this module, like the
+ * catalog-failure IDs, so a parallel migration does not conflict on the shared
+ * table; `scripts/check-locales.mjs` allows a catalog-only ID present in both
+ * locales.
+ */
+const SOURCE_MESSAGE_ID = {
+	contextSource: "jouzu.cli.catalogSource.context.source",
+	contextSourceAuth: "jouzu.cli.catalogSource.context.sourceAuth",
+	contextSourceLabel: "jouzu.cli.catalogSource.context.sourceLabel",
+	contextSourceLabelBare: "jouzu.cli.catalogSource.context.sourceLabelBare",
+	contextOverride: "jouzu.cli.catalogSource.context.override",
+	contextRegistry: "jouzu.cli.catalogSource.context.registry",
+	contextOverrides: "jouzu.cli.catalogSource.context.overrides",
+	contextCredentials: "jouzu.cli.catalogSource.context.credentials",
+	contextUrl: "jouzu.cli.catalogSource.context.url",
+	contextToken: "jouzu.cli.catalogSource.context.token",
+	contextTokenFor: "jouzu.cli.catalogSource.context.tokenFor",
+	unknownField: "jouzu.cli.catalogSource.unknownField",
+	notObject: "jouzu.cli.catalogSource.notObject",
+	notBoundedText: "jouzu.cli.catalogSource.notBoundedText",
+	invalidSourceId: "jouzu.cli.catalogSource.invalidSourceId",
+	urlAbsolute: "jouzu.cli.catalogSource.urlAbsolute",
+	urlCredentials: "jouzu.cli.catalogSource.urlCredentials",
+	urlQueryOrFragment: "jouzu.cli.catalogSource.urlQueryOrFragment",
+	urlScheme: "jouzu.cli.catalogSource.urlScheme",
+	authBearerCredentialRef: "jouzu.cli.catalogSource.authBearerCredentialRef",
+	authInvalidCredentialRef: "jouzu.cli.catalogSource.authInvalidCredentialRef",
+	authType: "jouzu.cli.catalogSource.authType",
+	sourceNotObject: "jouzu.cli.catalogSource.sourceNotObject",
+	sourceRequiresFields: "jouzu.cli.catalogSource.sourceRequiresFields",
+	sourceEnabledBoolean: "jouzu.cli.catalogSource.sourceEnabledBoolean",
+	registryNotObject: "jouzu.cli.catalogSource.registryNotObject",
+	registrySchema: "jouzu.cli.catalogSource.registrySchema",
+	registryNotRegularFile: "jouzu.cli.catalogSource.registryNotRegularFile",
+	duplicateId: "jouzu.cli.catalogSource.duplicateId",
+	duplicateUrl: "jouzu.cli.catalogSource.duplicateUrl",
+	overrideNotObject: "jouzu.cli.catalogSource.overrideNotObject",
+	overrideEnabledBoolean: "jouzu.cli.catalogSource.overrideEnabledBoolean",
+	overridesNotObject: "jouzu.cli.catalogSource.overridesNotObject",
+	overridesSchema: "jouzu.cli.catalogSource.overridesSchema",
+	overridesNotRegularFile: "jouzu.cli.catalogSource.overridesNotRegularFile",
+	credentialsNotObject: "jouzu.cli.catalogSource.credentialsNotObject",
+	credentialsSchema: "jouzu.cli.catalogSource.credentialsSchema",
+	credentialsNotRegularFile: "jouzu.cli.catalogSource.credentialsNotRegularFile",
+	tokenNotString: "jouzu.cli.catalogSource.tokenNotString",
+	builtinImmutable: {
+		edit: "jouzu.cli.catalogSource.builtinImmutableEdit",
+		remove: "jouzu.cli.catalogSource.builtinImmutableRemove",
+	},
+	reservedId: "jouzu.cli.catalogSource.reservedId",
+	signedOut: "jouzu.cli.catalogSource.signedOut",
+	discoveryCanceled: "jouzu.cli.catalogSource.discoveryCanceled",
+	unsupportedContentType: "jouzu.cli.catalogSource.unsupportedContentType",
+	mediaTypeMissing: "jouzu.cli.catalogSource.mediaTypeMissing",
+	attemptValid: "jouzu.cli.catalogSource.attemptValid",
+	responseTooLarge: "jouzu.cli.catalogSource.responseTooLarge",
+	noCatalogFound: "jouzu.cli.catalogSource.noCatalogFound",
+} as const;
+
+/** The catalog-resolved context label a validation diagnostic names. */
+function sourceContext(catalog: CatalogBundle, index: number): string {
+	return catalogText(catalog, SOURCE_MESSAGE_ID.contextSource, { index: index + 1 });
+}
+
+function sourceAuthContext(catalog: CatalogBundle, index: number): string {
+	return catalogText(catalog, SOURCE_MESSAGE_ID.contextSourceAuth, { index: index + 1 });
+}
+
+function sourceLabelContext(catalog: CatalogBundle, index: number): string {
+	return catalogText(catalog, SOURCE_MESSAGE_ID.contextSourceLabel, { index: index + 1 });
+}
+
+function overrideContext(catalog: CatalogBundle, id: string): string {
+	return catalogText(catalog, SOURCE_MESSAGE_ID.contextOverride, { id });
+}
 
 export const SHISA_API_CATALOG_SOURCE_ID = "shisa-api";
 export const SHISA_API_CATALOG_CREDENTIAL_ENV = "SHISA_API_KEY";
@@ -89,6 +172,8 @@ export interface CatalogEndpointDiscoveryOptions {
 	bearerToken?: string;
 	fetch?: typeof globalThis.fetch;
 	signal?: AbortSignal;
+	/** The resolved catalog the discovery messages render from; English when omitted. */
+	catalog?: CatalogBundle;
 }
 
 export interface CatalogEndpointDiscoveryResult {
@@ -113,29 +198,33 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-function assertOnlyKeys(record: Record<string, unknown>, allowed: readonly string[], context: string): void {
+function assertOnlyKeys(
+	record: Record<string, unknown>,
+	allowed: readonly string[],
+	context: string,
+	catalog: CatalogBundle,
+): void {
 	const unknown = Object.keys(record).filter((key) => !allowed.includes(key));
-	if (unknown.length > 0) throw new CatalogSourceError(`${context} contains unknown field: ${unknown[0]}`);
+	if (unknown.length > 0)
+		throw new CatalogSourceError(catalogText(catalog, SOURCE_MESSAGE_ID.unknownField, { context, field: unknown[0] }));
 }
 
-function controlFree(value: string, context: string, maxBytes: number): string {
+function controlFree(value: string, context: string, maxBytes: number, catalog: CatalogBundle): string {
 	const trimmed = value.trim();
 	const hasControl = Array.from(trimmed).some((character) => {
 		const codePoint = character.codePointAt(0) ?? 0;
 		return codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f);
 	});
 	if (!trimmed || Buffer.byteLength(trimmed) > maxBytes || hasControl) {
-		throw new CatalogSourceError(`${context} must be non-empty, bounded, and control-free`);
+		throw new CatalogSourceError(catalogText(catalog, SOURCE_MESSAGE_ID.notBoundedText, { context }));
 	}
 	return trimmed;
 }
 
-function normalizeSourceId(value: string): string {
+function normalizeSourceId(value: string, catalog: CatalogBundle = defaultCatalog()): string {
 	const id = value.trim().toLowerCase();
 	if (!SOURCE_ID_PATTERN.test(id)) {
-		throw new CatalogSourceError(
-			"catalog source id must use 1-64 lowercase letters, numbers, dots, dashes, or underscores",
-		);
+		throw new CatalogSourceError(catalogText(catalog, SOURCE_MESSAGE_ID.invalidSourceId));
 	}
 	return id;
 }
@@ -151,24 +240,24 @@ function sourceIdFromLabel(label: string): string {
 	return value || "catalog";
 }
 
-function parseAuth(value: unknown, context: string): CatalogSourceAuth {
-	if (!isRecord(value)) throw new CatalogSourceError(`${context} must be an object`);
+function parseAuth(value: unknown, context: string, catalog: CatalogBundle): CatalogSourceAuth {
+	if (!isRecord(value)) throw new CatalogSourceError(catalogText(catalog, SOURCE_MESSAGE_ID.notObject, { context }));
 	if (value.type === "none") {
-		assertOnlyKeys(value, ["type"], context);
+		assertOnlyKeys(value, ["type"], context, catalog);
 		return { type: "none" };
 	}
 	if (value.type === "bearer") {
-		assertOnlyKeys(value, ["type", "credentialRef"], context);
+		assertOnlyKeys(value, ["type", "credentialRef"], context, catalog);
 		if (typeof value.credentialRef !== "string" || !value.credentialRef.startsWith("env:")) {
-			throw new CatalogSourceError(`${context} bearer auth requires an environment credential reference`);
+			throw new CatalogSourceError(catalogText(catalog, SOURCE_MESSAGE_ID.authBearerCredentialRef, { context }));
 		}
 		const name = value.credentialRef.slice(4);
 		if (!ENV_NAME_PATTERN.test(name)) {
-			throw new CatalogSourceError(`${context} has an invalid environment credential reference`);
+			throw new CatalogSourceError(catalogText(catalog, SOURCE_MESSAGE_ID.authInvalidCredentialRef, { context }));
 		}
 		return { type: "bearer", credentialRef: `env:${name}` };
 	}
-	throw new CatalogSourceError(`${context}.type must be none or bearer`);
+	throw new CatalogSourceError(catalogText(catalog, SOURCE_MESSAGE_ID.authType, { context }));
 }
 
 function inferScheme(value: string): string {
@@ -196,59 +285,65 @@ export function isInsecureCatalogTransport(url: string): boolean {
 }
 
 /** Warning shown when a catalog source would send its bearer token over plain HTTP. */
-export function catalogInsecureTransportWarning(url: string): string | undefined {
+export function catalogInsecureTransportWarning(
+	url: string,
+	catalog: CatalogBundle = defaultCatalog(),
+): string | undefined {
 	if (!isInsecureCatalogTransport(url)) return undefined;
-	return "This catalog uses HTTP, so its bearer token is sent in plain text and can be read on the network. Use HTTPS if the catalog supports it.";
+	return catalogText(catalog, CatalogMessageId.catalogInsecureTransport);
 }
 
-export function normalizeCatalogSourceUrl(value: string): string {
-	const input = controlFree(value, "catalog source URL", 2048);
+export function normalizeCatalogSourceUrl(value: string, catalog: CatalogBundle = defaultCatalog()): string {
+	const input = controlFree(value, catalogText(catalog, SOURCE_MESSAGE_ID.contextUrl), 2048, catalog);
 	let parsed: URL;
 	try {
 		parsed = new URL(inferScheme(input));
 	} catch {
-		throw new CatalogSourceError("catalog source URL must be an absolute HTTP(S) URL or host");
+		throw new CatalogSourceError(catalogText(catalog, SOURCE_MESSAGE_ID.urlAbsolute));
 	}
 	if (parsed.username || parsed.password)
-		throw new CatalogSourceError("catalog source URL must not contain credentials");
+		throw new CatalogSourceError(catalogText(catalog, SOURCE_MESSAGE_ID.urlCredentials));
 	if (parsed.hash || parsed.search)
-		throw new CatalogSourceError("catalog source URL must not contain a query or fragment");
+		throw new CatalogSourceError(catalogText(catalog, SOURCE_MESSAGE_ID.urlQueryOrFragment));
 	// Plain HTTP is allowed but flagged: see catalogInsecureTransportWarning.
 	if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-		throw new CatalogSourceError("catalog source URL must use HTTP or HTTPS");
+		throw new CatalogSourceError(catalogText(catalog, SOURCE_MESSAGE_ID.urlScheme));
 	}
 	return parsed.href;
 }
 
-function parseSource(value: unknown, index: number): CatalogSource {
-	if (!isRecord(value)) throw new CatalogSourceError(`catalog source ${index + 1} must be an object`);
-	assertOnlyKeys(value, ["id", "label", "url", "enabled", "auth"], `catalog source ${index + 1}`);
+function parseSource(value: unknown, index: number, catalog: CatalogBundle): CatalogSource {
+	if (!isRecord(value))
+		throw new CatalogSourceError(catalogText(catalog, SOURCE_MESSAGE_ID.sourceNotObject, { index: index + 1 }));
+	assertOnlyKeys(value, ["id", "label", "url", "enabled", "auth"], sourceContext(catalog, index), catalog);
 	if (typeof value.id !== "string" || typeof value.label !== "string" || typeof value.url !== "string") {
-		throw new CatalogSourceError(`catalog source ${index + 1} requires id, label, and url strings`);
+		throw new CatalogSourceError(catalogText(catalog, SOURCE_MESSAGE_ID.sourceRequiresFields, { index: index + 1 }));
 	}
 	if (typeof value.enabled !== "boolean")
-		throw new CatalogSourceError(`catalog source ${index + 1}.enabled must be boolean`);
+		throw new CatalogSourceError(catalogText(catalog, SOURCE_MESSAGE_ID.sourceEnabledBoolean, { index: index + 1 }));
 	return {
-		id: normalizeSourceId(value.id),
-		label: controlFree(value.label, `catalog source ${index + 1} label`, LABEL_MAX_BYTES),
-		url: normalizeCatalogSourceUrl(value.url),
+		id: normalizeSourceId(value.id, catalog),
+		label: controlFree(value.label, sourceLabelContext(catalog, index), LABEL_MAX_BYTES, catalog),
+		url: normalizeCatalogSourceUrl(value.url, catalog),
 		enabled: value.enabled,
-		auth: parseAuth(value.auth, `catalog source ${index + 1}.auth`),
+		auth: parseAuth(value.auth, sourceAuthContext(catalog, index), catalog),
 	};
 }
 
-function validateRegistry(value: unknown): CatalogSourceRegistry {
-	if (!isRecord(value)) throw new CatalogSourceError("catalog source registry must be an object");
-	assertOnlyKeys(value, ["schemaVersion", "sources"], "catalog source registry");
+function validateRegistry(value: unknown, catalog: CatalogBundle = defaultCatalog()): CatalogSourceRegistry {
+	if (!isRecord(value)) throw new CatalogSourceError(catalogText(catalog, SOURCE_MESSAGE_ID.registryNotObject));
+	assertOnlyKeys(value, ["schemaVersion", "sources"], catalogText(catalog, SOURCE_MESSAGE_ID.contextRegistry), catalog);
 	if (value.schemaVersion !== 1 || !Array.isArray(value.sources)) {
-		throw new CatalogSourceError("catalog source registry requires schemaVersion 1 and a sources array");
+		throw new CatalogSourceError(catalogText(catalog, SOURCE_MESSAGE_ID.registrySchema));
 	}
-	const sources = value.sources.map(parseSource);
+	const sources = value.sources.map((source, index) => parseSource(source, index, catalog));
 	const ids = new Set<string>();
 	const urls = new Set<string>();
 	for (const source of sources) {
-		if (ids.has(source.id)) throw new CatalogSourceError(`duplicate catalog source id: ${source.id}`);
-		if (urls.has(source.url)) throw new CatalogSourceError(`duplicate catalog source URL: ${source.url}`);
+		if (ids.has(source.id))
+			throw new CatalogSourceError(catalogText(catalog, SOURCE_MESSAGE_ID.duplicateId, { id: source.id }));
+		if (urls.has(source.url))
+			throw new CatalogSourceError(catalogText(catalog, SOURCE_MESSAGE_ID.duplicateUrl, { url: source.url }));
 		ids.add(source.id);
 		urls.add(source.url);
 	}
@@ -267,30 +362,33 @@ export function catalogSourceRegistryExists(paths: JouzuPaths): boolean {
 	return existsSync(catalogSourceRegistryPath(paths));
 }
 
-export function loadCatalogSourceRegistry(paths: JouzuPaths): CatalogSourceRegistry {
+export function loadCatalogSourceRegistry(
+	paths: JouzuPaths,
+	catalog: CatalogBundle = defaultCatalog(),
+): CatalogSourceRegistry {
 	const path = catalogSourceRegistryPath(paths);
 	if (!existsSync(path)) return { schemaVersion: 1, sources: [] };
 	validatePrivateDirectory(configurationRoot(paths));
 	const metadata = lstatSync(path);
 	if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size > REGISTRY_MAX_BYTES) {
-		throw new CatalogSourceError("catalog source registry must be a bounded regular file");
+		throw new CatalogSourceError(catalogText(catalog, SOURCE_MESSAGE_ID.registryNotRegularFile));
 	}
 	try {
-		return validateRegistry(parseStrictJson(readFileSync(path, "utf8")));
+		return validateRegistry(parseStrictJson(readFileSync(path, "utf8")), catalog);
 	} catch (error) {
 		if (error instanceof CatalogSourceError) throw error;
 		throw new CatalogSourceError(error instanceof Error ? error.message : String(error));
 	}
 }
 
-function environmentSource(env: NodeJS.ProcessEnv): CatalogSource | undefined {
+function environmentSource(env: NodeJS.ProcessEnv, catalog: CatalogBundle): CatalogSource | undefined {
 	const url = env.JOUZU_MODEL_CATALOG_URL?.trim();
 	if (!url) return undefined;
 	const token = env.JOUZU_MODEL_CATALOG_TOKEN?.trim();
 	return {
 		id: "default",
 		label: "Environment catalog",
-		url: normalizeCatalogSourceUrl(url),
+		url: normalizeCatalogSourceUrl(url, catalog),
 		enabled: true,
 		auth: token ? { type: "bearer", credentialRef: "env:JOUZU_MODEL_CATALOG_TOKEN" } : { type: "none" },
 	};
@@ -300,22 +398,25 @@ export function catalogSourceOverridesPath(paths: JouzuPaths): string {
 	return join(configurationRoot(paths), "catalog-overrides.json");
 }
 
-function parseOverride(value: unknown, id: string): CatalogSourceOverride {
-	if (!isRecord(value)) throw new CatalogSourceError(`catalog source override ${id} must be an object`);
-	assertOnlyKeys(value, ["enabled"], `catalog source override ${id}`);
+function parseOverride(value: unknown, id: string, catalog: CatalogBundle): CatalogSourceOverride {
+	if (!isRecord(value)) throw new CatalogSourceError(catalogText(catalog, SOURCE_MESSAGE_ID.overrideNotObject, { id }));
+	assertOnlyKeys(value, ["enabled"], overrideContext(catalog, id), catalog);
 	if (value.enabled !== undefined && typeof value.enabled !== "boolean") {
-		throw new CatalogSourceError(`catalog source override ${id}.enabled must be boolean`);
+		throw new CatalogSourceError(catalogText(catalog, SOURCE_MESSAGE_ID.overrideEnabledBoolean, { id }));
 	}
 	return value.enabled === undefined ? {} : { enabled: value.enabled };
 }
 
-export function loadCatalogSourceOverrides(paths: JouzuPaths): Record<string, CatalogSourceOverride> {
+export function loadCatalogSourceOverrides(
+	paths: JouzuPaths,
+	catalog: CatalogBundle = defaultCatalog(),
+): Record<string, CatalogSourceOverride> {
 	const path = catalogSourceOverridesPath(paths);
 	if (!existsSync(path)) return {};
 	validatePrivateDirectory(configurationRoot(paths));
 	const metadata = lstatSync(path);
 	if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size > OVERRIDES_MAX_BYTES) {
-		throw new CatalogSourceError("catalog source overrides must be a bounded regular file");
+		throw new CatalogSourceError(catalogText(catalog, SOURCE_MESSAGE_ID.overridesNotRegularFile));
 	}
 	let value: unknown;
 	try {
@@ -323,14 +424,19 @@ export function loadCatalogSourceOverrides(paths: JouzuPaths): Record<string, Ca
 	} catch (error) {
 		throw new CatalogSourceError(error instanceof Error ? error.message : String(error));
 	}
-	if (!isRecord(value)) throw new CatalogSourceError("catalog source overrides must be an object");
-	assertOnlyKeys(value, ["schemaVersion", "overrides"], "catalog source overrides");
+	if (!isRecord(value)) throw new CatalogSourceError(catalogText(catalog, SOURCE_MESSAGE_ID.overridesNotObject));
+	assertOnlyKeys(
+		value,
+		["schemaVersion", "overrides"],
+		catalogText(catalog, SOURCE_MESSAGE_ID.contextOverrides),
+		catalog,
+	);
 	if (value.schemaVersion !== 1 || !isRecord(value.overrides)) {
-		throw new CatalogSourceError("catalog source overrides require schemaVersion 1 and an overrides object");
+		throw new CatalogSourceError(catalogText(catalog, SOURCE_MESSAGE_ID.overridesSchema));
 	}
 	const overrides: Record<string, CatalogSourceOverride> = {};
 	for (const [id, override] of Object.entries(value.overrides)) {
-		overrides[normalizeSourceId(id)] = parseOverride(override, id);
+		overrides[normalizeSourceId(id, catalog)] = parseOverride(override, id, catalog);
 	}
 	return overrides;
 }
@@ -367,9 +473,16 @@ export function isBuiltinCatalogSource(source: CatalogSource): boolean {
 }
 
 /** Explains why a user-registered source claiming the reserved id blocks the built-in source. */
-export function catalogSourceConflict(source: CatalogSource): string | undefined {
+export function catalogSourceConflict(
+	source: CatalogSource,
+	catalog: CatalogBundle = defaultCatalog(),
+): string | undefined {
 	if (source.id !== SHISA_API_CATALOG_SOURCE_ID || isBuiltinCatalogSource(source)) return undefined;
-	return `source id "${SHISA_API_CATALOG_SOURCE_ID}" is reserved for the built-in Shisa API catalog (${SHISA_API_CATALOG_SOURCE.url}, env:${SHISA_API_CATALOG_CREDENTIAL_ENV}); this entry points elsewhere, so the built-in source stays inactive`;
+	return catalogText(catalog, SOURCE_MESSAGE_ID.reservedId, {
+		id: SHISA_API_CATALOG_SOURCE_ID,
+		url: SHISA_API_CATALOG_SOURCE.url,
+		env: SHISA_API_CATALOG_CREDENTIAL_ENV,
+	});
 }
 
 export function catalogSourceCredentialName(source: CatalogSource): string | undefined {
@@ -431,50 +544,73 @@ export function catalogSourceCredentialsPath(paths: JouzuPaths): string {
 }
 
 /** Normalizes and validates a bearer token value before it is stored anywhere. */
-export function validateCatalogSourceToken(token: string): string {
-	return controlFree(token, "catalog token", TOKEN_MAX_BYTES);
+export function validateCatalogSourceToken(token: string, catalog: CatalogBundle = defaultCatalog()): string {
+	return controlFree(token, catalogText(catalog, SOURCE_MESSAGE_ID.contextToken), TOKEN_MAX_BYTES, catalog);
 }
 
-function parseCredentialsFile(value: unknown): Record<string, string> {
-	if (!isRecord(value)) throw new CatalogSourceError("catalog credentials must be an object");
-	assertOnlyKeys(value, ["schemaVersion", "tokens"], "catalog credentials");
+function parseCredentialsFile(value: unknown, catalog: CatalogBundle): Record<string, string> {
+	if (!isRecord(value)) throw new CatalogSourceError(catalogText(catalog, SOURCE_MESSAGE_ID.credentialsNotObject));
+	assertOnlyKeys(
+		value,
+		["schemaVersion", "tokens"],
+		catalogText(catalog, SOURCE_MESSAGE_ID.contextCredentials),
+		catalog,
+	);
 	const tokenRecord = value.tokens;
 	if (value.schemaVersion !== 1 || !isRecord(tokenRecord)) {
-		throw new CatalogSourceError("catalog credentials require schemaVersion 1 and a tokens object");
+		throw new CatalogSourceError(catalogText(catalog, SOURCE_MESSAGE_ID.credentialsSchema));
 	}
 	const tokens: Record<string, string> = {};
 	for (const [id, token] of Object.entries(tokenRecord)) {
-		if (typeof token !== "string") throw new CatalogSourceError(`catalog token for ${id} must be a string`);
-		tokens[normalizeSourceId(id)] = controlFree(token, `catalog token for ${id}`, TOKEN_MAX_BYTES);
+		if (typeof token !== "string")
+			throw new CatalogSourceError(catalogText(catalog, SOURCE_MESSAGE_ID.tokenNotString, { id }));
+		tokens[normalizeSourceId(id, catalog)] = controlFree(
+			token,
+			catalogText(catalog, SOURCE_MESSAGE_ID.contextTokenFor, { id }),
+			TOKEN_MAX_BYTES,
+			catalog,
+		);
 	}
 	return tokens;
 }
 
 /** Saved bearer tokens keyed by catalog source id; never written to catalogs.json. */
-export function loadCatalogSourceTokens(paths: JouzuPaths): Record<string, string> {
+export function loadCatalogSourceTokens(
+	paths: JouzuPaths,
+	catalog: CatalogBundle = defaultCatalog(),
+): Record<string, string> {
 	const path = catalogSourceCredentialsPath(paths);
 	if (!existsSync(path)) return {};
 	validatePrivateDirectory(configurationRoot(paths));
 	const metadata = lstatSync(path);
 	if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size > CREDENTIALS_MAX_BYTES) {
-		throw new CatalogSourceError("catalog credentials must be a bounded regular file");
+		throw new CatalogSourceError(catalogText(catalog, SOURCE_MESSAGE_ID.credentialsNotRegularFile));
 	}
 	try {
-		return parseCredentialsFile(parseStrictJson(readFileSync(path, "utf8")));
+		return parseCredentialsFile(parseStrictJson(readFileSync(path, "utf8")), catalog);
 	} catch (error) {
 		if (error instanceof CatalogSourceError) throw error;
 		throw new CatalogSourceError(error instanceof Error ? error.message : String(error));
 	}
 }
 
-export function getCatalogSourceToken(paths: JouzuPaths, sourceId: string): string | undefined {
-	return loadCatalogSourceTokens(paths)[normalizeSourceId(sourceId)];
+export function getCatalogSourceToken(
+	paths: JouzuPaths,
+	sourceId: string,
+	catalog: CatalogBundle = defaultCatalog(),
+): string | undefined {
+	return loadCatalogSourceTokens(paths, catalog)[normalizeSourceId(sourceId, catalog)];
 }
 
-export function setCatalogSourceToken(paths: JouzuPaths, sourceId: string, token: string): void {
-	const id = normalizeSourceId(sourceId);
-	const value = validateCatalogSourceToken(token);
-	const tokens = loadCatalogSourceTokens(paths);
+export function setCatalogSourceToken(
+	paths: JouzuPaths,
+	sourceId: string,
+	token: string,
+	catalog: CatalogBundle = defaultCatalog(),
+): void {
+	const id = normalizeSourceId(sourceId, catalog);
+	const value = validateCatalogSourceToken(token, catalog);
+	const tokens = loadCatalogSourceTokens(paths, catalog);
 	tokens[id] = value;
 	writeFilePrivateAtomic(
 		catalogSourceCredentialsPath(paths),
@@ -483,9 +619,13 @@ export function setCatalogSourceToken(paths: JouzuPaths, sourceId: string, token
 	);
 }
 
-export function removeCatalogSourceToken(paths: JouzuPaths, sourceId: string): void {
-	const id = normalizeSourceId(sourceId);
-	const tokens = loadCatalogSourceTokens(paths);
+export function removeCatalogSourceToken(
+	paths: JouzuPaths,
+	sourceId: string,
+	catalog: CatalogBundle = defaultCatalog(),
+): void {
+	const id = normalizeSourceId(sourceId, catalog);
+	const tokens = loadCatalogSourceTokens(paths, catalog);
 	if (!(id in tokens)) return;
 	delete tokens[id];
 	const path = catalogSourceCredentialsPath(paths);
@@ -497,17 +637,22 @@ export function removeCatalogSourceToken(paths: JouzuPaths, sourceId: string): v
 }
 
 /** Sources from the user registry, or the single-source environment shorthand when no registry exists. */
-function resolveBaseCatalogSources(paths: JouzuPaths, env: NodeJS.ProcessEnv): CatalogSource[] {
-	if (catalogSourceRegistryExists(paths)) return loadCatalogSourceRegistry(paths).sources;
-	const shorthand = environmentSource(env);
+function resolveBaseCatalogSources(paths: JouzuPaths, env: NodeJS.ProcessEnv, catalog: CatalogBundle): CatalogSource[] {
+	if (catalogSourceRegistryExists(paths)) return loadCatalogSourceRegistry(paths, catalog).sources;
+	const shorthand = environmentSource(env, catalog);
 	return shorthand ? [shorthand] : [];
 }
 
 /** True when the built-in descriptor is supplied by code rather than a user registry entry. */
-export function isCodeOwnedCatalogSource(paths: JouzuPaths, source: CatalogSource, env: NodeJS.ProcessEnv): boolean {
+export function isCodeOwnedCatalogSource(
+	paths: JouzuPaths,
+	source: CatalogSource,
+	env: NodeJS.ProcessEnv,
+	catalog: CatalogBundle = defaultCatalog(),
+): boolean {
 	return (
 		isBuiltinCatalogSource(source) &&
-		!resolveBaseCatalogSources(paths, env).some((candidate) => candidate.id === source.id)
+		!resolveBaseCatalogSources(paths, env, catalog).some((candidate) => candidate.id === source.id)
 	);
 }
 
@@ -515,9 +660,10 @@ export function resolveCatalogSources(
 	paths: JouzuPaths,
 	env: NodeJS.ProcessEnv = process.env,
 	options: ResolveCatalogSourcesOptions = {},
+	catalog: CatalogBundle = defaultCatalog(),
 ): CatalogSource[] {
-	const base = resolveBaseCatalogSources(paths, env);
-	const override = loadCatalogSourceOverrides(paths)[SHISA_API_CATALOG_SOURCE_ID];
+	const base = resolveBaseCatalogSources(paths, env, catalog);
+	const override = loadCatalogSourceOverrides(paths, catalog)[SHISA_API_CATALOG_SOURCE_ID];
 	const builtin: CatalogSource =
 		override?.enabled === undefined
 			? SHISA_API_CATALOG_SOURCE
@@ -532,8 +678,13 @@ export function resolveCatalogSources(
 	return options.includeDisabled ? sources : sources.filter((source) => source.enabled);
 }
 
-function writeRegistry(paths: JouzuPaths, registry: CatalogSourceRegistry, beforeSave?: () => void): void {
-	const validated = validateRegistry(registry);
+function writeRegistry(
+	paths: JouzuPaths,
+	registry: CatalogSourceRegistry,
+	beforeSave?: () => void,
+	catalog: CatalogBundle = defaultCatalog(),
+): void {
+	const validated = validateRegistry(registry, catalog);
 	beforeSave?.();
 	writeFilePrivateAtomic(
 		catalogSourceRegistryPath(paths),
@@ -545,37 +696,44 @@ function writeRegistry(paths: JouzuPaths, registry: CatalogSourceRegistry, befor
 export class CatalogSourceStore {
 	private readonly paths: JouzuPaths;
 	private readonly env: NodeJS.ProcessEnv;
+	private readonly catalog: CatalogBundle;
 
-	constructor(paths: JouzuPaths, options: { env?: NodeJS.ProcessEnv } = {}) {
+	constructor(paths: JouzuPaths, options: { env?: NodeJS.ProcessEnv; catalog?: CatalogBundle } = {}) {
 		this.paths = paths;
 		this.env = options.env ?? process.env;
+		this.catalog = options.catalog ?? defaultCatalog();
 	}
 
 	list(): CatalogSource[] {
-		return resolveCatalogSources(this.paths, this.env, { includeDisabled: true });
+		return resolveCatalogSources(this.paths, this.env, { includeDisabled: true }, this.catalog);
 	}
 
 	/** True when the source is the code-owned built-in rather than a registry entry. */
 	isCodeOwned(source: CatalogSource): boolean {
-		return isCodeOwnedCatalogSource(this.paths, source, this.env);
+		return isCodeOwnedCatalogSource(this.paths, source, this.env, this.catalog);
 	}
 
 	private assertMutable(source: CatalogSource, operation: "edit" | "remove"): void {
 		if (this.isCodeOwned(source)) {
 			throw new CatalogSourceError(
-				`cannot ${operation} the built-in ${source.label} catalog source; it can only be enabled or disabled`,
+				catalogText(this.catalog, SOURCE_MESSAGE_ID.builtinImmutable[operation], { label: source.label }),
 			);
 		}
 	}
 
 	private save(sources: CatalogSource[], beforeSave?: () => void): void {
-		writeRegistry(this.paths, { schemaVersion: 1, sources }, beforeSave);
+		writeRegistry(this.paths, { schemaVersion: 1, sources }, beforeSave, this.catalog);
 	}
 
 	add(input: CatalogSourceInput, beforeSave?: (source: CatalogSource) => void): CatalogSource {
 		const resolved = this.list();
-		const label = controlFree(input.label, "catalog source label", LABEL_MAX_BYTES);
-		const baseId = input.id ? normalizeSourceId(input.id) : sourceIdFromLabel(label);
+		const label = controlFree(
+			input.label,
+			catalogText(this.catalog, SOURCE_MESSAGE_ID.contextSourceLabelBare),
+			LABEL_MAX_BYTES,
+			this.catalog,
+		);
+		const baseId = input.id ? normalizeSourceId(input.id, this.catalog) : sourceIdFromLabel(label);
 		let id = baseId;
 		let suffix = 2;
 		while (resolved.some((source) => source.id === id)) {
@@ -591,9 +749,10 @@ export class CatalogSourceStore {
 				auth: input.auth,
 			},
 			resolved.length,
+			this.catalog,
 		);
 		// Persist only user-managed sources; the code-owned built-in is never materialized.
-		this.save([...resolveBaseCatalogSources(this.paths, this.env), source], () => beforeSave?.(source));
+		this.save([...resolveBaseCatalogSources(this.paths, this.env, this.catalog), source], () => beforeSave?.(source));
 		return source;
 	}
 
@@ -602,37 +761,46 @@ export class CatalogSourceStore {
 		input: Omit<CatalogSourceInput, "id">,
 		beforeSave?: (source: CatalogSource) => void,
 	): CatalogSource {
-		const normalizedId = normalizeSourceId(id);
-		const sources = resolveBaseCatalogSources(this.paths, this.env);
+		const normalizedId = normalizeSourceId(id, this.catalog);
+		const sources = resolveBaseCatalogSources(this.paths, this.env, this.catalog);
 		const index = sources.findIndex((source) => source.id === normalizedId);
 		if (index < 0) {
 			const resolved = this.list().find((source) => source.id === normalizedId);
 			if (resolved) this.assertMutable(resolved, "edit");
-			throw new CatalogSourceError(`catalog source not found: ${normalizedId}`);
+			throw new CatalogSourceError(
+				catalogText(this.catalog, CatalogMessageId.catalogSourceNotFound, { id: normalizedId }),
+			);
 		}
-		const source = parseSource({ ...input, id: normalizedId, enabled: input.enabled ?? sources[index].enabled }, index);
+		const source = parseSource(
+			{ ...input, id: normalizedId, enabled: input.enabled ?? sources[index].enabled },
+			index,
+			this.catalog,
+		);
 		sources[index] = source;
 		this.save(sources, () => beforeSave?.(source));
 		// A source that no longer authenticates has no use for a saved token.
-		if (source.auth.type === "none") removeCatalogSourceToken(this.paths, normalizedId);
+		if (source.auth.type === "none") removeCatalogSourceToken(this.paths, normalizedId, this.catalog);
 		return source;
 	}
 
 	setEnabled(id: string, enabled: boolean): CatalogSource {
-		const normalizedId = normalizeSourceId(id);
+		const normalizedId = normalizeSourceId(id, this.catalog);
 		const resolved = this.list();
 		const source = resolved.find((candidate) => candidate.id === normalizedId);
-		if (!source) throw new CatalogSourceError(`catalog source not found: ${normalizedId}`);
+		if (!source)
+			throw new CatalogSourceError(
+				catalogText(this.catalog, CatalogMessageId.catalogSourceNotFound, { id: normalizedId }),
+			);
 		if (this.isCodeOwned(source)) {
 			// Store only the override; the descriptor and credential reference stay code-owned.
 			// Returning to the descriptor default drops the override entirely.
-			const overrides = { ...loadCatalogSourceOverrides(this.paths) };
+			const overrides = { ...loadCatalogSourceOverrides(this.paths, this.catalog) };
 			if (enabled === SHISA_API_CATALOG_SOURCE.enabled) delete overrides[source.id];
 			else overrides[source.id] = { enabled };
 			writeCatalogSourceOverrides(this.paths, overrides);
 			return { ...source, enabled };
 		}
-		const sources = resolveBaseCatalogSources(this.paths, this.env);
+		const sources = resolveBaseCatalogSources(this.paths, this.env, this.catalog);
 		const index = sources.findIndex((candidate) => candidate.id === normalizedId);
 		sources[index] = { ...sources[index], enabled };
 		this.save(sources);
@@ -640,18 +808,20 @@ export class CatalogSourceStore {
 	}
 
 	remove(id: string): CatalogSource {
-		const normalizedId = normalizeSourceId(id);
-		const sources = resolveBaseCatalogSources(this.paths, this.env);
+		const normalizedId = normalizeSourceId(id, this.catalog);
+		const sources = resolveBaseCatalogSources(this.paths, this.env, this.catalog);
 		const index = sources.findIndex((source) => source.id === normalizedId);
 		if (index < 0) {
 			const resolved = this.list().find((source) => source.id === normalizedId);
 			if (resolved) this.assertMutable(resolved, "remove");
-			throw new CatalogSourceError(`catalog source not found: ${normalizedId}`);
+			throw new CatalogSourceError(
+				catalogText(this.catalog, CatalogMessageId.catalogSourceNotFound, { id: normalizedId }),
+			);
 		}
 		const [removed] = sources.splice(index, 1);
 		this.save(sources);
 		// The saved token is scoped to this source id, so it goes with the source.
-		removeCatalogSourceToken(this.paths, removed.id);
+		removeCatalogSourceToken(this.paths, removed.id, this.catalog);
 		return removed;
 	}
 }
@@ -660,27 +830,30 @@ export function resolveCatalogBearer(
 	source: CatalogSource,
 	env: NodeJS.ProcessEnv = process.env,
 	paths?: JouzuPaths,
+	catalog: CatalogBundle = defaultCatalog(),
 ): string | undefined {
 	if (source.auth.type === "none") return undefined;
 	if (paths && isShisaApiCatalogEndpoint(source) && isShisaSignedOut(paths))
-		throw new CatalogSourceError("Signed out of Shisa. Run /login shisa to reconnect.", "auth_required");
+		throw new CatalogSourceError(catalogText(catalog, SOURCE_MESSAGE_ID.signedOut), "auth_required");
 	const name = source.auth.credentialRef.slice(4);
 	const fromEnv = envCredentialValue(source, env);
 	if (fromEnv) return fromEnv;
 	if (paths) {
-		const stored = getCatalogSourceToken(paths, source.id);
+		const stored = getCatalogSourceToken(paths, source.id, catalog);
 		if (stored) return stored;
 		const login = shisaLoginToken(source, paths);
 		if (login) return login;
 	}
 	throw new CatalogSourceError(
-		`Catalog token variable ${name} is not set in this Jouzu process${paths ? " and no token is saved for this source" : ""}. Export it before starting Jouzu or save a token in Settings / Catalogs, then retry.`,
+		catalogText(catalog, paths ? CatalogMessageId.catalogTokenMissingWithSaved : CatalogMessageId.catalogTokenMissing, {
+			name,
+		}),
 		"auth_required",
 	);
 }
 
-export function catalogEndpointCandidates(input: string): string[] {
-	const exact = normalizeCatalogSourceUrl(input);
+export function catalogEndpointCandidates(input: string, catalog: CatalogBundle = defaultCatalog()): string[] {
+	const exact = normalizeCatalogSourceUrl(input, catalog);
 	const parsed = new URL(exact);
 	const path = parsed.pathname.replace(/\/+$/u, "") || "/";
 	let conventionalPath: string;
@@ -698,19 +871,27 @@ export async function discoverCatalogEndpoint(
 	input: string,
 	options: CatalogEndpointDiscoveryOptions,
 ): Promise<CatalogEndpointDiscoveryResult> {
-	if (options.signal?.aborted) throw new CatalogSourceError("Catalog endpoint discovery was canceled.");
-	const candidates = catalogEndpointCandidates(input);
+	const catalog = options.catalog ?? defaultCatalog();
+	if (options.signal?.aborted) throw new CatalogSourceError(catalogText(catalog, SOURCE_MESSAGE_ID.discoveryCanceled));
+	const candidates = catalogEndpointCandidates(input, catalog);
 	const token =
 		options.auth.type === "bearer"
 			? options.bearerToken?.trim() ||
 				resolveCatalogBearer(
 					{ id: "discovery", label: "Catalog", url: candidates[0], enabled: true, auth: options.auth },
 					options.env,
+					undefined,
+					catalog,
 				)
 			: undefined;
 	const attempts: Array<{ url: string; result: string }> = [];
+	// The first access failure drives the final diagnosis. It is recorded from the
+	// response status, not from the rendered attempt text, so a localized attempt
+	// result cannot change the control flow.
+	let accessFailureStatus: string | undefined;
 	for (const url of candidates) {
-		if (options.signal?.aborted) throw new CatalogSourceError("Catalog endpoint discovery was canceled.");
+		if (options.signal?.aborted)
+			throw new CatalogSourceError(catalogText(catalog, SOURCE_MESSAGE_ID.discoveryCanceled));
 		const controller = new AbortController();
 		const abort = () => controller.abort(options.signal?.reason);
 		options.signal?.addEventListener("abort", abort, { once: true });
@@ -725,48 +906,65 @@ export async function discoverCatalogEndpoint(
 				signal: controller.signal,
 			});
 			if (!response.ok) {
-				attempts.push({ url, result: `HTTP ${response.status}` });
+				if ((response.status === 401 || response.status === 403) && accessFailureStatus === undefined)
+					accessFailureStatus = String(response.status);
+				attempts.push({
+					url,
+					result: catalogText(catalog, CatalogMessageId.catalogAttemptHttp, { status: response.status }),
+				});
 				continue;
 			}
 			const mediaType = response.headers.get("content-type") ?? "";
 			if (!mediaType.toLowerCase().startsWith(MODEL_CATALOG_MEDIA_TYPE)) {
-				attempts.push({ url, result: safeCatalogMessage(`unsupported Content-Type ${mediaType || "missing"}`, token) });
+				const detail = mediaType || catalogText(catalog, SOURCE_MESSAGE_ID.mediaTypeMissing);
+				attempts.push({
+					url,
+					result: safeCatalogMessage(
+						catalogText(catalog, SOURCE_MESSAGE_ID.unsupportedContentType, { mediaType: detail }),
+						token,
+					),
+				});
 				continue;
 			}
 			const text = await readBoundedResponseText(response, {
 				maxBytes: MODEL_CATALOG_MAX_BYTES,
-				tooLargeError: () => new CatalogSourceError("catalog response exceeds 16 MiB"),
+				tooLargeError: () => new CatalogSourceError(catalogText(catalog, SOURCE_MESSAGE_ID.responseTooLarge)),
 			});
 			const document = parseAndValidateModelCatalog(text, { remote: true });
-			attempts.push({ url, result: "valid" });
+			attempts.push({ url, result: catalogText(catalog, SOURCE_MESSAGE_ID.attemptValid) });
 			return { url, document, text, etag: response.headers.get("etag") ?? undefined, attempts };
 		} catch (error) {
-			if (options.signal?.aborted) throw new CatalogSourceError("Catalog endpoint discovery was canceled.");
+			if (options.signal?.aborted)
+				throw new CatalogSourceError(catalogText(catalog, SOURCE_MESSAGE_ID.discoveryCanceled));
 			const message =
 				error instanceof CatalogSourceError || error instanceof ModelCatalogError
 					? safeCatalogMessage(error.message, token)
 					: describeCatalogFailure(error, "network").message;
-			attempts.push({ url, result: controller.signal.aborted ? "timed out" : message });
+			attempts.push({
+				url,
+				result: controller.signal.aborted ? catalogText(catalog, CatalogMessageId.catalogAttemptTimedOut) : message,
+			});
 		} finally {
 			clearTimeout(timeout);
 			options.signal?.removeEventListener("abort", abort);
 		}
 	}
-	const accessFailure = attempts.find((attempt) => attempt.result === "HTTP 401" || attempt.result === "HTTP 403");
-	if (accessFailure) {
-		const status = accessFailure.result.slice(5);
-		const summary = status === "401" ? "Catalog authentication failed" : "Catalog access was denied";
-		if (options.auth.type === "bearer") {
-			const name = options.auth.credentialRef.slice(4);
-			throw new CatalogSourceError(
-				`${summary} (HTTP ${status}). Check that ${name} or this source's saved token contains a bearer token accepted by the catalog.`,
-			);
-		}
-		throw new CatalogSourceError(
-			`${summary} (HTTP ${status}). Configure bearer-token authentication if this catalog requires it.`,
-		);
+	if (accessFailureStatus !== undefined) {
+		const status = accessFailureStatus;
+		const name = options.auth.type === "bearer" ? options.auth.credentialRef.slice(4) : undefined;
+		const messageId =
+			status === "401"
+				? name === undefined
+					? CatalogMessageId.catalogDiscoveryAuthFailed
+					: CatalogMessageId.catalogDiscoveryAuthFailedBearer
+				: name === undefined
+					? CatalogMessageId.catalogDiscoveryAccessDenied
+					: CatalogMessageId.catalogDiscoveryAccessDeniedBearer;
+		throw new CatalogSourceError(catalogText(catalog, messageId, name === undefined ? { status } : { status, name }));
 	}
 	throw new CatalogSourceError(
-		`No Jouzu catalog found. Attempts: ${attempts.map((attempt) => `${attempt.url}: ${attempt.result}`).join("; ")}`,
+		catalogText(catalog, SOURCE_MESSAGE_ID.noCatalogFound, {
+			attempts: attempts.map((attempt) => `${attempt.url}: ${attempt.result}`).join("; "),
+		}),
 	);
 }

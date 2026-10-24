@@ -20,6 +20,14 @@ Jouzu distributes the following release-owned Pi extensions and their default ru
 
 The bundled `pi-webaio` entrypoint supplies Jouzu's static `web_fetch` and `batch_web_fetch` tools without starting a browser. The package bundle also contains transitive dependencies. Their package metadata and included license or notice files remain with their source files under `node_modules`.
 
+## CLI localization catalogs
+
+| Package | Version | License evidence |
+| --- | --- | --- |
+| `@fluent/bundle` | 0.19.1 | Apache-2.0 in `package.json`; the package ships no separate license file |
+
+The CLI renders its own interface text from the Fluent catalogs in `dist/locales/`. `@fluent/syntax` is a build and CI dependency only and is not distributed.
+
 ## Native TextGuard helper
 
 `dist/textguard/` contains Linux, Windows, and macOS executables for x64 and

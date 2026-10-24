@@ -1,15 +1,20 @@
 import assert from "node:assert/strict";
+import { spawn, spawnSync } from "node:child_process";
+import { once } from "node:events";
+import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { getShellConfig } from "../node_modules/@earendil-works/pi-coding-agent/dist/utils/shell.js";
 import {
 	afterFlowCleanup,
 	assembledSession,
 	installedProducerExtensions,
 	replacedSession,
 } from "./fixtures/flow-assembly.mjs";
+import { controlledBackground } from "./fixtures/flow-background-gate.mjs";
 import { campaignScript, liveWait } from "./fixtures/flow-campaign.mjs";
 
 const idle = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -34,16 +39,18 @@ async function persistentRoot(t) {
 async function campaignThenReopen(t) {
 	const root = await persistentRoot(t);
 	const producers = await installedProducerExtensions();
+	const background = await controlledBackground(t);
 	const first = await assembledSession(t, {
 		root,
 		persist: true,
 		producerExtensions: producers,
-		script: campaignScript({ goal: "Survive a reopen" }),
+		script: campaignScript({ command: background.command, goal: "Survive a reopen" }),
 	});
 	await first.session.prompt("start the sweep and wait");
 
 	const before = first.ingress.branch();
 	const wait = await liveWait(first.ingress, "one live wait before the teardown");
+	await background.started;
 	const authorityBefore = await before.attachment.waits.authoritySnapshot();
 	const campaign = authorityBefore.work.find((work) => work.owner === "multiloop");
 	assert.ok(campaign, "the lane registered campaign work");
@@ -60,6 +67,49 @@ async function campaignThenReopen(t) {
 	});
 	return { root, first, next, campaign, wait, before };
 }
+
+test("fixture cleanup joins a surviving background child before removing its working directory", async (t) => {
+	let cleanup;
+	const scope = {
+		after: (callback) => {
+			cleanup = callback;
+		},
+	};
+	const root = await persistentRoot(scope);
+	const background = await controlledBackground(scope);
+	const { shell, args, commandTransport } = getShellConfig();
+	const child = spawn(shell, commandTransport === "stdin" ? args : [...args, background.command], {
+		cwd: root,
+		detached: process.platform !== "win32",
+		stdio: ["pipe", "ignore", "ignore"],
+	});
+	const exited = once(child, "exit");
+	child.stdin.end(commandTransport === "stdin" ? `${background.command}\n` : undefined);
+	t.after(async () => {
+		// Reap the test-owned process even if the cleanup assertion fails.
+		if (child.exitCode === null && child.signalCode === null) {
+			if (process.platform === "win32") {
+				const stopped = spawnSync("taskkill.exe", ["/PID", String(child.pid), "/T", "/F"], {
+					encoding: "utf8",
+					timeout: 10_000,
+					windowsHide: true,
+				});
+				assert.equal(stopped.status, 0, stopped.error?.message ?? stopped.stderr);
+			} else process.kill(-child.pid, "SIGKILL");
+		}
+		await exited;
+		await background.close();
+		await rm(root, { recursive: true, force: true });
+	});
+	await Promise.race([
+		background.started,
+		exited.then(() => assert.fail("the controlled child exited before the teardown regression")),
+	]);
+	assert.equal(child.exitCode, null, "the command is live without a producer shutdown hook");
+	await cleanup();
+	assert.deepEqual(await exited, [0, null]);
+	assert.equal(existsSync(root), false, "shared cleanup removed the child's working directory");
+});
 
 test("a campaign, its wait, and its original deadline survive a reopen", async (t) => {
 	const { first, next, campaign, wait, before } = await campaignThenReopen(t);

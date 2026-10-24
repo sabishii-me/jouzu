@@ -20,7 +20,9 @@ import { loadBundledProfile } from "../profiles.js";
 import { inspectReleaseExtensions, omitOptionalReleaseExtensionFailures } from "../release-extensions.js";
 import { createResponsesToolSchemaExtension } from "../responses-tool-schema.js";
 import { createToolArgumentExtension } from "../tool-arguments.js";
+import { buildRoleLanguageSection, snapshotLanguageContract } from "./language.js";
 import type { WorkerLaunch } from "./protocol.js";
+import { defaultLanguageContract } from "./roles.js";
 
 /** Cancel worker-local schedules before restored flow receipts inspect their state. */
 function disableChildSchedules(directory: string, warn: (message: string) => void): number {
@@ -99,6 +101,11 @@ export async function expandedChildResourceLoader(
 ) {
 	const compaction = new CompactionRequestController();
 	const profile = loadBundledProfile(launch.profile ?? "core");
+	// Snapshot the contract when the child's resources are built. This is the
+	// child's own copy: a parent-side language change after launch never reaches it.
+	const languageSection = buildRoleLanguageSection(
+		snapshotLanguageContract(launch.languageContract ?? defaultLanguageContract(launch.role)),
+	);
 	const bundledSkills: string[] = [];
 	for (const asset of profile.assets) {
 		if (!asset.target.startsWith("skills/")) continue;
@@ -198,6 +205,7 @@ export async function expandedChildResourceLoader(
 							event.systemPrompt,
 							undefined,
 							buildCapabilityRoutingGuidance(event.systemPromptOptions),
+							languageSection,
 						),
 					}));
 				},

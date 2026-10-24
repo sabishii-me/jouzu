@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { validateToolArguments } from "@earendil-works/pi-ai";
 import { convertResponsesTools } from "@earendil-works/pi-ai/api/openai-responses-shared";
+import { resolveCatalog } from "../dist/locale-catalog.js";
 import { notificationHash } from "../dist/notifications/inbox.js";
 import { pathDigest } from "../dist/path-digest.js";
 import { createWorkflowIntegration } from "../dist/subagents/integration.js";
@@ -26,6 +27,22 @@ test("shared dashboard takeover suppresses child widget and routes visibility wi
 		assert.ok(widgets.every(([, content]) => content === undefined));
 	} finally {
 		await f.handlers.get("session_shutdown")({}, f.ctx);
+	}
+});
+
+test("the subagent tool label comes from the resolved catalog and the tool name is unchanged", async () => {
+	const english = fixture();
+	const ja = resolveCatalog("ja").bundle;
+	const japanese = fixture(false, { catalog: ja });
+	try {
+		assert.equal(english.tool.name, "subagent");
+		assert.equal(english.tool.label, "Subagent");
+		assert.equal(japanese.tool.name, "subagent");
+		assert.equal(japanese.tool.label, ja.format("jouzu.cli.tool.subagent.label"));
+		assert.notEqual(japanese.tool.label, english.tool.label);
+	} finally {
+		await english.handlers.get("session_shutdown")({}, english.ctx);
+		await japanese.handlers.get("session_shutdown")({}, japanese.ctx);
 	}
 });
 
@@ -1261,6 +1278,28 @@ test("default children inherit current model and effort on launch and resume", a
 		assert.equal(review.model.id, "glm-5.3-flash");
 		assert.equal(review.thinking, "xhigh");
 		assert.equal(f.workers[2].launch.role.judging, true);
+	} finally {
+		await f.shutdown();
+	}
+});
+
+test("Japanese inherited effort errors keep the configured selector and launch snapshot intact", async () => {
+	const f = fixture(false, { catalog: resolveCatalog("ja").bundle });
+	try {
+		await f.handlers.get("session_start")({}, f.ctx);
+		f.setThinking(undefined);
+		await assert.rejects(
+			f.invoke({ op: "launch", role: "coder", task: "Implement" }),
+			/メインセッションで推論の強度を選択/u,
+		);
+		assert.equal(f.workers.length, 0);
+		assert.equal(f.integration.service.roles().config.roles.find((role) => role.id === "coder").thinking, "same");
+		f.setThinking("low");
+		const run = await f.invoke({ op: "launch", role: "coder", task: "Implement" });
+		assert.equal(run.thinking, "low");
+		assert.equal(f.workers[0].launch.thinkingLevel, "low");
+		f.setThinking("high");
+		assert.equal(f.workers[0].launch.thinkingLevel, "low");
 	} finally {
 		await f.shutdown();
 	}

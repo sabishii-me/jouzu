@@ -1,4 +1,5 @@
 import type { OAuthCredentials, OAuthLoginCallbacks } from "@earendil-works/pi-ai";
+import type { CatalogBundle } from "../locale-catalog.js";
 import type { JouzuPaths } from "../paths.js";
 import { writeShisaLoginCredential } from "./credentials.js";
 import { loginShisaDeviceFlow, type ShisaLoginCompletion, type ShisaLoginDeps } from "./device-flow.js";
@@ -12,6 +13,8 @@ export interface ShisaLoginOptions {
 	fetchImpl?: typeof fetch;
 	sleep?: (ms: number) => Promise<void>;
 	openBrowser?: (url: string) => void;
+	/** The resolved locale catalog for the login flow's own text. Defaults to English. */
+	catalog?: CatalogBundle;
 	/** Reports whether the link acknowledgement confirmed after the credential was saved. */
 	onCompletion?: (completion: ShisaLoginCompletion) => void;
 }
@@ -21,20 +24,25 @@ export async function loginShisa(
 	callbacks: OAuthLoginCallbacks,
 	options: ShisaLoginOptions,
 ): Promise<OAuthCredentials> {
-	return withShisaAuthOperation(options.paths, async () => {
-		const statePath = shisaLinkStatePath(options.paths);
-		const existing = readShisaLinkState(statePath);
-		const credential = await loginShisaDeviceFlow(callbacks, {
-			gatewayUrl: options.gatewayUrl,
-			clientVersion: options.jouzuVersion,
-			installId: existing?.install_id ?? newShisaInstallId(),
-			writeLinkState: (state) => writeShisaLinkState(statePath, state, options.paths.stateDir),
-			writeCredential: (value) => writeShisaLoginCredential(options.paths, value, callbacks.signal),
-			fetchImpl: options.fetchImpl,
-			sleep: options.sleep,
-			openBrowser: options.openBrowser,
-			onCompletion: options.onCompletion,
-		} satisfies ShisaLoginDeps);
-		return credential;
-	});
+	return withShisaAuthOperation(
+		options.paths,
+		async () => {
+			const statePath = shisaLinkStatePath(options.paths);
+			const existing = readShisaLinkState(statePath);
+			const credential = await loginShisaDeviceFlow(callbacks, {
+				gatewayUrl: options.gatewayUrl,
+				clientVersion: options.jouzuVersion,
+				installId: existing?.install_id ?? newShisaInstallId(),
+				writeLinkState: (state) => writeShisaLinkState(statePath, state, options.paths.stateDir),
+				writeCredential: (value) => writeShisaLoginCredential(options.paths, value, callbacks.signal),
+				fetchImpl: options.fetchImpl,
+				sleep: options.sleep,
+				openBrowser: options.openBrowser,
+				catalog: options.catalog,
+				onCompletion: options.onCompletion,
+			} satisfies ShisaLoginDeps);
+			return credential;
+		},
+		options.catalog,
+	);
 }

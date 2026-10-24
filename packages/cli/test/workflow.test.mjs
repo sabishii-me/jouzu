@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { CURSOR_MARKER, KeybindingsManager, TUI_KEYBINDINGS, visibleWidth } from "@earendil-works/pi-tui";
+import { resolveCatalog } from "../dist/locale-catalog.js";
 import { JouzuPaletteRouter } from "../dist/palette.js";
 import { defaultAgentConfig, digest, parseAgentConfig } from "../dist/subagents/roles.js";
 import { WorkflowComponent } from "../dist/workflow.js";
 
-function fixture() {
+function fixture(catalog) {
 	let config = defaultAgentConfig();
 	let writes = 0;
 	let enabled = true;
@@ -13,6 +14,7 @@ function fixture() {
 	let update = () => {};
 	const launches = [];
 	const context = {
+		catalog,
 		tui: { requestRender() {}, terminal: { rows: 32, columns: 90 } },
 		keybindings: new KeybindingsManager(TUI_KEYBINDINGS),
 		theme: { bg: (_role, text) => text, fg: (_role, text) => text, bold: (text) => text },
@@ -508,27 +510,33 @@ test("the assignment form defaults to the parent workspace and passes a chosen o
 	f.view.dispose();
 });
 
-test("Thinking offers same as main and cycles, cancels, and saves without changing the model", () => {
-	const f = fixture();
-	select(f, "coder");
-	enter(f.view);
-	down(f.view, 6);
-	assert.match(f.text(), /Same as main/);
-	f.view.handleInput("\x1b[C");
-	assert.match(f.text(), /Thinking.*off/);
-	cancel(f.view);
-	assert.equal(f.writes, 0);
-	select(f, "coder");
-	enter(f.view);
-	down(f.view, 6);
-	f.view.handleInput("\x1b[D");
-	assert.match(f.text(), /Thinking.*max/);
-	f.view.handleInput("\x1b[C");
-	assert.match(f.text(), /Same as main/);
-	for (const width of [24, 48, 80]) assert.ok(f.view.render(width).every((line) => visibleWidth(line) <= width));
-	down(f.view, 4);
-	enter(f.view);
-	assert.equal(f.writes, 1);
-	assert.equal(f.config.roles.find((role) => role.id === "coder").thinking, "same");
-	assert.equal(f.config.roles.find((role) => role.id === "coder").model, "same");
-});
+for (const [locale, sameLabel, thinkingLabel] of [
+	["en", "Same as main", "Thinking"],
+	["ja", "メインと同じ", "思考"],
+]) {
+	test(`Thinking inheritance cycles, cancels, and saves in ${locale}`, () => {
+		const f = fixture(resolveCatalog(locale).bundle);
+		select(f, "coder");
+		enter(f.view);
+		down(f.view, 6);
+		assert.ok(f.text().includes(sameLabel));
+		f.view.handleInput("\x1b[C");
+		assert.match(f.text(), new RegExp(`${thinkingLabel}.*off`, "u"));
+		cancel(f.view);
+		assert.equal(f.writes, 0);
+		select(f, "coder");
+		enter(f.view);
+		down(f.view, 6);
+		f.view.handleInput("\x1b[D");
+		assert.match(f.text(), new RegExp(`${thinkingLabel}.*max`, "u"));
+		f.view.handleInput("\x1b[C");
+		assert.ok(f.text().includes(sameLabel));
+		for (const width of [24, 48, 80]) assert.ok(f.view.render(width).every((line) => visibleWidth(line) <= width));
+		down(f.view, 4);
+		enter(f.view);
+		assert.equal(f.writes, 1);
+		assert.equal(f.config.roles.find((role) => role.id === "coder").thinking, "same");
+		assert.equal(f.config.roles.find((role) => role.id === "coder").model, "same");
+		f.view.dispose();
+	});
+}

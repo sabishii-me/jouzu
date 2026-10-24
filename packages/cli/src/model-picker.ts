@@ -8,7 +8,9 @@ import type {
 import { type Focusable, getKeybindings, Input, matchesKey, type TUI, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { CatalogSettingsComponent } from "./catalog-settings.js";
 import { catalogSourceCredentialAvailable } from "./catalog-sources.js";
+import { CatalogMessageId, catalogText, defaultCatalog } from "./cli-messages.js";
 import { activeContextClamp, clampContextWindow } from "./context-clamp.js";
+import { protectedModelId, protectedPath } from "./human-messages.js";
 import {
 	createJouzuKeybindingsManager,
 	formatEffectiveJouzuKeybinding,
@@ -17,6 +19,9 @@ import {
 } from "./jouzu-keybindings.js";
 import { formatEffectiveKeybinding, formatEffectiveKeyPair } from "./keybinding-hints.js";
 import { createLabelPolicy } from "./label-policy.js";
+import type { LanguageContractInput } from "./language-contract.js";
+import type { CatalogBundle } from "./locale-catalog.js";
+import { createLocalizationActivityTracker } from "./localization-deferral.js";
 import type { CatalogModelOffering, ModelCatalogDocument } from "./model-catalog.js";
 import {
 	CatalogProjectionController,
@@ -108,6 +113,12 @@ export interface JouzuModelPickerOptions {
 	catalogFetch?: typeof globalThis.fetch;
 	/** Client version the Settings account row reports when it signs in to Shisa. */
 	jouzuVersion?: string;
+	/** The `--jouzu-ui-locale` value, so the Settings Language view reports the `cli` source. */
+	uiLocaleCli?: string;
+	/** Stage successfully saved response/artifact choices for the next turn. */
+	onLanguageChanged?: (language: LanguageContractInput) => void;
+	/** The resolved catalog a Palette view renders its human text from. */
+	catalog?: CatalogBundle;
 }
 
 export interface ModelPickerComponentOptions {
@@ -144,7 +155,7 @@ function modelDisplay(model: PickerModel): NonNullable<PickerModel["display"]> {
 /** Narrow terminals drop Context first, then Provider, so the name stays readable. */
 function modelColumns(providerWidth: number, innerWidth: number): ModelColumns {
 	const available = Math.max(1, innerWidth - ROW_MARKER_COLUMNS);
-	const provider = Math.min(MAX_PROVIDER_COLUMN, Math.max(terminalTextWidth("Provider"), providerWidth));
+	const provider = Math.min(MAX_PROVIDER_COLUMN, providerWidth);
 	if (available - provider - CONTEXT_COLUMN - 2 * COLUMN_GAP >= MIN_NAME_COLUMN) {
 		return { name: available - provider - CONTEXT_COLUMN - 2 * COLUMN_GAP, provider, context: CONTEXT_COLUMN };
 	}
@@ -196,6 +207,7 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 	private readonly keybindings: KeybindingsManager;
 	private readonly jouzuKeybindings: JouzuKeybindingsManager;
 	private readonly styles: SessionUiStyles;
+	private readonly catalog: CatalogBundle;
 	private readonly wordmark: string;
 	private readonly close: () => void;
 	private readonly getRows: (query: string) => PickerRow[];
@@ -228,6 +240,9 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 		this.keybindings = options.context.keybindings;
 		this.jouzuKeybindings = options.context.jouzuKeybindings;
 		this.styles = options.context.styles;
+		// A caller without a resolved catalog (a unit test, for example) renders
+		// English rather than a second copy of the text.
+		this.catalog = options.context.catalog ?? defaultCatalog();
 		// The gradient wordmark varies per character, so it is rendered once here
 		// rather than resolved through a single-color role on every frame.
 		this.wordmark = renderBrandGradient("JOUZU", detectBannerColorMode());
@@ -350,19 +365,19 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 
 	private async refresh(onRefresh: (signal: AbortSignal) => Promise<void>): Promise<void> {
 		await this.runRefresh(onRefresh, {
-			timeoutText: "Model refresh timed out; showing cached models.",
-			failureText: (detail) => `Model refresh failed; showing cached models: ${detail}`,
+			timeoutText: catalogText(this.catalog, CatalogMessageId.modelPickerRefreshTimeout),
+			failureText: (detail) => catalogText(this.catalog, CatalogMessageId.modelPickerRefreshFailed, { detail }),
 		});
 	}
 
 	private async refreshCatalogs(): Promise<void> {
 		if (!this.onRefreshCatalogs) return;
-		this.message = { level: "info", text: "Refreshing model catalog…" };
+		this.message = { level: "info", text: catalogText(this.catalog, CatalogMessageId.modelPickerRefreshingCatalog) };
 		this.tui.requestRender();
 		await this.runRefresh((signal) => this.onRefreshCatalogs?.(signal) ?? Promise.resolve(), {
-			successText: "Model catalog refreshed.",
-			timeoutText: "Model catalog refresh timed out; showing cached models.",
-			failureText: (detail) => `Model catalog refresh failed; showing cached models: ${detail}`,
+			successText: catalogText(this.catalog, CatalogMessageId.modelPickerCatalogRefreshed),
+			timeoutText: catalogText(this.catalog, CatalogMessageId.modelPickerCatalogRefreshTimeout),
+			failureText: (detail) => catalogText(this.catalog, CatalogMessageId.modelPickerCatalogRefreshFailed, { detail }),
 		});
 	}
 
@@ -416,11 +431,12 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 		this.compactConfirmation = undefined;
 		this.busy = true;
 		const display = modelDisplay(row.model);
+		const model = protectedModelId(`${display.provider}/${display.modelId}`);
 		this.message = {
 			level: "info",
 			text: compactFirst
-				? `Compacting before switching to ${display.provider}/${display.modelId}…`
-				: `Selecting ${display.provider}/${display.modelId}…`,
+				? catalogText(this.catalog, CatalogMessageId.modelPickerCompacting, { model })
+				: catalogText(this.catalog, CatalogMessageId.modelPickerSelecting, { model }),
 		};
 		this.tui.requestRender();
 		const selection = compactFirst ? this.onCompactAndSelect(row) : this.onSelect(row);
@@ -444,7 +460,10 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 		const row = this.rows[this.selectedIndex];
 		if (!row || this.busy) return;
 		if (!row.model.available) {
-			this.message = { level: "error", text: "This model is unavailable. Check its provider or catalog credentials." };
+			this.message = {
+				level: "error",
+				text: catalogText(this.catalog, CatalogMessageId.modelPickerModelUnavailable),
+			};
 			this.tui.requestRender();
 			return;
 		}
@@ -453,7 +472,9 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 			this.compactConfirmation = { modelKey: modelReferenceKey(row.model) };
 			this.message = {
 				level: "info",
-				text: `Compact the active context and switch to ${display.provider}/${display.modelId}?`,
+				text: catalogText(this.catalog, CatalogMessageId.modelPickerCompactAndSwitch, {
+					model: protectedModelId(`${display.provider}/${display.modelId}`),
+				}),
 			};
 			this.tui.requestRender();
 			return;
@@ -480,11 +501,12 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 		const adding = !row.favorite;
 		try {
 			this.onToggleFavorite(row);
+			const model = protectedModelId(`${display.provider}/${display.modelId}`);
 			this.message = {
 				level: "info",
 				text: adding
-					? `Added ${display.provider}/${display.modelId} to favorites.`
-					: `Removed ${display.provider}/${display.modelId} from favorites.`,
+					? catalogText(this.catalog, CatalogMessageId.modelPickerFavoriteAdded, { model })
+					: catalogText(this.catalog, CatalogMessageId.modelPickerFavoriteRemoved, { model }),
 			};
 			this.recomputeTotal();
 			this.recomputeRows();
@@ -603,9 +625,15 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 	}
 
 	private headerText(columns: ModelColumns): string {
-		const cells = [padTerminalText("Name", columns.name)];
-		if (columns.provider) cells.push(padTerminalText("Provider", columns.provider));
-		if (columns.context) cells.push(padTerminalText("Context", columns.context, { alignment: "right" }));
+		const cells = [padTerminalText(catalogText(this.catalog, "jouzu.cli.modelPicker.columnName"), columns.name)];
+		if (columns.provider)
+			cells.push(padTerminalText(catalogText(this.catalog, "jouzu.cli.modelPicker.columnProvider"), columns.provider));
+		if (columns.context)
+			cells.push(
+				padTerminalText(catalogText(this.catalog, "jouzu.cli.modelPicker.columnContext"), columns.context, {
+					alignment: "right",
+				}),
+			);
 		return this.styles.apply("palette.section", `${" ".repeat(ROW_MARKER_COLUMNS)}${cells.join("  ")}`);
 	}
 
@@ -620,11 +648,15 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 		const favorite = row.favorite ? this.styles.apply("palette.favorite", "★") : " ";
 		const projectDefault = row.projectDefault ? this.styles.apply("palette.default", "◆") : " ";
 		const display = modelDisplay(row.model);
-		const flag = !row.model.available ? "unavailable" : row.contextFit === "too-small" ? "context-small" : "";
+		const flag = !row.model.available
+			? catalogText(this.catalog, CatalogMessageId.modelPickerRowUnavailable).trim()
+			: row.contextFit === "too-small"
+				? catalogText(this.catalog, CatalogMessageId.modelPickerRowContextSmall).trim()
+				: "";
 		const flagText = flag
 			? ` ${this.styles.apply(row.model.available ? "palette.context.small" : "palette.unavailable", flag)}`
 			: "";
-		const nameWidth = Math.max(1, columns.name - (flag ? flag.length + 1 : 0));
+		const nameWidth = Math.max(1, columns.name - (flag ? terminalTextWidth(flag) + 1 : 0));
 		const name = this.styles.apply(
 			selected ? "palette.identity.selected" : "palette.identity",
 			fitTerminalText(display.name, nameWidth, "…"),
@@ -651,7 +683,11 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 	}
 
 	render(width: number): string[] {
-		const mode = this.compactConfirmation ? " · Confirm" : this.searchFocused ? " · Search" : "";
+		const mode = this.compactConfirmation
+			? ` · ${catalogText(this.catalog, CatalogMessageId.modelPickerTitleConfirm)}`
+			: this.searchFocused
+				? ` · ${catalogText(this.catalog, CatalogMessageId.modelPickerTitleSearch)}`
+				: "";
 		const title = `${this.wordmark} ${this.theme.bold(this.styles.apply("palette.title", `· Models${mode}`))} ${this.styles.apply("palette.count", `${this.rows.length}/${this.totalCount}`)}`;
 		if (width < 12) return [fitTerminalText(title, Math.max(1, width))];
 		const innerWidth = paletteInnerWidth(width);
@@ -684,27 +720,47 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 			line(renderPaletteTabs("models", this.theme, this.styles)),
 			renderPaletteDivider(width, this.styles),
 			control(
-				"Search",
+				catalogText(this.catalog, "jouzu.cli.modelPicker.searchLabel"),
 				this.searchInput.render(Math.max(1, innerWidth - CONTROL_LABEL_COLUMN - 3))[0] ?? "",
 				this.searchFocused,
 			),
 		];
 		if (selected) {
 			const display = modelDisplay(selected.model);
-			const defaultLabel = selected.projectDefault ? " · project default" : "";
+			const defaultLabel = selected.projectDefault
+				? ` · ${catalogText(this.catalog, CatalogMessageId.modelPickerProjectDefault)}`
+				: "";
 			const source = selected.model.catalogLabel ? ` · ${sanitizeTerminalText(selected.model.catalogLabel)}` : "";
 			const identity = this.styles.apply("palette.detail", `${display.provider}/${display.modelId}`);
-			const detail = ` ${identity}${source} · context ${compactNumber(selected.model.contextWindow)} · max ${compactNumber(selected.model.maxTokens)}${defaultLabel}`;
+			const detail = ` ${catalogText(this.catalog, CatalogMessageId.modelPickerDetail, {
+				name: `${identity}${source}`,
+				context: compactNumber(selected.model.contextWindow, this.catalog),
+				max: compactNumber(selected.model.maxTokens, this.catalog),
+				default: defaultLabel,
+			})}`;
 			lines.push(line(this.theme.bg("selectedBg", padTerminalText(fitTerminalText(detail, innerWidth), innerWidth))));
 		} else {
-			lines.push(line(this.theme.bg("selectedBg", padTerminalText(" No model selected", innerWidth))));
+			lines.push(
+				line(
+					this.theme.bg(
+						"selectedBg",
+						padTerminalText(` ${catalogText(this.catalog, "jouzu.cli.modelPicker.noSelection")}`, innerWidth),
+					),
+				),
+			);
 		}
 		lines.push(line());
 		const columns = modelColumns(
-			Math.max(0, ...this.rows.map((row) => terminalTextWidth(this.providerCell(row)))),
+			Math.max(
+				terminalTextWidth(catalogText(this.catalog, "jouzu.cli.modelPicker.columnProvider")),
+				...this.rows.map((row) => terminalTextWidth(this.providerCell(row))),
+			),
 			innerWidth,
 		);
-		if (visibleRows.length === 0) lines.push(line(this.styles.apply("palette.empty", "No matching models")));
+		if (visibleRows.length === 0)
+			lines.push(
+				line(this.styles.apply("palette.empty", catalogText(this.catalog, CatalogMessageId.modelPickerEmpty))),
+			);
 		else lines.push(line(this.headerText(columns)));
 		for (let offset = 0; offset < visibleRows.length; offset += 1) {
 			const index = start + offset;
@@ -720,49 +776,58 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 		const confirm = formatEffectiveKeybinding(this.keybindings, "tui.select.confirm");
 		const cancel = formatEffectiveKeybinding(this.keybindings, "tui.select.cancel");
 		const move = formatEffectiveKeyPair(this.keybindings, "tui.select.up", "tui.select.down");
+		// Key-bar action labels are catalog text; the key itself is a resolved binding.
+		const action = (id: CatalogMessageId): string => catalogText(this.catalog, id);
 		const favoriteNow = formatEffectiveJouzuKeybinding(this.jouzuKeybindings, "jouzu.model.toggleFavorite", {
 			textFieldLive: this.searchFocused,
 		});
 		const favoriteAll = formatEffectiveJouzuKeybinding(this.jouzuKeybindings, "jouzu.model.toggleFavorite");
 		const refreshKey = formatEffectiveJouzuKeybinding(this.jouzuKeybindings, "jouzu.model.refresh");
-		const refreshHints: PaletteKeyHint[] = refreshKey === "Unbound" ? [] : [{ key: refreshKey, label: "refresh" }];
+		const refreshHints: PaletteKeyHint[] =
+			refreshKey === "Unbound" ? [] : [{ key: refreshKey, label: action(CatalogMessageId.paletteActionRefresh) }];
 		const hasQuery = Boolean(this.searchInput.getValue());
-		// A favorite binding that is not live in the search field is reached by moving into
-		// the results, which keeps the query and the selected row.
+		// Moving into results preserves the query before invoking a printable favorite binding.
 		const favoriteHints: PaletteKeyHint[] =
 			this.searchFocused && favoriteNow === "Unbound"
 				? favoriteAll !== "Unbound"
-					? [{ key: `${move} then ${favoriteAll}`, label: "favorite" }]
+					? [
+							{
+								key: catalogText(this.catalog, "jouzu.cli.modelPicker.keyThen", { first: move, second: favoriteAll }),
+								label: action(CatalogMessageId.paletteActionFavorite),
+							},
+						]
 					: []
 				: favoriteNow !== "Unbound"
-					? [{ key: favoriteNow, label: "favorite" }]
+					? [{ key: favoriteNow, label: action(CatalogMessageId.paletteActionFavorite) }]
 					: [];
 		const cancelHint: PaletteKeyHint = {
 			key: cancel,
-			label: hasQuery ? "clear search" : this.searchFocused ? "browse" : "close",
+			label: hasQuery
+				? catalogText(this.catalog, "jouzu.cli.modelPicker.clearSearch")
+				: action(this.searchFocused ? CatalogMessageId.paletteActionBrowse : CatalogMessageId.paletteActionClose),
 		};
 		const hints: PaletteKeyHint[] = this.compactConfirmation
 			? [
-					{ key: confirm, label: "compact and switch" },
-					{ key: cancel, label: "cancel" },
+					{ key: confirm, label: action(CatalogMessageId.paletteActionCompactAndSwitch) },
+					{ key: cancel, label: action(CatalogMessageId.paletteActionCancel) },
 				]
 			: this.searchFocused
 				? [
-						{ key: confirm, label: "select and save for project" },
+						{ key: confirm, label: action(CatalogMessageId.paletteActionSelectAndSaveForProject) },
 						...favoriteHints,
 						...refreshHints,
-						{ key: "←→", label: "cursor" },
-						{ key: move, label: "move" },
-						{ key: "Tab", label: "section" },
+						{ key: "←→", label: action(CatalogMessageId.paletteActionCursor) },
+						{ key: move, label: action(CatalogMessageId.paletteActionMove) },
+						{ key: "Tab", label: action(CatalogMessageId.paletteActionSection) },
 						cancelHint,
 					]
 				: [
-						{ key: confirm, label: "select and save for project" },
+						{ key: confirm, label: action(CatalogMessageId.paletteActionSelectAndSaveForProject) },
 						...favoriteHints,
 						...refreshHints,
-						{ key: "/", label: "search" },
-						{ key: move, label: "move" },
-						{ key: "Tab", label: "section" },
+						{ key: "/", label: action(CatalogMessageId.paletteActionSearch) },
+						{ key: move, label: action(CatalogMessageId.paletteActionMove) },
+						{ key: "Tab", label: action(CatalogMessageId.paletteActionSection) },
 						cancelHint,
 					];
 		lines.push(...renderPaletteKeyBar(hints, innerWidth, this.theme, this.styles).map(line));
@@ -970,14 +1035,22 @@ export function createJouzuModelPicker(
 	options: JouzuModelPickerOptions = {},
 ): JouzuModelPickerIntegration {
 	const store = new ModelPickerStore(paths);
+	// The resolved catalog the extension's notifications and startup labels read.
+	// A caller without one (a unit test, for example) renders English rather than
+	// a second copy of the text.
+	const messageCatalog = options.catalog ?? defaultCatalog();
 	const workflow = createWorkflowIntegration(paths, undefined, {
 		textguardFiles: options.textguardFiles,
 		...(options.dashboardVisibility ? { dashboardVisibility: options.dashboardVisibility } : {}),
 		profile: options.profile,
 		...(options.textguardMode ? { textguardMode: options.textguardMode } : {}),
+		...(options.catalog ? { catalog: options.catalog } : {}),
 	});
 	const jouzuKeybindings = createJouzuKeybindingsManager(paths);
-	const surface = new JouzuPaletteSurfaceHost({ jouzuKeybindings });
+	const surface = new JouzuPaletteSurfaceHost({
+		jouzuKeybindings,
+		...(options.catalog ? { catalog: options.catalog } : {}),
+	});
 	const catalogEnv = options.palette?.env ?? process.env;
 	const catalogProjection = new CatalogProjectionController(catalogEnv, paths);
 	let catalogs: ActiveModelCatalog[] = [];
@@ -997,20 +1070,24 @@ export function createJouzuModelPicker(
 	let activeCtx: ExtensionContext | undefined;
 	let reapplyCatalogProjection: (() => void) | undefined;
 	try {
-		catalogs = loadActiveModelCatalogs(paths, catalogEnv);
+		catalogs = loadActiveModelCatalogs(paths, catalogEnv, messageCatalog);
 		catalog = catalogs[0]?.document;
 	} catch (error) {
-		catalogWarning = `Cached model catalog was ignored: ${error instanceof Error ? error.message : String(error)}`;
+		catalogWarning = catalogText(messageCatalog, CatalogMessageId.modelPickerCatalogIgnored, {
+			message: error instanceof Error ? error.message : String(error),
+		});
 	}
 	const reloadCatalogs = (): void => {
 		try {
-			catalogs = loadActiveModelCatalogs(paths, catalogEnv);
+			catalogs = loadActiveModelCatalogs(paths, catalogEnv, messageCatalog);
 			catalog = catalogs[0]?.document;
 			catalogWarning = undefined;
 		} catch (error) {
 			catalogs = [];
 			catalog = undefined;
-			catalogWarning = `Cached model catalog was ignored: ${error instanceof Error ? error.message : String(error)}`;
+			catalogWarning = catalogText(messageCatalog, CatalogMessageId.modelPickerCatalogIgnored, {
+				message: error instanceof Error ? error.message : String(error),
+			});
 		}
 		reapplyCatalogProjection?.();
 		// The registry is updated synchronously above; open views recompute now.
@@ -1030,19 +1107,24 @@ export function createJouzuModelPicker(
 					env: catalogEnv,
 					fetch: options.catalogFetch,
 					timeoutMs: 15_000,
+					catalog: messageCatalog,
 				});
 				const failed = (refreshed?.results ?? [])
 					.filter(({ result }) => result.status === "error" || result.status === "rejected")
 					.map(({ source }) => sanitizeTerminalText(source.label));
 				if (failed.length > 0 && ctx)
 					ctx.ui.notify(
-						`Catalogs not refreshed: ${failed.join(", ")}. Cached catalog data remains available. Open Catalogs to retry.`,
+						catalogText(messageCatalog, CatalogMessageId.modelPickerCatalogsNotRefreshed, {
+							sources: failed.join(", "),
+						}),
 						"warning",
 					);
 			} catch (error) {
 				if (ctx)
 					ctx.ui.notify(
-						`Catalogs were not refreshed: ${sanitizeTerminalText(error instanceof Error ? error.message : String(error))} Cached catalog data remains available. Open Catalogs to retry.`,
+						catalogText(messageCatalog, CatalogMessageId.modelPickerCatalogsWereNotRefreshed, {
+							message: sanitizeTerminalText(error instanceof Error ? error.message : String(error)),
+						}),
 						"warning",
 					);
 			}
@@ -1053,7 +1135,9 @@ export function createJouzuModelPicker(
 			await ctx.modelRegistry.refresh({ allowNetwork: false });
 		} catch (error) {
 			ctx.ui.notify(
-				`Model availability was not refreshed: ${sanitizeTerminalText(error instanceof Error ? error.message : String(error))} Run /reload.`,
+				catalogText(messageCatalog, CatalogMessageId.modelPickerModelAvailabilityNotRefreshed, {
+					message: sanitizeTerminalText(error instanceof Error ? error.message : String(error)),
+				}),
 				"warning",
 			);
 		}
@@ -1077,6 +1161,9 @@ export function createJouzuModelPicker(
 	let cycleBusy = false;
 	let extensionApi: ExtensionAPI | undefined;
 	let setModel: ((model: PiModel) => Promise<boolean>) | undefined;
+	// Session activity a language change must respect. The tracker is fed by the
+	// Pi events below and read by the Settings Language view through `activity`.
+	const localizationActivity = createLocalizationActivityTracker();
 
 	const queueModelSwitch = (
 		ctx: ExtensionContext,
@@ -1086,7 +1173,12 @@ export function createJouzuModelPicker(
 	): void => {
 		queuedModelSwitch = { model, reference, setProjectDefault };
 		const display = modelDisplay(reference);
-		ctx.ui.notify(`Model switch queued for the next model call: ${display.provider}/${display.modelId}.`, "info");
+		ctx.ui.notify(
+			catalogText(messageCatalog, CatalogMessageId.modelPickerSwitchQueued, {
+				model: protectedModelId(`${display.provider}/${display.modelId}`),
+			}),
+			"info",
+		);
 	};
 
 	const syncSession = (ctx: ExtensionContext): void => {
@@ -1098,9 +1190,14 @@ export function createJouzuModelPicker(
 		}
 		const loaded = store.load();
 		state = loaded.state;
-		if (loaded.warning && !stateWarningShown) {
+		if (loaded.quarantinePath && !stateWarningShown) {
 			stateWarningShown = true;
-			ctx.ui.notify(loaded.warning, "warning");
+			ctx.ui.notify(
+				catalogText(messageCatalog, CatalogMessageId.modelPickerStatePreserved, {
+					path: protectedPath(loaded.quarantinePath),
+				}),
+				"warning",
+			);
 		}
 		if (catalogWarning && !catalogWarningShown) {
 			catalogWarningShown = true;
@@ -1145,7 +1242,9 @@ export function createJouzuModelPicker(
 			}
 		} catch (error) {
 			ctx.ui.notify(
-				`Saved thinking level was not applied: ${error instanceof Error ? error.message : String(error)}`,
+				catalogText(messageCatalog, CatalogMessageId.modelPickerThinkingLevelNotApplied, {
+					message: error instanceof Error ? error.message : String(error),
+				}),
 				"warning",
 			);
 		} finally {
@@ -1180,7 +1279,10 @@ export function createJouzuModelPicker(
 				description: "Open Jouzu catalog settings",
 				handler: async (_args, ctx) => {
 					if (ctx.mode !== "tui" || !(await openSettings())) {
-						ctx.ui.notify("Catalog settings require interactive TUI mode.", "warning");
+						ctx.ui.notify(
+							catalogText(messageCatalog, CatalogMessageId.modelPickerCatalogSettingsRequireTui),
+							"warning",
+						);
 					}
 				},
 			});
@@ -1190,7 +1292,11 @@ export function createJouzuModelPicker(
 					handler: async (_args, ctx) => {
 						activeCtx = ctx;
 						if (ctx.mode !== "tui") {
-							ctx.ui.notify(options.runtime?.about() ?? "Runtime diagnostics are unavailable.", "info");
+							ctx.ui.notify(
+								options.runtime?.about() ??
+									catalogText(messageCatalog, CatalogMessageId.modelPickerRuntimeDiagnosticsUnavailable),
+								"info",
+							);
 							return;
 						}
 						await openPalette({ view: "settings", query: "about" });
@@ -1206,6 +1312,7 @@ export function createJouzuModelPicker(
 							env: catalogEnv,
 							fetch: options.catalogFetch,
 							timeoutMs: 15_000,
+							catalog: messageCatalog,
 						}),
 					]);
 					reloadCatalogs();
@@ -1214,21 +1321,28 @@ export function createJouzuModelPicker(
 						const message =
 							modelRefresh.reason instanceof Error ? modelRefresh.reason.message : String(modelRefresh.reason);
 						ctx.ui.notify(
-							`Models were not refreshed: ${sanitizeTerminalText(message)} Open Models to retry.`,
+							catalogText(messageCatalog, CatalogMessageId.modelPickerModelsNotRefreshed, {
+								message: sanitizeTerminalText(message),
+							}),
 							"warning",
 						);
 					} else if (modelRefresh.value.modelRefresh.errors.size > 0) {
 						const providers = [...modelRefresh.value.modelRefresh.errors.keys()]
 							.map((provider) => sanitizeTerminalText(provider))
 							.join(", ");
-						ctx.ui.notify(`Model providers not refreshed: ${providers}. Open Models to retry.`, "warning");
+						ctx.ui.notify(
+							catalogText(messageCatalog, CatalogMessageId.modelPickerProvidersNotRefreshed, { providers }),
+							"warning",
+						);
 					}
 					const catalogRefresh = refreshes[1];
 					if (catalogRefresh.status === "rejected") {
 						const message =
 							catalogRefresh.reason instanceof Error ? catalogRefresh.reason.message : String(catalogRefresh.reason);
 						ctx.ui.notify(
-							`Catalogs were not refreshed: ${sanitizeTerminalText(message)} Cached catalog data remains available. Open Catalogs to retry.`,
+							catalogText(messageCatalog, CatalogMessageId.modelPickerCatalogsWereNotRefreshed, {
+								message: sanitizeTerminalText(message),
+							}),
 							"warning",
 						);
 					} else {
@@ -1237,7 +1351,9 @@ export function createJouzuModelPicker(
 							.map(({ source }) => sanitizeTerminalText(source.label));
 						if (failed.length > 0) {
 							ctx.ui.notify(
-								`Catalogs not refreshed: ${failed.join(", ")}. Cached catalog data remains available. Open Catalogs to retry.`,
+								catalogText(messageCatalog, CatalogMessageId.modelPickerCatalogsNotRefreshed, {
+									sources: failed.join(", "),
+								}),
 								"warning",
 							);
 						}
@@ -1272,21 +1388,41 @@ export function createJouzuModelPicker(
 				}
 				const startupThinkingLevel = ctx.thinkingLevel;
 				if (!modelReferencesEqual(reference, modelReference(ctx.model, catalog))) {
-					const label = projectReference ? "Project default" : "Last used model";
+					const label = catalogText(
+						messageCatalog,
+						projectReference
+							? CatalogMessageId.modelPickerStartupProjectDefault
+							: CatalogMessageId.modelPickerStartupLastUsed,
+					);
 					const model = resolveCatalogModel(ctx, reference, catalogs);
 					if (!model) {
-						ctx.ui.notify(`${label} is unavailable: ${reference.provider}/${reference.modelId}`, "warning");
+						ctx.ui.notify(
+							catalogText(messageCatalog, CatalogMessageId.modelPickerStartupUnavailable, {
+								label,
+								model: protectedModelId(`${reference.provider}/${reference.modelId}`),
+							}),
+							"warning",
+						);
 						return;
 					}
 					try {
 						restoringStartupModel = true;
 						if (!(await pi.setModel(model))) {
-							ctx.ui.notify(`${label} is not authenticated: ${reference.provider}/${reference.modelId}`, "warning");
+							ctx.ui.notify(
+								catalogText(messageCatalog, CatalogMessageId.modelPickerStartupNotAuthenticated, {
+									label,
+									model: protectedModelId(`${reference.provider}/${reference.modelId}`),
+								}),
+								"warning",
+							);
 							return;
 						}
 					} catch (error) {
 						ctx.ui.notify(
-							`${label} was not applied: ${error instanceof Error ? error.message : String(error)}`,
+							catalogText(messageCatalog, CatalogMessageId.modelPickerStartupNotApplied, {
+								label,
+								message: error instanceof Error ? error.message : String(error),
+							}),
 							"warning",
 						);
 						return;
@@ -1354,7 +1490,9 @@ export function createJouzuModelPicker(
 					state = store.setModelThinkingLevel(current, event.level);
 				} catch (error) {
 					ctx.ui.notify(
-						`Thinking level was not saved: ${error instanceof Error ? error.message : String(error)}`,
+						catalogText(messageCatalog, CatalogMessageId.modelPickerThinkingLevelNotSaved, {
+							message: error instanceof Error ? error.message : String(error),
+						}),
 						"warning",
 					);
 				}
@@ -1366,9 +1504,14 @@ export function createJouzuModelPicker(
 				if (!reference) return { action: "continue" };
 				try {
 					if (identity && !catalogs.some(({ document }) => document.catalogId === identity.catalogId))
-						throw new Error("The selected model catalog is disabled or unavailable. Open Models to select a model.");
+						throw new Error(catalogText(messageCatalog, CatalogMessageId.modelPickerCatalogDisabled));
 					const effective = resolveCatalogModel(ctx, reference, catalogs);
-					if (!effective) throw new Error(`Model is unavailable: ${reference.provider}/${reference.modelId}`);
+					if (!effective)
+						throw new Error(
+							catalogText(messageCatalog, CatalogMessageId.modelPickerModelUnavailableDetail, {
+								model: protectedModelId(`${reference.provider}/${reference.modelId}`),
+							}),
+						);
 					if (
 						effective.provider !== ctx.model.provider ||
 						effective.baseUrl !== ctx.model.baseUrl ||
@@ -1376,7 +1519,9 @@ export function createJouzuModelPicker(
 					) {
 						if (!(await pi.setModel(effective)))
 							throw new Error(
-								`No authentication for ${reference.provider}/${reference.modelId}. Open Catalogs to check its credential.`,
+								catalogText(messageCatalog, CatalogMessageId.modelPickerNoAuthenticationCredential, {
+									model: protectedModelId(`${reference.provider}/${reference.modelId}`),
+								}),
 							);
 					}
 					return { action: "continue" };
@@ -1386,6 +1531,11 @@ export function createJouzuModelPicker(
 					return { action: "handled" };
 				}
 			});
+			pi.on("agent_start", () => localizationActivity.set("streaming", true));
+			pi.on("agent_end", () => localizationActivity.set("streaming", false));
+			pi.on("agent_settled", () => localizationActivity.set("streaming", false));
+			pi.on("tool_execution_start", () => localizationActivity.set("tool", true));
+			pi.on("tool_execution_end", () => localizationActivity.set("tool", false));
 			pi.on("before_provider_request", (_event, ctx) => {
 				activeCtx = ctx;
 				const dispatched = modelReference(ctx.model, catalog);
@@ -1395,7 +1545,9 @@ export function createJouzuModelPicker(
 					pendingDispatch = undefined;
 				} catch (error) {
 					ctx.ui.notify(
-						`Model recency was not saved: ${error instanceof Error ? error.message : String(error)}`,
+						catalogText(messageCatalog, CatalogMessageId.modelPickerRecencyNotSaved, {
+							message: error instanceof Error ? error.message : String(error),
+						}),
 						"warning",
 					);
 				}
@@ -1408,15 +1560,31 @@ export function createJouzuModelPicker(
 				const display = modelDisplay(queued.reference);
 				try {
 					const effective = resolveCatalogModel(ctx, queued.reference, catalogs);
-					if (!effective) throw new Error(`Model is unavailable: ${display.provider}/${display.modelId}`);
+					if (!effective)
+						throw new Error(
+							catalogText(messageCatalog, CatalogMessageId.modelPickerModelUnavailableDetail, {
+								model: protectedModelId(`${display.provider}/${display.modelId}`),
+							}),
+						);
 					if (!(await activateModel(effective))) {
-						throw new Error(`No authentication for ${display.provider}/${display.modelId}`);
+						throw new Error(
+							catalogText(messageCatalog, CatalogMessageId.modelPickerNoAuthentication, {
+								model: protectedModelId(`${display.provider}/${display.modelId}`),
+							}),
+						);
 					}
 					if (queued.setProjectDefault) state = store.setProjectDefault(queued.reference, projectKey);
-					ctx.ui.notify(`Switched to ${display.provider}/${display.modelId}.`, "info");
+					ctx.ui.notify(
+						catalogText(messageCatalog, CatalogMessageId.modelPickerSwitchedTo, {
+							model: protectedModelId(`${display.provider}/${display.modelId}`),
+						}),
+						"info",
+					);
 				} catch (error) {
 					ctx.ui.notify(
-						`Queued model switch failed: ${sanitizeTerminalText(error instanceof Error ? error.message : String(error))}`,
+						catalogText(messageCatalog, CatalogMessageId.modelPickerQueuedSwitchFailed, {
+							message: sanitizeTerminalText(error instanceof Error ? error.message : String(error)),
+						}),
 						"warning",
 					);
 				}
@@ -1434,6 +1602,7 @@ export function createJouzuModelPicker(
 				cycleBusy = false;
 				extensionApi = undefined;
 				setModel = undefined;
+				localizationActivity.reset();
 			});
 		},
 	};
@@ -1466,24 +1635,42 @@ export function createJouzuModelPicker(
 									}),
 								onSelect: async (row) => {
 									const model = resolveCatalogModel(ctx, row.model, catalogs);
-									if (!model) throw new Error(`Model is unavailable: ${row.model.provider}/${row.model.modelId}`);
+									if (!model)
+										throw new Error(
+											catalogText(messageCatalog, CatalogMessageId.modelPickerModelUnavailableDetail, {
+												model: protectedModelId(`${row.model.provider}/${row.model.modelId}`),
+											}),
+										);
 									if (!ctx.isIdle()) {
 										queueModelSwitch(ctx, model, row.model, true);
 										return;
 									}
 									if (!(await activateModel(model)))
-										throw new Error(`No authentication for ${row.model.provider}/${row.model.modelId}`);
+										throw new Error(
+											catalogText(messageCatalog, CatalogMessageId.modelPickerNoAuthentication, {
+												model: protectedModelId(`${row.model.provider}/${row.model.modelId}`),
+											}),
+										);
 									state = store.setProjectDefault(row.model, projectKey);
 								},
 								onCompactAndSelect: async (row) => {
 									if (!ctx.isIdle()) {
-										throw new Error("Wait for the active model call to finish, then compact and switch.");
+										throw new Error(catalogText(messageCatalog, CatalogMessageId.modelPickerWaitForActiveCall));
 									}
 									const model = resolveCatalogModel(ctx, row.model, catalogs);
-									if (!model) throw new Error(`Model is unavailable: ${row.model.provider}/${row.model.modelId}`);
+									if (!model)
+										throw new Error(
+											catalogText(messageCatalog, CatalogMessageId.modelPickerModelUnavailableDetail, {
+												model: protectedModelId(`${row.model.provider}/${row.model.modelId}`),
+											}),
+										);
 									await compactContextForModelSwitch(ctx, row.model);
 									if (!(await activateModel(model)))
-										throw new Error(`No authentication for ${row.model.provider}/${row.model.modelId}`);
+										throw new Error(
+											catalogText(messageCatalog, CatalogMessageId.modelPickerNoAuthentication, {
+												model: protectedModelId(`${row.model.provider}/${row.model.modelId}`),
+											}),
+										);
 									state = store.setProjectDefault(row.model, projectKey);
 								},
 								onToggleFavorite: (row) => {
@@ -1491,12 +1678,18 @@ export function createJouzuModelPicker(
 								},
 								onRefresh: async (signal) => {
 									const api = extensionApi;
-									if (!api) throw new Error("model refresh is unavailable");
+									if (!api)
+										throw new Error(catalogText(messageCatalog, CatalogMessageId.modelPickerRefreshUnavailable));
 									const result = await catalogProjection.refresh(api, ctx, catalogs, signal);
 									if (result.modelRefresh.errors.size > 0) {
-										throw new Error(`could not refresh ${[...result.modelRefresh.errors.keys()].join(", ")}`);
+										throw new Error(
+											catalogText(messageCatalog, CatalogMessageId.modelPickerRefreshFailedProviders, {
+												providers: [...result.modelRefresh.errors.keys()].join(", "),
+											}),
+										);
 									}
-									if (result.modelRefresh.aborted) throw new Error("model refresh was aborted");
+									if (result.modelRefresh.aborted)
+										throw new Error(catalogText(messageCatalog, CatalogMessageId.modelPickerRefreshAborted));
 								},
 								subscribeCatalogsReloaded: (listener) => {
 									catalogReloadListeners.add(listener);
@@ -1506,13 +1699,15 @@ export function createJouzuModelPicker(
 								},
 								onRefreshCatalogs: async (signal) => {
 									const api = extensionApi;
-									if (!api) throw new Error("model refresh is unavailable");
+									if (!api)
+										throw new Error(catalogText(messageCatalog, CatalogMessageId.modelPickerRefreshUnavailable));
 									const refreshes = await Promise.allSettled([
 										catalogProjection.refresh(api, ctx, catalogs, signal),
 										refreshAvailableModelCatalogs(paths, {
 											env: catalogEnv,
 											fetch: options.catalogFetch,
 											timeoutMs: 15_000,
+											catalog: messageCatalog,
 										}),
 									]);
 									reloadCatalogs();
@@ -1520,13 +1715,21 @@ export function createJouzuModelPicker(
 									if (modelRefresh.status === "rejected") {
 										const message =
 											modelRefresh.reason instanceof Error ? modelRefresh.reason.message : String(modelRefresh.reason);
-										throw new Error(`models were not refreshed: ${sanitizeTerminalText(message)}`);
+										throw new Error(
+											catalogText(messageCatalog, CatalogMessageId.modelPickerModelsNotRefreshedDetail, {
+												message: sanitizeTerminalText(message),
+											}),
+										);
 									}
 									if (modelRefresh.value.modelRefresh.errors.size > 0) {
 										const providers = [...modelRefresh.value.modelRefresh.errors.keys()]
 											.map((provider) => sanitizeTerminalText(provider))
 											.join(", ");
-										throw new Error(`model providers were not refreshed: ${providers}`);
+										throw new Error(
+											catalogText(messageCatalog, CatalogMessageId.modelPickerProvidersNotRefreshedDetail, {
+												providers,
+											}),
+										);
 									}
 									const catalogRefresh = refreshes[1];
 									if (catalogRefresh.status === "rejected") {
@@ -1534,13 +1737,21 @@ export function createJouzuModelPicker(
 											catalogRefresh.reason instanceof Error
 												? catalogRefresh.reason.message
 												: String(catalogRefresh.reason);
-										throw new Error(`catalogs were not refreshed: ${sanitizeTerminalText(message)}`);
+										throw new Error(
+											catalogText(messageCatalog, CatalogMessageId.modelPickerCatalogsNotRefreshedDetail, {
+												message: sanitizeTerminalText(message),
+											}),
+										);
 									}
 									const failed = (catalogRefresh.value?.results ?? [])
 										.filter(({ result }) => result.status === "error" || result.status === "rejected")
 										.map(({ source }) => sanitizeTerminalText(source.label));
 									if (failed.length > 0) {
-										throw new Error(`catalogs were not refreshed: ${failed.join(", ")}`);
+										throw new Error(
+											catalogText(messageCatalog, CatalogMessageId.modelPickerCatalogsNotRefreshedDetail, {
+												message: failed.join(", "),
+											}),
+										);
 									}
 								},
 							}),
@@ -1552,11 +1763,15 @@ export function createJouzuModelPicker(
 								runtime: options.runtime,
 								paths,
 								env: catalogEnv,
+								sessionId: ctx.sessionManager?.getSessionId(),
 								onCatalogsChanged: reloadCatalogs,
 								labelPolicy: createLabelPolicy(paths),
 								...(options.onDashboardChanged ? { onDashboardChanged: options.onDashboardChanged } : {}),
 								onAccountChanged: (change) => refreshShisaAccount(change),
 								...(options.jouzuVersion ? { jouzuVersion: options.jouzuVersion } : {}),
+								...(options.uiLocaleCli ? { uiLocaleCli: options.uiLocaleCli } : {}),
+								...(options.onLanguageChanged ? { onLanguageChanged: options.onLanguageChanged } : {}),
+								activity: () => localizationActivity.snapshot(),
 							}),
 					},
 				}),
@@ -1574,7 +1789,7 @@ export function createJouzuModelPicker(
 		// starts; before that the registry resolves only TUI actions, so fall
 		// back to a generic label when app.model.select has no keys.
 		const text = formatEffectiveKeybinding(getKeybindings() as unknown as KeybindingsManager, "app.model.select");
-		return text === "Unbound" ? "the model-select binding" : text;
+		return text === "Unbound" ? catalogText(messageCatalog, CatalogMessageId.modelPickerModelSelectBinding) : text;
 	};
 
 	const cycleFavorite = async (direction: FavoriteCycleDirection): Promise<boolean> => {
@@ -1582,7 +1797,7 @@ export function createJouzuModelPicker(
 		const activateModel = setModel;
 		if (ctx?.mode !== "tui" || !activateModel) return false;
 		if (cycleBusy) {
-			ctx.ui.notify("A favorite model switch is already in progress.", "info");
+			ctx.ui.notify(catalogText(messageCatalog, CatalogMessageId.modelPickerFavoriteSwitchInProgress), "info");
 			return true;
 		}
 		const current = queuedModelSwitch?.reference ?? modelReference(ctx.model, catalog);
@@ -1596,7 +1811,10 @@ export function createJouzuModelPicker(
 		});
 		if (favoriteRows.length === 0) {
 			ctx.ui.notify(
-				`No favorite models. Open Models with ${modelsOpenText()} and press ${formatEffectiveJouzuKeybinding(jouzuKeybindings, "jouzu.model.toggleFavorite")} on a model to add one.`,
+				catalogText(messageCatalog, CatalogMessageId.modelPickerNoFavoriteModelsAdd, {
+					key: modelsOpenText(),
+					toggle: formatEffectiveJouzuKeybinding(jouzuKeybindings, "jouzu.model.toggleFavorite"),
+				}),
 				"info",
 			);
 			return true;
@@ -1606,15 +1824,15 @@ export function createJouzuModelPicker(
 		if (candidates.length === 0) {
 			ctx.ui.notify(
 				availableRows.length === 0
-					? "No favorite models are available in the current model scope."
-					: `No favorite model can fit the active context. Open Models with ${modelsOpenText()} to compact and switch.`,
+					? catalogText(messageCatalog, CatalogMessageId.modelPickerNoFavoriteModelsAvailable)
+					: catalogText(messageCatalog, CatalogMessageId.modelPickerNoFavoriteFits, { key: modelsOpenText() }),
 				"warning",
 			);
 			return true;
 		}
 		const currentIndex = candidates.findIndex((row) => modelReferencesEqual(row.model, current));
 		if (candidates.length === 1 && currentIndex === 0) {
-			ctx.ui.notify("Only one favorite model is available.", "info");
+			ctx.ui.notify(catalogText(messageCatalog, CatalogMessageId.modelPickerOnlyOneFavorite), "info");
 			return true;
 		}
 		const targetIndex =
@@ -1629,7 +1847,9 @@ export function createJouzuModelPicker(
 		const model = resolveCatalogModel(ctx, target, catalogs);
 		if (!model) {
 			ctx.ui.notify(
-				`Favorite model is unavailable: ${modelDisplay(target).provider}/${modelDisplay(target).modelId}`,
+				catalogText(messageCatalog, CatalogMessageId.modelPickerFavoriteUnavailable, {
+					model: protectedModelId(`${modelDisplay(target).provider}/${modelDisplay(target).modelId}`),
+				}),
 				"warning",
 			);
 			return true;
@@ -1642,15 +1862,24 @@ export function createJouzuModelPicker(
 		try {
 			if (!(await activateModel(model))) {
 				ctx.ui.notify(
-					`No authentication for ${modelDisplay(target).provider}/${modelDisplay(target).modelId}`,
+					catalogText(messageCatalog, CatalogMessageId.modelPickerNoAuthentication, {
+						model: protectedModelId(`${modelDisplay(target).provider}/${modelDisplay(target).modelId}`),
+					}),
 					"warning",
 				);
 				return true;
 			}
-			ctx.ui.notify(`Switched to ${modelDisplay(target).provider}/${modelDisplay(target).modelId}.`, "info");
+			ctx.ui.notify(
+				catalogText(messageCatalog, CatalogMessageId.modelPickerSwitchedTo, {
+					model: protectedModelId(`${modelDisplay(target).provider}/${modelDisplay(target).modelId}`),
+				}),
+				"info",
+			);
 		} catch (error) {
 			ctx.ui.notify(
-				`Favorite model switch failed: ${sanitizeTerminalText(error instanceof Error ? error.message : String(error))}`,
+				catalogText(messageCatalog, CatalogMessageId.modelPickerFavoriteSwitchFailed, {
+					message: sanitizeTerminalText(error instanceof Error ? error.message : String(error)),
+				}),
 				"warning",
 			);
 		} finally {
@@ -1663,7 +1892,10 @@ export function createJouzuModelPicker(
 		const ctx = activeCtx;
 		if (ctx?.mode !== "tui") return false;
 		ctx.ui.notify(
-			`Jouzu uses Favorites for quick switching. Open Models with ${modelsOpenText()} and press ${formatEffectiveJouzuKeybinding(jouzuKeybindings, "jouzu.model.toggleFavorite")} on a model to favorite it.`,
+			catalogText(messageCatalog, CatalogMessageId.modelPickerFavoritesUsage, {
+				key: modelsOpenText(),
+				toggle: formatEffectiveJouzuKeybinding(jouzuKeybindings, "jouzu.model.toggleFavorite"),
+			}),
 			"info",
 		);
 		return true;

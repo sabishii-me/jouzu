@@ -6,6 +6,7 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, write
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 
+import { packedTarballEntry } from "./pack-output.mjs";
 import { writeManifest } from "./release-artifact.mjs";
 
 const root = resolve(import.meta.dirname, "..");
@@ -46,7 +47,7 @@ function pack(directory, version, broken = false) {
 		);
 	}
 	const stdout = runNpm(["pack", "--ignore-scripts", "--json", "--pack-destination", outputDirectory], directory);
-	return JSON.parse(stdout)[0];
+	return packedTarballEntry(stdout);
 }
 
 rmSync(outputDirectory, { recursive: true, force: true });

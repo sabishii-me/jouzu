@@ -1,4 +1,5 @@
 import type { InlineExtension } from "@earendil-works/pi-coding-agent";
+import type { CatalogBundle } from "../locale-catalog.js";
 import { retainAutomaticWork } from "./automatic-work.js";
 import type { PiSessionFlowIngress } from "./pi-session-ingress.js";
 import { type FlowAttempt, FlowLedgerError } from "./receipt-ledger.js";
@@ -12,6 +13,8 @@ export function createTaskControllerExtension(options: {
 	/** True while task execution is attributed to an autonomous multiloop/goal continuation. */
 	autonomous?(): boolean;
 	onError(error: unknown): void;
+	/** The resolved catalog the task-context skip notice reads its text from. */
+	catalog?: CatalogBundle;
 }): InlineExtension & {
 	consumedAttempt(attempt: FlowAttempt): void;
 	unboundTasks(): FlowTask[];
@@ -56,6 +59,7 @@ export function createTaskControllerExtension(options: {
 				},
 				valid: (attempt) => producer?.validAttempt(attempt) ?? Promise.resolve(false),
 				onError: options.onError,
+				catalog: options.catalog,
 			});
 			unsubscribe?.();
 			unsubscribe = pi.events.on("jouzu:task-flow", (data) => {

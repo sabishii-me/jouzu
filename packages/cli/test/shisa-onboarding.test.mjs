@@ -7,6 +7,7 @@ import test from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { setCatalogSourceToken } from "../dist/catalog-sources.js";
 import { isInteractivePiStartup } from "../dist/interactive-startup.js";
+import { resolveCatalog } from "../dist/locale-catalog.js";
 import { resolveJouzuPaths } from "../dist/paths.js";
 import { readShisaLoginToken, writeShisaLoginCredential } from "../dist/shisa-link/credentials.js";
 import { offerShisaOnboarding, shisaOnboardingPath } from "../dist/shisa-link/onboarding.js";
@@ -228,6 +229,22 @@ test("credential storage failure is reported without acknowledgement", async (t)
 	});
 	assert.match(h.text(), /storage permissions/);
 	assert.doesNotMatch(h.text(), /Signed in to Shisa AI/);
+});
+
+test("a Japanese catalog renders the offer and hint in Japanese and keeps protected values", async (t) => {
+	let asked = "";
+	const h = harness(t, {
+		ask: async (question) => {
+			asked = question;
+			return "n";
+		},
+	});
+	await offerShisaOnboarding({ ...h.options, catalog: resolveCatalog("ja").bundle });
+	assert.match(h.text(), /最新のオープンコーディングモデル/);
+	assert.match(h.text(), /後で `\/login shisa` からでも接続できます。/);
+	assert.match(asked, /今すぐ接続しますか？/);
+	assert.match(asked, /後で `\/login shisa` でも接続できます/);
+	assert.doesNotMatch(h.text(), /Connect to Shisa AI|connect later/);
 });
 
 test("unknown terminal width uses readable prose wrapping", async (t) => {
