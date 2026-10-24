@@ -197,6 +197,12 @@ globalThis.__languageWiring = {
 			for (const handler of handlers.get(event) ?? []) result = (await handler(data, ctx)) ?? result;
 			return result;
 		};
+		// Pi hands each run fresh options; presentation sets the preamble section on them.
+		const composedPreamble = async () => {
+			const event = { ...promptEvent, systemPromptOptions: { ...promptEvent.systemPromptOptions, sections: {} } };
+			await emit("before_agent_start", event);
+			return event.systemPromptOptions.sections.preamble;
+		};
 		const snapshot = () => ({
 			contract: structuredClone(languageContract.currentContract()),
 			section: languageContract.currentSection(),
@@ -204,7 +210,7 @@ globalThis.__languageWiring = {
 		});
 		await emit("session_start", { reason: "startup" });
 		observed.initial = snapshot();
-		observed.initialPrompt = (await emit("before_agent_start", promptEvent)).systemPrompt;
+		observed.initialPrompt = await composedPreamble();
 		if (scenario.action) {
 			const opening = commands.get("catalogs").handler("", ctx);
 			assert.ok(panel, "the production Settings caller opened a panel");
@@ -242,13 +248,13 @@ globalThis.__languageWiring = {
 			}
 			observed.applied = snapshot();
 			observed.rendered = panel.render(80).join("\n");
-			observed.nextPrompt = (await emit("before_agent_start", promptEvent)).systemPrompt;
+			observed.nextPrompt = await composedPreamble();
 			observed.next = snapshot();
 			if (scenario.action === "reset") {
 				panel.handleInput("r");
 				panel.handleInput("enter");
 				observed.resetStaged = snapshot();
-				observed.resetPrompt = (await emit("before_agent_start", promptEvent)).systemPrompt;
+				observed.resetPrompt = await composedPreamble();
 				observed.reset = snapshot();
 			}
 			closePanel();

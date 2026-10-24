@@ -136,21 +136,31 @@ export function clearStartupNotice(): void {
 const BRAILLE_MARK = ["⠈⢹ ⡎⢱ ⡇⢸ ⢉⠝ ⡇⢸", "⠣⠜ ⠣⠜ ⠣⠜ ⠮⠤ ⠣⠜"] as const;
 const BRAILLE_MIN_WIDTH = 16;
 const ANSI_RESET = "\u001b[0m";
-const PI_DEFAULT_IDENTITY =
-	"You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.";
 const JOUZU_DEFAULT_IDENTITY =
 	"You are an expert coding assistant operating inside Jouzu, a coding-agent environment built on the Pi harness. You help users by reading files, executing commands, editing code, and writing new files.";
 export const JOUZU_USER_COMMUNICATION_GUIDANCE =
-	"Communicate clearly with the user. Do not invent acronyms or use unexplained jargon.";
+	"Communicate clearly with the user. Do not invent acronyms or use unexplained jargon. Responses render as Markdown.";
+export const JOUZU_HARNESS_GUIDANCE =
+	"Make independent tool calls in parallel in one response. Treat a message that arrives while you work as steering the current task unless it cancels or replaces it.";
 export const JOUZU_REPOSITORY_WORK_GUIDANCE =
-	"Work directly by default. Follow repository instructions and preserve user-owned work. Inspect relevant files before editing. Scope file searches to relevant project paths and widen only when needed; do not run filesystem-wide scans such as `find /` unless the user explicitly requests them. Distinguish evidence from assumptions, make the smallest coherent change, and run the narrowest deterministic check. Report untested limitations honestly. Use task tracking only for work with three or more distinct steps. Use background, goal, loop, scheduling, web, or browser tools only when the task requires them; do not combine workflow systems unless each has a separate purpose. For optional skills, read the exact listed `<location>` once; never search guessed package paths. If a skill file is unavailable, continue without it.";
+	"Work directly by default. Follow repository instructions and preserve user-owned work. Inspect relevant files before editing. Scope file searches to relevant project paths and widen only when needed; do not run filesystem-wide scans such as `find /` unless the user explicitly requests them. Distinguish evidence from assumptions, make the smallest coherent change, and run the narrowest deterministic check. Report untested limitations honestly. Use task tracking only for work with three or more distinct steps. Use background, goal, loop, scheduling, web, or browser tools only when the task requires them; do not combine workflow systems unless each has a separate purpose. Compute reported numbers with executed code, not mental arithmetic. Read an optional skill only when the task needs it, not because a keyword matches; read the exact listed `<location>` once and never search guessed package paths. If a skill file is unavailable, continue without it.";
 /**
  * Asynchronous-work guidance for sessions without flow-control waits. When `agent_wait` is
  * active, its tool guidelines carry the complete wait protocol, so this paragraph is omitted.
  */
 export const JOUZU_ASYNC_WAIT_GUIDANCE =
 	"Prefer completion notifications over sleeping or polling, and do independent work while a job runs. Do not use shell sleep, repeated status calls, or scheduled check-ins merely to keep the session active. Without completion notifications, poll on a bounded schedule and explain the limit. On wake, verify the exact execution and its output before marking work complete.";
-export const JOUZU_DEFAULT_GUIDANCE = `${JOUZU_USER_COMMUNICATION_GUIDANCE}\n${JOUZU_REPOSITORY_WORK_GUIDANCE}`;
+export const JOUZU_DEFAULT_GUIDANCE = `${JOUZU_USER_COMMUNICATION_GUIDANCE}\n${JOUZU_HARNESS_GUIDANCE}\n${JOUZU_REPOSITORY_WORK_GUIDANCE}`;
+
+/** Tool guidelines Pi renders in its rules only while the tool is active. */
+export const JOUZU_TOOL_GUIDELINES: Readonly<Record<string, readonly string[]>> = {
+	edit: [
+		"Before an edit with a multi-line oldText, check that every line missing from newText is meant to be deleted.",
+	],
+	bash: [
+		'Do not print separator lines such as `echo "===="` between commands; each command\'s output is already shown.',
+	],
+};
 
 interface CapabilityRoute {
 	need: string;
@@ -291,46 +301,56 @@ export function buildCapabilityRoutingGuidance(options: BuildSystemPromptOptions
 	return tools.has("agent_wait") ? table : `${JOUZU_ASYNC_WAIT_GUIDANCE}\n\n${table}`;
 }
 
-/** Opening of Pi's default `<docs>` section; `scripts/check-pi-contract.mjs` pins it. */
-export const PI_DOCS_SECTION_START =
-	"<docs>\nPi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):";
-
 /**
  * Pi's documentation pointer, narrowed to Pi development. Pi's longer section also routes
  * models, keybindings, and environment variables to Pi docs, which `jouzu-reference` covers.
  */
 export function jouzuDocsSection(): string {
-	return `<docs>\nPi documentation (read only for Pi extension, SDK, theme, or TUI development): README ${getReadmePath()}; guides ${getDocsPath()}; examples ${getExamplesPath()}. Resolve docs/... and examples/... paths against those directories.\n</docs>`;
+	return `Pi documentation (read only for Pi extension, SDK, theme, or TUI development): README ${getReadmePath()}; guides ${getDocsPath()}; examples ${getExamplesPath()}. Resolve docs/... and examples/... paths against those directories.`;
 }
 
-function replacePiDocsSection(systemPrompt: string): string {
-	const start = systemPrompt.indexOf(PI_DOCS_SECTION_START);
-	if (start < 0) return systemPrompt;
-	const end = systemPrompt.indexOf("\n</docs>", start);
-	if (end < 0) return systemPrompt;
-	return `${systemPrompt.slice(0, start)}${jouzuDocsSection()}${systemPrompt.slice(end + "\n</docs>".length)}`;
+/** The local calendar date. A new day becomes a section update instead of a rewritten prompt. */
+export function jouzuDateSection(now: Date = new Date()): string {
+	// The en-CA locale formats a local date as YYYY-MM-DD.
+	return `Today's date: ${now.toLocaleDateString("en-US", { weekday: "long" })}, ${now.toLocaleDateString("en-CA")}`;
 }
 
 /**
- * Brand Pi's default prompt and append Jouzu guidance.
- *
- * The composition order is fixed: the default identity, the default guidance,
- * the capability routing, then the response-language section. The last two are
- * optional. Pi's `<docs>` section is narrowed to Pi development. A user-owned
- * `customPrompt` is left alone, and so is a prompt that is not Pi's default.
+ * The Jouzu preamble, in fixed order: identity, default guidance, capability routing
+ * (including any model guidance), then the response-language section.
  */
-export function brandDefaultSystemPrompt(
-	systemPrompt: string,
-	customPrompt?: string,
-	capabilityRouting?: string,
-	responseLanguageSection?: string,
-): string {
-	if (customPrompt || !systemPrompt.startsWith(PI_DEFAULT_IDENTITY)) return systemPrompt;
-	const sections = [JOUZU_DEFAULT_GUIDANCE];
-	if (capabilityRouting) sections.push(capabilityRouting);
-	if (responseLanguageSection) sections.push(responseLanguageSection);
-	const rest = replacePiDocsSection(systemPrompt.slice(PI_DEFAULT_IDENTITY.length));
-	return `${JOUZU_DEFAULT_IDENTITY}\n\n${sections.join("\n\n")}${rest}`;
+export function jouzuPreamble(capabilityRouting?: string, responseLanguageSection?: string): string {
+	return [JOUZU_DEFAULT_IDENTITY, JOUZU_DEFAULT_GUIDANCE, capabilityRouting, responseLanguageSection]
+		.filter(Boolean)
+		.join("\n\n");
+}
+
+export interface JouzuPromptParts {
+	capabilityRouting?: string;
+	responseLanguageSection?: string;
+	now?: Date;
+}
+
+/**
+ * Apply Jouzu's prompt as structured sections of Pi's default prompt: the preamble, a
+ * narrowed `docs` section, the date, and tool guidelines. Pi diffs sections between runs and
+ * sends a change as a section update, so the leading prompt stays byte-stable. A user-owned
+ * `customPrompt` or another extension's forced prompt is left alone; returns whether the
+ * sections were applied.
+ */
+export function applyJouzuPromptSections(options: BuildSystemPromptOptions, parts: JouzuPromptParts = {}): boolean {
+	if (options.customPrompt || options.forceSystemPrompt !== undefined) return false;
+	options.sections ??= {};
+	const sections = options.sections;
+	sections.preamble = jouzuPreamble(parts.capabilityRouting, parts.responseLanguageSection);
+	sections.docs = jouzuDocsSection();
+	sections.date = jouzuDateSection(parts.now);
+	options.toolGuidelines ??= {};
+	const guidelines = options.toolGuidelines;
+	for (const [tool, lines] of Object.entries(JOUZU_TOOL_GUIDELINES)) {
+		if (options.selectedTools?.includes(tool)) guidelines[tool] = [...(guidelines[tool] ?? []), ...lines];
+	}
+	return true;
 }
 
 function fitPresentationText(text: string, width: number): string {
@@ -492,14 +512,10 @@ export function createJouzuPresentationExtension(
 				]
 					.filter(Boolean)
 					.join("\n\n");
-				const systemPrompt = brandDefaultSystemPrompt(
-					event.systemPrompt,
-					event.systemPromptOptions.customPrompt,
+				applyJouzuPromptSections(event.systemPromptOptions, {
 					capabilityRouting,
-					options.responseLanguageSection?.(),
-				);
-				if (systemPrompt === event.systemPrompt) return;
-				return { systemPrompt };
+					responseLanguageSection: options.responseLanguageSection?.(),
+				});
 			});
 
 			pi.on("session_start", (_event, ctx) => {

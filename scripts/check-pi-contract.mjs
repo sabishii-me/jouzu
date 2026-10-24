@@ -30,8 +30,6 @@ const nestedTuiKeybindingsSource = resolve(
 const tuiKeybindingsSource = existsSync(nestedTuiKeybindingsSource)
 	? nestedTuiKeybindingsSource
 	: resolve(root, "node_modules", "@earendil-works", "pi-tui", "dist", "keybindings.js");
-const expectedDefaultIdentity =
-	"You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.";
 
 function runNode(args, options = {}) {
 	const result = spawnSync(process.execPath, args, {
@@ -58,16 +56,6 @@ for (const path of [
 ]) {
 	assert.ok(existsSync(path), `Pi keybinding contract source is missing: ${path}`);
 }
-assert.ok(
-	readFileSync(systemPromptSource, "utf8").includes(expectedDefaultIdentity),
-	"Pi default identity changed; review Jouzu's exact-prefix branding before qualifying this Pi version",
-);
-assert.ok(
-	readFileSync(systemPromptSource, "utf8").includes(
-		"Pi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):",
-	),
-	"Pi documentation section changed; review Jouzu's <docs> replacement before qualifying this Pi version",
-);
 const keybindingsText = readFileSync(keybindingsSource, "utf8");
 assert.match(
 	keybindingsText,

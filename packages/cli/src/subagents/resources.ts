@@ -14,7 +14,7 @@ import { CompactionRequestController, registerCompactionRequest } from "../compa
 import { FlowLedgerError } from "../flow-control/receipt-ledger.js";
 import { assertScheduleJob } from "../flow-control/schedule-waits.js";
 import { buildModelGuidance } from "../model-guidance.js";
-import { brandDefaultSystemPrompt, buildCapabilityRoutingGuidance } from "../presentation.js";
+import { applyJouzuPromptSections, buildCapabilityRoutingGuidance } from "../presentation.js";
 import { validatePrivateDirectory, writeFilePrivateAtomic } from "../private-fs.js";
 import { loadBundledProfile } from "../profiles.js";
 import { inspectReleaseExtensions, omitOptionalReleaseExtensionFailures } from "../release-extensions.js";
@@ -200,14 +200,12 @@ export async function expandedChildResourceLoader(
 				name: "jouzu-child",
 				factory: (pi) => {
 					registerCompactionRequest(pi, compaction);
-					pi.on("before_agent_start", (event) => ({
-						systemPrompt: brandDefaultSystemPrompt(
-							event.systemPrompt,
-							undefined,
-							buildCapabilityRoutingGuidance(event.systemPromptOptions),
-							languageSection,
-						),
-					}));
+					pi.on("before_agent_start", (event) => {
+						applyJouzuPromptSections(event.systemPromptOptions, {
+							capabilityRouting: buildCapabilityRoutingGuidance(event.systemPromptOptions),
+							responseLanguageSection: languageSection,
+						});
+					});
 				},
 			},
 		],

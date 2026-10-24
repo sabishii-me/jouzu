@@ -1534,6 +1534,13 @@ export interface LoadSkillsResult {
     admissionLimits?: boolean;
 }`,
 		);
+	} else if (path === "dist/core/system-prompt.js") {
+		// Hosts may supply the untagged preamble as a section, so a branded identity is a
+		// structured edit that Pi can diff instead of a forced full-prompt replacement.
+		change(
+			'if (!SYSTEM_PROMPT_SECTION_NAME.test(name) || name === "preamble") {',
+			"if (!SYSTEM_PROMPT_SECTION_NAME.test(name)) {",
+		);
 	} else {
 		throw new Error(`Unknown patch path ${path}`);
 	}
@@ -1573,4 +1580,5 @@ export const paths = [
 	"dist/core/model-runtime.d.ts",
 	"dist/core/cache-warmer.js",
 	"dist/core/settings-manager.js",
+	"dist/core/system-prompt.js",
 ];

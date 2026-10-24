@@ -29,10 +29,11 @@ import {
 } from "../dist/language-contract.js";
 import { resolveArtifactPolicy, resolveResponseLanguage } from "../dist/language-settings.js";
 import {
-	brandDefaultSystemPrompt,
+	applyJouzuPromptSections,
 	buildCapabilityRoutingGuidance,
 	createJouzuPresentationExtension,
 	JOUZU_DEFAULT_GUIDANCE,
+	jouzuPreamble,
 } from "../dist/presentation.js";
 
 const resolvedJa = () => resolveResponseLanguage({ cli: "ja" });
@@ -179,19 +180,14 @@ test("each fixed language names itself in its own section", () => {
 test("the section composes after the existing guidance without changing it", () => {
 	const routingOptions = { customPrompt: undefined, selectedTools: ["read", "bg_task", "web_fetch"], skills: [] };
 	const routing = buildCapabilityRoutingGuidance(routingOptions);
-	const before = brandDefaultSystemPrompt(UPSTREAM_PROMPT, undefined, routing);
+	const before = jouzuPreamble(routing);
 	// Omitting the section keeps the exact pre-language-contract output.
-	assert.equal(brandDefaultSystemPrompt(UPSTREAM_PROMPT, undefined, routing, undefined), before);
-	assert.equal(
-		brandDefaultSystemPrompt(UPSTREAM_PROMPT, undefined, undefined),
-		brandDefaultSystemPrompt(UPSTREAM_PROMPT),
-	);
+	assert.equal(jouzuPreamble(routing, undefined), before);
 
 	const section = buildResponseLanguageSection(contractJa());
-	const after = brandDefaultSystemPrompt(UPSTREAM_PROMPT, undefined, routing, section);
-	// The existing prompt is byte-identical, with the section inserted after the
-	// capability routing and before Pi's remaining prompt.
-	assert.equal(after, before.replace("\n\nAvailable tools:", `\n\n${section}\n\nAvailable tools:`));
+	const after = jouzuPreamble(routing, section);
+	// The existing preamble is byte-identical, with the section appended after the capability routing.
+	assert.equal(after, `${before}\n\n${section}`);
 	const order = [JOUZU_DEFAULT_GUIDANCE, routing, section].map((part) => after.indexOf(part));
 	assert.deepEqual(
 		order,
@@ -199,7 +195,12 @@ test("the section composes after the existing guidance without changing it", () 
 	);
 	assert.ok(order.every((index) => index >= 0));
 	// A user-owned prompt is untouched, so the section never overrides it.
-	assert.equal(brandDefaultSystemPrompt(UPSTREAM_PROMPT, "user-owned", routing, section), UPSTREAM_PROMPT);
+	const owned = { cwd: "/workspace", customPrompt: "user-owned", sections: {} };
+	assert.equal(
+		applyJouzuPromptSections(owned, { capabilityRouting: routing, responseLanguageSection: section }),
+		false,
+	);
+	assert.deepEqual(owned.sections, {});
 });
 
 test("the presentation extension composes the section for the active contract", () => {
@@ -217,12 +218,11 @@ test("the presentation extension composes the section for the active contract", 
 		responseLanguageSection: () => section,
 	}).factory(pi);
 	const options = { customPrompt: undefined, selectedTools: ["read"], skills: [] };
-	const result = handlers.get("before_agent_start")({ systemPrompt: UPSTREAM_PROMPT, systemPromptOptions: options });
-	assert.equal(
-		result.systemPrompt,
-		brandDefaultSystemPrompt(UPSTREAM_PROMPT, undefined, buildCapabilityRoutingGuidance(options), section),
-	);
-	assert.match(result.systemPrompt, /Response language: Japanese \(ja\)/u);
+	const event = { systemPrompt: UPSTREAM_PROMPT, systemPromptOptions: { ...options, sections: {} } };
+	assert.equal(handlers.get("before_agent_start")(event), undefined);
+	const preamble = event.systemPromptOptions.sections.preamble;
+	assert.equal(preamble, jouzuPreamble(buildCapabilityRoutingGuidance(options), section));
+	assert.match(preamble, /Response language: Japanese \(ja\)/u);
 });
 
 // --- T10: epoch persistence and resume --------------------------------------

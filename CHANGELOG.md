@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Send Jouzu's prompt additions as named sections of Pi's prompt. A change during a session, such as a new date, language, or tool set, reaches the model as a section update instead of a rewritten prompt, so provider prompt caching keeps working. The prompt now includes today's date, asks for parallel independent tool calls, and treats a message sent during work as steering the current task.
+
 - Remove repeated instructions from the default system prompt and shorten the task tool descriptions. A default Core session sends about 17,000 characters of system prompt instead of 22,000, and about 38,000 characters of tool definitions instead of 50,000. The multiloop iteration tools are offered only while a loop or goal is running. Browser-tool parameter details move into the tool parameter descriptions.
 
 ### Fixed

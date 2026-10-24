@@ -17,6 +17,7 @@ import type { CatalogBundle } from "../locale-catalog.js";
 import { preferCatalogModels } from "../model-catalog-projection.js";
 import { createNotificationInbox } from "../notifications/inbox.js";
 import type { JouzuPaths } from "../paths.js";
+import { setPromptSections } from "../prompt-sections.js";
 import type { TextGuardMode } from "../textguard-policy.js";
 import {
 	observedSubagentResults,
@@ -530,15 +531,11 @@ export function createWorkflowIntegration(
 			});
 			pi.on("before_agent_start", (event, active) => {
 				ctx = active;
-				let systemPrompt = event.systemPrompt;
-				if (mainRole) systemPrompt += `\n\nAgent role: ${mainRole.id}\n${mainRole.instructions}`;
-				if (subagentsEnabled)
-					systemPrompt +=
-						"\n\nSubagents are enabled. Roles can change during the session; choose a role from op:roles that allows child placement. Only the user can change role models; do not edit agent configuration to select another model. Write each assignment in complete sentences with normal spacing. Give one objective, verified context and file paths, constraints, acceptance checks, and an explicit stopping point and report. Separate dependent stages. For follow-ups, state what changed and what remains authorized. Diagnose provider, tool, and instruction failures before judging implementation quality; do not substitute another model.";
-				if (!subagentsEnabled)
-					systemPrompt +=
-						"\n\nSubagents are disabled by the user for this session. Work directly; do not delegate or re-enable subagents. Existing results may be inspected and acknowledged.";
-				return { systemPrompt };
+				const role = mainRole ? `Agent role: ${mainRole.id}\n${mainRole.instructions}` : undefined;
+				const subagents = subagentsEnabled
+					? "Subagents are enabled. Roles can change during the session; choose a role from op:roles that allows child placement. Only the user can change role models; do not edit agent configuration to select another model. Write each assignment in complete sentences with normal spacing. Give one objective, verified context and file paths, constraints, acceptance checks, and an explicit stopping point and report. Separate dependent stages. For follow-ups, state what changed and what remains authorized. Diagnose provider, tool, and instruction failures before judging implementation quality; do not substitute another model."
+					: "Subagents are disabled by the user for this session. Work directly; do not delegate or re-enable subagents. Existing results may be inspected and acknowledged.";
+				return setPromptSections(event, { agent_role: role, subagents });
 			});
 			pi.on("session_shutdown", async () => {
 				dashboard.dispose();
@@ -559,7 +556,11 @@ export function createWorkflowIntegration(
 						description:
 							"Fields by operation: roles: none; list: offset?; launch: role, task; read/stop: id; resume/steer: id, task; acknowledge: batchId. Trace: id? (omit for parent), query?, kind?, entryId?, offset?, limit?. Read also accepts offset.",
 					},
-					role: { type: "string", description: "Role ID from op:roles." },
+					role: {
+						type: "string",
+						description:
+							"Role ID from op:roles. A name the user gives that op:roles does not list may be a model; choose a listed role and tell the user that role models are set in Workflow.",
+					},
 					batchId: {
 						type: "string",
 						description: "Current-run completion batch ID for op:acknowledge. Call alone when no reply is needed.",

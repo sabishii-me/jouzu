@@ -618,13 +618,6 @@
 	{
 		"file": "packages/cli/src/presentation.ts",
 		"kind": "variable-literal",
-		"text": "Communicate clearly with the user. Do not invent acronyms or use unexplained jargon.",
-		"category": "model-facing",
-		"reason": "The brand system prompt that presentation.ts hands to the model. It is model-facing text, so it stays English."
-	},
-	{
-		"file": "packages/cli/src/presentation.ts",
-		"kind": "variable-literal",
 		"text": "Prefer completion notifications over sleeping or polling, and do independent work while a job runs. Do not use shell sleep, repeated status calls, or scheduled check-ins merely to keep the session active. Without completion notifications, poll on a bounded schedule and explain the limit. On wake, verify the exact execution and its output before marking work complete.",
 		"category": "model-facing",
 		"reason": "The brand system prompt that presentation.ts hands to the model. It is model-facing text, so it stays English."
@@ -632,21 +625,7 @@
 	{
 		"file": "packages/cli/src/presentation.ts",
 		"kind": "variable-literal",
-		"text": "Work directly by default. Follow repository instructions and preserve user-owned work. Inspect relevant files before editing. Scope file searches to relevant project paths and widen only when needed; do not run filesystem-wide scans such as `find /` unless the user explicitly requests them. Distinguish evidence from assumptions, make the smallest coherent change, and run the narrowest deterministic check. Report untested limitations honestly. Use task tracking only for work with three or more distinct steps. Use background, goal, loop, scheduling, web, or browser tools only when the task requires them; do not combine workflow systems unless each has a separate purpose. For optional skills, read the exact listed `<location>` once; never search guessed package paths. If a skill file is unavailable, continue without it.",
-		"category": "model-facing",
-		"reason": "The brand system prompt that presentation.ts hands to the model. It is model-facing text, so it stays English."
-	},
-	{
-		"file": "packages/cli/src/presentation.ts",
-		"kind": "variable-literal",
 		"text": "You are an expert coding assistant operating inside Jouzu, a coding-agent environment built on the Pi harness. You help users by reading files, executing commands, editing code, and writing new files.",
-		"category": "model-facing",
-		"reason": "The brand system prompt that presentation.ts hands to the model. It is model-facing text, so it stays English."
-	},
-	{
-		"file": "packages/cli/src/presentation.ts",
-		"kind": "variable-literal",
-		"text": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
 		"category": "model-facing",
 		"reason": "The brand system prompt that presentation.ts hands to the model. It is model-facing text, so it stays English."
 	},
@@ -674,9 +653,23 @@
 	{
 		"file": "packages/cli/src/presentation.ts",
 		"kind": "variable-literal",
-		"text": "<docs>\nPi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):",
+		"text": "Communicate clearly with the user. Do not invent acronyms or use unexplained jargon. Responses render as Markdown.",
 		"category": "model-facing",
-		"reason": "The opening of Pi's own default <docs> section, matched so presentation.ts can replace it. It is model-facing Pi text, so it stays English."
+		"reason": "The brand system prompt that presentation.ts hands to the model. It is model-facing text, so it stays English."
+	},
+	{
+		"file": "packages/cli/src/presentation.ts",
+		"kind": "variable-literal",
+		"text": "Make independent tool calls in parallel in one response. Treat a message that arrives while you work as steering the current task unless it cancels or replaces it.",
+		"category": "model-facing",
+		"reason": "The brand system prompt that presentation.ts hands to the model. It is model-facing text, so it stays English."
+	},
+	{
+		"file": "packages/cli/src/presentation.ts",
+		"kind": "variable-literal",
+		"text": "Work directly by default. Follow repository instructions and preserve user-owned work. Inspect relevant files before editing. Scope file searches to relevant project paths and widen only when needed; do not run filesystem-wide scans such as `find /` unless the user explicitly requests them. Distinguish evidence from assumptions, make the smallest coherent change, and run the narrowest deterministic check. Report untested limitations honestly. Use task tracking only for work with three or more distinct steps. Use background, goal, loop, scheduling, web, or browser tools only when the task requires them; do not combine workflow systems unless each has a separate purpose. Compute reported numbers with executed code, not mental arithmetic. Read an optional skill only when the task needs it, not because a keyword matches; read the exact listed `<location>` once and never search guessed package paths. If a skill file is unavailable, continue without it.",
+		"category": "model-facing",
+		"reason": "The brand system prompt that presentation.ts hands to the model. It is model-facing text, so it stays English."
 	},
 	{
 		"file": "packages/cli/src/profile-manager.ts",
@@ -1188,5 +1181,26 @@
 		"text": "The child reported a language limitation (contract {…}): {…}",
 		"category": "model-facing",
 		"reason": "The notice prepended to a child result the parent model reads, so a reported language limitation is surfaced rather than hidden."
+	},
+	{
+		"file": "packages/cli/src/subagents/integration.ts",
+		"kind": "conditional-branch",
+		"text": "Agent role: {…}\n{…}",
+		"category": "model-facing",
+		"reason": "Part of the subagent section of the system prompt that integration.ts hands to the model. It is model-facing text, so it stays English."
+	},
+	{
+		"file": "packages/cli/src/subagents/integration.ts",
+		"kind": "conditional-branch",
+		"text": "Subagents are enabled. Roles can change during the session; choose a role from op:roles that allows child placement. Only the user can change role models; do not edit agent configuration to select another model. Write each assignment in complete sentences with normal spacing. Give one objective, verified context and file paths, constraints, acceptance checks, and an explicit stopping point and report. Separate dependent stages. For follow-ups, state what changed and what remains authorized. Diagnose provider, tool, and instruction failures before judging implementation quality; do not substitute another model.",
+		"category": "model-facing",
+		"reason": "Part of the subagent section of the system prompt that integration.ts hands to the model. It is model-facing text, so it stays English."
+	},
+	{
+		"file": "packages/cli/src/subagents/integration.ts",
+		"kind": "conditional-branch",
+		"text": "Subagents are disabled by the user for this session. Work directly; do not delegate or re-enable subagents. Existing results may be inspected and acknowledged.",
+		"category": "model-facing",
+		"reason": "Part of the subagent section of the system prompt that integration.ts hands to the model. It is model-facing text, so it stays English."
 	}
 ]

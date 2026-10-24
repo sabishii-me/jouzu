@@ -31,9 +31,9 @@ import {
 	resolveResponseLanguage,
 } from "../dist/language-settings.js";
 import {
-	brandDefaultSystemPrompt,
 	buildCapabilityRoutingGuidance,
 	createJouzuPresentationExtension,
+	jouzuPreamble,
 } from "../dist/presentation.js";
 import { BACKGROUND_MONITOR_LANGUAGE_CONTRACT, COMPACTOR_LANGUAGE_CONTRACT } from "../dist/subagents/language.js";
 import { workerEnvironment } from "../dist/subagents/manager.js";
@@ -164,14 +164,12 @@ test("a saved response language reaches the composed prompt and the persisted ep
 		// existing guidance, and the rest of the prompt is unchanged.
 		const section = buildResponseLanguageSection(session.languageContract.currentContract());
 		const routing = buildCapabilityRoutingGuidance(routingOptions);
-		const expected = brandDefaultSystemPrompt(UPSTREAM_PROMPT, undefined, routing, section);
-		const composed = session.emit("before_agent_start", {
-			systemPrompt: UPSTREAM_PROMPT,
-			systemPromptOptions: routingOptions,
-		});
-		// `emit` returns the last handler's result; presentation returns the prompt.
-		assert.equal(composed.systemPrompt, expected);
-		assert.match(composed.systemPrompt, /Response language: Japanese \(ja\)/u);
+		const event = { systemPrompt: UPSTREAM_PROMPT, systemPromptOptions: { ...routingOptions, sections: {} } };
+		session.emit("before_agent_start", event);
+		// Presentation sets the preamble section; the section follows the existing guidance.
+		const preamble = event.systemPromptOptions.sections.preamble;
+		assert.equal(preamble, jouzuPreamble(routing, section));
+		assert.match(preamble, /Response language: Japanese \(ja\)/u);
 		assert.equal(session.languageContract.currentEpoch().source, "config");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
@@ -193,12 +191,11 @@ test("auto applies artifact instructions without fixing the response language en
 		assert.match(section, /Artifact language policy/u);
 		assert.doesNotMatch(section, /Response language:/u);
 		const routing = buildCapabilityRoutingGuidance(routingOptions);
-		const composed = session.emit("before_agent_start", {
-			systemPrompt: UPSTREAM_PROMPT,
-			systemPromptOptions: routingOptions,
-		});
-		assert.equal(composed.systemPrompt, brandDefaultSystemPrompt(UPSTREAM_PROMPT, undefined, routing, section));
-		assert.doesNotMatch(composed.systemPrompt, /Response language:/u);
+		const event = { systemPrompt: UPSTREAM_PROMPT, systemPromptOptions: { ...routingOptions, sections: {} } };
+		session.emit("before_agent_start", event);
+		const preamble = event.systemPromptOptions.sections.preamble;
+		assert.equal(preamble, jouzuPreamble(routing, section));
+		assert.doesNotMatch(preamble, /Response language:/u);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
