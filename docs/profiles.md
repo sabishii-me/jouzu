@@ -50,7 +50,7 @@ The default system prompt tells the agent to:
 
 It also includes today's date and narrows Pi's documentation pointer to Pi extension, SDK, theme, and TUI development; Jouzu settings questions go to `jouzu-reference`.
 
-Jouzu adds these as named sections of Pi's prompt. When one changes during a session, such as the date or the response language, the model receives an update to that section and the rest of the prompt stays the same, which keeps provider prompt caching effective.
+Jouzu adds these as named sections of Pi's prompt. Ordinary conversation does not change them, but changes such as a new date or response-language preference produce section updates. On routes that support mid-conversation system messages, Pi can preserve the leading message and send the update later. Otherwise, Pi folds the update into the leading system message. Provider support, tool declarations and cache policy determine whether a cached prefix can be reused; named sections alone do not guarantee a cache hit.
 
 A custom system prompt replaces these, and Jouzu does not modify it.
 
