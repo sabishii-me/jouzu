@@ -1,19 +1,40 @@
 # Changelog
 
-## Unreleased
+## 0.2.2 - 2026-10-24
+
+### Added
+
+- Add an English/Japanese interface choice, with Japanese marked as a preview, and independent response and artifact-language preferences. First-run setup asks for interface and response languages separately. `/language` previews and saves choices; confirmed UI choices override startup flags and environment inputs. See [Language and prompt instructions](docs/language.md).
+- Add session Fast mode with `/fast on` and `/fast off` for eligible GPT models using Responses or Codex connections. Show the choice beside the model's thinking level and restore it with the session. Provider eligibility and higher rates apply. See [Fast mode](docs/models.md#fast-mode).
+- Bundle an optional Jouzu reference skill for detailed usage guidance.
 
 ### Changed
 
-- Send Jouzu's prompt additions as named sections of Pi's prompt. A change during a session, such as a new date, language, or tool set, reaches the model as a section update instead of a rewritten prompt, so provider prompt caching keeps working. The prompt now includes today's date, asks for parallel independent tool calls, and treats a message sent during work as steering the current task.
-
-- Remove repeated instructions from the default system prompt and shorten the task tool descriptions. A default Core session sends about 17,000 characters of system prompt instead of 22,000, and about 38,000 characters of tool definitions instead of 50,000. The multiloop iteration tools are offered only while a loop or goal is running. Browser-tool parameter details move into the tool parameter descriptions.
+- Upgrade the embedded Pi runtime to 1.4.0 and refresh bundled dependencies, including security fixes for Undici and source dependency advisories.
+- Make Models, Workflow and Settings scrollable on short terminals, including long forms, explanations and errors. Keep editable agent definitions above Runs and put Language first in Settings.
+- Localize supported Pi settings and selectors, Jouzu screens and built-in slash-command descriptions while preserving user and unrelated extension content. Some screens require reopening; Japanese remains a preview. See [Localization coverage](docs/localization.md).
+- Make new coder and reviewer presets inherit the main model and reasoning effort on launch and resume. Preserve saved explicit choices and pass the caller's configured response and artifact-language preferences to children.
+- Send Jouzu's prompt additions as named Pi sections, so supported routes can update changed sections while keeping stable instructions intact. Actual prompt-cache reuse depends on the provider. Include the current date and guidance for parallel independent tool calls and steering during active work.
+- Remove repeated instructions from the default prompt and shorten task tool descriptions. Offer multiloop iteration tools while a loop or goal is active, and put browser parameter details in the tool parameter descriptions.
 
 ### Fixed
 
+- Preserve extension tool activation in child sessions and resolve Session Line shortcuts after terminal initialization.
+- Pause automatic replies after an unrecovered provider error or output truncation without discarding pending work. Resume with a new message or `/flow resume`. See [Flow control](docs/flow-control.md).
+- Keep request-history capacity recoverable, avoid disposal deadlocks from overlapping commands, and allow extension commands to replace sessions on Pi 1.4.
+- Normalize numeric tool formats for Responses connections. Preserve native TextGuard decoding evidence and keep command-name findings advisory.
 - Avoid loading an unused native HTTP library that prevented browser tools from starting on older Linux systems.
 - Save Defuddle extraction diagnostics with web-fetch results instead of printing parser warnings over the terminal interface. Expand the tool entry to review them. See [Web tools](docs/web.md#extraction-diagnostics).
-- Pause automatic replies after a provider error remains unrecovered, and report the cause. Resume with a new message or `/flow resume`. See [Flow control](docs/flow-control.md).
 - Count prompt-cache refreshes that complete after the next request or a context change replaces their schedule in usage and cost totals. See [Prompt-cache warming](docs/cache-warming.md).
+
+### Installation
+
+- Bundle Node.js 24.22.1 in the Windows launcher and refresh signed runtime dependencies. Improve startup and update controls, report component-preparation failures, and offer recovery for outdated bundled Git.
+- Acquire Windows process locks under long state paths and remove the launcher's PATH entry before uninstalling its helper.
+
+### Development
+
+- Separate the ordinary hosted CI tier from full release qualification, consolidate matrix jobs, and add affected-test selection, timing records, duration budgets and stress testing. Keep full Linux/macOS release qualification and native Windows checks.
 
 ## 0.2.1 - 2026-10-19
 
