@@ -23,7 +23,7 @@ function assertRecoveryGuidance(prompt) {
 	for (const clause of [
 		"diagnosis and failure reports are intermediate results, not completion",
 		"Do not weaken checks, bypass failures, or silently reduce the requested scope",
-		"If the user requested review or diagnosis only, respect that boundary",
+		"If the user explicitly requests diagnosis only, review only, or otherwise limits changes, respect that boundary",
 		"Keep the original deliverables active while resolving prerequisites",
 		"apply that instruction in the same turn",
 		"Preserve running jobs and pending work across follow-up messages",
@@ -73,10 +73,19 @@ test("Astra guidance follows the selected model on every turn without accumulati
 });
 
 test("delegation guidance describes only the active Jouzu tool", () => {
-	assert.match(buildModelGuidance("gpt-6-astra", ["subagent"]), /Discover configured roles first/);
+	assert.match(buildModelGuidance("gpt-6-astra", ["subagent"]), /Follow its role-discovery and assignment contract/);
 	assert.doesNotMatch(buildModelGuidance("gpt-6-astra", ["read"]), /subagent|configured roles/);
 	for (const id of [undefined, "gpt-6-astra-preview", "custom-gpt-6-astra", "gpt-5.6-sol"])
 		assert.equal(buildModelGuidance(id, ["subagent"]), "");
+});
+
+test("Astra guidance keeps one scope boundary and evidence rule after deduplication", () => {
+	const guidance = buildModelGuidance("gpt-6-astra", ["subagent"]);
+	assert.equal(guidance.match(/respect that boundary/g)?.length, 1);
+	assert.equal(guidance.match(/do not mark work complete or report success without the required evidence/g)?.length, 1);
+	assert.match(guidance, /Use task dependencies, user-input holds, pauses, or agent_wait for blocked work/);
+	assert.match(guidance, /verify child evidence and the integrated result before reporting completion/);
+	assert.ok(guidance.length < 5650, "keep this wording-only pass below the prior 5981-character guidance");
 });
 
 test("child sessions receive the same model guidance as main sessions", async (t) => {
