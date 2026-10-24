@@ -2,11 +2,17 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
+import { loadCatalog } from "../dist/locale-catalog.js";
 import {
 	DEFAULT_PALETTE_OVERLAY_OPTIONS,
 	JouzuPaletteRouter,
 	JouzuPaletteSurfaceHost,
+	paletteHeightBudget,
+	paletteScrollbarMarker,
+	paletteViewport,
 	renderPaletteField,
+	renderPaletteKeyBar,
+	renderPaletteScrollbarRow,
 	renderPaletteTabs,
 	selectPalettePresentation,
 } from "../dist/palette.js";
@@ -16,6 +22,103 @@ const identityTheme = {
 	bg: (_role, value) => value,
 	bold: (value) => value,
 };
+
+test("Palette tabs localize labels while preserving active markers and default callers", () => {
+	const styles = { apply: (_role, value) => value };
+	assert.match(renderPaletteTabs("models", identityTheme, styles), /\[Models\].*Workflow.*Settings/u);
+	for (const [locale, labels] of [
+		["en", ["Models", "Workflow", "Settings"]],
+		["ja", ["モデル", "ワークフロー", "設定"]],
+		["zh-Hans", ["模型", "工作流", "设置"]],
+		["zh-Hant", ["模型", "工作流程", "設定"]],
+	]) {
+		const catalog = loadCatalog(locale);
+		for (const [index, view] of ["models", "workflow", "settings"].entries()) {
+			const tabs = renderPaletteTabs(view, identityTheme, styles, catalog);
+			assert.ok(tabs.includes(`[${labels[index]}]`));
+			assert.ok(labels.every((label) => tabs.includes(label)));
+			assert.ok(visibleWidth(tabs) <= 44, `${locale} tabs fit a 48-column frame`);
+		}
+	}
+});
+
+test("Palette height matches the overlay cap and stays bounded on replacement terminals", () => {
+	assert.equal(DEFAULT_PALETTE_OVERLAY_OPTIONS.maxHeight, "90%");
+	for (const rows of [1, 2, 4, 8, 12, 16, 24, 30, 80]) {
+		assert.equal(paletteHeightBudget(rows), Math.max(1, Math.min(rows - 2, Math.floor(rows * 0.9))));
+		assert.ok(paletteHeightBudget(rows) <= rows);
+	}
+	for (const invalid of [0, -1, Number.NaN, Number.POSITIVE_INFINITY])
+		assert.equal(paletteHeightBudget(invalid), paletteHeightBudget(24));
+});
+
+test("Palette viewport centers the selection and reports hidden rows", () => {
+	const styles = { apply: (_role, value) => value };
+	assert.deepEqual(paletteViewport(100, 0, 10), {
+		start: 0,
+		end: 10,
+		capacity: 10,
+		visible: 10,
+		hasAbove: false,
+		hasBelow: true,
+	});
+	assert.deepEqual(paletteViewport(100, 50, 10), {
+		start: 45,
+		end: 55,
+		capacity: 10,
+		visible: 10,
+		hasAbove: true,
+		hasBelow: true,
+	});
+	assert.deepEqual(paletteViewport(100, 99, 10), {
+		start: 90,
+		end: 100,
+		capacity: 10,
+		visible: 10,
+		hasAbove: true,
+		hasBelow: false,
+	});
+	assert.deepEqual(paletteViewport(3, 2, 10), {
+		start: 0,
+		end: 3,
+		capacity: 10,
+		visible: 3,
+		hasAbove: false,
+		hasBelow: false,
+	});
+	const top = paletteViewport(100, 0, 10);
+	assert.equal(paletteScrollbarMarker(0, top, 100), "█");
+	assert.equal(paletteScrollbarMarker(9, top, 100), "▼");
+	const middle = paletteViewport(100, 50, 1);
+	assert.equal(paletteScrollbarMarker(0, middle, 100), "↕");
+	const bottom = paletteViewport(100, 99, 10);
+	assert.equal(paletteScrollbarMarker(0, bottom, 100), "▲");
+	assert.equal(visibleWidth(renderPaletteScrollbarRow("row", 48, styles, "▼")), 48);
+});
+
+test("key bars wrap CJK and rebound keys without clipping primary or cancel actions", () => {
+	const styles = { apply: (_role, value) => value };
+	const hints = [
+		{ key: "Ctrl+Shift+Enter", label: "選択してプロジェクトに保存" },
+		{ key: "Ctrl+Shift+F", label: "お気に入り" },
+		{ key: "Esc/Ctrl+C", label: "キャンセル" },
+	];
+	for (const width of [24, 48, 80, 120]) {
+		const bar = renderPaletteKeyBar(hints, width - 4, identityTheme, styles);
+		assert.ok(bar.every((line) => visibleWidth(line) <= width - 4));
+		const text = bar.join("").replaceAll(/\s/gu, "");
+		for (const hint of hints) assert.ok(text.includes(`${hint.key}${hint.label}`));
+	}
+	const bounded = renderPaletteKeyBar(hints, 44, identityTheme, styles, 2).join("\n");
+	assert.match(bounded, /Ctrl\+Shift\+Enter.*選択してプロジェクトに保存/u);
+	assert.match(bounded, /Esc\/Ctrl\+C.*キャンセル/u);
+	assert.doesNotMatch(bounded, /お気に入り/u);
+	const compact = renderPaletteKeyBar(hints, 20, identityTheme, styles, 2);
+	assert.equal(compact.length, 2);
+	assert.ok(compact.every((line) => visibleWidth(line) <= 20));
+	assert.match(compact.join("\n"), /Ctrl\+Shift\+Enter 選/u);
+	assert.match(compact.join("\n"), /Esc\/Ctrl\+C キャンセ/u);
+});
 
 test("field metadata truncates before a required value and right-aligns", () => {
 	const field = (value, meta) =>

@@ -92,11 +92,11 @@ test("an explicitly chosen Japanese profile remains independent of the display l
 });
 
 for (const [name, overrides, expected] of [
-	["CLI over environment", { cliLocale: "en", envLocale: "ja" }, "en"],
-	["environment over saved choice", { envLocale: "en" }, "en"],
-	["CLI auto over saved choice", { cliLocale: "auto", envLocale: "ja" }, "en"],
+	["CLI and environment", { cliLocale: "en", envLocale: "ja" }, "ja"],
+	["environment", { envLocale: "en" }, "ja"],
+	["CLI auto", { cliLocale: "auto", envLocale: "ja" }, "ja"],
 ]) {
-	test(`first-run re-resolution preserves ${name}`, (t) => {
+	test(`first-run confirmed choice overrides ${name}`, (t) => {
 		const observed = run(t, { ...overrides, choice: { uiLocale: "ja", responseLanguage: "ja" } });
 		assert.ok(Object.values(observed.catalogs).every((locale) => locale === expected));
 		assert.equal(JSON.parse(observed.settingsAfter).localization.uiLocale, "ja");
@@ -155,35 +155,28 @@ test("RPC startup bypasses first-run interaction and preserves machine stdout", 
 	assert.deepEqual(observed.piArgs.slice(-3), ["--no-extensions", "--mode", "rpc"]);
 });
 
-for (const environmentScope of [false, true]) {
-	test(`main and picker deliver successful Settings ${environmentScope ? "environment" : "session"} Apply to the next prompt`, (t) => {
-		const observed = run(t, { settings, action: "apply", environmentScope });
-		assert.deepEqual(observed.preview, observed.initial);
-		assert.deepEqual(observed.applied, observed.initial, "Apply only stages the contract");
-		assert.equal(observed.callbacks.length, 1);
-		const callback = observed.callbacks[0];
-		assert.equal(callback.language.responseLanguage.source, environmentScope ? "config" : "session");
-		if (environmentScope) {
-			assert.deepEqual(callback.persisted, {}, "no session override shadows the saved values");
-			assert.equal(callback.saved.settings.responseLanguage, "ja", "persistence precedes the callback");
-			assert.equal(callback.saved.settings.artifactPolicy.commits, "preserve");
-			const fresh = run(t, { rawSettings: observed.settingsAfter });
-			assert.equal(fresh.initial.contract.taskLanguage, "ja", "a new launch resolves the saved response language");
-			assert.deepEqual(fresh.initial.contract.artifactPolicy, observed.next.contract.artifactPolicy);
-			assert.equal(fresh.sessionFile, undefined, "fresh resolution needs no session store");
-		} else {
-			assert.equal(callback.persisted.responseLanguage, "ja", "persistence precedes the callback");
-			assert.equal(observed.settingsAfter, observed.settingsBefore, "session scope preserves the saved defaults");
-		}
-		assert.equal(observed.next.epochs, observed.initial.epochs + 1);
-		assert.equal(observed.next.contract.taskLanguage, "ja");
-		assert.equal(observed.next.contract.artifactPolicy.commits, "preserve");
-		assert.match(observed.nextPrompt, /Response language: Japanese \(ja\)/u);
-		assert.match(observed.nextPrompt, /commits: Preserve the existing language/u);
-	});
-}
+test("main and picker persist Settings Apply before staging the next prompt", (t) => {
+	const observed = run(t, { settings, action: "apply" });
+	assert.deepEqual(observed.preview, observed.initial);
+	assert.deepEqual(observed.applied, observed.initial, "Apply only stages the contract");
+	assert.equal(observed.callbacks.length, 1);
+	const callback = observed.callbacks[0];
+	assert.equal(callback.language.responseLanguage.source, "config");
+	assert.deepEqual(callback.persisted, {}, "no session override shadows the saved values");
+	assert.equal(callback.saved.settings.responseLanguage, "ja", "persistence precedes the callback");
+	assert.equal(callback.saved.settings.artifactPolicy.commits, "preserve");
+	const fresh = run(t, { rawSettings: observed.settingsAfter });
+	assert.equal(fresh.initial.contract.taskLanguage, "ja", "a new launch resolves the saved response language");
+	assert.deepEqual(fresh.initial.contract.artifactPolicy, observed.next.contract.artifactPolicy);
+	assert.equal(fresh.sessionFile, undefined, "fresh resolution needs no session store");
+	assert.equal(observed.next.epochs, observed.initial.epochs + 1);
+	assert.equal(observed.next.contract.taskLanguage, "ja");
+	assert.equal(observed.next.contract.artifactPolicy.commits, "preserve");
+	assert.match(observed.nextPrompt, /Response language: Japanese \(ja\)/u);
+	assert.match(observed.nextPrompt, /commits: Preserve the existing language/u);
+});
 
-for (const action of ["cancel", "failure", "ui-only"]) {
+for (const action of ["cancel", "failure"]) {
 	test(`Settings ${action} does not stage a response contract`, (t) => {
 		const observed = run(t, { settings, action });
 		assert.equal(observed.callbacks.length, 0);
@@ -196,6 +189,44 @@ for (const action of ["cancel", "failure", "ui-only"]) {
 		}
 	});
 }
+
+test("confirmed Automatic overrides launch inputs and follows the OS on the next launch", (t) => {
+	const observed = run(t, {
+		settings: { ...settings, uiLocale: "ja" },
+		cliLocale: "ja",
+		envLocale: "ja",
+		action: "ui-only",
+	});
+	assert.equal(observed.activeUiLocale, "en");
+	assert.equal(JSON.parse(observed.settingsAfter).localization.uiLocale, "auto");
+	const fresh = run(t, { rawSettings: observed.settingsAfter, cliLocale: "ja", envLocale: "ja" });
+	assert.ok(Object.values(fresh.catalogs).every((locale) => locale === "en"));
+});
+
+for (const launchOverride of [{ cliLocale: "ja" }, { envLocale: "ja" }]) {
+	test(`confirmed English overrides ${Object.keys(launchOverride)[0]} and refreshes shared UI text`, (t) => {
+		const observed = run(t, { settings: { ...settings, uiLocale: "ja" }, ...launchOverride, action: "ui-english" });
+		assert.ok(Object.values(observed.catalogs).every((locale) => locale === "ja"));
+		assert.match(observed.confirmation, /日本語\s*→\s*English/u);
+		assert.doesNotMatch(observed.confirmation, /→\s*(Automatic|自動)/u);
+		assert.equal(JSON.parse(observed.settingsAfter).localization.uiLocale, "en");
+		assert.equal(observed.activeUiLocale, "en");
+		assert.match(observed.activeShortcutHint, /models/u);
+		assert.doesNotMatch(observed.activeShortcutHint, /モデル/u);
+		assert.equal(observed.callbacks.length, 0, "display changes do not change response instructions");
+		assert.deepEqual(observed.next, observed.initial);
+		const fresh = run(t, { rawSettings: observed.settingsAfter, ...launchOverride });
+		assert.ok(Object.values(fresh.catalogs).every((locale) => locale === "en"));
+	});
+}
+
+test("display-only Apply saves the choice without changing the response contract", (t) => {
+	const observed = run(t, { settings, action: "ui-only" });
+	assert.equal(observed.callbacks.length, 0);
+	assert.deepEqual(observed.next, observed.initial);
+	assert.equal(JSON.parse(observed.settingsAfter).localization.uiLocale, "ja");
+	assert.equal(observed.activeUiLocale, "ja");
+});
 
 for (const action of ["defer-stream", "defer-tool"]) {
 	test(`the production picker ${action} activity blocks persistence and contract staging until idle`, (t) => {
@@ -217,12 +248,12 @@ test("Settings artifact-only Apply reaches the main prompt without fixing Automa
 	assert.doesNotMatch(observed.nextPrompt, /Response language:|Write user-facing explanations in/u);
 });
 
-test("Settings reset notifies the main contract after clearing the session override", (t) => {
+test("Settings display reset preserves saved response and artifact preferences", (t) => {
 	const observed = run(t, { settings, action: "reset" });
-	assert.equal(observed.callbacks.length, 2);
-	assert.deepEqual(observed.callbacks[1].persisted, {});
+	assert.equal(observed.callbacks.length, 1, observed.resetRendered);
 	assert.deepEqual(observed.resetStaged, observed.next);
-	assert.equal(observed.reset.contract.taskLanguage, "en");
-	assert.equal(observed.reset.contract.artifactPolicy.commits, "en");
-	assert.match(observed.resetPrompt, /Response language: English \(en\)/u);
+	assert.equal(observed.reset.contract.taskLanguage, "ja");
+	assert.equal(observed.reset.contract.artifactPolicy.commits, "preserve");
+	assert.match(observed.resetPrompt, /Response language: Japanese \(ja\)/u);
+	assert.equal(JSON.parse(observed.settingsAfter).localization.uiLocale, "auto");
 });

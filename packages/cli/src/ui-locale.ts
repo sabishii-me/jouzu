@@ -7,11 +7,13 @@
  * them.
  *
  * This module implements the value set, normalization, the read-only schema
- * validation of `<configDir>/localization.json`, the five-step resolution
- * order (explicit option, Jouzu environment variable, saved setting, OS `auto`,
- * built-in default), and the atomic, conflict-checked save of the settings
- * file. Reading never writes; a save goes through the private atomic write
- * helper and refuses to overwrite settings it could not read.
+ * validation of `<configDir>/localization.json`, the resolution order (saved
+ * preference, explicit option, Jouzu environment variable, OS `auto`, built-in
+ * default), and the atomic, conflict-checked save of the settings file.
+ * Confirmed choices outrank launch inputs, including `auto`, which follows the
+ * OS rather than an older CLI or Jouzu environment value. Reading
+ * never writes; a save goes through the private atomic write helper and refuses
+ * to overwrite settings it could not read.
  *
  * The settings file also carries the language contract (`responseLanguage` and
  * `artifactPolicy`). This module validates and preserves those fields, and
@@ -743,8 +745,8 @@ export function normalizeUiLocale(raw: string): UiLocale | undefined {
 }
 
 /**
- * The inputs to the five-step resolution order: raw candidates, the validated
- * saved state, and the built-in default.
+ * The inputs to the resolution order: raw candidates, the validated saved
+ * state, and the built-in default.
  */
 export interface UiLocaleResolutionInput {
 	/** The explicit option value, already validated by `args.ts`. */
@@ -794,11 +796,13 @@ function resolveAuto(
 }
 
 /**
- * Resolve the UI locale in the fixed order: explicit option, `JOUZU_UI_LOCALE`,
- * the saved setting, the OS (`auto`), then the built-in default.
+ * Resolve the UI locale in the fixed order: saved preference, explicit option,
+ * `JOUZU_UI_LOCALE`, the OS, then the built-in default. A saved `auto` follows
+ * the OS without consulting launch inputs.
  *
  * Per-source policy for an unsupported raw value:
- * - an explicit option is a usage error (`UiLocaleUsageError`);
+ * - an explicit option is a usage error (`UiLocaleUsageError`), even when a
+ *   saved preference would win;
  * - the environment and the OS fall back to English, keeping the raw value and
  *   the reason in `fallback`;
  * - a saved setting that is unsupported, malformed, or from a future schema
@@ -817,15 +821,29 @@ export function resolveUiLocale(
 ): ResolvedUiLocale {
 	const builtin = input.builtin ?? DEFAULT_UI_LOCALE_PREFERENCE;
 	const os = input.os ?? [];
+	const config = input.config ?? { status: "absent" };
 
-	// 1. Explicit option.
-	if (input.cli !== undefined) {
-		if (input.cli === "auto") return resolveAuto("auto", os, builtin, catalog);
-		if (isSupportedUiLocale(input.cli)) return { requested: input.cli, effective: input.cli, source: "cli" };
+	// Validate an explicit option before a saved preference can hide it. The
+	// argument parser rejects this first, but the resolver keeps the same
+	// boundary when called directly.
+	if (input.cli !== undefined && input.cli !== "auto" && !isSupportedUiLocale(input.cli)) {
 		throw new UiLocaleUsageError(input.cli);
 	}
 
-	// 2. Jouzu environment variable.
+	// 1. Saved preference. A confirmed choice outranks the launch inputs.
+	if (config.status === "ok") {
+		return config.preference === "auto"
+			? resolveAuto("auto", os, builtin, catalog)
+			: { requested: config.preference, effective: config.preference, source: "config" };
+	}
+
+	// 2. Explicit option.
+	if (input.cli !== undefined) {
+		if (input.cli === "auto") return resolveAuto("auto", os, builtin, catalog);
+		return { requested: input.cli, effective: input.cli, source: "cli" };
+	}
+
+	// 3. Jouzu environment variable.
 	if (input.env !== undefined && input.env.trim().length > 0) {
 		if (input.env === "auto") return resolveAuto("auto", os, builtin, catalog);
 		const normalized = normalizeUiLocale(input.env);
@@ -833,12 +851,7 @@ export function resolveUiLocale(
 		return fallbackResult("env", input.env, `unsupported JOUZU_UI_LOCALE value: ${input.env}`);
 	}
 
-	// 3. Saved setting.
-	const config = input.config ?? { status: "absent" };
-	if (config.status === "ok") {
-		if (config.preference === "auto") return resolveAuto("auto", os, builtin, catalog);
-		return { requested: config.preference, effective: config.preference, source: "config" };
-	}
+	// 4. OS resolution, then the built-in default.
 	if (config.status === "future") {
 		return fallbackResult(
 			"config",
@@ -850,6 +863,5 @@ export function resolveUiLocale(
 		return fallbackResult("config", "unreadable", `saved localization settings are unusable: ${config.reason}`);
 	}
 
-	// 4. OS `auto`, then 5. the built-in default.
 	return resolveAuto(builtin === "auto" ? "auto" : builtin, os, builtin, catalog);
 }

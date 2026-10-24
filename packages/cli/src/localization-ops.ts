@@ -18,21 +18,23 @@
  *   session id to the values that session asked for. It applies to that
  *   process only and never rewrites the environment save.
  *
- * The values resolve in the documented order. The display language takes the
- * session override first (when it is a fixed locale), then `JOUZU_UI_LOCALE`,
- * the saved setting, the OS candidate, and the built-in default, which is the
- * order `resolveUiLocale` implements. The response language takes the session
- * override, then the saved setting, then the built-in default
+ * The values resolve in the documented order. The display language takes a
+ * saved preference first, then the session override (a fixed locale),
+ * `JOUZU_UI_LOCALE`, the OS candidate, and the built-in default. A saved
+ * `auto` follows the OS. A confirmed Settings choice is persisted and wins
+ * over launch inputs instead of being masked by them. Response language takes
+ * the session override, then the saved setting, then the built-in default
  * (`resolveResponseLanguage`). The artifact policy takes the session override,
  * then the saved setting, then the built-in default (`resolveArtifactPolicy`).
  *
  * ## Scope
  *
  * `applyLocalization` with `scope: "session"` records the request in the
- * session store only. With `scope: "environment"` it persists every requested
- * field, removes only the matching current-session overrides, and returns a
- * notice for every other known session when saved settings change. Artifact
- * fields are merged independently. It never edits another session's override.
+ * session store only. With `scope: "environment"`, used by Settings, it persists
+ * every requested field, removes only the matching current-session overrides,
+ * and returns a notice for every other known session when saved settings
+ * change. Artifact fields are merged independently. It never edits another
+ * session's override.
  *
  * ## Safety
  *
@@ -503,8 +505,12 @@ function resolveEffectiveLocalization(input: {
 	catalog: CatalogBundle;
 }): ResolvedLocalization {
 	const configState: LocalizationConfigState = input.snapshot.state;
+	const savedPreference = configState.status === "ok";
 	let uiLocale: ResolvedLocalizationUiLocale;
-	if (input.override.uiLocale !== undefined && input.override.uiLocale !== "auto") {
+	// A saved preference outranks a session override for the same
+	// reason it outranks CLI and environment input: a confirmed choice must not
+	// be stored and then masked by an older preference.
+	if (!savedPreference && input.override.uiLocale !== undefined && input.override.uiLocale !== "auto") {
 		uiLocale = {
 			requested: input.override.uiLocale,
 			effective: input.override.uiLocale,
@@ -751,13 +757,14 @@ function applyEnvironmentScope(
  * Apply a requested change and return the receipt.
  *
  * The plan runs first; a conflict raises `LocalizationConflictError` and writes
- * nothing. A session-scoped apply writes only the current session's override.
- * An environment-scoped apply persists requested fields and clears only their
- * matching current-session overrides, so the saved values take effect. Other
- * known sessions receive a notice when saved settings change; their overrides
- * are untouched. Each file write is atomic; saved settings use revision checks.
- * A failed session-store write attempts to restore the saved settings. The
- * two-file operation is not atomic.
+ * nothing. A session-scoped apply writes only the current session's override;
+ * Settings uses environment scope. An environment-scoped apply persists
+ * requested fields and clears only their matching current-session overrides, so
+ * the saved values take effect. Other known sessions receive a notice when
+ * saved settings change; their overrides are untouched. Each file write is
+ * atomic; saved settings use revision checks. A failed session-store write
+ * attempts to restore the saved settings. The two-file operation is not
+ * atomic.
  */
 export function applyLocalization(paths: JouzuPaths, options: LocalizationPlanOptions): LocalizationApplyResult {
 	const catalog = options.catalog ?? defaultCatalog();

@@ -187,20 +187,20 @@ Run the focused interaction tests while iterating, then run `npm run check` and 
 
 ## Settings
 
-Settings has a **View: ‹ Catalogs › / ‹ About › / ‹ Language ›** choice. Move to it with `↑` from the Shisa AI row, then use `←`, `→`, or `Enter` to change the view. `/catalogs` opens Catalogs; `/about` opens About. `Tab` and `Shift+Tab` remain top-level navigation and preserve the selected Settings view. A catalog edit or confirmation blocks external routes.
+Settings is one scrollable pane: Language first, then account and general controls, Model Catalogs, and About. `/language`, `/catalogs`, and `/about` focus their respective sections. `Tab` and `Shift+Tab` remain top-level navigation. A catalog edit or confirmation blocks external routes. Overflow shows a position indicator; paging reaches content below the last selectable row. Forms and confirmations also scroll instead of dropping fields or recovery instructions.
 
-Catalogs includes a **Shisa AI** row above the context-limit row and the catalog list. Signed out, the row reports `Not connected` with the signup credits, and `Enter` runs device sign-in inside the panel: the verification URL and code appear in the message area, and `Esc` cancels sign-in rather than closing Settings. With a saved sign-in, the row reports its organization and dashboard address. An environment key shows `Connected · SHISA_API_KEY` without borrowing the saved sign-in's organization. `Enter` reports the dashboard address, and `D` signs out after confirmation.
+Settings includes a **Shisa AI** row above the context-limit row and the catalog list. Signed out, the row reports `Not connected` with the signup credits, and `Enter` runs device sign-in inside the panel: the verification URL and code appear in the message area, and `Esc` cancels sign-in rather than closing Settings. With a saved sign-in, the row reports its organization and dashboard address. An environment key shows `Connected · SHISA_API_KEY` without borrowing the saved sign-in's organization. `Enter` reports the dashboard address, and `D` signs out after confirmation.
 
-Catalogs also includes a **Dashboard** choice below **Maximum context**. Use `←`, `→`, or `Enter` to save `compact`, `expanded`, or `hidden`. The choice applies across sessions. `/subagents hide` is a session-only override; `/subagents show` restores the saved choice without changing it.
+Settings also includes a **Dashboard** choice below **Maximum context**. Use `←`, `→`, or `Enter` to save `compact`, `expanded`, or `hidden`. The choice applies across sessions. `/subagents hide` is a session-only override; `/subagents show` restores the saved choice without changing it.
 
-Catalogs includes **Auto labels** below Dashboard. `Enter`, `Space`, `←`, or `→`
+Settings includes **Auto labels** below Dashboard. `Enter`, `Space`, `←`, or `→`
 toggles the persistent global naming switch. It shares its setting with
 `/labels global on|off`; a session-level off choice or pane pin remains effective.
 Turning it off cancels pending naming and releases pane ownership in the current
 process. Invalid saved settings remain off and saving reports an error without
 overwriting them.
 
-The account row scrolls out of view when the catalog source window moves past its first page. Keyboard navigation back to the first source restores it. A focused account stays visible during sign-in or sign-out. An expanded selected catalog gets offering space before additional source rows.
+The whole pane scrolls, including account information and catalog offerings. Focus navigation reveals the selected control. Page Up/Page Down can inspect explanatory content without changing its value. Form input after manual paging first reveals the selected field. Long messages have their own page controls; `Ctrl+Home`/`Ctrl+End` reaches the form's edges while a message is displayed.
 
 After sign-in, Jouzu refreshes authenticated catalogs and model availability in the same session. If credentials were saved but server confirmation failed or was interrupted, the panel retains the warning and asks the user to sign in again. Signup offers are not displayed as an account balance.
 
@@ -208,31 +208,32 @@ About shows the running and installed Jouzu builds, Pi version, and process star
 
 Language shows **Display language**, **Response language**, and **Artifact policy**, with their values and resolution sources. Move into the items with `↓`; `←` or `→` cycles the focused item's candidate as a preview. A preview changes only the Settings panel and writes nothing. `Esc` cancels it and restores the effective value; a second `Esc` closes Settings.
 
-`Enter` opens a confirmation for the previewed changes. It also opens confirmation on a row with a session override, so you can save that active value without changing it first. Use `←` or `→` to choose **Session** or **Saved setting** (environment scope), then `Enter` to apply or `Esc` to cancel. Saved scope persists the requested UI locale, response language and artifact preferences for future sessions; session scope keeps them local to this session. The panel reports the result of the save. Response and artifact choices apply on the next agent turn, without changing a reply already in progress. Display-language preview and refresh affect the Settings panel; restart after a saved UI change to use the new language throughout the session.
+`Enter` opens a confirmation showing the requested changes. A second `Enter` saves them for future sessions; `Esc` cancels. The panel reports the save result. Confirmed display language overrides CLI and environment inputs and refreshes supported screens. Response and artifact choices apply on the next agent turn, without changing a reply already in progress. Screens that retain their opening language switch when reopened or after a restart.
 
 Display-language choices are `auto`, `English`, and `日本語`. Response-language choices also include `简体中文` and `繁體中文`; their presence does not offer Chinese UI catalogs. See [Language, locale and prompt instructions](language.md) for precedence, profiles, custom prompts and child inheritance.
 
-The view must preserve input, selection, scroll position, and running work when it defers a change during text composition, a destructive confirmation, a streaming reply, a running tool, or an update. A language change must never answer a destructive confirmation. Changing Jouzu's display language does not translate a screen owned by Pi, a third-party extension, or a service.
+The view must preserve input, selection, scroll position, and running work when it defers a change during text composition, a destructive confirmation, a streaming reply, a running tool, or an update. A language change must never answer a destructive confirmation. Changing Jouzu's display language does not translate third-party extension content or service-owned web pages.
 
 ## Workflow
 
-Workflow uses one top-level tab and a visible **View: ‹ Agents ›** / **View: ‹ Runs ›** choice. The choice uses `←`/`→`; `Tab` remains reserved for Models / Workflow / Settings. Opening `/workflow` shows runs while children are queued or running, and definitions otherwise. A **Subagents: ‹ On › / ‹ Off ›** row controls child execution for this session with `Enter`, `Space`, or `←`/`→`. Disabling asks for confirmation if children are queued or running, then stops them without undoing file changes. Definition editing and result inspection remain available. `/workflow on`, `/workflow off`, and `/workflow toggle` provide command shortcuts; off/toggle apply directly. Run updates request a redraw without changing the selected view.
+Workflow shows agent definitions above Runs in one scrollable pane, including while children are active. `Tab` remains reserved for Models / Workflow / Settings. A **Subagents: ‹ On › / ‹ Off ›** row controls child execution for this session with `Enter`, `Space`, or `←`/`→`. Disabling asks for confirmation if children are queued or running, then stops them without undoing file changes. Definition editing and result inspection remain available. `/workflow on`, `/workflow off`, and `/workflow toggle` provide command shortcuts; off/toggle apply directly. Run updates request a redraw without changing the selected control.
 
 Two rows below it write `agents.json` as soon as they change. **Concurrency** opens a form whose number field accepts 1–32 and saves on `Enter`. **Child writers** is a choice between **‹ In parallel ›** (the default), which lets writers share a workspace, and **‹ One at a time ›**, which runs one writer per workspace and takes the cross-session workspace lock. The saving session applies either change at once; other sessions pick it up when they next save or attach. An assignment form adds a **Workspace** row that names the child's directory; it defaults to the parent session's.
 
 ```text
 ╭ Workflow ─────────────────────────────────────╮
 │ Models  [Workflow]  Settings                   │
-│ → View: ‹ Agents ›                            │
-│   Subagents: ‹ On › · this session             │
+│ → Subagents: ‹ On › · this session             │
 │   Concurrency: 4 · 1–32                        │
 │   Child writers: ‹ In parallel ›               │
 │   orchestrator · provider/planner-model        │
 │   coder · provider/coder-model                 │
 │   reviewer · provider/review-model             │
 │   + Add agent                                 │
-│ Enter change · ↑/↓ move · Esc/Ctrl+C close     │
-│ Tab/Shift+Tab sections · ←→ change view        │
+│   Runs                                        │
+│   coder · running · read                      │
+│ Enter edit · ↑/↓ move · Esc/Ctrl+C close       │
+│ Tab/Shift+Tab sections · PgUp/PgDn scroll      │
 ╰───────────────────────────────────────────────╯
 ```
 
@@ -242,4 +243,4 @@ Workflow forms contain nested model and multiline editors. This extends the form
 
 Runs show role, state, and current tool or assignment, with queued and running children first. Enter opens run details with model, usage, and output/control rows. Output uses bounded byte pages and a line viewport; semantic Page Up/Page Down moves through the text. Stop opens a confirmation that states existing changes remain. A completed or interrupted run offers Resume with a new assignment. Failures remain visible in the panel and keep the relevant form values.
 
-At narrow widths, rows use terminal cell width and truncate long identities. Fields and action rows scroll with selection. Width tests cover 24, 48, 80, and 120 columns, including Japanese model searches. The Agents/Runs layout sketch is illustrative; rendered key hints resolve the user's effective bindings.
+At narrow widths, rows use terminal cell width and truncate long identities. Fields and action rows scroll with selection. An overflowing browse, run-detail, or form pane shows a position line with above/below markers; semantic Page Up/Page Down reaches hidden content, including text after the last selectable row. Width tests cover 24, 48, 80, and 120 columns, including Japanese model searches. The Agents/Runs layout sketch is illustrative; rendered key hints resolve the user's effective bindings.

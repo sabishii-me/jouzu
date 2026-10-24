@@ -233,8 +233,8 @@ test("the CLI reports the same language contract, profile, and model under both 
 	const root = mkdtempSync(join(tmpdir(), "jouzu-language-integration-cli-ui-"));
 	try {
 		const home = join(root, "home");
-		writeSettings(home, { uiLocale: "en", responseLanguage: "ja", artifactPolicy: { commits: "ja" } });
 		const reportFor = (locale) => {
+			writeSettings(home, { uiLocale: locale, responseLanguage: "ja", artifactPolicy: { commits: "ja" } });
 			const result = runCli(["--jouzu-home", home, "--jouzu-ui-locale", locale, "doctor", "--json"]);
 			assert.equal(result.status, 0, result.stderr || result.stdout);
 			assert.equal(result.stderr, "");

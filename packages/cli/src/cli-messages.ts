@@ -340,6 +340,10 @@ export const CatalogMessageId = {
 	workJobExit: "jouzu.cli.work.jobExit",
 	// Palette key-bar actions and shared view labels. The key itself is a resolved
 	// binding injected at render time; only the action label is catalog text.
+	paletteTabModels: "jouzu.cli.palette.tab.models",
+	paletteTabWorkflow: "jouzu.cli.palette.tab.workflow",
+	paletteTabSettings: "jouzu.cli.palette.tab.settings",
+	paletteViewTitle: "jouzu.cli.palette.viewTitle",
 	paletteValueUnknown: "jouzu.cli.palette.value.unknown",
 	paletteActionRefresh: "jouzu.cli.palette.action.refresh",
 	paletteActionFavorite: "jouzu.cli.palette.action.favorite",

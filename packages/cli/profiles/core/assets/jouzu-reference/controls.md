@@ -5,8 +5,8 @@
 | Surface | Entry |
 | --- | --- |
 | Models | `/model`, `Ctrl+L` |
-| Workflow definitions/runs | `/workflow`; `/subagents` opens Runs |
-| Catalog/account/context/dashboard settings | `/catalogs`; View row selects About or Language |
+| Workflow definitions/runs | `/workflow`; definitions stay above Runs, including while children are active |
+| Language/account/context/dashboard/catalog settings | `/language` or `/catalogs`; one scrollable Settings pane |
 | Runtime settings/theme/cache warming | `/settings` |
 | Running/installed version | `/about` |
 | Session identity/details | `/status`, `/session` |
@@ -14,7 +14,7 @@
 | Automatic session names | `/labels` |
 | MCP connections | `/mcp` |
 
-Tab/Shift+Tab switch Palette sections; Esc cancels or closes. Slash commands are user actions, not shell commands.
+Tab/Shift+Tab switch Palette sections; Esc cancels or closes. Page Up/Page Down scrolls overflowing content; position indicators show more above or below. Slash commands are user actions, not shell commands.
 
 ## Assistant tools
 

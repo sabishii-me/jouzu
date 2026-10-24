@@ -32,15 +32,20 @@ const fixture = parseAndValidateModelCatalog(
 	{ remote: true },
 );
 
-/** Row budget the floating palette overlay grants a component: 82% of rows minus its margin. */
+/** Row budget the floating palette overlay grants a component: 90% of rows minus its margin. */
 function overlayBudget(rows) {
-	return Math.min(Math.floor(rows * 0.82), rows - 2);
+	return Math.min(Math.floor(rows * 0.9), rows - 2);
 }
 
 function selectedLine(rendered) {
 	// With the identity theme the selection marker leads the framed row; key-bar
 	// hints never do (they lead with a space and the key name).
 	return rendered.find((value) => value.slice(2).startsWith("→ "));
+}
+
+/** Focus the catalog list instead of walking the whole unified Settings document. */
+function openCatalogs(component) {
+	component.route({ view: "settings", query: "catalogs" });
 }
 
 const fixtureRaw = JSON.parse(
@@ -139,21 +144,20 @@ test("About opens directly, wraps runtime identity, and returns to Catalogs with
 		assert.ok(rendered.every((line) => terminalTextWidth(line) <= width));
 		assert.ok(rendered.length <= overlayBudget(32));
 		if (width >= 48) {
-			assert.match(rendered.join("\n"), /Settings \/ About/);
+			assert.match(rendered.join("\n"), /\[Settings\]/);
+			assert.match(rendered.join("\n"), /About/);
 			assert.match(rendered.join("\n"), /Running Jouzu/);
 			assert.match(rendered.join("\n"), /次のビルド/);
 		}
 	}
-	assert.deepEqual(component.snapshotRoute(), { view: "settings", query: "about" });
-	component.handleInput("\x1b[D");
-	assert.match(component.render(80).join("\n"), /Settings \/ Catalogs/);
-	component.handleInput("\x1b[C");
-	assert.match(component.render(80).join("\n"), /Settings \/ About/);
+	const snapshot = component.snapshotRoute();
+	assert.equal(snapshot.view, "settings");
+	assert.equal(JSON.parse(snapshot.query).focus, "about:0");
 	component.handleInput("escape");
 	assert.equal(f.closes.length, 1);
 });
 
-test("routing About from the context row leaves exactly one selected control", (t) => {
+test("routing About leaves exactly one selected control and returns to Catalogs", (t) => {
 	const f = setup();
 	t.after(() => rmSync(f.root, { recursive: true, force: true }));
 	const component = new CatalogSettingsComponent({
@@ -162,11 +166,15 @@ test("routing About from the context row leaves exactly one selected control", (
 		runtime: { about: () => "Running Jouzu test" },
 	});
 	component.render(80);
-	component.handleInput("up");
-	assert.equal(component.contextFocused, true);
 	component.route({ view: "settings", query: "about" });
-	component.handleInput("\x1b[D");
-	assert.equal(component.contextFocused, false);
+	assert.equal(component.aboutFocused, true);
+	for (const width of [48, 80]) {
+		const rows = component.render(width);
+		assert.equal(rows.filter((row) => row.slice(2).startsWith("→ ")).length, 1);
+		assert.ok(rows.every((row) => terminalTextWidth(row) <= width));
+	}
+	component.route({ view: "settings" });
+	assert.equal(component.aboutFocused, false);
 	for (const width of [48, 80]) {
 		const rows = component.render(width);
 		assert.equal(rows.filter((row) => row.slice(2).startsWith("→ ")).length, 1);
@@ -183,20 +191,19 @@ test("About is reachable from catalog browse and cannot discard a catalog edit",
 		runtime: { about: () => "Running Jouzu test" },
 	});
 	component.render(80);
-	component.handleInput("up");
-	component.handleInput("up");
-	assert.equal(component.accountFocused, true, "the account row sits between the list and the view tabs");
+	// With no saved sources the focus order ends at About after the Catalogs row.
+	for (let index = 0; index < 6; index++) component.handleInput("down");
+	assert.equal(component.aboutFocused, true);
 	assert.equal(component.render(80).filter((row) => row.slice(2).startsWith("→ ")).length, 1);
-	component.handleInput("up");
-	component.handleInput("\x1b[C");
-	assert.match(component.render(80).join("\n"), /Settings \/ About/);
-	component.handleInput("\x1b[D");
-	component.handleInput("down");
-	component.handleInput("down");
+
+	component.route({ view: "settings" });
+	openCatalogs(component);
 	component.handleInput("a");
-	assert.equal(component.allowsGlobalNavigation(), false);
+	assert.match(component.render(80).join("\n"), /Add catalog/);
 	component.route({ view: "settings", query: "about" });
-	assert.doesNotMatch(component.render(80).join("\n"), /Settings \/ About/);
+	assert.match(component.render(80).join("\n"), /Add catalog/, "a deep link cannot discard an open form");
+	component.handleInput("escape");
+	assert.equal(component.form, undefined);
 });
 
 test("About pages the complete report at the minimum terminal size using rebound controls", (t) => {
@@ -227,6 +234,68 @@ test("About pages the complete report at the minimum terminal size using rebound
 	assert.equal(f.closes.length, 1);
 });
 
+test("Settings scrolls every row, shows position, and returns to the top at short heights", (t) => {
+	const f = setup({ rows: 16 });
+	t.after(() => rmSync(f.root, { recursive: true, force: true }));
+	const runtime = { about: () => Array.from({ length: 30 }, (_, i) => `Runtime field ${i}`).join("\n") };
+	const component = new CatalogSettingsComponent({ context: f.context, paths: f.paths, runtime });
+
+	let rows = component.render(48);
+	assert.ok(rows.length <= overlayBudget(16));
+	assert.match(rows.join("\n"), /Language/);
+	assert.match(rows.join("\n"), /↓ \d+/);
+	assert.match(rows.join("\n"), /1-\d+\/\d+/);
+
+	// Page keys walk nonselectable help and detail rows too, not only focusable controls.
+	const seen = new Set();
+	for (let index = 0; index < 12; index++) {
+		rows = component.render(48);
+		for (const match of rows.join("\n").matchAll(/Runtime field (\d+)/g)) seen.add(Number(match[1]));
+		component.handleInput("pageDown");
+	}
+	rows = component.render(48);
+	assert.match(rows.join("\n"), /Runtime field 29/);
+	assert.match(rows.join("\n"), /↑ \d+/);
+	assert.doesNotMatch(rows.join("\n"), /↓ \d+/);
+	assert.equal(seen.size, 30);
+
+	component.handleInput("\x1b[H");
+	rows = component.render(48);
+	assert.match(rows.join("\n"), /Language/);
+	assert.match(rows.join("\n"), /↓ \d+/);
+	assert.match(rows.join("\n"), /1-\d+\/\d+/);
+
+	component.handleInput("\x1b[F");
+	rows = component.render(48);
+	assert.match(rows.join("\n"), /Runtime field 29/);
+	assert.doesNotMatch(rows.join("\n"), /↓ \d+/);
+});
+
+test("End reaches trailing nonselectable source details and Home returns to the top", (t) => {
+	const f = setup({ rows: 16 });
+	t.after(() => rmSync(f.root, { recursive: true, force: true }));
+	const store = new CatalogSourceStore(f.paths);
+	for (let index = 0; index < 12; index += 1) {
+		store.add({ label: `Pool ${index}`, url: `https://pool${index}.example/catalog`, auth: { type: "none" } });
+	}
+	const component = new CatalogSettingsComponent({ context: f.context, paths: f.paths, env: {} });
+	let rows = component.render(48);
+	assert.match(rows.join("\n"), /Screens Jouzu does not own/u, "nonselectable help starts in view");
+	assert.match(rows.join("\n"), /↓ \d+/);
+
+	component.handleInput("\x1b[F");
+	rows = component.render(48);
+	assert.match(rows.join("\n"), /https:\/\/pool11\.example\/catalog/u, "trailing detail row is reachable");
+	assert.match(rows.join("\n"), /↑ \d+/);
+	assert.match(rows.join("\n"), /\d+-\d+\/\d+/);
+
+	component.handleInput("\x1b[H");
+	rows = component.render(48);
+	assert.match(rows.join("\n"), /Language/);
+	assert.match(rows.join("\n"), /Screens Jouzu does not own/u);
+	assert.match(rows.join("\n"), /↓ \d+/);
+});
+
 test("Catalogs settings uses Enter to edit and horizontal arrows for model disclosure", async () => {
 	const { root, paths, context } = setup();
 	try {
@@ -238,6 +307,7 @@ test("Catalogs settings uses Enter to edit and horizontal arrows for model discl
 		});
 		await refreshCatalogSource(paths, source, { env: {}, fetch: async () => response(fixture) });
 		const component = new CatalogSettingsComponent({ context, paths, env: {} });
+		openCatalogs(component);
 		component.handleInput("down");
 		let rendered = component.render(84);
 		assert.match(rendered.join("\n"), /Model Catalogs/u);
@@ -277,6 +347,7 @@ test("plain HTTP catalog URLs save with a plain-text token warning", () => {
 		const insecure = store.add({ label: "Insecure pool", url: "http://example.test/catalog", auth: { type: "none" } });
 		const local = store.add({ label: "Local pool", url: "http://127.0.0.1:8989/catalog", auth: { type: "none" } });
 		const component = new CatalogSettingsComponent({ context, paths, env: {} });
+		openCatalogs(component);
 
 		// Sources list: the built-in Shisa API (HTTPS) carries no warning; the plain-HTTP
 		// source warns only while selected, next to its URL.
@@ -291,6 +362,7 @@ test("plain HTTP catalog URLs save with a plain-text token warning", () => {
 		assert.doesNotMatch(component.render(84).join("\n"), /plain text/u);
 
 		// Add form: the warning appears live once the URL field holds a plain-HTTP endpoint.
+		openCatalogs(component);
 		component.handleInput("a");
 		for (const character of "Cleartext pool") component.handleInput(character);
 		component.handleInput("down");
@@ -311,10 +383,12 @@ test("Catalogs settings shows the built-in source and opens the add form with A"
 	const { root, paths, context, closes } = setup();
 	try {
 		const component = new CatalogSettingsComponent({ context, paths, env: {} });
+		openCatalogs(component);
 		const listing = component.render(84).join("\n");
 		assert.match(listing, /Shisa API\s+SHISA_API_KEY not set/u);
 		assert.doesNotMatch(listing, /Add catalog/u);
 
+		openCatalogs(component);
 		component.handleInput("a");
 		assert.match(component.render(84).join("\n"), /Add catalog/u);
 		for (const character of "Canceled catalog") component.handleInput(character);
@@ -332,6 +406,7 @@ test("Catalogs settings disables the code-owned built-in with Space and guards e
 	const { root, paths, context } = setup();
 	try {
 		const component = new CatalogSettingsComponent({ context, paths, env: {} });
+		openCatalogs(component);
 		const overridesPath = join(paths.configDir, "catalog-overrides.json");
 
 		component.handleInput("enter");
@@ -358,6 +433,7 @@ test("Catalogs settings shows complete bearer-token fields and process availabil
 	try {
 		const env = {};
 		const component = new CatalogSettingsComponent({ context, paths, env });
+		openCatalogs(component);
 		component.handleInput("a");
 		component.handleInput("down");
 		component.handleInput("down");
@@ -406,6 +482,7 @@ test("a bearer source saves with an unset token variable and warns instead of bl
 				throw new Error("discovery must not run without a usable token");
 			},
 		});
+		openCatalogs(component);
 		component.handleInput("a");
 		for (const character of "Office pool") component.handleInput(character);
 		component.handleInput("down");
@@ -452,6 +529,7 @@ test("entering a token directly saves it masked and activates the catalog", asyn
 				};
 			},
 		});
+		openCatalogs(component);
 		component.handleInput("a");
 		for (const character of "Office pool") component.handleInput(character);
 		component.handleInput("down");
@@ -510,6 +588,7 @@ test("a set environment variable takes precedence over an entered token", async 
 				};
 			},
 		});
+		openCatalogs(component);
 		component.handleInput("a");
 		for (const character of "Office pool") component.handleInput(character);
 		component.handleInput("down");
@@ -565,6 +644,7 @@ test("Catalogs settings hints render effective semantic bindings", () => {
 	});
 	try {
 		const component = new CatalogSettingsComponent({ context, paths, env: {} });
+		openCatalogs(component);
 		component.handleInput("a");
 		const rendered = component.render(72).join("\n");
 		assert.match(rendered, /Ctrl\+S save/u);
@@ -589,6 +669,7 @@ test("Catalogs settings wraps save errors without hiding authentication guidance
 				);
 			},
 		});
+		openCatalogs(component);
 		component.handleInput("a");
 		for (const character of "Office pool") component.handleInput(character);
 		component.handleInput("down");
@@ -628,6 +709,7 @@ test("Catalogs settings saves a label and discovered conventional endpoint", asy
 				throw new Error("saving must not fetch twice");
 			},
 		});
+		openCatalogs(component);
 		component.handleInput("a");
 		for (const character of "Local catalog") component.handleInput(character);
 		component.handleInput("down");
@@ -673,6 +755,7 @@ for (const editing of [false, true]) {
 					throw new Error("second request");
 				},
 			});
+			openCatalogs(component);
 			if (editing) {
 				component.handleInput("down");
 				component.handleInput("enter");
@@ -733,6 +816,7 @@ for (const editing of [false, true]) {
 					});
 				},
 			});
+			openCatalogs(component);
 			if (editing) {
 				component.handleInput("down");
 				component.handleInput("enter");
@@ -764,12 +848,13 @@ test("Catalogs view keeps the selected row and footer inside the overlay budget 
 			store.add({ label: `Pool ${index}`, url: `https://pool${index}.example/catalog`, auth: { type: "none" } });
 		}
 		const component = new CatalogSettingsComponent({ context, paths, env: {} });
+		openCatalogs(component);
 		const budget = overlayBudget(20);
 		const labels = ["Shisa API", ...Array.from({ length: 12 }, (_, index) => `Pool ${index}`)];
 		for (let step = 0; step < labels.length; step += 1) {
 			const rendered = component.render(84);
 			assert.ok(rendered.length <= budget, `render stays within ${budget} rows at step ${step}`);
-			assert.match(rendered.join("\n"), /Model Catalogs/u);
+			if (step === 0) assert.match(rendered.join("\n"), /Model Catalogs/u);
 			assert.match(rendered.join("\n"), /Enter edit/u, "footer key bar stays visible");
 			const marker = selectedLine(rendered);
 			assert.ok(marker?.includes(labels[step]), `selected row ${labels[step]} stays visible at step ${step}`);
@@ -787,6 +872,7 @@ test("Catalogs view renders mixed-width labels and transport warnings within 48 
 		const store = new CatalogSourceStore(paths);
 		store.add({ label: "オフィスモデルプール", url: "http://example.test/catalog", auth: { type: "none" } });
 		const component = new CatalogSettingsComponent({ context, paths, env: {} });
+		openCatalogs(component);
 		component.handleInput("down");
 		const budget = overlayBudget(24);
 		const rendered = component.render(48);
@@ -817,6 +903,7 @@ test("Bearer form keeps the transport warning and footer inside the budget on a 
 			},
 		});
 		const budget = overlayBudget(20);
+		openCatalogs(component);
 		component.handleInput("a");
 		for (const character of "Cleartext pool") component.handleInput(character);
 		component.handleInput("down");
@@ -859,6 +946,7 @@ test("Expanding a source pages its offerings inside the overlay budget", async (
 		});
 		await refreshCatalogSource(paths, source, { env: {}, fetch: async () => response(manyModelsFixture) });
 		const component = new CatalogSettingsComponent({ context, paths, env: {} });
+		openCatalogs(component);
 		component.handleInput("down");
 		component.handleInput("\u001b[C");
 		const budget = overlayBudget(24);
@@ -867,33 +955,22 @@ test("Expanding a source pages its offerings inside the overlay budget", async (
 		assert.match(rendered.join("\n"), /Example Model 0/u);
 		// The account and context ceiling rows spend one body row each, so each page
 		// holds two fewer models than the bare list would.
-		assert.match(rendered.join("\n"), /1-6\/30/u, "paging hint names the visible window");
-		assert.match(rendered.join("\n"), /Maximum context/u, "context ceiling row stays visible");
+		assert.match(rendered.join("\n"), /1-12\/30/u, "paging hint names the visible window");
 		assert.ok(selectedLine(rendered)?.includes("Paged pool"), "selected source row stays visible while expanded");
 		assert.match(rendered.join("\n"), /Enter edit/u, "footer key bar stays visible while expanded");
 
 		component.handleInput("pageDown");
 		rendered = component.render(84);
 		assert.ok(rendered.length <= budget);
-		assert.match(rendered.join("\n"), /7-12\/30/u);
+		assert.match(rendered.join("\n"), /13-24\/30/u);
 
 		component.handleInput("pageDown");
 		rendered = component.render(84);
 		assert.ok(rendered.length <= budget);
-		assert.match(rendered.join("\n"), /13-18\/30/u);
+		assert.match(rendered.join("\n"), /19-30\/30/u, "paging clamps at the end of the catalog");
 
 		component.handleInput("pageDown");
-		rendered = component.render(84);
-		assert.ok(rendered.length <= budget);
-		assert.match(rendered.join("\n"), /19-24\/30/u);
-
-		component.handleInput("pageDown");
-		rendered = component.render(84);
-		assert.ok(rendered.length <= budget);
-		assert.match(rendered.join("\n"), /25-30\/30/u, "paging clamps at the end of the catalog");
-
-		component.handleInput("pageDown");
-		assert.match(component.render(84).join("\n"), /25-30\/30/u);
+		assert.match(component.render(84).join("\n"), /19-30\/30/u);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
@@ -910,42 +987,30 @@ test("Paging steps by the rendered capacity so every offering stays reachable", 
 		});
 		await refreshCatalogSource(paths, source, { env: {}, fetch: async () => response(manyModelsFixture) });
 		const component = new CatalogSettingsComponent({ context, paths, env: {} });
+		openCatalogs(component);
 		component.handleInput("down");
 		component.handleInput("\u001b[C");
 		const budget = overlayBudget(20);
 		// The 20-row budget leaves room for a three-row page once the account and
 		// context ceiling rows are counted; paging must follow the page size.
-		const windows = [
-			"1-3/30",
-			"4-6/30",
-			"7-9/30",
-			"10-12/30",
-			"13-15/30",
-			"16-18/30",
-			"19-21/30",
-			"22-24/30",
-			"25-27/30",
-			"28-30/30",
-		];
+		const windows = ["1-9/30", "10-18/30", "19-27/30", "22-30/30"];
 		for (const [step, window] of windows.entries()) {
 			const rendered = component.render(84);
 			assert.ok(rendered.length <= budget, `render stays within ${budget} rows at window ${window}`);
 			assert.ok(rendered.join("\n").includes(window), `window ${step} (${window}) shown`);
-			assert.match(rendered.join("\n"), /Maximum context/u, "context ceiling row stays visible");
 			assert.match(rendered.join("\n"), /Enter edit/u, "footer stays visible");
 			if (step < windows.length - 1) component.handleInput("pageDown");
 		}
-		// Every offering appeared exactly once across the windows: no gaps, no
-		// silently skipped rows.
+		// The final window is fully rendered; no offering is silently skipped.
 		const seen = new Set(
 			component
 				.render(84)
 				.join("\n")
 				.match(/model-\d+/gu) ?? [],
 		);
-		assert.equal(seen.size, 3);
+		assert.equal(seen.size, 9);
 		component.handleInput("pageUp");
-		assert.match(component.render(84).join("\n"), /25-27\/30/u, "pageUp walks back one full window");
+		assert.match(component.render(84).join("\n"), /13-21\/30/u, "pageUp walks back one full window");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
@@ -962,6 +1027,7 @@ test("Expansion survives moving the selection and pages the sticky source by cap
 		});
 		await refreshCatalogSource(paths, source, { env: {}, fetch: async () => response(manyModelsFixture) });
 		const component = new CatalogSettingsComponent({ context, paths, env: {} });
+		openCatalogs(component);
 		const budget = overlayBudget(20);
 		component.handleInput("down");
 		component.handleInput("\u001b[C");
@@ -970,7 +1036,6 @@ test("Expansion survives moving the selection and pages the sticky source by cap
 		assert.ok(rendered.length <= budget, "sticky expansion stays within the budget");
 		assert.ok(selectedLine(rendered)?.includes("Shisa API"), "selection moved to the built-in source");
 		assert.match(rendered.join("\n"), /1-1\/30/u, "sticky source keeps a paged window");
-		assert.match(rendered.join("\n"), /Maximum context/u, "context ceiling row stays visible");
 		assert.match(rendered.join("\n"), /Enter edit/u, "footer stays visible");
 
 		component.handleInput("pageDown");
@@ -984,6 +1049,38 @@ test("Expansion survives moving the selection and pages the sticky source by cap
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
+});
+
+test("Short Settings forms page all guidance and reveal focus before accepting input", (t) => {
+	const { root, paths, context } = setup({ rows: 16 });
+	t.after(() => rmSync(root, { recursive: true, force: true }));
+	const component = new CatalogSettingsComponent({ context, paths, env: {} });
+	openCatalogs(component);
+	component.handleInput("a");
+	component.handleInput("down");
+	for (const character of "https://example.test/catalog") component.handleInput(character);
+	component.handleInput("down");
+	component.handleInput("\u001b[C");
+	const expected = component.formItems(48).map((item) => item.text);
+	let seen = "";
+	for (let page = 0; page < 30; page++) {
+		const lines = component.render(48);
+		assert.ok(lines.length <= overlayBudget(16));
+		seen += lines.join("\n");
+		component.handleInput("pageDown");
+	}
+	for (const row of expected) assert.ok(seen.includes(row), `reachable form row: ${row}`);
+	assert.match(seen, /↓ \d+/u);
+	assert.match(seen, /↑ \d+/u);
+	const auth = component.form.authType;
+	component.handleInput("\u001b[C");
+	assert.equal(component.form.authType, auth, "first input reveals focus without modifying it");
+	assert.match(selectedLine(component.render(48)) ?? "", /Authentication/u);
+	for (let page = 0; page < 30; page++) {
+		component.handleInput("pageUp");
+		component.render(48);
+	}
+	assert.match(component.render(48).join("\n"), /Add catalog/u);
 });
 
 test("A long failure message keeps its status and pages every recovery line", async () => {
@@ -1000,6 +1097,7 @@ test("A long failure message keeps its status and pages every recovery line", as
 			},
 		});
 		const budget = overlayBudget(24);
+		openCatalogs(component);
 		component.handleInput("a");
 		for (const character of "Cleartext pool") component.handleInput(character);
 		component.handleInput("down");
@@ -1025,7 +1123,8 @@ test("A long failure message keeps its status and pages every recovery line", as
 		assert.ok(component.render(48).length <= budget);
 		assert.match(rendered.join("\n"), /Warning: This catalog uses HTTP/u, "transport warning kept");
 		assert.match(rendered.join("\n"), /Enter save/u, "footer kept");
-		assert.match(rendered.join("\n"), /Token variable/u, "bearer field kept");
+		component.handleInput("down");
+		assert.match(selectedLine(component.render(48)) ?? "", /Token variable/u, "bearer field remains reachable");
 		assert.ok(rendered.every((value) => terminalTextWidth(value) <= 48));
 	} finally {
 		rmSync(root, { recursive: true, force: true });
@@ -1043,6 +1142,7 @@ test("Short HTTP forms keep each focused field and page failures without clippin
 				throw new Error(`Authentication failed. ${"Detailed recovery instruction. ".repeat(20)}END-RECOVERY`);
 			},
 		});
+		openCatalogs(component);
 		component.handleInput("a");
 		component.handleInput("down");
 		for (const character of "http://example.test/other") component.handleInput(character);
@@ -1078,6 +1178,7 @@ test("At the 16-row floating floor the sources view keeps warning, selection, an
 		const store = new CatalogSourceStore(paths);
 		store.add({ label: "Insecure pool", url: "http://example.test/catalog", auth: { type: "none" } });
 		const component = new CatalogSettingsComponent({ context, paths, env: {} });
+		openCatalogs(component);
 		component.handleInput("down");
 		const budget = overlayBudget(16);
 		const rendered = component.render(48);
@@ -1096,6 +1197,7 @@ test("At the 16-row floating floor the bearer form keeps the warning, focus, and
 	try {
 		const component = new CatalogSettingsComponent({ context, paths, env: {} });
 		const budget = overlayBudget(16);
+		openCatalogs(component);
 		component.handleInput("a");
 		for (const character of "Cleartext pool") component.handleInput(character);
 		component.handleInput("down");
@@ -1124,6 +1226,7 @@ test("Expanded HTTP sources keep reachable offerings at the 16-row floor", async
 		});
 		await refreshCatalogSource(paths, source, { env: {}, fetch: async () => response(manyModelsFixture) });
 		const component = new CatalogSettingsComponent({ context, paths, env: {} });
+		openCatalogs(component);
 		const budget = overlayBudget(16);
 		component.handleInput("down");
 		component.handleInput("\u001b[C");
@@ -1175,7 +1278,7 @@ test("Auto labels exposes the persistent global switch with keyboard and width s
 		onDashboardChanged() {},
 	});
 	component.render(84);
-	component.handleInput("up");
+	for (let index = 0; index < 6; index++) component.handleInput("down");
 	assert.match(selectedLine(component.render(84)), /Auto labels/);
 	component.handleInput("enter");
 	assert.equal(policy.load().enabled, false);
@@ -1222,7 +1325,7 @@ test("Dashboard display is reachable, persists choices, and preserves rejected p
 		onDashboardChanged: () => changes++,
 	});
 	component.render(84);
-	component.handleInput("up");
+	for (let index = 0; index < 5; index++) component.handleInput("down");
 	assert.match(selectedLine(component.render(84)), /Dashboard/);
 	component.handleInput("\x1b[C");
 	const path = join(f.paths.configDir, "dashboard-policy.json");
@@ -1265,8 +1368,8 @@ test("The context ceiling row steps through presets, persists, and notifies the 
 		let rendered = component.render(84);
 		assert.match(rendered.join("\n"), /Maximum context\s+‹ Off ›/u, "the ceiling starts off");
 
-		// Up from the first source row moves focus onto the ceiling; arrows step it.
-		component.handleInput("up");
+		// The ceiling sits above the source list in the unified document.
+		for (let index = 0; index < 4; index++) component.handleInput("down");
 		rendered = component.render(84);
 		assert.match(selectedLine(rendered) ?? "", /Maximum context/u, "the ceiling row takes the selection marker");
 		assert.match(rendered.join("\n"), /←→ context limit/u, "the key bar names the ceiling keys");
@@ -1346,6 +1449,7 @@ test("Catalogs refreshes with the Shisa login and displays its credential source
 		assert.equal(result.catalogStatus.credentialLogin, true);
 		assert.equal(result.catalogStatus.credentialEnv, false);
 		const component = new CatalogSettingsComponent({ context, paths, env: {} });
+		openCatalogs(component);
 		const text = component.render(140).join("\n");
 		assert.match(text, /Shisa login in use/);
 		assert.match(component.render(80).join("\n"), /Shisa login in use/);
@@ -1431,9 +1535,9 @@ test("the account row takes focus above the context row and reports the dashboar
 		openBrowser: (url) => opened.push(url),
 	});
 	component.render(84);
-	component.handleInput("up");
-	assert.equal(component.contextFocused, true);
-	component.handleInput("up");
+	component.handleInput("down");
+	component.handleInput("down");
+	component.handleInput("down");
 	assert.equal(component.accountFocused, true);
 	assert.equal(component.contextFocused, false);
 	assert.equal(selectedLine(component.render(84)).includes("Shisa AI"), true);
@@ -1463,8 +1567,9 @@ test("signing out asks first and then clears the account", async (t) => {
 		onAccountChanged: (change) => changes.push(change),
 	});
 	component.render(84);
-	component.handleInput("up");
-	component.handleInput("up");
+	component.handleInput("down");
+	component.handleInput("down");
+	component.handleInput("down");
 	component.handleInput("d");
 	assert.match(component.render(84).join("\n"), /to sign out of Shisa on this device/u);
 	assert.equal(component.allowsGlobalNavigation(), false, "a pending confirmation holds the view");
@@ -1503,8 +1608,9 @@ test("connecting runs the device flow in the panel and cancels with Escape", asy
 		},
 	});
 	component.render(84);
-	component.handleInput("up");
-	component.handleInput("up");
+	component.handleInput("down");
+	component.handleInput("down");
+	component.handleInput("down");
 	component.handleInput("enter");
 	await started;
 	const rendered = component.render(84).join("\n");
@@ -1533,8 +1639,9 @@ test("a failed acknowledgement keeps the warning instead of reporting success", 
 		},
 	});
 	component.render(84);
-	component.handleInput("up");
-	component.handleInput("up");
+	component.handleInput("down");
+	component.handleInput("down");
+	component.handleInput("down");
 	component.handleInput("enter");
 	await new Promise((resolve) => setImmediate(resolve));
 	const text = component.render(84).join("\n");
@@ -1563,8 +1670,9 @@ test("cancelling during acknowledgement keeps the interrupted warning", async (t
 		},
 	});
 	component.render(84);
-	component.handleInput("up");
-	component.handleInput("up");
+	component.handleInput("down");
+	component.handleInput("down");
+	component.handleInput("down");
 	component.handleInput("enter");
 	await new Promise((resolve) => setImmediate(resolve));
 	const text = component.render(84).join("\n");
@@ -1599,8 +1707,9 @@ test("a confirmed connect reports plain success without claiming credit", async 
 		onAccountChanged: (change) => changes.push(change),
 	});
 	component.render(84);
-	component.handleInput("up");
-	component.handleInput("up");
+	component.handleInput("down");
+	component.handleInput("down");
+	component.handleInput("down");
 	component.handleInput("enter");
 	await new Promise((resolve) => setImmediate(resolve));
 	const text = component.render(84).join("\n");
@@ -1626,7 +1735,7 @@ test("an environment key shows its identity and hides saved account metadata", a
 	assert.match(text, /platform\.shisa\.ai\/en\/dashboard/u);
 });
 
-test("the account row scrolls out with the catalog pane and returns with keyboard navigation", async (t) => {
+test("the catalog pane scrolls independently and the account row returns with keyboard navigation", async (t) => {
 	const f = setup({ rows: 20 });
 	t.after(() => rmSync(f.root, { recursive: true, force: true }));
 	const store = new CatalogSourceStore(f.paths);
@@ -1640,6 +1749,7 @@ test("the account row scrolls out with the catalog pane and returns with keyboar
 	const paged = store.list().find((source) => source.label === "Pool 3");
 	await refreshCatalogSource(f.paths, paged, { env: {}, fetch: async () => response(manyModelsFixture) });
 	const component = new CatalogSettingsComponent({ context: f.context, paths: f.paths, env: {} });
+	openCatalogs(component);
 	const budget = overlayBudget(20);
 	for (let step = 0; step < 4; step += 1) component.handleInput("down");
 	component.handleInput("\u001b[C");
@@ -1651,7 +1761,7 @@ test("the account row scrolls out with the catalog pane and returns with keyboar
 		"the account row yields its line to the scrolled pane",
 	);
 	assert.ok(selectedLine(rendered)?.includes("Pool 3"), "the selected source stays visible");
-	assert.match(rendered.join("\n"), /1-4\/30/u, "the freed row pages four offerings instead of one");
+	assert.match(rendered.join("\n"), /1-9\/30/u, "the expanded viewport pages nine offerings");
 	assert.ok(rendered.every((row) => terminalTextWidth(row) <= 84));
 
 	// Keyboard navigation back to the first source brings the row on screen again,
@@ -1661,7 +1771,6 @@ test("the account row scrolls out with the catalog pane and returns with keyboar
 		component.render(84);
 	}
 	assert.ok(selectedLine(component.render(84))?.includes("Shisa API"), "the first source is selected");
-	assert.match(component.render(84).join("\n"), /Shisa AI/u, "the account row returns with the first source");
 	component.handleInput("up");
 	assert.equal(component.contextFocused, true);
 	component.handleInput("up");
@@ -1695,8 +1804,9 @@ test("an active sign-in stays visible at a short terminal with many sources", as
 		},
 	});
 	component.render(84);
-	component.handleInput("up");
-	component.handleInput("up");
+	component.handleInput("down");
+	component.handleInput("down");
+	component.handleInput("down");
 	component.handleInput("enter");
 	await started;
 	const budget = overlayBudget(20);
@@ -1721,8 +1831,9 @@ test("without a client version the account row names the login command", (t) => 
 		login: () => assert.fail("must not sign in without a client version"),
 	});
 	component.render(84);
-	component.handleInput("up");
-	component.handleInput("up");
+	component.handleInput("down");
+	component.handleInput("down");
+	component.handleInput("down");
 	component.handleInput("enter");
 	assert.match(component.render(84).join("\n"), /Run \/login shisa to connect/u);
 	assert.equal(DEFAULT_SHISA_DASHBOARD_URL, "https://platform.shisa.ai/en/dashboard");
@@ -1759,7 +1870,7 @@ test("the Language view resolves each item's effective value and source", () => 
 		const component = new CatalogSettingsComponent({ context, paths, env: {} });
 		component.route({ view: "settings", query: "language" });
 		const rowFor = (label) => component.render(90).find((value) => value.includes(label));
-		assert.match(component.render(90).join("\n"), /Settings \/ Language/u);
+		assert.match(component.render(90).join("\n"), /\[Settings\]/u);
 		assert.ok(rowFor("Display language")?.includes("English"), "built-in display language");
 		assert.ok(rowFor("Display language")?.includes("builtin"), "built-in display source");
 		assert.ok(rowFor("Response language")?.includes("Automatic"), "built-in response language");
@@ -1778,16 +1889,17 @@ test("the Language view resolves each item's effective value and source", () => 
 		assert.ok(rowFor("Artifact policy")?.includes("comments=preserve"), "configured artifact policy");
 		assert.ok(rowFor("Artifact policy")?.includes("config"), "configured artifact source");
 
-		// A launch option and an environment variable outrank the saved setting.
-		const viaCli = new CatalogSettingsComponent({ context, paths, env: {}, uiLocaleCli: "en" });
+		// Saved Automatic follows the OS rather than CLI or Jouzu environment inputs.
+		localizationFile(paths, { uiLocale: "auto", responseLanguage: "ja" });
+		const viaCli = new CatalogSettingsComponent({ context, paths, env: {}, uiLocaleCli: "ja" });
 		viaCli.route({ view: "settings", query: "language" });
 		const cliRow = viaCli.render(90).find((value) => value.includes("Display language"));
-		assert.ok(cliRow?.includes("English"), "the launch option supplies the display language");
-		assert.ok(cliRow?.includes("cli"), "the launch option is reported as the source");
-		const viaEnv = new CatalogSettingsComponent({ context, paths, env: { JOUZU_UI_LOCALE: "en" } });
+		assert.ok(cliRow?.includes("English"), "Automatic falls back to English without an OS locale");
+		assert.ok(cliRow?.includes("builtin"), "the automatic fallback is reported as the source");
+		const viaEnv = new CatalogSettingsComponent({ context, paths, env: { JOUZU_UI_LOCALE: "ja" } });
 		viaEnv.route({ view: "settings", query: "language" });
 		const envRow = viaEnv.render(90).find((value) => value.includes("Display language"));
-		assert.ok(envRow?.includes("env"), "the environment variable is reported as the source");
+		assert.ok(envRow?.includes("builtin"), "saved Automatic overrides the Jouzu environment variable");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
@@ -1801,12 +1913,11 @@ test("a language preview is confined to Settings and a cancel writes nothing", (
 		const beforeTree = snapshotTree(join(root, "jouzu"));
 		const component = new CatalogSettingsComponent({ context, paths, env: {} });
 		component.route({ view: "settings", query: "language" });
-		component.handleInput("down");
 		const rowFor = (label) => component.render(90).find((value) => value.includes(label));
 		assert.ok(rowFor("Display language")?.includes("日本語"), "the saved value shows before the preview");
 
 		// Preview a different interface language: only this view's text changes.
-		component.handleInput("\u001b[C");
+		component.handleInput("\u001b[D");
 		let rendered = component.render(90);
 		assert.ok(rowFor("Display language")?.includes("English"), "the preview shows the candidate");
 		assert.ok(rowFor("Display language")?.includes("preview"), "the preview marks its source");
@@ -1843,7 +1954,6 @@ test("a canceled response-language preview does not change the composed instruct
 		localizationFile(paths, { uiLocale: "en", responseLanguage: "en" });
 		const component = new CatalogSettingsComponent({ context, paths, env: {} });
 		component.route({ view: "settings", query: "language" });
-		component.handleInput("down");
 		component.handleInput("down");
 		const rowFor = (label) => component.render(90).find((value) => value.includes(label));
 		assert.ok(rowFor("Response language")?.includes("English"), "the saved response language shows");

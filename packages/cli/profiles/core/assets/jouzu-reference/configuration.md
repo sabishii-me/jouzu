@@ -54,16 +54,14 @@ Saved shape (example, not a replacement for an existing file):
 
 - Offered interface languages: `en`, `ja`. Response language: `auto`, `en`, `ja`, `zh-Hans`, `zh-Hant`. `auto` adds no fixed conversation-language instruction.
 - Each artifact field accepts `preserve`, `project`, or an explicit response-language tag. `preserve` keeps existing text; `project` follows project language. The example shows built-in artifact defaults.
-- Startup UI precedence: `--jouzu-ui-locale`, `JOUZU_UI_LOCALE`, saved preference, locale environment, English fallback. UI `auto` takes the first nonempty `LC_ALL`, `LC_MESSAGES`, `LANG`; these do not set response language. Live session overrides are separate from a doctor process's report.
+- Startup UI precedence: saved preference, `--jouzu-ui-locale`, `JOUZU_UI_LOCALE`, locale environment, English fallback. Saved `auto` follows the first nonempty `LC_ALL`, `LC_MESSAGES`, `LANG` without consulting launch overrides; these do not set response language. A doctor process reports startup resolution, not another session's live state.
 - Repository `.jouzu/localization.json` is not trusted artifact policy. The `ja` profile independently requests Japanese responses; use `core` to rely on language settings alone.
 
 ### Recover English
 
-Startup escape hatch: `jz --jouzu-ui-locale en` (keep the installation's home override). This does not change the saved preference. Offer it to the user; do not launch another interactive process in a tool.
+In Settings: `/language` → **Display language** → **English**. Arrow keys preview without saving. Enter opens confirmation; Enter again saves the choice. It overrides CLI/environment inputs and refreshes supported screens. Reopen or restart screens that retain their opening language.
 
-In Settings: `/catalogs` → **View** row → **Language** → **Display language** → **English**. Arrow keys preview in the panel without saving. Enter opens confirmation; choose **environment** scope and confirm. Restart when ready for whole-interface English. CLI/environment overrides can mask the saved value.
-
-Session scope writes a session override. **Saved setting** (environment scope) persists requested UI, response and artifact preferences; response/artifact changes also apply on the next turn, not an active reply. Other running sessions keep their active choices. Reset clears this session's overrides and saves UI `auto`, preserving saved response/artifact defaults.
+Every confirmed change persists the requested UI, response and artifact preferences. Response/artifact changes also apply on the next turn, not an active reply. Other running sessions keep their active choices. Reset clears this session's overrides and saves UI `auto`, preserving saved response/artifact defaults.
 
 For an authorized file fallback, read `localization.json`, change only `localization.uiLocale` to `en`, preserve other fields, validate JSON, and report restart required. Never replace a malformed file with the example. Persistent response/artifact edits also take effect at a new session. “Answer in English” does not authorize UI, artifact, profile or model changes.
 

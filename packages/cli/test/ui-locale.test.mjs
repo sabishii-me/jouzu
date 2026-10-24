@@ -143,23 +143,24 @@ function dirWithLocalization(contents) {
 	return dir;
 }
 
-test("the five-step order prefers the explicit option", () => {
+test("a saved fixed preference wins over the explicit option and environment", () => {
 	const resolved = resolveUiLocale({
 		cli: "ja",
-		env: "en",
+		env: "ja",
 		config: config("en"),
 		os: ["en_US.UTF-8"],
 	});
+	assert.deepEqual(resolved, { requested: "en", effective: "en", source: "config" });
+});
+
+test("the explicit option wins when no preference is saved", () => {
+	const resolved = resolveUiLocale({ cli: "ja", env: "en", config: { status: "absent" }, os: ["en_US.UTF-8"] });
 	assert.deepEqual(resolved, { requested: "ja", effective: "ja", source: "cli" });
 });
 
-test("the environment variable wins over the saved setting and the OS", () => {
-	const resolved = resolveUiLocale({
-		env: "ja_JP.UTF-8",
-		config: config("en"),
-		os: ["en_US.UTF-8"],
-	});
-	assert.deepEqual(resolved, { requested: "ja", effective: "ja", source: "env" });
+test("saved Automatic overrides CLI and Jouzu environment inputs and follows the OS", () => {
+	const resolved = resolveUiLocale({ cli: "ja", env: "ja_JP.UTF-8", config: config("auto"), os: ["en_US.UTF-8"] });
+	assert.deepEqual(resolved, { requested: "auto", effective: "en", source: "os" });
 });
 
 test("the saved setting wins over the OS and the built-in default", () => {
@@ -213,12 +214,20 @@ test("a saved auto is kept as an intent and resolved from the OS", () => {
 });
 
 test("an unsupported environment value falls back to English with the reason", () => {
-	const resolved = resolveUiLocale({ env: "fr_FR.UTF-8", config: config("ja"), os: ["ja_JP.UTF-8"] });
+	const resolved = resolveUiLocale({ env: "fr_FR.UTF-8", os: ["ja_JP.UTF-8"] });
 	assert.equal(resolved.effective, "en");
 	assert.equal(resolved.source, "env");
 	assert.equal(resolved.fallback?.requested, "fr_FR.UTF-8");
 	assert.equal(resolved.fallback?.effective, "en");
 	assert.match(resolved.fallback?.reason ?? "", /unsupported JOUZU_UI_LOCALE/u);
+});
+
+test("a saved fixed preference ignores an unsupported environment value", () => {
+	assert.deepEqual(resolveUiLocale({ env: "fr_FR.UTF-8", config: config("ja"), os: ["ja_JP.UTF-8"] }), {
+		requested: "ja",
+		effective: "ja",
+		source: "config",
+	});
 });
 
 test("an unsupported OS candidate falls back to English with the reason", () => {
@@ -232,6 +241,11 @@ test("an unsupported OS candidate falls back to English with the reason", () => 
 test("an unsupported explicit option is a usage error, not a fallback", () => {
 	assert.throws(() => resolveUiLocale({ cli: "fr" }), UiLocaleUsageError);
 	assert.throws(() => resolveUiLocale({ cli: "fr" }), /--jouzu-ui-locale must be one of/u);
+	assert.throws(
+		() => resolveUiLocale({ cli: "fr", config: config("ja") }),
+		UiLocaleUsageError,
+		"a saved preference must not hide a bad launch value",
+	);
 });
 
 test("a saved value is refused on write and never stored", () => {

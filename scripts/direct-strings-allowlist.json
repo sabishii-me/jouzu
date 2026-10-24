@@ -1,5 +1,103 @@
 [
 	{
+		"file": "packages/session-ui/src/contracts.ts",
+		"kind": "record-value",
+		"text": "Manage tasks — view, create, clear completed. '/tasks auto' enters auto-advance mode.",
+		"category": "protected-values",
+		"reason": "Exact bundled command registration used to identify owned text before localization."
+	},
+	{
+		"file": "packages/session-ui/src/contracts.ts",
+		"kind": "record-value",
+		"text": "Set one objective and work toward it; a lightweight multiloop run",
+		"category": "protected-values",
+		"reason": "Exact bundled command registration used to identify owned text before localization."
+	},
+	{
+		"file": "packages/session-ui/src/contracts.ts",
+		"kind": "record-value",
+		"text": "Start, resume, or manage autonomous iteration loops",
+		"category": "protected-values",
+		"reason": "Exact bundled command registration used to identify owned text before localization."
+	},
+	{
+		"file": "packages/session-ui/src/contracts.ts",
+		"kind": "record-value",
+		"text": "Manage scheduled prompts interactively",
+		"category": "protected-values",
+		"reason": "Exact bundled command registration used to identify owned text before localization."
+	},
+	{
+		"file": "packages/session-ui/src/contracts.ts",
+		"kind": "record-value",
+		"text": "Background shell task dashboard and controls.",
+		"category": "protected-values",
+		"reason": "Exact bundled command registration used to identify owned text before localization."
+	},
+	{
+		"file": "packages/session-ui/src/contracts.ts",
+		"kind": "record-value",
+		"text": "Show tracked background tasks",
+		"category": "protected-values",
+		"reason": "Exact bundled command registration used to identify owned text before localization."
+	},
+	{
+		"file": "packages/session-ui/src/contracts.ts",
+		"kind": "record-value",
+		"text": "Move the next bash command to a background task",
+		"category": "protected-values",
+		"reason": "Exact bundled command registration used to identify owned text before localization."
+	},
+	{
+		"file": "packages/session-ui/src/contracts.ts",
+		"kind": "record-value",
+		"text": "Remove finished background tasks",
+		"category": "protected-values",
+		"reason": "Exact bundled command registration used to identify owned text before localization."
+	},
+	{
+		"file": "packages/session-ui/src/contracts.ts",
+		"kind": "record-value",
+		"text": "Spawn a background shell task: /bg:run <command>",
+		"category": "protected-values",
+		"reason": "Exact bundled command registration used to identify owned text before localization."
+	},
+	{
+		"file": "packages/session-ui/src/contracts.ts",
+		"kind": "record-value",
+		"text": "Terminate a running background task: /bg:stop <id>",
+		"category": "protected-values",
+		"reason": "Exact bundled command registration used to identify owned text before localization."
+	},
+	{
+		"file": "packages/session-ui/src/contracts.ts",
+		"kind": "record-value",
+		"text": "Compact conversation with pi-vcc structured summary",
+		"category": "protected-values",
+		"reason": "Exact bundled command registration used to identify owned text before localization."
+	},
+	{
+		"file": "packages/session-ui/src/contracts.ts",
+		"kind": "record-value",
+		"text": "Recall earlier parts of this session. Plain keywords work best; add scope:all to reach edited or retried turns.",
+		"category": "protected-values",
+		"reason": "Exact bundled command registration used to identify owned text before localization."
+	},
+	{
+		"file": "packages/session-ui/src/contracts.ts",
+		"kind": "record-value",
+		"text": "Show code preview renderer health and settings",
+		"category": "protected-values",
+		"reason": "Exact bundled command registration used to identify owned text before localization."
+	},
+	{
+		"file": "packages/session-ui/src/contracts.ts",
+		"kind": "record-value",
+		"text": "Configure code preview settings",
+		"category": "protected-values",
+		"reason": "Exact bundled command registration used to identify owned text before localization."
+	},
+	{
 		"file": "packages/cli/src/subagents/language.ts",
 		"kind": "conditional-branch",
 		"text": "Preserve the existing language.",
@@ -546,13 +644,6 @@
 		"reason": "Renders the visible-row and total counts joined by a slash: two protected numbers and a separator, no words."
 	},
 	{
-		"file": "packages/cli/src/model-picker.ts",
-		"kind": "apply-argument",
-		"text": "· Models{…}",
-		"category": "product-name",
-		"reason": "Palette view name kept English as a product noun by the owner decision of 2026-10-08; the title is that name plus a separator."
-	},
-	{
 		"file": "packages/cli/src/notifications/inbox.ts",
 		"kind": "text-property",
 		"text": "No reply needed.",
@@ -561,24 +652,17 @@
 	},
 	{
 		"file": "packages/cli/src/palette.ts",
-		"kind": "label-property",
-		"text": "Models",
-		"category": "product-name",
-		"reason": "Palette view name kept English as a product noun by the owner decision of 2026-10-08."
+		"kind": "apply-argument",
+		"text": "│",
+		"category": "blank-or-separator",
+		"reason": "The scrollbar frame edge is a decorative line, not translatable text."
 	},
 	{
-		"file": "packages/cli/src/palette.ts",
-		"kind": "label-property",
-		"text": "Settings",
-		"category": "product-name",
-		"reason": "Palette view name kept English as a product noun by the owner decision of 2026-10-08."
-	},
-	{
-		"file": "packages/cli/src/palette.ts",
-		"kind": "label-property",
-		"text": "Workflow",
-		"category": "product-name",
-		"reason": "Palette view name kept English as a product noun by the owner decision of 2026-10-08."
+		"file": "packages/cli/src/catalog-settings.ts",
+		"kind": "apply-argument",
+		"text": "→",
+		"category": "blank-or-separator",
+		"reason": "The Settings selection marker is a decorative arrow, not translatable text."
 	},
 	{
 		"file": "packages/cli/src/palette.ts",

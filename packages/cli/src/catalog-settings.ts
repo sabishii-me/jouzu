@@ -58,7 +58,6 @@ import {
 	type LocalizationPlan,
 	LocalizationRecoveryError,
 	type LocalizationRequest,
-	type LocalizationScope,
 	type LocalizationSessionOverride,
 	planLocalization,
 	type ResolvedLocalizationUiLocale,
@@ -80,6 +79,7 @@ import {
 	type PaletteKeyHint,
 	type PaletteRoute,
 	paletteChoice,
+	paletteHeightBudget,
 	paletteInnerWidth,
 	renderPaletteDivider,
 	renderPaletteField,
@@ -115,7 +115,7 @@ import {
 	type UiLocalePreference,
 } from "./ui-locale.js";
 
-interface CatalogSettingsOptions {
+export interface CatalogSettingsOptions {
 	context: PaletteComponentContext;
 	paths: JouzuPaths;
 	env?: NodeJS.ProcessEnv;
@@ -136,6 +136,8 @@ interface CatalogSettingsOptions {
 	jouzuVersion?: string;
 	/** The `--jouzu-ui-locale` value, so the Language view can report the `cli` source. */
 	uiLocaleCli?: string;
+	/** Refresh the host's display catalog after a confirmed, persisted UI choice. */
+	onUiLocaleChanged?: (locale: UiLocale) => void;
 	/** Notify the active contract only after response/artifact choices are saved. */
 	onLanguageChanged?: (language: LanguageContractInput) => void;
 	/**
@@ -145,9 +147,9 @@ interface CatalogSettingsOptions {
 	 */
 	activity?: () => LocalizationActivity;
 	/**
-	 * The current session identity. A session-scoped language change is recorded
-	 * under this id, and the view reads that override back so it shows the
-	 * effective value and its `session` source.
+	 * The current session identity. A saved apply clears only this session's
+	 * legacy override, and the view reads any remaining override back so it can
+	 * show the effective value and its `session` source.
 	 */
 	sessionId?: string;
 	/** Test seams for the account row. */
@@ -216,8 +218,8 @@ const FORM_LABEL_COLUMN = 14;
 const LANGUAGE_LABEL_COLUMN = 20;
 
 /**
- * The session id a component without a host session records a session-scoped
- * change under. A real session always passes its own id.
+ * The session id a component without a host session uses when reading and
+ * clearing legacy session overrides. A real session always passes its own id.
  */
 const DEFAULT_LOCALIZATION_SESSION_ID = "settings";
 
@@ -229,9 +231,6 @@ const DEFAULT_LOCALIZATION_SESSION_ID = "settings";
 const LOCALIZATION_SETTINGS_MESSAGE_IDS = {
 	confirmHeading: "jouzu.cli.localization.settings.confirm.heading",
 	resetHeading: "jouzu.cli.localization.settings.reset.heading",
-	scope: "jouzu.cli.localization.settings.scope",
-	scopeSession: "jouzu.cli.localization.settings.scope.session",
-	scopeEnvironment: "jouzu.cli.localization.settings.scope.environment",
 	recovery: "jouzu.cli.localization.settings.recovery",
 	resetConfirm: "jouzu.cli.localization.settings.reset.confirm",
 	noChange: "jouzu.cli.localization.settings.no.change",
@@ -240,11 +239,11 @@ const LOCALIZATION_SETTINGS_MESSAGE_IDS = {
 	appliedNoBackup: "jouzu.cli.localization.settings.applied.no.backup",
 	resetDone: "jouzu.cli.localization.settings.reset.done",
 	resetDoneNoBackup: "jouzu.cli.localization.settings.reset.done.no.backup",
+	savedRestart: "jouzu.cli.localization.settings.saved.restart",
 	notices: "jouzu.cli.localization.settings.notices",
 	applyFailed: "jouzu.cli.localization.settings.apply.failed",
 	resetFailed: "jouzu.cli.localization.settings.reset.failed",
 	hintApply: "jouzu.cli.localization.settings.hint.apply",
-	hintScope: "jouzu.cli.localization.settings.hint.scope",
 	hintReset: "jouzu.cli.localization.settings.hint.reset",
 } as const;
 
@@ -255,10 +254,7 @@ const LOCALIZATION_FIELD_LABEL_IDS: Readonly<Record<LocalizationField, CatalogMe
 	artifactPolicy: CatalogMessageId.settingsLabelArtifactPolicy,
 };
 
-/** The Settings sub-views reachable from the View row. */
-export type SettingsView = "catalogs" | "language" | "about";
-
-/** The three language items the Language view shows. */
+/** Language controls at the start of the Settings pane. */
 type LanguageItem = "ui" | "response" | "artifact";
 
 /**
@@ -282,20 +278,6 @@ function artifactPresetFor(policy: ArtifactPolicy): ArtifactPolicyPreset {
 	return "default";
 }
 
-/** The catalog ID for each Settings sub-view's name. */
-const SETTINGS_VIEW_NAME_IDS: Readonly<Record<SettingsView, CatalogMessageId>> = {
-	catalogs: CatalogMessageId.settingsViewCatalogs,
-	language: CatalogMessageId.settingsViewLanguage,
-	about: CatalogMessageId.settingsViewAbout,
-};
-
-/** Map a Palette route query to a Settings sub-view. About needs the runtime report. */
-function settingsViewFromQuery(query: string | undefined, hasRuntime: boolean): SettingsView {
-	if (query === "language") return "language";
-	if (query === "about" && hasRuntime) return "about";
-	return "catalogs";
-}
-
 /** The shipped interface locale preferences, in the UI-locale set's order. */
 const SHIPPED_UI_LOCALE_PREFERENCES: readonly UiLocalePreference[] = UI_LOCALE_PREFERENCES.filter(
 	(preference) => preference === "auto" || isShippedUiLocale(preference),
@@ -303,10 +285,6 @@ const SHIPPED_UI_LOCALE_PREFERENCES: readonly UiLocalePreference[] = UI_LOCALE_P
 
 /** The response-language preferences, in the language set's order. */
 const RESPONSE_LANGUAGE_PREFERENCES: readonly ResponseLanguagePreference[] = ["auto", ...RESPONSE_LANGUAGES];
-/** Body rows the global context ceiling row spends: one, and it yields before the selected source. */
-const CONTEXT_SECTION_ROWS = 1;
-/** Body rows the Shisa account row spends; it yields last, after the catalog list heading. */
-const ACCOUNT_SECTION_ROWS = 1;
 
 /** Plain-text token warning for a source URL, prefixed for list rendering. */
 function transportWarningText(catalog: CatalogBundle, url: string): string | undefined {
@@ -375,10 +353,28 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 	private readonly login: typeof loginShisa;
 	private readonly logout: typeof logoutShisa;
 	private readonly openBrowser?: (url: string) => void;
-	private view: SettingsView = "catalogs";
-	private viewFocused = false;
+	private aboutFocused = false;
 	private aboutOffset = 0;
-	private aboutCapacity = 1;
+	private aboutRows = 1;
+	private scrollOffset = 0;
+	private modalOffset = 0;
+	private modalCapacity = 1;
+	private modalTotal = 0;
+	private modalIdentity: unknown;
+	private modalManual = false;
+	private bodyCapacity = 1;
+	private focusRows = new Map<string, number>();
+	private scrollToSection = true;
+	/** Keep the selected control in view after keyboard focus movement. */
+	private ensureFocusVisible = false;
+	/** Page/Home/End scrolling owns the viewport until the selection moves again. */
+	private manualScroll = false;
+	/** A Home/End request that the next document render consumes. */
+	private scrollToTop = false;
+	private scrollToBottom = false;
+	/** The last rendered document and viewport sizes, used by page scrolling. */
+	private contentRows = 0;
+	private viewportRows = 1;
 	private views: SourceView[] = [];
 	private selectedIndex = 0;
 	private labelsFocused = false;
@@ -386,36 +382,35 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 	private dashboardFocused = false;
 	private readonly onDashboardChanged?: () => void;
 	private contextFocused = false;
-	/** Whether the last render kept the context ceiling row; a dropped row cannot take focus. */
-	private contextRowVisible = true;
+
 	private account: ShisaAccountStatus;
 	private accountFocused = false;
-	/** Whether the last render kept the account row; a dropped row cannot take focus. */
-	private accountRowVisible = true;
+
 	private confirmLogout = false;
 	private readonly unsubscribeAuth: () => void;
 	private maxContextTokens?: number;
-	/** Which Language-view row holds focus, if any. */
-	private languageFocused?: LanguageItem;
+	/** The focused language control, when focus is in the Language section. */
+	private languageFocused?: LanguageItem = "ui";
 	/** The interface language being previewed inside Settings, if any. */
 	private previewUiLocale?: UiLocalePreference;
 	/** The response language being previewed inside Settings, if any. */
 	private previewResponseLanguage?: ResponseLanguagePreference;
 	/** The artifact-policy preset being previewed inside Settings, if any. */
 	private previewArtifactPolicy?: ArtifactPolicyPreset;
-	/** The pending scope confirmation for the previewed change, if any. */
-	private languageConfirm?: { scope: LocalizationScope; request: LocalizationRequest; plan: LocalizationPlan };
+	/** The pending confirmation for the previewed change, if any. */
+	private languageConfirm?: { request: LocalizationRequest; plan: LocalizationPlan };
 	/** Whether a reset of every language setting is waiting for confirmation. */
 	private languageResetConfirm = false;
 	/** The last apply or reset receipt, shown until the next input. */
 	private languageReceipt?: {
 		kind: "apply" | "reset";
-		scope?: LocalizationScope;
 		backupDir?: string;
 		transactionId: string;
 		notices: number;
+		uiLocaleChanged: boolean;
 	};
 	private readonly uiLocaleCli?: string;
+	private readonly onUiLocaleChanged?: CatalogSettingsOptions["onUiLocaleChanged"];
 	private readonly onLanguageChanged?: CatalogSettingsOptions["onLanguageChanged"];
 	private readonly activity?: () => LocalizationActivity;
 	private readonly sessionId: string;
@@ -457,6 +452,7 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 		this.runtime = options.runtime;
 		this.jouzuVersion = options.jouzuVersion;
 		this.uiLocaleCli = options.uiLocaleCli;
+		this.onUiLocaleChanged = options.onUiLocaleChanged;
 		this.onLanguageChanged = options.onLanguageChanged;
 		this.activity = options.activity;
 		this.sessionId = options.sessionId ?? DEFAULT_LOCALIZATION_SESSION_ID;
@@ -471,11 +467,9 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 			this.account = readShisaAccountStatus(this.paths, this.env);
 			this.tui.requestRender();
 		});
-		this.view = settingsViewFromQuery(options.initialRoute?.query, this.runtime !== undefined);
-		this.viewFocused = this.view !== "catalogs";
 		this.reloadViews();
 		this.reloadContextPolicy();
-		if (this.view === "catalogs" && this.views.length === 0 && !this.message) this.startForm("add");
+		this.restoreRoute(options.initialRoute);
 	}
 
 	get focused(): boolean {
@@ -489,47 +483,168 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 
 	route(route: PaletteRoute): void {
 		if (route.view !== "settings" || !this.allowsGlobalNavigation()) return;
-		if (route.query) {
-			this.setView(settingsViewFromQuery(route.query, this.runtime !== undefined));
-			return;
-		}
 		this.reloadViews();
+		this.restoreRoute(route);
 		this.tui.requestRender();
 	}
 
 	snapshotRoute(): PaletteRoute {
-		return { view: "settings", query: this.view };
+		return {
+			view: "settings",
+			query: JSON.stringify({
+				focus: this.focusKey(),
+				scroll: this.scrollOffset,
+				expanded: this.expandedSourceId,
+				offering: this.expandedOffset,
+			}),
+		};
 	}
 
-	/** The Settings sub-views reachable from the View row; About needs the runtime report. */
-	private availableViews(): SettingsView[] {
-		return this.runtime ? ["catalogs", "about", "language"] : ["catalogs", "language"];
-	}
-
-	/** Switch sub-view, resetting the focus that belongs to the previous one. */
-	private setView(view: SettingsView, focus = view !== "catalogs"): void {
-		this.view = view;
-		this.viewFocused = focus;
-		this.languageFocused = undefined;
-		this.contextFocused = false;
-		this.dashboardFocused = false;
-		this.labelsFocused = false;
-		this.accountFocused = false;
-		this.aboutOffset = 0;
-		this.message = undefined;
-		this.reloadViews();
-		this.tui.requestRender();
-	}
-
-	/** Cycle the View row through the available sub-views. */
-	private cycleView(direction: -1 | 1): void {
-		const views = this.availableViews();
-		const index = Math.max(0, views.indexOf(this.view));
-		this.setView(views[(index + direction + views.length) % views.length], true);
+	/** Deep links focus sections; retained routes restore the same control and viewport. */
+	private restoreRoute(route?: PaletteRoute): void {
+		if (route?.resume && route.query?.startsWith("{")) {
+			try {
+				const state = JSON.parse(route.query);
+				if (typeof state.focus === "string") this.focusControl(state.focus);
+				if (Number.isSafeInteger(state.scroll)) this.scrollOffset = Math.max(0, state.scroll);
+				if (typeof state.expanded === "string") this.expandedSourceId = state.expanded;
+				if (Number.isSafeInteger(state.offering)) this.expandedOffset = Math.max(0, state.offering);
+				this.scrollToSection = false;
+				this.manualScroll = true;
+				return;
+			} catch {
+				// A stale route falls back to the first control without writing state.
+			}
+		}
+		this.manualScroll = false;
+		this.focusControl(
+			route?.query === "about" && this.runtime
+				? "about:0"
+				: route?.query === "catalogs"
+					? this.views[0]
+						? `source:${this.views[0].source.id}`
+						: "catalogs"
+					: "ui",
+		);
+		this.scrollToSection = true;
 	}
 
 	allowsGlobalNavigation(): boolean {
-		return !this.form && !this.confirmRemove && !this.confirmLogout && !this.busy;
+		return (
+			!this.form &&
+			!this.confirmRemove &&
+			!this.confirmLogout &&
+			!this.busy &&
+			!this.previewActive &&
+			!this.languageConfirm &&
+			!this.languageResetConfirm
+		);
+	}
+
+	private focusKey(): string {
+		if (this.languageFocused) return this.languageFocused;
+		if (this.accountFocused) return "account";
+		if (this.contextFocused) return "context";
+		if (this.dashboardFocused) return "dashboard";
+		if (this.labelsFocused) return "labels";
+		if (this.aboutFocused) return `about:${this.aboutOffset}`;
+		return this.selected() ? `source:${this.selected()?.source.id}` : "catalogs";
+	}
+
+	private focusControl(key: string): void {
+		this.languageFocused = key === "ui" || key === "response" || key === "artifact" ? key : undefined;
+		this.accountFocused = key === "account";
+		this.contextFocused = key === "context";
+		this.dashboardFocused = key === "dashboard" && Boolean(this.onDashboardChanged);
+		this.labelsFocused = key === "labels" && Boolean(this.labelPolicy);
+		this.aboutFocused = key.startsWith("about:") && Boolean(this.runtime);
+		if (this.aboutFocused) this.aboutOffset = Math.max(0, Number.parseInt(key.slice(6), 10) || 0);
+		if (key.startsWith("source:")) {
+			const index = this.views.findIndex((view) => view.source.id === key.slice(7));
+			this.selectedIndex = Math.max(0, index);
+		}
+	}
+
+	private focusOrder(): string[] {
+		return [
+			"ui",
+			"response",
+			"artifact",
+			"account",
+			"context",
+			...(this.onDashboardChanged ? ["dashboard"] : []),
+			...(this.labelPolicy ? ["labels"] : []),
+			...(this.views.length ? this.views.map((view) => `source:${view.source.id}`) : ["catalogs"]),
+			...(this.runtime ? Array.from({ length: this.aboutRows }, (_, index) => `about:${index}`) : []),
+		];
+	}
+
+	/** Navigation follows controls, not whichever rows happened to fit the previous frame. */
+	private moveFocus(direction: -1 | 1, page = false): void {
+		const order = this.focusOrder();
+		const index = Math.max(0, order.indexOf(this.focusKey()));
+		let next = Math.max(0, Math.min(order.length - 1, index + direction));
+		if (page) {
+			const row = this.focusRows.get(order[index]) ?? 0;
+			const target = row + direction * Math.max(1, this.bodyCapacity - 1);
+			while (next + direction >= 0 && next + direction < order.length) {
+				const nextRow = this.focusRows.get(order[next + direction]);
+				if (nextRow === undefined || (direction > 0 ? nextRow > target : nextRow < target)) break;
+				next += direction;
+			}
+		}
+		this.focusControl(order[next]);
+		this.ensureFocusVisible = true;
+		this.manualScroll = false;
+		this.scrollToTop = false;
+		this.scrollToBottom = false;
+		this.message = undefined;
+		this.languageReceipt = undefined;
+		this.tui.requestRender();
+	}
+
+	/**
+	 * Scroll the document by one viewport without moving the selection out of
+	 * view. Page keys reach nonselectable rows too, so a long About report or
+	 * help text cannot be stranded below the last focusable control.
+	 */
+	private pageScroll(direction: -1 | 1): void {
+		const maximum = Math.max(0, this.contentRows - this.viewportRows);
+		if (maximum === 0) return;
+		const step = Math.max(1, this.viewportRows - 1);
+		const next = Math.max(0, Math.min(maximum, this.scrollOffset + direction * step));
+		if (next === this.scrollOffset) return;
+		this.scrollOffset = next;
+		this.ensureFocusVisible = false;
+		this.manualScroll = true;
+		this.scrollToTop = false;
+		this.scrollToBottom = false;
+		this.message = undefined;
+		this.languageReceipt = undefined;
+		// Keep a focusable row selected when the new viewport has one.
+		const current = this.focusRows.get(this.focusKey());
+		if (current === undefined || current < next || current >= next + this.viewportRows) {
+			const visible = [...this.focusRows.entries()].filter(([, row]) => row >= next && row < next + this.viewportRows);
+			if (visible.length > 0) {
+				const chosen = direction > 0 ? visible[visible.length - 1] : visible[0];
+				this.focusControl(chosen[0]);
+			}
+		}
+		this.tui.requestRender();
+	}
+
+	/** Jump to the first or last document row, including trailing nonselectable text. */
+	private scrollToEdge(edge: "top" | "bottom"): void {
+		const order = this.focusOrder();
+		this.focusControl(edge === "top" ? order[0] : order[order.length - 1]);
+		this.scrollToTop = edge === "top";
+		this.scrollToBottom = edge === "bottom";
+		this.scrollToSection = false;
+		this.ensureFocusVisible = false;
+		this.manualScroll = true;
+		this.message = undefined;
+		this.languageReceipt = undefined;
+		this.tui.requestRender();
 	}
 
 	private selected(): SourceView | undefined {
@@ -537,6 +652,7 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 	}
 
 	private reloadViews(preferredId?: string): void {
+		const retainedId = preferredId ?? this.selected()?.source.id;
 		try {
 			const sources = this.store.list();
 			this.views = sources.map((source) => {
@@ -551,7 +667,6 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 					})),
 				};
 			});
-			const retainedId = preferredId ?? this.selected()?.source.id;
 			const retainedIndex = retainedId ? this.views.findIndex((view) => view.source.id === retainedId) : -1;
 			this.selectedIndex =
 				retainedIndex >= 0 ? retainedIndex : Math.min(this.selectedIndex, Math.max(0, this.views.length - 1));
@@ -591,7 +706,7 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 	private startForm(mode: "add" | "edit"): void {
 		const selected = mode === "edit" ? this.selected()?.source : undefined;
 		if (mode === "edit" && !selected) return;
-		this.contextFocused = false;
+		this.focusControl(selected ? `source:${selected.id}` : "catalogs");
 		const label = new Input();
 		const url = new Input();
 		const credential = new Input();
@@ -836,15 +951,6 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 		this.tui.requestRender();
 	}
 
-	private moveSelection(delta: number): void {
-		this.contextFocused = false;
-		this.accountFocused = false;
-		this.selectedIndex = Math.max(0, Math.min(this.views.length - 1, this.selectedIndex + delta));
-		this.expandedOffset = 0;
-		this.confirmRemove = false;
-		this.tui.requestRender();
-	}
-
 	/**
 	 * The activity a language change must respect. The component's own
 	 * destructive confirmations are included, so the display language is fixed
@@ -889,8 +995,9 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 	} {
 		const saved = this.savedLanguageState();
 		const override = this.sessionOverride();
+		const savedPreference = saved.config.status === "ok";
 		let uiLocale: ResolvedLocalizationUiLocale;
-		if (override.uiLocale !== undefined && override.uiLocale !== "auto") {
+		if (!savedPreference && override.uiLocale !== undefined && override.uiLocale !== "auto") {
 			uiLocale = { requested: override.uiLocale, effective: override.uiLocale, source: "session" };
 		} else {
 			const resolved = resolveUiLocale({
@@ -964,20 +1071,6 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 		this.catalog = resolveCatalog(this.previewEffectiveUiLocale(this.previewUiLocale)).bundle;
 	}
 
-	/** Move focus between the three Language-view rows and the View row above them. */
-	private moveLanguageFocus(delta: -1 | 1): void {
-		const order: LanguageItem[] = ["ui", "response", "artifact"];
-		const index = order.indexOf(this.languageFocused ?? "ui");
-		const next = index + delta;
-		if (next < 0) {
-			this.languageFocused = undefined;
-			this.viewFocused = true;
-		} else {
-			this.languageFocused = order[Math.min(next, order.length - 1)];
-		}
-		this.tui.requestRender();
-	}
-
 	/** Cycle the focused Language-view row, previewing the value inside Settings. */
 	private cycleLanguageItem(direction: -1 | 1): void {
 		const item = this.languageFocused;
@@ -1049,16 +1142,6 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 		this.applyPreviewCatalog();
 	}
 
-	/** The display label for one scope. */
-	private scopeLabel(scope: LocalizationScope): string {
-		return catalogText(
-			this.catalog,
-			scope === "environment"
-				? LOCALIZATION_SETTINGS_MESSAGE_IDS.scopeEnvironment
-				: LOCALIZATION_SETTINGS_MESSAGE_IDS.scopeSession,
-		);
-	}
-
 	/** Show why a language change waits, naming the confirmation keys when relevant. */
 	private showDeferralMessage(deferral: LocalizationDeferral): void {
 		const parts: string[] = [];
@@ -1080,7 +1163,7 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 		this.tui.requestRender();
 	}
 
-	/** Keep explicit previews until scope selection; equal effective values can still be saved. */
+	/** Keep explicit previews until confirmation; equal effective values can still be saved. */
 	private pendingLanguageRequest(): LocalizationRequest {
 		if (!this.previewActive) {
 			// Enter on one session-overridden row can promote it without previewing
@@ -1104,56 +1187,46 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 		};
 	}
 
-	/** Compare the confirmed request with the destination scope, not only the effective session. */
+	/** Compare the confirmed request with the current effective preference. */
 	private languageChangeRows(
 		request: LocalizationRequest,
-		scope: LocalizationScope,
 	): Array<{ field: LocalizationField; from: string; to: string }> {
 		const state = this.languageState();
-		const saved = this.savedLanguageState().settings;
-		const uiLocale = scope === "environment" ? (saved?.uiLocale ?? "auto") : state.uiLocale.requested;
-		const responseLanguage =
-			scope === "environment" ? (saved?.responseLanguage ?? "auto") : state.responseLanguage.effective;
-		const artifactPolicy =
-			scope === "environment"
-				? resolveArtifactPolicy({ config: saved?.artifactPolicy }).effective
-				: state.artifactPolicy.effective;
 		const rows: Array<{ field: LocalizationField; from: string; to: string }> = [];
 		if (request.uiLocale !== undefined) {
 			rows.push({
 				field: "uiLocale",
-				from: this.responseLanguageLabel(uiLocale),
+				from: this.responseLanguageLabel(state.uiLocale.requested),
 				to: this.responseLanguageLabel(request.uiLocale),
 			});
 		}
 		if (request.responseLanguage !== undefined) {
 			rows.push({
 				field: "responseLanguage",
-				from: this.responseLanguageLabel(responseLanguage),
+				from: this.responseLanguageLabel(state.responseLanguage.effective),
 				to: this.responseLanguageLabel(request.responseLanguage),
 			});
 		}
 		if (request.artifactPolicy !== undefined) {
 			rows.push({
 				field: "artifactPolicy",
-				from: formatArtifactPolicy(artifactPolicy),
-				to: formatArtifactPolicy({ ...artifactPolicy, ...request.artifactPolicy }),
+				from: formatArtifactPolicy(state.artifactPolicy.effective),
+				to: formatArtifactPolicy({ ...state.artifactPolicy.effective, ...request.artifactPolicy }),
 			});
 		}
 		return rows;
 	}
 
-	/** Plan one scope and keep the plan for the confirmation summary. */
-	private planLanguageChange(
-		scope: LocalizationScope,
-		request: LocalizationRequest,
-	): { scope: LocalizationScope; request: LocalizationRequest; plan: LocalizationPlan } {
+	/** Plan the persistent change and keep the plan for the confirmation summary. */
+	private planLanguageChange(request: LocalizationRequest): {
+		request: LocalizationRequest;
+		plan: LocalizationPlan;
+	} {
 		return {
-			scope,
 			request,
 			plan: planLocalization(this.paths, {
 				sessionId: this.sessionId,
-				scope,
+				scope: "environment",
 				request,
 				env: this.env,
 				catalog: this.catalog,
@@ -1161,7 +1234,7 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 		};
 	}
 
-	/** Open the scope confirmation for the current previews, or name the reason it waits. */
+	/** Open the persistent-change confirmation for the current previews, or name why it waits. */
 	private openLanguageConfirm(): void {
 		const deferral = detectLocalizationDeferral(this.activityState(), this.catalog);
 		if (deferral.deferred) {
@@ -1178,23 +1251,16 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 			this.tui.requestRender();
 			return;
 		}
-		this.languageConfirm = this.planLanguageChange("session", request);
+		this.languageConfirm = this.planLanguageChange(request);
 		this.message = undefined;
 		this.messageOffset = 0;
 		this.tui.requestRender();
 	}
 
-	/** Switch the pending confirmation between the session and the saved setting. */
-	private toggleLanguageScope(): void {
-		const confirm = this.languageConfirm;
-		if (!confirm) return;
-		const scope: LocalizationScope = confirm.scope === "session" ? "environment" : "session";
-		this.languageConfirm = this.planLanguageChange(scope, confirm.request);
-		this.tui.requestRender();
-	}
-
 	/** Read the persisted result, not the plan's pre-apply effective values. */
 	private notifyLanguageChange(result: LocalizationApplyResult): void {
+		if (result.changed && result.plan.actions.some((action) => action.field === "uiLocale"))
+			this.onUiLocaleChanged?.(this.languageState().uiLocale.effective);
 		if (
 			result.changed &&
 			result.plan.actions.some((action) => action.field === "responseLanguage" || action.field === "artifactPolicy")
@@ -1226,7 +1292,7 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 		try {
 			const result = applyLocalization(this.paths, {
 				sessionId: this.sessionId,
-				scope: confirm.scope,
+				scope: "environment",
 				request: confirm.request,
 				env: this.env,
 				catalog: this.catalog,
@@ -1237,10 +1303,10 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 			this.refreshLanguageCatalog();
 			this.languageReceipt = {
 				kind: "apply",
-				scope: confirm.scope,
 				...(result.backupDir ? { backupDir: result.backupDir } : {}),
 				transactionId: result.transactionId,
 				notices: result.notices.length,
+				uiLocaleChanged: result.plan.actions.some((action) => action.field === "uiLocale"),
 			};
 			this.message = { level: "info", text: this.languageReceiptText() };
 		} catch (error) {
@@ -1293,6 +1359,7 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 				...(result.backupDir ? { backupDir: result.backupDir } : {}),
 				transactionId: result.transactionId,
 				notices: result.notices.length,
+				uiLocaleChanged: result.plan.actions.some((action) => action.field === "uiLocale"),
 			};
 			this.message = { level: "info", text: this.languageReceiptText() };
 		} catch (error) {
@@ -1314,7 +1381,6 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 	private languageReceiptText(): string {
 		const receipt = this.languageReceipt;
 		if (!receipt) return "";
-		const scope = this.scopeLabel(receipt.scope ?? "session");
 		let text: string;
 		if (receipt.kind === "reset") {
 			text = receipt.backupDir
@@ -1328,12 +1394,10 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 		} else {
 			text = receipt.backupDir
 				? catalogText(this.catalog, LOCALIZATION_SETTINGS_MESSAGE_IDS.applied, {
-						scope,
 						backup: receipt.backupDir,
 						transaction: receipt.transactionId,
 					})
 				: catalogText(this.catalog, LOCALIZATION_SETTINGS_MESSAGE_IDS.appliedNoBackup, {
-						scope,
 						transaction: receipt.transactionId,
 					});
 		}
@@ -1342,33 +1406,45 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 				count: String(receipt.notices),
 			})}`;
 		}
+		if (receipt.uiLocaleChanged) {
+			text += ` ${catalogText(this.catalog, LOCALIZATION_SETTINGS_MESSAGE_IDS.savedRestart)}`;
+		}
 		return text;
 	}
 
-	/** Body rows the Language view needs: the heading and the three items. */
-	private languageRequired(): number {
-		if (this.languageConfirm || this.languageResetConfirm) return 3;
-		return 4;
-	}
-
-	/** Keep the highest-ranked rows and drop whole lower-ranked ones to fit the budget. */
-	private fitLanguageBody(items: Array<{ rank: number; text: string }>, budget: number): string[] {
-		while (items.length > budget) {
-			let dropIndex = -1;
-			let dropRank = 0;
-			for (let index = 0; index < items.length; index += 1) {
-				if (items[index].rank > dropRank) {
-					dropRank = items[index].rank;
-					dropIndex = index;
-				}
-			}
-			if (dropIndex < 0) break;
-			items.splice(dropIndex, 1);
+	/** Scroll complete modal content without dropping fields or recovery instructions. */
+	private fitModalBody(lines: string[], budget: number, width: number, selected = 0): string[] {
+		const identity = this.form ?? this.languageConfirm ?? this.languageResetConfirm;
+		if (identity !== this.modalIdentity) {
+			this.modalIdentity = identity;
+			this.modalOffset = 0;
+			this.modalManual = false;
 		}
-		return items.map((item) => item.text);
+		this.modalTotal = lines.length;
+		const overflow = lines.length > budget;
+		this.modalCapacity = Math.max(1, budget - (overflow ? 1 : 0));
+		if (!this.modalManual) {
+			if (selected < this.modalOffset) this.modalOffset = selected;
+			if (selected >= this.modalOffset + this.modalCapacity) this.modalOffset = selected - this.modalCapacity + 1;
+		}
+		this.modalOffset = Math.max(0, Math.min(this.modalOffset, lines.length - this.modalCapacity));
+		const end = Math.min(lines.length, this.modalOffset + this.modalCapacity);
+		const visible = lines.slice(this.modalOffset, end);
+		if (overflow && budget > 1)
+			visible.push(
+				renderTerminalFrameRow(
+					this.styles.apply(
+						"palette.hint",
+						this.scrollIndicator(this.modalOffset, end, lines.length, paletteInnerWidth(width)),
+					),
+					width,
+					{ border: (value) => this.styles.apply("palette.border", value) },
+				),
+			);
+		return visible;
 	}
 
-	/** The confirmation summary: the pending change, the scope, and the recovery path. */
+	/** The confirmation summary: the pending change and the recovery path. */
 	private renderLanguageConfirm(width: number, line: (value?: string) => string, budget: number): string[] {
 		const confirm = this.languageConfirm;
 		if (!confirm) return [];
@@ -1386,7 +1462,7 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 				),
 			},
 		];
-		for (const row of this.languageChangeRows(confirm.request, confirm.scope)) {
+		for (const row of this.languageChangeRows(confirm.request)) {
 			items.push({
 				rank: 1,
 				text: line(
@@ -1406,28 +1482,17 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 				),
 			});
 		}
-		items.push({
-			rank: 0,
-			text: line(
-				renderPaletteField({
-					label: catalogText(this.catalog, LOCALIZATION_SETTINGS_MESSAGE_IDS.scope),
-					labelRole: "palette.identity",
-					value: paletteChoice(this.scopeLabel(confirm.scope)),
-					labelWidth: LANGUAGE_LABEL_COLUMN,
-					innerWidth,
-					selected: true,
-					theme: this.theme,
-					styles: this.styles,
-				}),
-			),
-		});
 		for (const recoveryLine of wrapTextWithAnsi(
 			`  ${catalogText(this.catalog, LOCALIZATION_SETTINGS_MESSAGE_IDS.recovery)}`,
 			innerWidth,
 		)) {
 			items.push({ rank: 0, text: line(this.styles.apply("palette.hint", recoveryLine)) });
 		}
-		return this.fitLanguageBody(items, budget);
+		return this.fitModalBody(
+			items.map((item) => item.text),
+			budget,
+			width,
+		);
 	}
 
 	/** The reset confirmation: what reset does and the recovery path. */
@@ -1458,7 +1523,11 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 		)) {
 			items.push({ rank: 0, text: line(this.styles.apply("palette.hint", recoveryLine)) });
 		}
-		return this.fitLanguageBody(items, budget);
+		return this.fitModalBody(
+			items.map((item) => item.text),
+			budget,
+			width,
+		);
 	}
 
 	/** The Language view's heading and three rows, each carrying its own selection flag. */
@@ -1498,7 +1567,9 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 		return [
 			row(
 				CatalogMessageId.settingsLabelDisplayLanguage,
-				languageSelfName(uiEffective, this.catalog),
+				this.previewUiLocale === undefined
+					? languageSelfName(uiEffective, this.catalog)
+					: this.responseLanguageLabel(this.previewUiLocale),
 				this.previewUiLocale !== undefined ? previewSource : state.uiLocale.source,
 				"ui",
 			),
@@ -1517,82 +1588,41 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 		];
 	}
 
-	/** Render the Language view, dropping non-focused rows before the focused one. */
-	private renderLanguage(width: number, line: (value?: string) => string, budget: number): string[] {
-		if (this.languageConfirm) return this.renderLanguageConfirm(width, line, budget);
-		if (this.languageResetConfirm) return this.renderLanguageResetConfirm(width, line, budget);
-		const innerWidth = paletteInnerWidth(width);
-		const heading = {
-			text: line(
-				renderPaletteHeading(
-					catalogText(this.catalog, CatalogMessageId.settingsHeadingLanguage),
-					innerWidth,
-					this.theme,
-					this.styles,
-				),
-			),
-			selected: false,
-		};
-		const items = [heading, ...this.languageItems(innerWidth, line)];
-		// The switch condition for screens Jouzu does not own. It is informational
-		// and non-selectable, so it yields before any item row when the terminal is
-		// short.
-		for (const noticeLine of wrapTextWithAnsi(`  ${upstreamSwitchNotice(this.catalog)}`, innerWidth)) {
-			items.push({ text: line(this.styles.apply("palette.hint", noticeLine)), selected: false });
-		}
-		if (items.length > budget) items.shift();
-		while (items.length > budget) {
-			const index = items.findIndex((item) => !item.selected);
-			if (index < 0) break;
-			items.splice(index, 1);
-		}
-		return items.map((item) => item.text);
-	}
-
 	handleInput(data: string): void {
-		if (this.allowsGlobalNavigation() && this.viewFocused) {
-			if (matchesKey(data, "left") || matchesKey(data, "right")) {
-				this.message = undefined;
-				this.cycleView(matchesKey(data, "left") ? -1 : 1);
-				return;
-			}
-			if (this.keybindings.matches(data, "tui.select.confirm")) {
-				this.message = undefined;
-				this.cycleView(1);
-				return;
-			}
-			if (this.keybindings.matches(data, "tui.select.cancel")) {
-				this.close();
-				return;
-			}
-			if (this.view === "about") {
-				const up = this.keybindings.matches(data, "tui.select.up");
-				const down = this.keybindings.matches(data, "tui.select.down");
-				const pageUp = this.keybindings.matches(data, "tui.select.pageUp");
-				const pageDown = this.keybindings.matches(data, "tui.select.pageDown");
-				if (up || down || pageUp || pageDown) {
-					this.aboutOffset = Math.max(
-						0,
-						this.aboutOffset + (up || pageUp ? -1 : 1) * (pageUp || pageDown ? this.aboutCapacity : 1),
-					);
-					this.tui.requestRender();
-				}
-				return;
-			}
-			if (this.keybindings.matches(data, "tui.select.down")) {
-				this.viewFocused = false;
-				if (this.view === "language") this.languageFocused = "ui";
-				else if (this.accountRowVisible) this.accountFocused = true;
-				else this.contextFocused = this.contextRowVisible;
+		if (this.form || this.languageConfirm || this.languageResetConfirm) {
+			const first = matchesKey(data, "ctrl+home");
+			const last = matchesKey(data, "ctrl+end");
+			const up = this.messageCapacity === 0 && this.keybindings.matches(data, "tui.select.pageUp");
+			const down = this.messageCapacity === 0 && this.keybindings.matches(data, "tui.select.pageDown");
+			if (up || down || first || last) {
+				this.modalManual = true;
+				this.modalOffset = first
+					? 0
+					: last
+						? Math.max(0, this.modalTotal - this.modalCapacity)
+						: Math.max(
+								0,
+								Math.min(this.modalTotal - this.modalCapacity, this.modalOffset + (down ? 1 : -1) * this.modalCapacity),
+							);
 				this.tui.requestRender();
-			}
-			return;
-		}
-		if (this.view === "language" && this.languageConfirm) {
-			if (matchesKey(data, "left") || matchesKey(data, "right")) {
-				this.toggleLanguageScope();
 				return;
 			}
+			if (this.form && this.modalManual && !this.keybindings.matches(data, "tui.select.cancel")) {
+				this.modalManual = false;
+				this.tui.requestRender();
+				return;
+			}
+		}
+		if (this.message && this.message.text === this.messageIdentity && this.messageCapacity > 0) {
+			const previous = this.keybindings.matches(data, "tui.select.pageUp");
+			const next = this.keybindings.matches(data, "tui.select.pageDown");
+			if (previous || next) {
+				this.messageOffset = Math.max(0, this.messageOffset + (next ? 1 : -1) * this.messageCapacity);
+				this.tui.requestRender();
+				return;
+			}
+		}
+		if (this.languageConfirm) {
 			if (this.keybindings.matches(data, "tui.select.confirm")) {
 				this.applyLanguageConfirm();
 				return;
@@ -1604,7 +1634,7 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 			}
 			return;
 		}
-		if (this.view === "language" && this.languageResetConfirm) {
+		if (this.languageResetConfirm) {
 			if (this.keybindings.matches(data, "tui.select.confirm")) {
 				this.applyLanguageReset();
 				return;
@@ -1615,40 +1645,6 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 				return;
 			}
 			return;
-		}
-		if (this.view === "language" && this.languageFocused) {
-			const up = this.keybindings.matches(data, "tui.select.up");
-			const down = this.keybindings.matches(data, "tui.select.down");
-			if (up || down) {
-				this.moveLanguageFocus(up ? -1 : 1);
-				return;
-			}
-			if (matchesKey(data, "left") || matchesKey(data, "right")) {
-				this.cycleLanguageItem(matchesKey(data, "left") ? -1 : 1);
-				return;
-			}
-			if (this.keybindings.matches(data, "tui.select.confirm")) {
-				this.openLanguageConfirm();
-				return;
-			}
-			if (data === "r") {
-				this.openLanguageResetConfirm();
-				return;
-			}
-			if (this.keybindings.matches(data, "tui.select.cancel")) {
-				if (!this.cancelLanguagePreview()) this.close();
-				return;
-			}
-			return;
-		}
-		if (this.message && this.message.text === this.messageIdentity && this.messageCapacity > 0) {
-			const previous = this.keybindings.matches(data, "tui.select.pageUp");
-			const next = this.keybindings.matches(data, "tui.select.pageDown");
-			if (previous || next) {
-				this.messageOffset = Math.max(0, this.messageOffset + (next ? 1 : -1) * this.messageCapacity);
-				this.tui.requestRender();
-				return;
-			}
 		}
 		if (this.form) {
 			if (this.keybindings.matches(data, "tui.select.cancel")) {
@@ -1706,7 +1702,7 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 				this.tui.requestRender();
 				return;
 			}
-			this.close();
+			if (!this.cancelLanguagePreview()) this.close();
 			return;
 		}
 		if (this.busy) return;
@@ -1717,14 +1713,38 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 			}
 			return;
 		}
+		if (!this.confirmRemove) {
+			const up = this.keybindings.matches(data, "tui.select.up");
+			const down = this.keybindings.matches(data, "tui.select.down");
+			const pageUp = this.keybindings.matches(data, "tui.select.pageUp");
+			const pageDown = this.keybindings.matches(data, "tui.select.pageDown");
+			if (up || down) {
+				this.moveFocus(up ? -1 : 1);
+				return;
+			}
+			if (pageUp || pageDown) {
+				if (this.focusKey().startsWith("source:") && this.expandedSourceId && this.expandedCapacity > 0) {
+					this.expandedOffset = Math.max(0, this.expandedOffset + (pageUp ? -1 : 1) * this.expandedCapacity);
+					this.tui.requestRender();
+				} else this.pageScroll(pageUp ? -1 : 1);
+				return;
+			}
+			// Pi has no select-scope Home/End actions; there is no live text field here.
+			if (matchesKey(data, "home") || matchesKey(data, "end")) {
+				this.scrollToEdge(matchesKey(data, "home") ? "top" : "bottom");
+				return;
+			}
+		}
+		if (this.languageFocused) {
+			if (matchesKey(data, "left") || matchesKey(data, "right"))
+				this.cycleLanguageItem(matchesKey(data, "left") ? -1 : 1);
+			else if (this.keybindings.matches(data, "tui.select.confirm")) this.openLanguageConfirm();
+			else if (data === "r") this.openLanguageResetConfirm();
+			return;
+		}
+		if (this.aboutFocused) return;
 		if (this.labelsFocused) {
-			if (this.keybindings.matches(data, "tui.select.up")) {
-				this.labelsFocused = false;
-				this.dashboardFocused = Boolean(this.onDashboardChanged);
-				this.contextFocused = !this.dashboardFocused;
-			} else if (this.keybindings.matches(data, "tui.select.down")) {
-				this.labelsFocused = false;
-			} else if (
+			if (
 				matchesKey(data, "left") ||
 				matchesKey(data, "right") ||
 				data === " " ||
@@ -1752,13 +1772,7 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 			return;
 		}
 		if (this.dashboardFocused) {
-			if (this.keybindings.matches(data, "tui.select.up")) {
-				this.dashboardFocused = false;
-				this.contextFocused = true;
-			} else if (this.keybindings.matches(data, "tui.select.down")) {
-				this.dashboardFocused = false;
-				this.labelsFocused = Boolean(this.labelPolicy);
-			} else if (
+			if (
 				matchesKey(data, "left") ||
 				matchesKey(data, "right") ||
 				this.keybindings.matches(data, "tui.select.confirm")
@@ -1786,18 +1800,6 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 			return;
 		}
 		if (this.accountFocused) {
-			if (this.keybindings.matches(data, "tui.select.up")) {
-				this.accountFocused = false;
-				if (this.runtime) this.viewFocused = true;
-				this.tui.requestRender();
-				return;
-			}
-			if (this.keybindings.matches(data, "tui.select.down")) {
-				this.accountFocused = false;
-				this.contextFocused = this.contextRowVisible;
-				this.tui.requestRender();
-				return;
-			}
 			if (this.keybindings.matches(data, "tui.select.confirm")) {
 				if (!this.account.signedIn) {
 					void this.connectShisa();
@@ -1853,56 +1855,9 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 			}
 			return;
 		}
-		if (this.keybindings.matches(data, "tui.select.up")) {
-			if (this.accountRowVisible && (this.contextFocused || (this.selectedIndex === 0 && !this.contextRowVisible))) {
-				this.contextFocused = false;
-				this.accountFocused = true;
-				this.tui.requestRender();
-				return;
-			}
-			if (this.runtime && (this.contextFocused || (this.selectedIndex === 0 && !this.contextRowVisible))) {
-				this.contextFocused = false;
-				this.viewFocused = true;
-				this.tui.requestRender();
-				return;
-			}
-			if (this.contextFocused) return;
-			if (this.selectedIndex === 0 && this.views.length > 0 && this.contextRowVisible) {
-				if (this.labelPolicy) this.labelsFocused = true;
-				else if (this.onDashboardChanged) this.dashboardFocused = true;
-				else this.contextFocused = true;
-				this.tui.requestRender();
-				return;
-			}
-			this.moveSelection(-1);
-			return;
-		}
-		if (this.keybindings.matches(data, "tui.select.down")) {
-			if (this.contextFocused) {
-				this.contextFocused = false;
-				this.dashboardFocused = Boolean(this.onDashboardChanged);
-				this.labelsFocused = !this.dashboardFocused && Boolean(this.labelPolicy);
-				this.tui.requestRender();
-				return;
-			}
-			this.moveSelection(1);
-			return;
-		}
-		if (this.keybindings.matches(data, "tui.select.pageUp") && this.expandedSourceId) {
-			// Page by the capacity the last render actually granted so windows stay
-			// contiguous: no offering row is unreachable when the page is smaller
-			// than the default eight.
-			this.expandedOffset = Math.max(0, this.expandedOffset - this.expandedCapacity);
-			this.tui.requestRender();
-			return;
-		}
-		if (this.keybindings.matches(data, "tui.select.pageDown") && this.expandedSourceId) {
-			this.expandedOffset += this.expandedCapacity;
-			this.tui.requestRender();
-			return;
-		}
-		if (this.contextFocused && (matchesKey(data, "left") || matchesKey(data, "right"))) {
-			this.stepContextLimit(matchesKey(data, "right") ? 1 : -1);
+		if (this.contextFocused) {
+			if (matchesKey(data, "left") || matchesKey(data, "right"))
+				this.stepContextLimit(matchesKey(data, "right") ? 1 : -1);
 			return;
 		}
 		if (matchesKey(data, "right") && this.selected()) {
@@ -1930,7 +1885,7 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 				this.tui.requestRender();
 				return;
 			}
-			this.startForm("edit");
+			this.startForm(this.selected() ? "edit" : "add");
 			return;
 		}
 		if (data === "a") {
@@ -1982,29 +1937,25 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 		}
 	}
 
-	/**
-	 * Form rows ranked by what yields first when the terminal is too short for
-	 * the whole form: guidance hints (4), the credential-availability note (3),
-	 * the heading (2), then non-focused field rows (1). Rank 0 — the full
-	 * transport warning and the focused field — never drops. On a terminal too
-	 * short even for the rank-0 rows the render exceeds the budget rather than
-	 * hide mandatory content; the overlay then clips its bottom edge.
-	 */
+	/** Keep every form row reachable and follow the focused field until manual paging. */
 	private renderForm(width: number, line: (value?: string) => string, budget: number): string[] {
 		const items = this.formItems(width);
-		while (items.length > budget) {
-			let dropIndex = -1;
-			let dropRank = 0;
-			for (let index = 0; index < items.length; index += 1) {
-				if (items[index].rank > dropRank) {
-					dropRank = items[index].rank;
-					dropIndex = index;
-				}
-			}
-			if (dropIndex < 0) break;
-			items.splice(dropIndex, 1);
-		}
-		return items.map((item) => line(item.text));
+		const warning = items.filter((item) => item.rank === 0 && !item.text.includes("→"));
+		const pinWarning = warning.length > 0 && warning.length + 2 <= budget;
+		const body = pinWarning ? items.filter((item) => !warning.includes(item)) : items;
+		const selected = Math.max(
+			0,
+			body.findIndex((item) => item.rank === 0 && item.text.includes("→")),
+		);
+		return [
+			...(pinWarning ? warning.map((item) => line(item.text)) : []),
+			...this.fitModalBody(
+				body.map((item) => line(item.text)),
+				budget - (pinWarning ? warning.length : 0),
+				width,
+				selected,
+			),
+		];
 	}
 
 	/** Body rows the form can never shed: every field plus the transport warning. */
@@ -2188,13 +2139,12 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 						{ key: move, label: text(CatalogMessageId.settingsHintMove) },
 						{ key: cancel, label: text(CatalogMessageId.settingsHintClose) },
 					];
-		if (this.view === "language" && this.languageConfirm)
+		if (this.languageConfirm)
 			return [
 				{ key: confirm, label: text(LOCALIZATION_SETTINGS_MESSAGE_IDS.hintApply) },
-				{ key: "←→", label: text(LOCALIZATION_SETTINGS_MESSAGE_IDS.hintScope) },
 				{ key: cancel, label: text(CatalogMessageId.settingsHintCancel) },
 			];
-		if (this.view === "language" && this.languageResetConfirm)
+		if (this.languageResetConfirm)
 			return [
 				{ key: confirm, label: text(LOCALIZATION_SETTINGS_MESSAGE_IDS.hintReset) },
 				{ key: cancel, label: text(CatalogMessageId.settingsHintCancel) },
@@ -2212,15 +2162,9 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 						: text(CatalogMessageId.settingsHintClose),
 				},
 			];
-		if (this.viewFocused)
+		if (this.aboutFocused)
 			return [
-				{ key: confirm, label: text(CatalogMessageId.settingsHintChangeView) },
-				{ key: "←→", label: text(CatalogMessageId.settingsHintView) },
-				{
-					key: move,
-					label:
-						this.view === "about" ? text(CatalogMessageId.settingsHintScroll) : text(CatalogMessageId.settingsHintMove),
-				},
+				{ key: move, label: text(CatalogMessageId.settingsHintScroll) },
 				{ key: "Tab/Shift+Tab", label: text(CatalogMessageId.settingsHintSection) },
 				{ key: cancel, label: text(CatalogMessageId.settingsHintClose) },
 			];
@@ -2505,24 +2449,27 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 		return fitTerminalText(`    ${range}`, innerWidth);
 	}
 
-	/**
-	 * Sources list bounded to the body budget. Drop order, always whole groups:
-	 * the conflict note, the URL detail line, the context ceiling row, then the
-	 * list heading. The selected row and its full transport warning stay; if even
-	 * those exceed the budget the render overflows rather than hide mandatory
-	 * rows, and the overlay clips its bottom edge. Other source rows and expanded
-	 * model pages spend only the rows that remain.
-	 */
-	private renderSources(
-		width: number,
-		line: (value?: string) => string,
-		budget: number,
-		reclaimTabs: () => number,
-	): string[] {
+	/** One document, with anchors for every control and report line. Only its viewport is clipped. */
+	private renderSettings(width: number, line: (value?: string) => string, budget: number): string[] {
 		this.expandedCapacity = 0;
+		this.bodyCapacity = budget;
+		this.focusRows.clear();
 		const innerWidth = paletteInnerWidth(width);
 		const lines: string[] = [];
-		const contextRow = this.contextRow(innerWidth, line);
+		const add = (key: string, text: string): void => {
+			this.focusRows.set(key, lines.length);
+			lines.push(text);
+		};
+		const heading = (id: CatalogMessageId, meta = "") =>
+			line(renderPaletteHeading(catalogText(this.catalog, id), innerWidth, this.theme, this.styles, meta));
+		lines.push(heading(CatalogMessageId.settingsHeadingLanguage));
+		this.languageItems(innerWidth, line).forEach((item, index) => {
+			add(["ui", "response", "artifact"][index], item.text);
+		});
+		for (const text of wrapTextWithAnsi(`  ${upstreamSwitchNotice(this.catalog)}`, innerWidth))
+			lines.push(line(this.styles.apply("palette.hint", text)));
+		add("account", this.accountRow(innerWidth, line));
+		add("context", this.contextRow(innerWidth, line));
 		const dashboardRow = this.onDashboardChanged
 			? line(
 					renderPaletteField({
@@ -2559,171 +2506,37 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 					}),
 				)
 			: undefined;
-		let contextRows = CONTEXT_SECTION_ROWS + Number(dashboardRow !== undefined) + Number(labelsRow !== undefined);
-		const accountRow = this.accountRow(innerWidth, line);
-		let accountRows = ACCOUNT_SECTION_ROWS;
+		if (dashboardRow) add("dashboard", dashboardRow);
+		if (labelsRow) add("labels", labelsRow);
 		const active = this.views.filter((view) => view.source.enabled && view.status.status === "active").length;
-		const headingText = line(
-			renderPaletteHeading(
-				catalogText(this.catalog, CatalogMessageId.settingsHeadingModelCatalogs),
-				innerWidth,
-				this.theme,
-				this.styles,
-				`${active}/${this.views.length} active`,
-			),
-		);
+		const catalogHeading = lines.length;
+		lines.push(heading(CatalogMessageId.settingsHeadingModelCatalogs, `${active}/${this.views.length} active`));
 		if (this.views.length === 0) {
-			this.accountRowVisible = true;
-			lines.push(
-				accountRow,
-				contextRow,
-				...(dashboardRow ? [dashboardRow] : []),
-				...(labelsRow ? [labelsRow] : []),
-				headingText,
-			);
-			lines.push(
+			add(
+				"catalogs",
 				line(
-					this.styles.apply("palette.empty", `  ${catalogText(this.catalog, CatalogMessageId.settingsEmptyNoSources)}`),
+					renderPaletteField({
+						label: catalogText(this.catalog, CatalogMessageId.settingsFormAddHeading),
+						labelWidth: 0,
+						innerWidth,
+						selected: this.focusKey() === "catalogs",
+						theme: this.theme,
+						styles: this.styles,
+					}),
 				),
 			);
-			return lines;
 		}
-		const selected = this.views[this.selectedIndex];
-		const extras = this.selectedDetailGroups(selected, innerWidth, line);
-		const selectedExpanded = this.expandedSourceId === selected.source.id;
-		// A source left expanded while the selection moved keeps its block; its
-		// row and one trailer line are reserved up front so its paging hint or
-		// empty-catalog note cannot push the frame past the budget.
-		const stickyIndex = this.expandedSourceId
-			? this.views.findIndex((view) => view.source.id === this.expandedSourceId)
-			: -1;
-		const sticky = stickyIndex >= 0 && stickyIndex !== this.selectedIndex;
-		// Pool = rows left after the heading, the selected row, its details, and
-		// one reserved trailer line per expanded block. Whole extras groups drop,
-		// never mid-warning, until the pool clears.
-		let pool =
-			budget -
-			accountRows -
-			contextRows -
-			1 -
-			1 -
-			(extras.detail.length + extras.warning.length + extras.conflict.length) -
-			(selectedExpanded ? 1 : 0) -
-			(sticky ? 1 : 0);
-		const contextFloor = this.labelsFocused ? 1 : 0;
-		let headingKept = true;
-		const dropOrShrink = (): void => {
-			if (extras.conflict.length > 0) {
-				pool += extras.conflict.length;
-				extras.conflict = [];
-			} else if (extras.detail.length > 0) {
-				pool += extras.detail.length;
-				extras.detail = [];
-			} else if (contextRows > contextFloor) {
-				pool += contextRows - contextFloor;
-				contextRows = contextFloor;
-			} else if (headingKept) {
-				pool += 1;
-				headingKept = false;
-			} else if (accountRows > 0) {
-				pool += accountRows;
-				accountRows = 0;
-			}
-		};
-		while (
-			pool < 0 &&
-			(extras.conflict.length > 0 ||
-				extras.detail.length > 0 ||
-				contextRows > contextFloor ||
-				headingKept ||
-				accountRows > 0)
-		)
-			dropOrShrink();
-		// An expanded selection keeps its first offering and paging trailer
-		// ahead of optional source rows. When even that does not fit, the tab row
-		// and divider yield first so the expansion stays reachable.
-		const offeringReserve = selectedExpanded ? Math.min(selected.offerings.length, 1) : 0;
-		if (pool - offeringReserve < 0) pool += reclaimTabs();
-		if (pool < 0) {
-			// Mandatory rows alone exceed the budget; overflow honestly.
-			pool = 0;
-		}
-		const others = this.views.length - 1;
-		/**
-		 * Split the pool between the selected catalog's disclosure and the other
-		 * source rows. An expanded selection takes priority: it keeps one
-		 * neighboring source for context and spends the rest on offerings (at least
-		 * one whenever a row remains) before widening the window to more sources.
-		 * The sticky expansion of a non-selected source keeps its one-offering
-		 * reserve and fills from whatever the pool has left.
-		 */
-		const allocate = (
-			available: number,
-		): { pageSize: number; stickyPageSize: number; windowSize: number; start: number } => {
-			let visibleOthers: number;
-			let pageSize = 0;
-			let stickyPageSize = 0;
-			if (selectedExpanded) {
-				const floor = available > 0 && selected.offerings.length > 0 ? 1 : 0;
-				const neighbor = others > 0 ? 1 : 0;
-				pageSize = Math.max(0, Math.min(selected.offerings.length, Math.max(floor, available - neighbor)));
-				visibleOthers = Math.min(others, Math.max(0, available - pageSize));
-			} else {
-				const reserve = sticky ? Math.min(this.views[stickyIndex].offerings.length, 1) : 0;
-				if (available - reserve >= others) {
-					visibleOthers = others;
-					const pagePool = available - others - reserve;
-					stickyPageSize = sticky
-						? Math.max(0, Math.min(this.views[stickyIndex].offerings.length, pagePool + reserve))
-						: 0;
-				} else {
-					// Window the source rows; the reserved offering row keeps at least one
-					// entry of the sticky expansion visible ahead of further sources.
-					visibleOthers = Math.max(0, available - reserve);
-					stickyPageSize = sticky
-						? Math.max(0, Math.min(this.views[stickyIndex].offerings.length, available - visibleOthers))
-						: 0;
-				}
-			}
-			const windowSize = visibleOthers + 1;
-			let start =
-				windowSize >= this.views.length
-					? 0
-					: Math.max(
-							0,
-							Math.min(this.selectedIndex - Math.floor((windowSize - 1) / 2), this.views.length - windowSize),
-						);
-			if (sticky && windowSize < this.views.length) {
-				// Shift the window just enough to keep the sticky expanded source in
-				// view alongside the selection; when the window cannot span both, the
-				// sticky block yields (its reserved rows go unused).
-				const lo = Math.max(0, Math.max(this.selectedIndex, stickyIndex) - (windowSize - 1));
-				const hi = Math.min(this.views.length - windowSize, Math.min(this.selectedIndex, stickyIndex));
-				if (lo <= hi) start = hi;
-			}
-			return { pageSize, stickyPageSize, windowSize, start };
-		};
-		let allocation = allocate(pool);
-		// The account row scrolls with the catalog pane. Once the source window has
-		// moved past its first page, the row yields its line to the pane and comes
-		// back when keyboard navigation returns to the first source. A focused
-		// account (including a running sign-in or sign-out, which holds focus)
-		// always stays visible so no control is lost off-screen.
-		if (allocation.start > 0 && accountRows > 0 && !this.accountFocused) {
-			accountRows = 0;
-			pool += 1;
-			allocation = allocate(pool);
-		}
-		const { pageSize, stickyPageSize, windowSize, start } = allocation;
-		const end = start + windowSize;
-		for (let index = start; index < end; index += 1) {
-			const view = this.views[index];
-			const isSelected = index === this.selectedIndex;
+		let selectedEnd = 0;
+		let expandedRange: { start: number; end: number; capacity: number } | undefined;
+		for (const view of this.views) {
+			const key = `source:${view.source.id}`;
+			const isSelected = this.focusKey() === key;
 			const expanded = this.expandedSourceId === view.source.id;
 			const count = view.status.configured
 				? (view.status.offeringCount ?? view.offerings.length)
 				: view.offerings.length;
-			lines.push(
+			add(
+				key,
 				line(
 					renderPaletteField({
 						label: `${expanded ? "▾" : "▸"} ${fitTerminalText(sanitizeTerminalText(view.source.label), SOURCE_LABEL_COLUMN - 2)}`,
@@ -2732,97 +2545,147 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 						meta: catalogText(this.catalog, CatalogMessageId.settingsModelCount, { count }),
 						labelWidth: SOURCE_LABEL_COLUMN,
 						innerWidth,
-						selected:
-							isSelected &&
-							!this.viewFocused &&
-							!this.contextFocused &&
-							!this.accountFocused &&
-							!this.dashboardFocused &&
-							!this.labelsFocused,
+						selected: isSelected,
 						theme: this.theme,
 						styles: this.styles,
 					}),
 				),
 			);
-			if (isSelected) {
-				lines.push(...extras.detail, ...extras.warning, ...extras.conflict);
-			}
-			if (!expanded) continue;
-			const capacity = isSelected ? pageSize : stickyPageSize;
-			this.expandedCapacity = capacity;
-			const maximumOffset = Math.max(0, view.offerings.length - capacity);
-			this.expandedOffset = Math.min(this.expandedOffset, maximumOffset);
-			for (const offering of view.offerings.slice(this.expandedOffset, this.expandedOffset + capacity)) {
-				lines.push(
-					line(
-						renderPaletteField({
-							label: `    ${catalogText(this.catalog, CatalogMessageId.settingsOfferingRow, {
-								provider: offering.providerId,
-								model: offering.modelId,
-							})}`,
-							labelRole: "palette.identity",
-							value: this.styles.apply("palette.detail", offering.name),
-							labelWidth: SOURCE_LABEL_COLUMN + 12,
-							innerWidth,
-							selected: false,
-							theme: this.theme,
-							styles: this.styles,
-						}),
-					),
+			const extras = this.selectedDetailGroups(view, innerWidth, line);
+			if (isSelected) lines.push(...extras.warning);
+			if (expanded) {
+				const capacity = Math.max(
+					1,
+					Math.min(view.offerings.length, isSelected ? budget - extras.warning.length - 3 : 1),
 				);
-			}
-			if (view.offerings.length === 0)
-				lines.push(
-					line(
-						this.styles.apply(
-							"palette.empty",
-							`    ${catalogText(this.catalog, CatalogMessageId.settingsEmptyNoOfferings)}`,
-						),
-					),
-				);
-			else if (capacity > 0 && view.offerings.length > capacity)
-				lines.push(
-					line(
-						this.styles.apply(
-							"palette.hint",
-							this.pagingHintText(
-								this.expandedOffset,
-								Math.min(view.offerings.length, this.expandedOffset + capacity),
-								view.offerings.length,
+				this.expandedOffset = Math.min(this.expandedOffset, Math.max(0, view.offerings.length - capacity));
+				const start = lines.length;
+				for (const offering of view.offerings.slice(this.expandedOffset, this.expandedOffset + capacity)) {
+					lines.push(
+						line(
+							renderPaletteField({
+								label: `    ${catalogText(this.catalog, CatalogMessageId.settingsOfferingRow, {
+									provider: offering.providerId,
+									model: offering.modelId,
+								})}`,
+								labelRole: "palette.identity",
+								value: this.styles.apply("palette.detail", offering.name),
+								labelWidth: SOURCE_LABEL_COLUMN + 12,
 								innerWidth,
+								selected: false,
+								theme: this.theme,
+								styles: this.styles,
+							}),
+						),
+					);
+				}
+				if (!view.offerings.length)
+					lines.push(
+						line(
+							this.styles.apply(
+								"palette.empty",
+								`    ${catalogText(this.catalog, CatalogMessageId.settingsEmptyNoOfferings)}`,
 							),
 						),
+					);
+				else if (view.offerings.length > capacity)
+					lines.push(
+						line(
+							this.styles.apply(
+								"palette.hint",
+								this.pagingHintText(
+									this.expandedOffset,
+									Math.min(view.offerings.length, this.expandedOffset + capacity),
+									view.offerings.length,
+									innerWidth,
+								),
+							),
+						),
+					);
+				expandedRange = { start, end: lines.length, capacity };
+			}
+			if (isSelected) {
+				selectedEnd = lines.length;
+				// Warnings and offerings have priority; details remain in the same scrollable document.
+				lines.push(...extras.detail, ...extras.conflict);
+			}
+		}
+		const aboutHeading = lines.length;
+		if (this.runtime) {
+			lines.push(heading(CatalogMessageId.settingsViewAbout));
+			const report = this.runtime
+				.about()
+				.split("\n")
+				.flatMap((text) => wrapTextWithAnsi(sanitizeTerminalText(text), Math.max(1, innerWidth - 2)));
+			this.aboutRows = Math.max(1, report.length);
+			this.aboutOffset = Math.min(this.aboutOffset, this.aboutRows - 1);
+			for (const [index, text] of report.entries()) {
+				const selected = this.aboutFocused && this.aboutOffset === index;
+				add(
+					`about:${index}`,
+					line(
+						`${selected ? this.styles.apply("palette.marker", "→") : " "} ${this.styles.apply("palette.value", text)}`,
 					),
 				);
+			}
 		}
-		const prefix: string[] = [];
-		if (accountRows > 0) prefix.push(accountRow);
-		this.accountRowVisible = accountRows > 0;
-		if (!this.accountRowVisible) this.accountFocused = false;
-		if (contextRows === 1 && this.labelsFocused && labelsRow) prefix.push(labelsRow);
-		else if (contextRows > 0)
-			prefix.push(contextRow, ...(dashboardRow ? [dashboardRow] : []), ...(labelsRow ? [labelsRow] : []));
-		this.contextRowVisible = contextRows > 0;
-		if (!this.contextRowVisible) {
-			this.contextFocused = false;
-			this.dashboardFocused = false;
-			this.labelsFocused = false;
+		const selectedRow = this.focusRows.get(this.focusKey()) ?? 0;
+		const contentRows = lines.length;
+		const overflowing = contentRows > budget;
+		const viewportRows = overflowing ? Math.max(1, budget - 1) : budget;
+		this.contentRows = contentRows;
+		this.viewportRows = viewportRows;
+		this.bodyCapacity = viewportRows;
+		const maximumOffset = Math.max(0, contentRows - viewportRows);
+		if (this.scrollToTop) {
+			this.scrollOffset = 0;
+			this.scrollToTop = false;
+			this.ensureFocusVisible = false;
+		} else if (this.scrollToBottom) {
+			this.scrollOffset = maximumOffset;
+			this.scrollToBottom = false;
+			this.ensureFocusVisible = false;
+		} else if (this.scrollToSection) {
+			this.scrollOffset = this.aboutFocused ? aboutHeading : this.languageFocused ? 0 : catalogHeading;
+			this.scrollToSection = false;
+			this.ensureFocusVisible = true;
 		}
-		if (headingKept) prefix.push(headingText);
-		lines.unshift(...prefix);
-		return lines;
+		if (this.ensureFocusVisible || !this.manualScroll) {
+			const end = Math.max(selectedRow + 1, selectedEnd);
+			if (selectedRow < this.scrollOffset) this.scrollOffset = selectedRow;
+			if (end > this.scrollOffset + viewportRows) this.scrollOffset = Math.max(selectedRow, end - viewportRows);
+			this.ensureFocusVisible = false;
+		}
+		this.scrollOffset = Math.max(0, Math.min(this.scrollOffset, maximumOffset));
+		if (
+			expandedRange &&
+			expandedRange.start >= this.scrollOffset &&
+			expandedRange.end <= this.scrollOffset + viewportRows
+		)
+			this.expandedCapacity = expandedRange.capacity;
+		const visible = lines.slice(this.scrollOffset, this.scrollOffset + viewportRows);
+		if (!overflowing) return visible;
+		const end = Math.min(contentRows, this.scrollOffset + viewportRows);
+		return [
+			...visible,
+			line(this.styles.apply("palette.hint", this.scrollIndicator(this.scrollOffset, end, contentRows, innerWidth))),
+		];
 	}
 
-	/**
-	 * Lines the floating overlay can show for this view. The palette opens with
-	 * `maxHeight: "82%"` and a margin of 1, and the overlay clips a taller
-	 * render from the bottom, so the render targets the same budget. Below the
-	 * floating floor (fewer than 16 rows) the palette renders in place, where
-	 * this budget is conservative but never harmful.
-	 */
+	/** One-row position indicator for a document taller than the viewport. */
+	private scrollIndicator(start: number, end: number, total: number, innerWidth: number): string {
+		const above = start;
+		const below = total - end;
+		const parts: string[] = [];
+		if (above > 0) parts.push(`↑ ${above}`);
+		parts.push(`${start + 1}-${end}/${total}`);
+		if (below > 0) parts.push(`↓ ${below}`);
+		return fitTerminalText(`  ${parts.join(" · ")}`, innerWidth);
+	}
+
+	/** Use the same row cap as the Palette overlay and its outer margins. */
 	private heightBudget(): number {
-		const rows = Number(this.tui.terminal?.rows ?? 24);
-		return Math.max(5, Math.min(Math.floor(rows * 0.82), Math.max(1, rows - 2)));
+		return paletteHeightBudget(Number(this.tui.terminal?.rows ?? 24));
 	}
 
 	/** Page complete messages rather than discard failure details or recovery instructions. */
@@ -2842,70 +2705,52 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 	}
 
 	render(width: number): string[] {
-		const viewName = catalogText(this.catalog, SETTINGS_VIEW_NAME_IDS[this.view]);
-		const title = `${this.wordmark} ${this.theme.bold(this.styles.apply("palette.title", catalogText(this.catalog, CatalogMessageId.settingsTitle, { view: viewName })))}`;
-		if (width < 12) return [fitTerminalText(title, Math.max(1, width))];
+		const title = `${this.wordmark} ${this.theme.bold(this.styles.apply("palette.title", catalogText(this.catalog, CatalogMessageId.paletteTabSettings)))}`;
+		if (width < 12 || this.heightBudget() < 4) return [fitTerminalText(title, Math.max(1, width))];
 		const border = (value: string) => this.styles.apply("palette.border", value);
 		const frameOptions = { border };
 		const line = (value = "") => renderTerminalFrameRow(value, width, frameOptions);
 		const innerWidth = paletteInnerWidth(width);
 		const head = [renderTerminalFrameTitle(title, width, frameOptions)];
-		if (!this.form && !this.confirmRemove) {
-			head.push(line(renderPaletteTabs("settings", this.theme, this.styles)));
+		if (
+			!this.form &&
+			!this.confirmRemove &&
+			!this.confirmLogout &&
+			!this.languageConfirm &&
+			!this.languageResetConfirm
+		) {
+			head.push(line(renderPaletteTabs("settings", this.theme, this.styles, this.catalog)));
 			head.push(renderPaletteDivider(width, this.styles));
-			// The View row leads the sub-view switcher. It is always present in a real
-			// session (the runtime report is available); without one it appears only
-			// once a sub-view that needs it is open.
-			if (this.runtime !== undefined || this.view !== "catalogs")
-				head.push(
-					line(
-						renderPaletteField({
-							label: catalogText(this.catalog, CatalogMessageId.settingsLabelView),
-							value: paletteChoice(viewName),
-							labelWidth: 8,
-							innerWidth,
-							selected: this.viewFocused,
-							theme: this.theme,
-							styles: this.styles,
-						}),
-					),
-				);
 		}
 		const baseTail = [
-			...renderPaletteKeyBar(this.hints(), innerWidth, this.theme, this.styles).map(line),
+			...renderPaletteKeyBar(
+				this.hints(),
+				innerWidth,
+				this.theme,
+				this.styles,
+				Math.max(1, this.heightBudget() - head.length - 3),
+			).map(line),
 			renderTerminalFrameBorder(width, { ...frameOptions, left: "╰", right: "╯" }),
 		];
 		const budget = this.heightBudget();
-		if (this.view === "about") {
-			const content = (this.runtime?.about() ?? "")
-				.split("\n")
-				.flatMap((text) => wrapTextWithAnsi(sanitizeTerminalText(text), innerWidth));
-			this.aboutCapacity = Math.max(1, budget - head.length - baseTail.length - 1);
-			this.aboutOffset = Math.min(this.aboutOffset, Math.max(0, content.length - this.aboutCapacity));
-			const end = Math.min(content.length, this.aboutOffset + this.aboutCapacity);
-			return [
-				...head,
-				...content.slice(this.aboutOffset, end).map((text) => line(this.styles.apply("palette.value", text))),
-				...(content.length > this.aboutCapacity
-					? [line(this.pagingHintText(this.aboutOffset, end, content.length, innerWidth))]
-					: []),
-				...baseTail,
-			].map((value) => fitTerminalText(value, width));
-		}
 		// Keep complete messages available through paging. On short terminals,
 		// non-focused form rows yield before the message, warning, or controls.
 		const message = this.message;
 		const messageLines = message ? wrapTextWithAnsi(message.text, innerWidth) : [];
 		const bodyMin = this.form
 			? this.formRequired(width)
-			: this.view === "language"
-				? this.languageRequired()
-				: this.sourcesRequired(width);
+			: this.languageConfirm || this.languageResetConfirm
+				? 3
+				: this.languageFocused
+					? 3
+					: this.focusKey().startsWith("source:")
+						? this.sourcesRequired(width)
+						: 1;
 		if (messageLines.length && head.length > 1 && budget - head.length - baseTail.length - 1 - bodyMin < 2)
 			head.splice(1, 2);
 		let messageRoom = Math.max(0, budget - head.length - baseTail.length - 1 - bodyMin);
 		if (messageLines.length && messageRoom < 2 && this.form) {
-			const minimum = this.formItems(width).filter((item) => item.rank === 0).length;
+			const minimum = this.formItems(width).filter((item) => item.rank === 0).length + 2;
 			messageRoom = Math.max(0, budget - head.length - baseTail.length - 1 - minimum);
 		}
 		if (this.messageIdentity !== (message?.text ?? "")) this.messageOffset = 0;
@@ -2927,22 +2772,17 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 			...(shownMessage.length > 0 ? [line(), ...shownMessage.map((messageLine) => line(messageLine))] : []),
 			...baseTail,
 		];
+		if (budget < head.length + baseTail.length + 1 && head.length > 1) head.splice(1, 2);
+		while (baseTail.length > 2 && budget < head.length + baseTail.length + 1) baseTail.splice(baseTail.length - 2, 1);
+		if (budget < 4) return [head[0], ...baseTail].slice(0, budget).map((value) => fitTerminalText(value, width));
 		const bodyBudget = Math.max(1, budget - head.length - tail.length);
-		// renderSources may reclaim the tab row and divider when an expanded
-		// selection would otherwise have no reachable offerings; the returned
-		// rows join its pool so the total stays inside the budget.
-		let tabsReclaimed = false;
-		const reclaimTabs = (): number => {
-			if (tabsReclaimed || head.length <= 1) return 0;
-			head.splice(1, 2);
-			tabsReclaimed = true;
-			return 2;
-		};
 		const body = this.form
 			? this.renderForm(width, line, bodyBudget)
-			: this.view === "language"
-				? this.renderLanguage(width, line, bodyBudget)
-				: this.renderSources(width, line, bodyBudget, reclaimTabs);
+			: this.languageConfirm
+				? this.renderLanguageConfirm(width, line, bodyBudget)
+				: this.languageResetConfirm
+					? this.renderLanguageResetConfirm(width, line, bodyBudget)
+					: this.renderSettings(width, line, bodyBudget);
 		return [...head, ...body, ...tail].map((value) => fitTerminalText(value, width));
 	}
 

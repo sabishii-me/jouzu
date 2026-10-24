@@ -296,13 +296,17 @@ test("a preview change keeps the selected catalog item", () => {
 		const store = new CatalogSourceStore(f.paths);
 		store.add({ label: "Office pool", url: "https://office.example/catalog", auth: { type: "none" } });
 		const component = new CatalogSettingsComponent({ context: f.context, paths: f.paths, env: {} });
+		component.route({ view: "settings", query: "catalogs" });
 		component.handleInput("down");
 		assert.ok(selectedLine(component.render(90))?.includes("Office pool"), "the user source is selected");
+		const retained = component.snapshotRoute();
 
 		component.route({ view: "settings", query: "language" });
 		component.handleInput("down");
 		component.handleInput("\u001b[C");
-		component.route({ view: "settings", query: "catalogs" });
+		assert.equal(component.allowsGlobalNavigation(), false, "preview must be resolved before leaving");
+		component.handleInput("escape");
+		component.route({ ...retained, resume: true });
 		assert.ok(
 			selectedLine(component.render(90))?.includes("Office pool"),
 			"the selection survives the language preview",
@@ -328,13 +332,16 @@ test("a deferred change keeps the selection and the scroll position", async () =
 			env: {},
 			activity: () => ({ streaming: true }),
 		});
+		component.route({ view: "settings", query: "catalogs" });
 		component.handleInput("down");
 		component.handleInput("\u001b[C");
 		component.render(84);
 		component.handleInput("pageDown");
 		const before = component.render(84).join("\n");
 		assert.ok(selectedLine(component.render(84))?.includes("Paged pool"));
-		assert.match(before, /7-12\/30/u, "the scroll position moved off the first page");
+		const position = /\d+-\d+\/30/u.exec(before)?.[0];
+		assert.ok(position && !position.startsWith("1-"), "the scroll position moved off the first page");
+		const retained = component.snapshotRoute();
 
 		// Attempt a language change while a reply is streaming: it is deferred.
 		component.route({ view: "settings", query: "language" });
@@ -342,10 +349,19 @@ test("a deferred change keeps the selection and the scroll position", async () =
 		component.handleInput("\u001b[C");
 		assert.match(component.render(90).join("\n"), /Language change deferred:/);
 
-		component.route({ view: "settings", query: "catalogs" });
+		component.route({ ...retained, resume: true });
 		const after = component.render(84).join("\n");
 		assert.ok(selectedLine(component.render(84))?.includes("Paged pool"), "the selection is unchanged");
-		assert.match(after, /7-12\/30/u, "the scroll position is unchanged");
+		assert.equal(
+			/\d+-\d+\/30/u.exec(after)?.[0]?.split("-")[0],
+			position.split("-")[0],
+			"the first visible offering is unchanged",
+		);
+		assert.equal(
+			component.expandedOffset,
+			JSON.parse(retained.query).offering,
+			"the stored offering offset is unchanged",
+		);
 		assert.ok(component.render(84).every((row) => terminalTextWidth(row) <= 84));
 	} finally {
 		rmSync(f.root, { recursive: true, force: true });
@@ -356,6 +372,7 @@ test("a language change cannot discard a catalog form draft", () => {
 	const f = setup();
 	try {
 		const component = new CatalogSettingsComponent({ context: f.context, paths: f.paths, env: {} });
+		component.route({ view: "settings", query: "catalogs" });
 		component.handleInput("a");
 		for (const character of "Draft pool") component.handleInput(character);
 		assert.equal(component.allowsGlobalNavigation(), false, "a live form blocks global navigation");
@@ -379,6 +396,7 @@ test("the component's own destructive confirmation fixes the display language", 
 			auth: { type: "none" },
 		});
 		const component = new CatalogSettingsComponent({ context: f.context, paths: f.paths, env: {} });
+		component.route({ view: "settings", query: "catalogs" });
 		component.handleInput("down");
 		component.handleInput("d");
 		const prompt = component.render(90).join("\n");

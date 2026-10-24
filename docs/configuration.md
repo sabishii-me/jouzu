@@ -72,7 +72,7 @@ The UI locale, the response language, and the artifact policy are stored in `loc
 
 The UI locale, response language, and artifact policy are separate settings. Changing `uiLocale` does not change `responseLanguage` or `artifactPolicy`, and no language setting selects a model, provider, or region.
 
-Use Settings **Language** to preview changes, then choose **Session** for temporary overrides or **Saved setting** to persist the requested UI, response and artifact preferences. Response and artifact changes apply to the current agent on its next turn; restart for a saved UI change throughout the interface. Direct file edits apply to a new session. See the [scope and timing rules](language.md#save-or-apply-to-this-session).
+Use `/language` or Settings **Language** to preview changes, then press Enter to review and Enter again to save the requested UI, response and artifact preferences. Confirmed display choices override CLI/environment inputs and refresh supported screens; reopen or restart screens that retain their opening language. Response and artifact changes apply to the current agent on its next turn. Direct file edits apply to a new session. See the [save and timing rules](language.md#save-language-preferences).
 
 ### Startup resolution
 
@@ -107,7 +107,7 @@ Jouzu still uses these Pi resources:
 | --- | --- |
 | `JOUZU_HOME` | Root for all Jouzu configuration, state, and cache |
 | `JOUZU_PROFILE` | Profile for this launch: `core` or `ja`. The selection is saved. See [Profiles](profiles.md). |
-| `JOUZU_UI_LOCALE` | UI locale for this launch; overridden by `--jouzu-ui-locale`. See [Language](#language). |
+| `JOUZU_UI_LOCALE` | Startup UI locale when no preference is saved; a CLI option takes precedence in that case. See [Language](#language). |
 | `SHISA_API_KEY` | Shisa API key; overrides the saved login. See [Shisa AI account](shisa.md). |
 | `JOUZU_MODEL_CATALOG_URL`, `JOUZU_MODEL_CATALOG_TOKEN` | Single catalog source when `catalogs.json` does not exist. See [Model catalogs](catalogs.md). |
 | `JOUZU_FLOW_CONTROL=0` | Disable flow control. See [Flow control](flow-control.md). |

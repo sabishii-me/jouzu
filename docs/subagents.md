@@ -1,6 +1,6 @@
 # Agents and runs
 
-Open `/workflow`, or choose **Workflow** in the Palette. The **Agents** view lists definitions. Select one with `↑`/`↓` and press `Enter` to edit its model, instructions, and execution settings. Use the **View** row's `←`/`→` choice to switch to **Runs**.
+Open `/workflow`, or choose **Workflow** in the Palette. Agent definitions appear above **Runs** in the same scrollable pane, including while children are active. Select a definition with `↑`/`↓` and press `Enter` to edit its model, instructions, and execution settings. Page Up/Page Down scrolls longer panes; a position indicator shows content above and below.
 
 Fresh installations provide `coder` and `reviewer` child presets with `model: "same"` and `thinking: "same"`. Each launch or resume uses the main session’s selected model and reasoning effort. A running or queued child keeps the settings captured when it was requested. Saved definitions keep your choices.
 

@@ -18,6 +18,7 @@ import {
 	defaultCatalog,
 } from "./cli-messages.js";
 import { DashboardVisibility, loadDashboardPolicy } from "./dashboard-policy.js";
+import { createDisplayCatalog } from "./display-catalog.js";
 import { createDoctorReport } from "./doctor.js";
 import { createFastModeExtension, FAST_MODE_STATUS } from "./fast-mode.js";
 import { CliMessageId, protectedSourceError } from "./human-messages.js";
@@ -36,7 +37,7 @@ import { createLabelPolicy } from "./label-policy.js";
 import { promptForLanguageChoice, saveLanguageChoice } from "./language-choice.js";
 import { createLanguageContractExtension } from "./language-contract.js";
 import { readProjectArtifactPolicy, resolveArtifactPolicy, resolveResponseLanguage } from "./language-settings.js";
-import { type CatalogBundle, summarizeCatalog } from "./locale-catalog.js";
+import { type CatalogBundle, resolveCatalog, summarizeCatalog } from "./locale-catalog.js";
 import { catalogSupportStates } from "./locale-status.js";
 import { loadMetadata } from "./metadata.js";
 import { catalogRegistrationGaps, catalogThinkingLevelGaps } from "./model-catalog.js";
@@ -52,7 +53,6 @@ import {
 import { projectDefaultAppliesAtStartup } from "./model-picker-state.js";
 import { resolveJouzuPaths } from "./paths.js";
 import { offerPiConfigurationImport, PiImportError } from "./pi-import.js";
-import { withPiUiLocalization } from "./pi-ui-localization.js";
 import { buildPreRuntimeContext } from "./pre-runtime.js";
 import { writeProfileChoice } from "./profile-choice.js";
 import {
@@ -540,6 +540,8 @@ export async function runMainCli(args: string[]): Promise<void> {
 	const releaseExtensionStatus = inspectReleaseExtensions();
 	probeReleaseRuntimeCompatibility(releaseExtensionStatus);
 	ensureReleaseRuntimeCompatibility(releaseExtensionStatus);
+	const displayCatalog = createDisplayCatalog(preRuntime.catalog.bundle);
+	preRuntime = { ...preRuntime, catalog: { ...preRuntime.catalog, bundle: displayCatalog.bundle } };
 	const piArgs = withReleaseExtensionArguments(parsed.args, releaseExtensionStatus, preRuntime.catalog.bundle);
 	const runtimeDiagnostics = createRuntimeDiagnostics(
 		metadata,
@@ -552,6 +554,12 @@ export async function runMainCli(args: string[]): Promise<void> {
 	const dashboardVisibility = new DashboardVisibility();
 	let dashboardMode = loadDashboardPolicy(paths).mode;
 	const modelPicker = createJouzuModelPicker(paths, {
+		onUiLocaleChanged: (locale) => {
+			const resolved = resolveCatalog(locale);
+			displayCatalog.update(resolved.bundle);
+			preRuntime = { ...preRuntime, catalog: { ...resolved, bundle: displayCatalog.bundle } };
+			dashboardController.invalidateDisplay();
+		},
 		onLanguageChanged: ({ responseLanguage, artifactPolicy }) =>
 			languageContract.applyLanguage(responseLanguage, artifactPolicy),
 		onDashboardChanged: () => {
@@ -767,12 +775,14 @@ export async function runMainCli(args: string[]): Promise<void> {
 				releaseDiagnostics,
 			],
 		});
-	const runPi = () => {
+	const runPi = async () => {
 		const execute = () =>
 			usesReleaseExtensions(parsed.args)
 				? withReleaseExtensionConflictPolicy(pi, releaseExtensionStatus, startPi)
 				: startPi();
-		return interactiveStartup ? withPiUiLocalization(preRuntime.catalog.bundle, execute, pi) : execute();
+		if (!interactiveStartup) return execute();
+		const { withPiUiLocalization } = await import("./pi-ui-localization.js");
+		return withPiUiLocalization(() => displayCatalog.bundle, execute, pi);
 	};
 	try {
 		await withJouzuOutput(runPi, {

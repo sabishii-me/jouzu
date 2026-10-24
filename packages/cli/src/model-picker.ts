@@ -6,7 +6,7 @@ import type {
 	Theme,
 } from "@earendil-works/pi-coding-agent";
 import { type Focusable, getKeybindings, Input, matchesKey, type TUI, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import { CatalogSettingsComponent } from "./catalog-settings.js";
+import { CatalogSettingsComponent, type CatalogSettingsOptions } from "./catalog-settings.js";
 import { catalogSourceCredentialAvailable } from "./catalog-sources.js";
 import { CatalogMessageId, catalogText, defaultCatalog } from "./cli-messages.js";
 import { activeContextClamp, clampContextWindow } from "./context-clamp.js";
@@ -64,10 +64,14 @@ import {
 	type PaletteKeyHint,
 	type PaletteRoute,
 	type PaletteSurfaceOptions,
+	paletteHeightBudget,
 	paletteInnerWidth,
+	paletteScrollbarMarker,
+	paletteViewport,
 	renderPaletteDivider,
 	renderPaletteField,
 	renderPaletteKeyBar,
+	renderPaletteScrollbarRow,
 	renderPaletteTabs,
 } from "./palette.js";
 import type { JouzuPaths } from "./paths.js";
@@ -117,6 +121,8 @@ export interface JouzuModelPickerOptions {
 	uiLocaleCli?: string;
 	/** Stage successfully saved response/artifact choices for the next turn. */
 	onLanguageChanged?: (language: LanguageContractInput) => void;
+	/** Refresh the shared display catalog after a confirmed UI preference is saved. */
+	onUiLocaleChanged?: CatalogSettingsOptions["onUiLocaleChanged"];
 	/** The resolved catalog a Palette view renders its human text from. */
 	catalog?: CatalogBundle;
 }
@@ -153,11 +159,11 @@ function modelDisplay(model: PickerModel): NonNullable<PickerModel["display"]> {
 }
 
 /** Narrow terminals drop Context first, then Provider, so the name stays readable. */
-function modelColumns(providerWidth: number, innerWidth: number): ModelColumns {
+function modelColumns(providerWidth: number, innerWidth: number, contextWidth = CONTEXT_COLUMN): ModelColumns {
 	const available = Math.max(1, innerWidth - ROW_MARKER_COLUMNS);
 	const provider = Math.min(MAX_PROVIDER_COLUMN, providerWidth);
-	if (available - provider - CONTEXT_COLUMN - 2 * COLUMN_GAP >= MIN_NAME_COLUMN) {
-		return { name: available - provider - CONTEXT_COLUMN - 2 * COLUMN_GAP, provider, context: CONTEXT_COLUMN };
+	if (available - provider - contextWidth - 2 * COLUMN_GAP >= MIN_NAME_COLUMN) {
+		return { name: available - provider - contextWidth - 2 * COLUMN_GAP, provider, context: contextWidth };
 	}
 	if (available - provider - COLUMN_GAP >= MIN_NAME_COLUMN) {
 		return { name: available - provider - COLUMN_GAP, provider, context: 0 };
@@ -221,6 +227,11 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 	private searchFocused = false;
 	private totalCount = 0;
 	private selectedIndex = 0;
+	private rowsVisible = 8;
+	private messageScroll = 0;
+	private messageScrollMax = 0;
+	private messageRowsVisible = 1;
+	private renderedMessage = "";
 	/** Query the current rows were ranked for; editing it moves the cursor. */
 	private appliedQuery = "";
 	/** Cursor position before the current search began; clearing the search returns to it. */
@@ -546,6 +557,24 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 			}
 			return;
 		}
+		// Page keys scroll an overflowing message before navigating model rows.
+		// This also keeps confirmation and in-flight errors readable without activation.
+		if (this.message && this.messageScrollMax > 0) {
+			const delta = this.keybindings.matches(data, "tui.select.pageUp")
+				? -this.messageRowsVisible
+				: this.keybindings.matches(data, "tui.select.pageDown")
+					? this.messageRowsVisible
+					: matchesKey(data, "ctrl+home")
+						? -Number.MAX_SAFE_INTEGER
+						: matchesKey(data, "ctrl+end")
+							? Number.MAX_SAFE_INTEGER
+							: 0;
+			if (delta) {
+				this.messageScroll = Math.max(0, Math.min(this.messageScrollMax, this.messageScroll + delta));
+				this.tui.requestRender();
+				return;
+			}
+		}
 		if (this.busy) return;
 		if (this.compactConfirmation) {
 			if (this.keybindings.matches(data, "tui.select.confirm")) this.confirmCompaction();
@@ -556,15 +585,25 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 			: this.keybindings.matches(data, "tui.select.down")
 				? 1
 				: this.keybindings.matches(data, "tui.select.pageUp")
-					? -8
+					? -this.rowsVisible
 					: this.keybindings.matches(data, "tui.select.pageDown")
-						? 8
+						? this.rowsVisible
 						: 0;
 		if (step) {
 			// Moving through results leaves the search field with the query kept, so
 			// printable row actions apply to the filtered selection.
 			if (this.searchFocused) this.leaveSearchField();
 			this.moveSelection(step);
+			return;
+		}
+		if (matchesKey(data, "ctrl+home")) {
+			if (this.searchFocused) this.leaveSearchField();
+			this.moveSelection(-Number.MAX_SAFE_INTEGER);
+			return;
+		}
+		if (matchesKey(data, "ctrl+end")) {
+			if (this.searchFocused) this.leaveSearchField();
+			this.moveSelection(Number.MAX_SAFE_INTEGER);
 			return;
 		}
 		if (!this.searchFocused && matchesKey(data, "home")) {
@@ -688,16 +727,14 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 			: this.searchFocused
 				? ` · ${catalogText(this.catalog, CatalogMessageId.modelPickerTitleSearch)}`
 				: "";
-		const title = `${this.wordmark} ${this.theme.bold(this.styles.apply("palette.title", `· Models${mode}`))} ${this.styles.apply("palette.count", `${this.rows.length}/${this.totalCount}`)}`;
-		if (width < 12) return [fitTerminalText(title, Math.max(1, width))];
+		const viewTitle = catalogText(this.catalog, CatalogMessageId.paletteViewTitle, {
+			view: catalogText(this.catalog, CatalogMessageId.paletteTabModels),
+			stage: mode,
+		});
+		const title = `${this.wordmark} ${this.theme.bold(this.styles.apply("palette.title", viewTitle))} ${this.styles.apply("palette.count", `${this.rows.length}/${this.totalCount}`)}`;
+		const height = paletteHeightBudget(Number(this.tui.terminal?.rows ?? 24));
+		if (width < 12 || height < 6) return [fitTerminalText(title, Math.max(1, width))];
 		const innerWidth = paletteInnerWidth(width);
-		const terminalRows = Number(this.tui.terminal?.rows ?? 24);
-		const rowCapacity = Math.max(3, Math.min(12, terminalRows - 16));
-		const start = Math.max(
-			0,
-			Math.min(this.selectedIndex - Math.floor(rowCapacity / 2), Math.max(0, this.rows.length - rowCapacity)),
-		);
-		const visibleRows = this.rows.slice(start, start + rowCapacity);
 		const selected = this.rows[this.selectedIndex];
 		const border = (value: string) => this.styles.apply("palette.border", value);
 		const frameOptions = { border };
@@ -715,16 +752,7 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 					styles: this.styles,
 				}),
 			);
-		const lines = [
-			renderTerminalFrameTitle(title, width, frameOptions),
-			line(renderPaletteTabs("models", this.theme, this.styles)),
-			renderPaletteDivider(width, this.styles),
-			control(
-				catalogText(this.catalog, "jouzu.cli.modelPicker.searchLabel"),
-				this.searchInput.render(Math.max(1, innerWidth - CONTROL_LABEL_COLUMN - 3))[0] ?? "",
-				this.searchFocused,
-			),
-		];
+		let detailLine: string;
 		if (selected) {
 			const display = modelDisplay(selected.model);
 			const defaultLabel = selected.projectDefault
@@ -738,41 +766,43 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 				max: compactNumber(selected.model.maxTokens, this.catalog),
 				default: defaultLabel,
 			})}`;
-			lines.push(line(this.theme.bg("selectedBg", padTerminalText(fitTerminalText(detail, innerWidth), innerWidth))));
+			detailLine = line(this.theme.bg("selectedBg", padTerminalText(fitTerminalText(detail, innerWidth), innerWidth)));
 		} else {
-			lines.push(
-				line(
-					this.theme.bg(
-						"selectedBg",
-						padTerminalText(` ${catalogText(this.catalog, "jouzu.cli.modelPicker.noSelection")}`, innerWidth),
-					),
+			detailLine = line(
+				this.theme.bg(
+					"selectedBg",
+					padTerminalText(` ${catalogText(this.catalog, "jouzu.cli.modelPicker.noSelection")}`, innerWidth),
 				),
 			);
 		}
-		lines.push(line());
 		const columns = modelColumns(
 			Math.max(
 				terminalTextWidth(catalogText(this.catalog, "jouzu.cli.modelPicker.columnProvider")),
 				...this.rows.map((row) => terminalTextWidth(this.providerCell(row))),
 			),
 			innerWidth,
+			Math.max(CONTEXT_COLUMN, terminalTextWidth(catalogText(this.catalog, "jouzu.cli.modelPicker.columnContext"))),
 		);
-		if (visibleRows.length === 0)
-			lines.push(
-				line(this.styles.apply("palette.empty", catalogText(this.catalog, CatalogMessageId.modelPickerEmpty))),
-			);
-		else lines.push(line(this.headerText(columns)));
-		for (let offset = 0; offset < visibleRows.length; offset += 1) {
-			const index = start + offset;
-			lines.push(line(this.rowText(visibleRows[offset], index === this.selectedIndex, columns)));
-		}
-		while (lines.length < rowCapacity + 7) lines.push(line());
-		if (this.message) {
-			const role = this.message.level === "error" ? "palette.message.error" : "palette.message.info";
-			for (const messageLine of wrapTextWithAnsi(this.message.text, innerWidth)) {
-				lines.push(line(this.styles.apply(role, messageLine)));
-			}
-		}
+		const listHeaderLine =
+			this.rows.length === 0
+				? line(this.styles.apply("palette.empty", catalogText(this.catalog, CatalogMessageId.modelPickerEmpty)))
+				: line(this.headerText(columns));
+		const headParts: Array<{ key: string; line: string }> = [
+			{ key: "title", line: renderTerminalFrameTitle(title, width, frameOptions) },
+			{ key: "tabs", line: line(renderPaletteTabs("models", this.theme, this.styles, this.catalog)) },
+			{ key: "divider", line: renderPaletteDivider(width, this.styles) },
+			{
+				key: "search",
+				line: control(
+					catalogText(this.catalog, "jouzu.cli.modelPicker.searchLabel"),
+					this.searchInput.render(Math.max(1, innerWidth - CONTROL_LABEL_COLUMN - 3))[0] ?? "",
+					this.searchFocused,
+				),
+			},
+			{ key: "detail", line: detailLine },
+			{ key: "blank", line: line() },
+			{ key: "columns", line: listHeaderLine },
+		];
 		const confirm = formatEffectiveKeybinding(this.keybindings, "tui.select.confirm");
 		const cancel = formatEffectiveKeybinding(this.keybindings, "tui.select.cancel");
 		const move = formatEffectiveKeyPair(this.keybindings, "tui.select.up", "tui.select.down");
@@ -806,31 +836,101 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 				? catalogText(this.catalog, "jouzu.cli.modelPicker.clearSearch")
 				: action(this.searchFocused ? CatalogMessageId.paletteActionBrowse : CatalogMessageId.paletteActionClose),
 		};
-		const hints: PaletteKeyHint[] = this.compactConfirmation
-			? [
-					{ key: confirm, label: action(CatalogMessageId.paletteActionCompactAndSwitch) },
-					{ key: cancel, label: action(CatalogMessageId.paletteActionCancel) },
-				]
-			: this.searchFocused
+		const hints: PaletteKeyHint[] = this.busy
+			? [{ key: cancel, label: action(CatalogMessageId.paletteActionClose) }]
+			: this.compactConfirmation
 				? [
-						{ key: confirm, label: action(CatalogMessageId.paletteActionSelectAndSaveForProject) },
-						...favoriteHints,
-						...refreshHints,
-						{ key: "←→", label: action(CatalogMessageId.paletteActionCursor) },
-						{ key: move, label: action(CatalogMessageId.paletteActionMove) },
-						{ key: "Tab", label: action(CatalogMessageId.paletteActionSection) },
-						cancelHint,
+						{ key: confirm, label: action(CatalogMessageId.paletteActionCompactAndSwitch) },
+						{ key: cancel, label: action(CatalogMessageId.paletteActionCancel) },
 					]
-				: [
-						{ key: confirm, label: action(CatalogMessageId.paletteActionSelectAndSaveForProject) },
-						...favoriteHints,
-						...refreshHints,
-						{ key: "/", label: action(CatalogMessageId.paletteActionSearch) },
-						{ key: move, label: action(CatalogMessageId.paletteActionMove) },
-						{ key: "Tab", label: action(CatalogMessageId.paletteActionSection) },
-						cancelHint,
-					];
-		lines.push(...renderPaletteKeyBar(hints, innerWidth, this.theme, this.styles).map(line));
+				: this.searchFocused
+					? [
+							{ key: confirm, label: action(CatalogMessageId.paletteActionSelectAndSaveForProject) },
+							...favoriteHints,
+							...refreshHints,
+							{ key: "←→", label: action(CatalogMessageId.paletteActionCursor) },
+							{ key: move, label: action(CatalogMessageId.paletteActionMove) },
+							{ key: "Tab", label: action(CatalogMessageId.paletteActionSection) },
+							cancelHint,
+						]
+					: [
+							{ key: confirm, label: action(CatalogMessageId.paletteActionSelectAndSaveForProject) },
+							...favoriteHints,
+							...refreshHints,
+							{ key: "/", label: action(CatalogMessageId.paletteActionSearch) },
+							{ key: move, label: action(CatalogMessageId.paletteActionMove) },
+							{ key: "Tab", label: action(CatalogMessageId.paletteActionSection) },
+							cancelHint,
+						];
+		const wrappedMessage = this.message ? wrapTextWithAnsi(this.message.text, innerWidth) : [];
+		const messageReserve = Math.min(2, wrappedMessage.length);
+		// Keep the title, tabs, search, one selected row, and the footer. Reserve
+		// message rows before spending space on optional details or separators.
+		const keyBar = renderPaletteKeyBar(
+			hints,
+			innerWidth,
+			this.theme,
+			this.styles,
+			Math.max(1, height - 5 - messageReserve),
+		);
+		for (const key of ["blank", "detail", "divider", "columns", ...(messageReserve > 0 ? ["search"] : [])]) {
+			if (headParts.length + keyBar.length + 2 + messageReserve <= height) break;
+			const index = headParts.findIndex((part) => part.key === key);
+			if (index >= 0) headParts.splice(index, 1);
+		}
+		const lines = headParts.map((part) => part.line);
+		const messageRoom = Math.max(0, height - lines.length - keyBar.length - 2);
+		if (this.renderedMessage !== (this.message?.text ?? "")) this.messageScroll = 0;
+		this.renderedMessage = this.message?.text ?? "";
+		this.messageRowsVisible = Math.max(1, messageRoom);
+		this.messageScrollMax = Math.max(0, wrappedMessage.length - messageRoom);
+		this.messageScroll = Math.min(this.messageScroll, this.messageScrollMax);
+		const messageLines = wrappedMessage.slice(this.messageScroll, this.messageScroll + messageRoom);
+		const rowCapacity = Math.max(1, height - lines.length - keyBar.length - messageLines.length - 1);
+		this.rowsVisible = rowCapacity;
+		const viewport = paletteViewport(this.rows.length, this.selectedIndex, rowCapacity);
+		const visibleRows = this.rows.slice(viewport.start, viewport.end);
+		const hasScrollbar = this.rows.length > viewport.visible;
+		for (let offset = 0; offset < rowCapacity; offset += 1) {
+			const row = visibleRows[offset];
+			if (!row) {
+				lines.push(line());
+				continue;
+			}
+			const value = this.rowText(row, viewport.start + offset === this.selectedIndex, columns);
+			lines.push(
+				hasScrollbar
+					? renderPaletteScrollbarRow(
+							value,
+							width,
+							this.styles,
+							paletteScrollbarMarker(offset, viewport, this.rows.length),
+						)
+					: line(value),
+			);
+		}
+		const messageRole = this.message?.level === "error" ? "palette.message.error" : "palette.message.info";
+		const messageViewport = {
+			start: this.messageScroll,
+			end: this.messageScroll + messageLines.length,
+			capacity: messageRoom,
+			visible: messageLines.length,
+			hasAbove: this.messageScroll > 0,
+			hasBelow: this.messageScroll < this.messageScrollMax,
+		};
+		lines.push(
+			...messageLines.map((text, index) =>
+				this.messageScrollMax > 0
+					? renderPaletteScrollbarRow(
+							this.styles.apply(messageRole, text),
+							width,
+							this.styles,
+							paletteScrollbarMarker(index, messageViewport, wrappedMessage.length),
+						)
+					: line(this.styles.apply(messageRole, text)),
+			),
+		);
+		lines.push(...keyBar.map(line));
 		lines.push(renderTerminalFrameBorder(width, { ...frameOptions, left: "╰", right: "╯" }));
 		return lines.map((value) => fitTerminalText(value, width));
 	}
@@ -1771,6 +1871,7 @@ export function createJouzuModelPicker(
 								...(options.jouzuVersion ? { jouzuVersion: options.jouzuVersion } : {}),
 								...(options.uiLocaleCli ? { uiLocaleCli: options.uiLocaleCli } : {}),
 								...(options.onLanguageChanged ? { onLanguageChanged: options.onLanguageChanged } : {}),
+								...(options.onUiLocaleChanged ? { onUiLocaleChanged: options.onUiLocaleChanged } : {}),
 								activity: () => localizationActivity.snapshot(),
 							}),
 					},

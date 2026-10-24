@@ -232,9 +232,8 @@ async function harness(t, behavior = {}) {
 }
 
 function focusAccount(component) {
-	component.render(100);
-	component.handleInput("up");
-	component.handleInput("up");
+	component.route({ view: "settings", query: "language" });
+	for (let row = 0; row < 3; row++) component.handleInput("down");
 	assert.equal(component.accountFocused, true, "the account row takes focus");
 }
 

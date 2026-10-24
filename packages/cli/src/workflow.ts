@@ -1,4 +1,4 @@
-import { Editor, type Focusable, Input, matchesKey, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { CURSOR_MARKER, Editor, type Focusable, Input, matchesKey, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import {
 	CatalogError,
 	CatalogMessageId,
@@ -17,6 +17,7 @@ import {
 	type PaletteKeyHint,
 	type PaletteRoute,
 	paletteChoice,
+	paletteHeightBudget,
 	paletteInnerWidth,
 	renderPaletteDivider,
 	renderPaletteField,
@@ -71,6 +72,10 @@ const MODE_TITLE_IDS: Partial<Record<Exclude<Mode, "text">, CatalogMessageId>> =
 };
 interface Row {
 	label: string;
+	/** What this row is in the unified browse pane; other modes leave it unset. */
+	kind?: "setting" | "role" | "add-agent" | "run";
+	/** Stable role or run identity, used to keep selection across refreshes. */
+	refId?: string;
 	/** Stable identity for a row whose action logic must survive translation. */
 	id?: string;
 	/** Override the shared label column, for a control that is not a list row. */
@@ -102,8 +107,6 @@ const LABEL_COLUMN_MINIMUM = 8;
  * unbounded metadata at 48 columns.
  */
 const RUN_LABEL_MAXIMUM = 18;
-/** Width of a standalone control label, matched to the Models view. */
-const CONTROL_LABEL_COLUMN = 8;
 /** Width shared by the session-setting rows, so their values line up. */
 const SETTINGS_LABEL_COLUMN = 13;
 
@@ -125,7 +128,8 @@ const makeInput = (text: string) => {
 
 export class WorkflowComponent implements PaletteComponent, Focusable {
 	private mode: Mode = "browse";
-	private section: "agents" | "runs" = "agents";
+	/** Browse rows render roles before runs; this is the area a deep link or refresh lands on. */
+	private pendingLanding?: "agents" | "runs";
 	private selected = 0;
 	private outputLine = 0;
 	private outputLines: string[] = [];
@@ -155,15 +159,20 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 	private closed = false;
 	private unsubscribe: () => void;
 	private rowsVisible = 8;
-	private listedRunIds: string[] = [];
+	private scrollOffset = 0;
+	private scrollFollowsSelection = true;
+	private viewportRoom = 1;
+	private viewportTotal = 0;
+	private listedRowKeys: string[] = [];
 	constructor(
 		private readonly context: PaletteComponentContext,
 		private readonly service: WorkflowService,
 		initialRoute: PaletteRoute = { view: "workflow" },
 	) {
-		// A fresh `/workflow` open lands on live work: Runs while children are queued or running,
-		// and definitions otherwise. An explicit route, such as the View toggle or /subagents, wins.
-		this.section =
+		// `/workflow` lands on live work while children are queued or running, and on
+		// definitions otherwise. `/subagents` passes `runs` to land on the run list.
+		// Roles and their controls always stay above runs in the same browse pane.
+		this.pendingLanding =
 			initialRoute.query === "runs" || (initialRoute.query === undefined && service.runs().some(isActiveRun))
 				? "runs"
 				: "agents";
@@ -173,17 +182,23 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 		this.catalog = context.catalog ?? defaultCatalog();
 		this.unsubscribe = service.subscribe(() => {
 			if (this.closed) return;
-			if (this.mode === "browse" && this.section === "runs" && this.selected >= 2) {
-				const selectedId = this.listedRunIds[this.selected - 2];
-				const runs = this.listedRuns();
-				const index = runs.findIndex((run) => run.id === selectedId);
-				if (index >= 0) this.selected = index + 2;
-				this.listedRunIds = runs.map((run) => run.id);
+			if (this.mode === "browse") {
+				// Runs and roles can be inserted above the selected row. Keep the same
+				// row selected by identity instead of by index.
+				const previousKey = this.listedRowKeys[this.selected];
+				try {
+					const rows = this.rows();
+					const index = previousKey === undefined ? -1 : this.listedRowKeys.indexOf(previousKey);
+					if (index >= 0) this.selected = index;
+					else this.selected = Math.min(this.selected, Math.max(0, rows.length - 1));
+				} catch {
+					// A failed refresh is reported by render in the message area.
+				}
 			}
 			this.context.tui.requestRender();
 		});
 	}
-	/** Active runs lead the Runs view; each group keeps the manager's newest-first order. */
+	/** Active runs lead the run list; each group keeps the manager's newest-first order. */
 	private listedRuns(): AgentRun[] {
 		const runs = this.service.runs();
 		return [...runs.filter(isActiveRun), ...runs.filter((run) => !isActiveRun(run))];
@@ -227,12 +242,23 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 		return this.mode === "browse" && !this.busy;
 	}
 	snapshotRoute(): PaletteRoute {
-		return { view: "workflow", query: this.section };
+		if (this.mode === "run" || this.mode === "output") return { view: "workflow", query: "runs" };
+		if (this.mode !== "browse") return { view: "workflow", query: "agents" };
+		try {
+			const row = this.rows()[this.selected];
+			return { view: "workflow", query: row?.kind === "run" ? "runs" : "agents" };
+		} catch {
+			return { view: "workflow", query: "agents" };
+		}
 	}
 	route(route: PaletteRoute): void {
 		if (!this.allowsGlobalNavigation()) return;
-		this.section = route.query === "runs" ? "runs" : "agents";
+		this.pendingLanding =
+			route.query === "runs" || (route.query === undefined && this.service.runs().some(isActiveRun))
+				? "runs"
+				: "agents";
 		this.selected = 0;
+		this.resetViewport();
 	}
 	invalidate(): void {
 		this.editor?.invalidate();
@@ -245,9 +271,78 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 		this.mode = mode;
 		this.syncFocus();
 		this.selected = 0;
+		this.resetViewport();
 		this.message = "";
 		this.messageLevel = "info";
 		this.context.tui.requestRender();
+	}
+	private resetViewport(): void {
+		this.scrollOffset = 0;
+		this.scrollFollowsSelection = true;
+		this.viewportRoom = 1;
+		this.viewportTotal = 0;
+	}
+	/** Scroll the document by one page without moving row selection. */
+	private scrollPage(delta: number): void {
+		this.scrollFollowsSelection = false;
+		const room = Math.max(1, this.viewportRoom);
+		const maximum = Math.max(0, this.viewportTotal - room);
+		this.scrollOffset = Math.max(0, Math.min(this.scrollOffset + delta * room, maximum));
+	}
+	/** Keep the selected row visible, or preserve a manual page offset. */
+	private viewportStart(total: number, room: number, selectedLine: number): number {
+		const maximum = Math.max(0, total - room);
+		let start = Math.max(0, Math.min(this.scrollOffset, maximum));
+		if (this.scrollFollowsSelection) {
+			if (selectedLine < start) start = selectedLine;
+			else if (selectedLine >= start + room) start = selectedLine - room + 1;
+			start = Math.max(0, Math.min(start, maximum));
+		}
+		return start;
+	}
+	/** One-line position and above/below indicator for an overflowing document. */
+	private scrollIndicator(start: number, end: number, total: number, innerWidth: number): string {
+		const range = `${start + 1}-${Math.min(end, total)}/${total}`;
+		const above = start > 0 ? "↑" : " ";
+		const below = end < total ? "↓" : " ";
+		const position = `${above} ${range} ${below}`;
+		const keys = formatEffectiveKeyPair(this.context.keybindings, "tui.select.pageUp", "tui.select.pageDown");
+		const full = `${position} · ${keys}`;
+		return fitTerminalText(terminalTextWidth(full) <= innerWidth ? full : position, innerWidth, "…");
+	}
+	/** Stable identity for a browse row, so refresh can keep the same row selected. */
+	private rowKey(row: Row): string {
+		if (row.kind === "run") return `run:${row.refId}`;
+		if (row.kind === "role") return `role:${row.refId}`;
+		if (row.kind === "add-agent") return "add-agent";
+		return `row:${row.id ?? row.label}`;
+	}
+	/** Move a deep-link or refresh landing onto the first role or run row. */
+	private applyLanding(rows: readonly Row[]): void {
+		const target = this.pendingLanding;
+		if (!target) return;
+		this.pendingLanding = undefined;
+		const index = rows.findIndex((row) => row.kind === (target === "runs" ? "run" : "role"));
+		if (index >= 0) {
+			this.selected = index;
+			return;
+		}
+		if (target === "runs") {
+			const addAgent = rows.findIndex((row) => row.kind === "add-agent");
+			if (addAgent >= 0) {
+				this.selected = addAgent;
+				return;
+			}
+		}
+		this.selected = 0;
+	}
+	/** Select a browse row by stable key, used when returning from a form or a run. */
+	private returnToBrowse(key: string): void {
+		this.pendingLanding = undefined;
+		this.setMode("browse");
+		const rows = this.rows();
+		const index = rows.findIndex((row) => this.rowKey(row) === key);
+		this.selected = Math.max(index, 0);
 	}
 	private async perform(label: CatalogMessageRef, action: () => Promise<void>): Promise<void> {
 		if (this.busy) return;
@@ -312,7 +407,7 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 		if (index >= 0) config.roles[index] = role;
 		else config.roles.push(role);
 		this.service.save({ config, revision: snapshot.revision });
-		this.setMode("browse");
+		this.returnToBrowse(`role:${role.id}`);
 		this.message = this.msg(CatalogMessageId.workflowMessageSaved, { agent: role.id });
 		this.messageLevel = "info";
 	}
@@ -331,7 +426,7 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 		const snapshot = this.service.roles();
 		const value = Number(required(this.concurrencyInput).getValue().trim());
 		this.service.save({ ...snapshot, config: { ...snapshot.config, maxConcurrent: value } });
-		this.setMode("browse");
+		this.returnToBrowse("row:concurrency");
 		this.message = this.msg(CatalogMessageId.workflowMessageConcurrencySet, { value });
 		this.messageLevel = "info";
 	}
@@ -379,8 +474,7 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 			);
 			void this.perform(label, async () => {
 				await this.service.setSubagentsEnabled(enabled);
-				this.setMode("browse");
-				this.selected = 1;
+				this.returnToBrowse("row:subagents");
 			});
 		};
 		if (!enabled && this.service.runs().some(isActiveRun)) {
@@ -408,24 +502,15 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 	}
 	private rows(): Row[] {
 		if (this.mode === "browse") {
+			const snapshot = this.service.roles();
+			const roles = snapshot.config.roles;
+			const runs = this.listedRuns();
+			const active = runs.filter(isActiveRun).length;
+			// Roles and their controls are part of the same browse pane as runs, so
+			// editing stays reachable while children are queued, running, or disabled.
 			const rows: Row[] = [
 				{
-					label: this.msg(CatalogMessageId.paletteActionView),
-					labelWidth: CONTROL_LABEL_COLUMN,
-					value: paletteChoice(
-						this.section === "agents"
-							? this.msg(CatalogMessageId.workflowLabelAgents)
-							: this.msg(CatalogMessageId.workflowLabelRuns),
-					),
-					choice: () => {
-						this.section = this.section === "agents" ? "runs" : "agents";
-						this.selected = 0;
-					},
-					run: () => {
-						this.section = this.section === "agents" ? "runs" : "agents";
-					},
-				},
-				{
+					kind: "setting",
 					id: "subagents",
 					label: this.msg(CatalogMessageId.workflowRowSubagents),
 					labelWidth: 9,
@@ -437,74 +522,80 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 					meta: this.msg(CatalogMessageId.workflowMetaThisSession),
 					choice: () => this.toggleSubagents(),
 				},
+				{
+					kind: "setting",
+					id: "concurrency",
+					label: this.msg(CatalogMessageId.workflowRowConcurrency),
+					labelWidth: SETTINGS_LABEL_COLUMN,
+					value: String(snapshot.config.maxConcurrent),
+					meta: `${CONCURRENCY_BOUNDS.minimum}–${CONCURRENCY_BOUNDS.maximum}`,
+					hint: this.msg(CatalogMessageId.paletteActionEdit),
+					run: () => this.openConcurrency(),
+				},
+				{
+					kind: "setting",
+					id: "child-writers",
+					label: this.msg(CatalogMessageId.workflowRowChildWriters),
+					labelWidth: SETTINGS_LABEL_COLUMN,
+					value: paletteChoice(
+						snapshot.config.workspaceWriters === "parallel"
+							? this.msg(CatalogMessageId.workflowValueInParallel)
+							: this.msg(CatalogMessageId.workflowValueOneAtATime),
+					),
+					choice: () => this.toggleWorkspaceWriters(),
+				},
+				...roles.map((role, index) => ({
+					kind: "role" as const,
+					refId: role.id,
+					label: role.id,
+					labelRole: "palette.identity" as const,
+					value: agentModelSelectorLabel(role.model, this.service.models()),
+					...(this.service.activeRole() === role.id ? { meta: this.msg(CatalogMessageId.workflowMetaInSession) } : {}),
+					...(index === 0
+						? {
+								heading: this.msg(CatalogMessageId.workflowLabelAgents),
+								headingMeta: this.msg(CatalogMessageId.workflowHeadingMetaDefined, {
+									count: String(roles.length),
+								}),
+							}
+						: {}),
+					run: () => this.edit(role),
+				})),
+				{
+					kind: "add-agent",
+					label: this.msg(CatalogMessageId.workflowRowAddAgent),
+					...(roles.length === 0
+						? {
+								heading: this.msg(CatalogMessageId.workflowLabelAgents),
+								headingMeta: this.msg(CatalogMessageId.workflowHeadingMetaDefined, { count: "0" }),
+							}
+						: {}),
+					run: () => this.edit(),
+				},
+				...runs.map((run, index) => ({
+					kind: "run" as const,
+					refId: run.id,
+					label: fitTerminalText(run.role.id, RUN_LABEL_MAXIMUM),
+					labelRole: "palette.identity" as const,
+					value: run.status,
+					meta: run.currentTool ?? run.task.replace(/\s+/g, " "),
+					...(index === 0
+						? {
+								heading: this.msg(CatalogMessageId.workflowLabelRuns),
+								headingMeta: this.msg(CatalogMessageId.workflowHeadingMetaRuns, {
+									active,
+									count: String(runs.length),
+								}),
+							}
+						: {}),
+					run: () => {
+						this.runId = run.id;
+						this.setMode("run");
+					},
+				})),
 			];
-			if (this.section === "agents") {
-				const snapshot = this.service.roles();
-				const roles = snapshot.config.roles;
-				rows.push(
-					{
-						label: this.msg(CatalogMessageId.workflowRowConcurrency),
-						labelWidth: SETTINGS_LABEL_COLUMN,
-						value: String(snapshot.config.maxConcurrent),
-						meta: `${CONCURRENCY_BOUNDS.minimum}–${CONCURRENCY_BOUNDS.maximum}`,
-						hint: this.msg(CatalogMessageId.paletteActionEdit),
-						run: () => this.openConcurrency(),
-					},
-					{
-						label: this.msg(CatalogMessageId.workflowRowChildWriters),
-						labelWidth: SETTINGS_LABEL_COLUMN,
-						value: paletteChoice(
-							snapshot.config.workspaceWriters === "parallel"
-								? this.msg(CatalogMessageId.workflowValueInParallel)
-								: this.msg(CatalogMessageId.workflowValueOneAtATime),
-						),
-						choice: () => this.toggleWorkspaceWriters(),
-					},
-					...roles.map((role, index) => ({
-						label: role.id,
-						labelRole: "palette.identity" as const,
-						value: agentModelSelectorLabel(role.model, this.service.models()),
-						...(this.service.activeRole() === role.id
-							? { meta: this.msg(CatalogMessageId.workflowMetaInSession) }
-							: {}),
-						...(index === 0
-							? {
-									heading: this.msg(CatalogMessageId.workflowLabelAgents),
-									headingMeta: this.msg(CatalogMessageId.workflowHeadingMetaDefined, {
-										count: String(roles.length),
-									}),
-								}
-							: {}),
-						run: () => this.edit(role),
-					})),
-				);
-				rows.push({ label: this.msg(CatalogMessageId.workflowRowAddAgent), run: () => this.edit() });
-			} else {
-				const runs = this.listedRuns();
-				const active = runs.filter(isActiveRun).length;
-				this.listedRunIds = runs.map((run) => run.id);
-				rows.push(
-					...runs.map((run, index) => ({
-						label: fitTerminalText(run.role.id, RUN_LABEL_MAXIMUM),
-						labelRole: "palette.identity" as const,
-						value: run.status,
-						meta: run.currentTool ?? run.task.replace(/\s+/g, " "),
-						...(index === 0
-							? {
-									heading: this.msg(CatalogMessageId.workflowLabelRuns),
-									headingMeta: this.msg(CatalogMessageId.workflowHeadingMetaRuns, {
-										active,
-										count: String(runs.length),
-									}),
-								}
-							: {}),
-						run: () => {
-							this.runId = run.id;
-							this.setMode("run");
-						},
-					})),
-				);
-			}
+			this.listedRowKeys = rows.map((row) => this.rowKey(row));
+			this.applyLanding(rows);
 			return rows;
 		}
 		if (this.mode === "role") {
@@ -797,20 +888,26 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 						]),
 				{
 					label: this.msg(CatalogMessageId.workflowRowBackToRuns),
-					run: () => {
-						this.section = "runs";
-						this.setMode("browse");
-					},
+					run: () => this.returnToBrowse(`run:${run.id}`),
 				},
 			];
 		}
 		return [];
 	}
 	handleInput(data: string): void {
-		if (this.busy) return;
 		const key = this.context.keybindings;
-		this.message = "";
-		this.messageLevel = "info";
+		const paging = key.matches(data, "tui.select.pageUp") || key.matches(data, "tui.select.pageDown");
+		if (this.busy) {
+			if (paging) {
+				this.scrollPage(key.matches(data, "tui.select.pageUp") ? -1 : 1);
+				this.context.tui.requestRender();
+			}
+			return;
+		}
+		if (!paging) {
+			this.message = "";
+			this.messageLevel = "info";
+		}
 		try {
 			if (this.mode === "text") {
 				if (key.matches(data, "tui.select.cancel")) {
@@ -829,16 +926,23 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 					this.selected = 2;
 				} else if (this.mode === "confirm") this.setMode(required(this.confirmation).back);
 				else if (this.mode === "output" || this.mode === "task") this.setMode(this.runId ? "run" : "browse");
+				else if (this.mode === "role") this.returnToBrowse(this.originalId ? `role:${this.originalId}` : "add-agent");
+				else if (this.mode === "limit") this.returnToBrowse("row:concurrency");
 				else this.setMode("browse");
 				return;
 			}
 			if (this.mode === "confirm") {
 				if (key.matches(data, "tui.select.confirm")) this.confirmation?.action();
+				else if (key.matches(data, "tui.select.pageUp") || key.matches(data, "tui.select.pageDown")) {
+					this.scrollPage(key.matches(data, "tui.select.pageUp") ? -1 : 1);
+					this.context.tui.requestRender();
+				}
 				return;
 			}
 			if (this.mode === "output") {
 				if (key.matches(data, "tui.select.pageDown") || key.matches(data, "tui.select.confirm")) {
-					if (this.outputLine + this.rowsVisible < this.outputLines.length) this.outputLine += this.rowsVisible;
+					if (this.outputLine + this.rowsVisible < Math.max(this.outputLines.length, this.viewportTotal - 1))
+						this.outputLine += this.rowsVisible;
 					else if (this.outputNext !== null) {
 						this.outputHistory.push(this.outputOffset);
 						this.outputOffset = this.outputNext;
@@ -855,32 +959,68 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 				this.context.tui.requestRender();
 				return;
 			}
+			const pageUp = key.matches(data, "tui.select.pageUp");
+			const pageDown = key.matches(data, "tui.select.pageDown");
+			if ((pageUp || pageDown) && this.mode !== "browse" && this.mode !== "models") {
+				this.scrollPage(pageUp ? -1 : 1);
+				this.context.tui.requestRender();
+				return;
+			}
 			const rows = this.rows();
+			if (!this.scrollFollowsSelection && !pageUp && !pageDown && key.matches(data, "tui.select.confirm")) {
+				// Reveal the selection before Enter can activate an offscreen control.
+				this.scrollFollowsSelection = true;
+				this.context.tui.requestRender();
+				return;
+			}
 			this.selected = Math.min(this.selected, Math.max(0, rows.length - 1));
-			if (key.matches(data, "tui.select.up")) this.selected = Math.max(0, this.selected - 1);
-			else if (key.matches(data, "tui.select.down")) this.selected = Math.min(rows.length - 1, this.selected + 1);
-			else if (key.matches(data, "tui.select.pageUp")) this.selected = Math.max(0, this.selected - this.rowsVisible);
-			else if (key.matches(data, "tui.select.pageDown"))
-				this.selected = Math.min(rows.length - 1, this.selected + this.rowsVisible);
-			else if (key.matches(data, "tui.select.confirm")) {
+			if (key.matches(data, "tui.select.up")) {
+				this.selected = Math.max(0, this.selected - 1);
+				this.scrollFollowsSelection = true;
+			} else if (key.matches(data, "tui.select.down")) {
+				this.selected = Math.min(rows.length - 1, this.selected + 1);
+				this.scrollFollowsSelection = true;
+			} else if (pageUp || pageDown) {
+				if (!this.scrollFollowsSelection) this.scrollPage(pageUp ? -1 : 1);
+				else if (pageDown) {
+					if (this.selected < rows.length - 1)
+						this.selected = Math.min(rows.length - 1, this.selected + this.rowsVisible);
+					else this.scrollPage(1);
+				} else if (this.selected > 0) this.selected = Math.max(0, this.selected - this.rowsVisible);
+				else this.scrollPage(-1);
+			} else if (key.matches(data, "tui.select.confirm")) {
 				const row = rows[this.selected];
 				if (row?.input) {
 					if (this.mode === "role") this.save();
 					else this.saveConcurrency();
 				} else if (row?.choice) row.choice(1);
 				else row?.run?.();
-			} else if (matchesKey(data, "ctrl+home")) this.selected = 0;
-			else if (matchesKey(data, "ctrl+end")) this.selected = Math.max(0, rows.length - 1);
-			else if (this.mode === "models") {
+			} else if (matchesKey(data, "ctrl+home")) {
+				this.selected = 0;
+				this.scrollOffset = 0;
+				this.scrollFollowsSelection = true;
+			} else if (matchesKey(data, "ctrl+end")) {
+				this.selected = Math.max(0, rows.length - 1);
+				this.scrollFollowsSelection = true;
+			} else if (this.mode === "models") {
 				this.modelSearch.handleInput(data);
 				this.selected = 0;
-			} else if (rows[this.selected]?.input) rows[this.selected].input?.handleInput(data);
-			else if (this.mode === "browse" && rows[this.selected]?.id === "subagents" && matchesKey(data, "space"))
+				this.scrollFollowsSelection = true;
+			} else if (rows[this.selected]?.input) {
+				if (!this.scrollFollowsSelection) this.scrollFollowsSelection = true;
+				else rows[this.selected].input?.handleInput(data);
+			} else if (this.mode === "browse" && rows[this.selected]?.id === "subagents" && matchesKey(data, "space"))
 				this.toggleSubagents();
 			else if (matchesKey(data, "left")) rows[this.selected]?.choice?.(-1);
 			else if (matchesKey(data, "right")) rows[this.selected]?.choice?.(1);
-			else if (matchesKey(data, "home")) this.selected = 0;
-			else if (matchesKey(data, "end")) this.selected = Math.max(0, rows.length - 1);
+			else if (matchesKey(data, "home")) {
+				this.selected = 0;
+				this.scrollOffset = 0;
+				this.scrollFollowsSelection = true;
+			} else if (matchesKey(data, "end")) {
+				this.selected = Math.max(0, rows.length - 1);
+				this.scrollFollowsSelection = true;
+			}
 		} catch (error) {
 			this.message = sanitizeTerminalText(this.errorText(error, CatalogMessageId.workflowMessageOperationFailed));
 			this.messageLevel = "error";
@@ -888,6 +1028,7 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 		this.context.tui.requestRender();
 	}
 	private hints(): PaletteKeyHint[] {
+		if (this.busy) return [];
 		const keybindings = this.context.keybindings;
 		const confirm = formatEffectiveKeybinding(keybindings, "tui.select.confirm");
 		const cancel = formatEffectiveKeybinding(keybindings, "tui.select.cancel");
@@ -920,11 +1061,16 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 		} catch {}
 		const fallback =
 			this.mode === "browse"
-				? this.section === "agents"
-					? this.msg(CatalogMessageId.workflowHintEditAgent)
-					: this.msg(CatalogMessageId.workflowHintInspectRun)
-				: (selected?.label.replace(/[…›]/g, "").trim().toLowerCase() ?? "select");
-		const primary = selected?.input ? "save" : selected?.choice ? "change" : (selected?.hint ?? fallback);
+				? selected?.kind === "run"
+					? this.msg(CatalogMessageId.workflowHintInspectRun)
+					: this.msg(CatalogMessageId.workflowHintEditAgent)
+				: (selected?.label.replace(/[…›]/g, "").trim().toLowerCase() ??
+					this.msg(CatalogMessageId.workflowStageChooseModel));
+		const primary = selected?.input
+			? this.msg(CatalogMessageId.settingsHintSave)
+			: selected?.choice
+				? this.msg(CatalogMessageId.paletteActionChange)
+				: (selected?.hint ?? fallback);
 		const hints: PaletteKeyHint[] = [
 			{ key: confirm, label: primary },
 			{ key: move, label: this.msg(CatalogMessageId.paletteActionMove) },
@@ -933,11 +1079,18 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 		if (this.mode === "browse" && selected?.id === "subagents")
 			hints.push({ key: "Space", label: this.msg(CatalogMessageId.paletteActionToggle) });
 		if (this.mode === "browse") hints.push({ key: "Tab", label: this.msg(CatalogMessageId.paletteActionSection) });
-		hints.push({ key: cancel, label: this.mode === "browse" ? "close" : "cancel" });
+		hints.push({
+			key: cancel,
+			label: this.msg(
+				this.mode === "browse" ? CatalogMessageId.paletteActionClose : CatalogMessageId.paletteActionCancel,
+			),
+		});
 		return hints;
 	}
 	render(width: number): string[] {
-		if (width < 12) return [fitTerminalText("Workflow", width)];
+		const view = this.msg(CatalogMessageId.paletteTabWorkflow);
+		const height = paletteHeightBudget(Number(this.context.tui.terminal?.rows ?? 24));
+		if (width < 12 || height < 4) return [fitTerminalText(view, Math.max(1, width))];
 		const inner = paletteInnerWidth(width);
 		const { theme, styles } = this.context;
 		const style = (value: string) => styles.apply("palette.border", value);
@@ -946,17 +1099,17 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 		const heading = (label: string, meta = "") => row(renderPaletteHeading(label, inner, theme, styles, meta));
 		// The text editor serves two fields, so its title names the one in hand.
 		const stage = this.stageSuffix();
-		const title = `${this.wordmark} ${theme.bold(styles.apply("palette.title", this.msg(CatalogMessageId.workflowTitle, { stage })))}${
+		const title = `${this.wordmark} ${theme.bold(styles.apply("palette.title", this.msg(CatalogMessageId.paletteViewTitle, { view, stage })))}${
 			this.busy ? ` ${styles.apply("palette.count", this.msg(CatalogMessageId.workflowTitleBusy))}` : ""
 		}`;
 		const lines = [renderTerminalFrameTitle(title, width, frame)];
 		if (this.mode === "browse") {
-			lines.push(row(renderPaletteTabs("workflow", theme, styles)));
+			lines.push(row(renderPaletteTabs("workflow", theme, styles, this.catalog)));
 			lines.push(renderPaletteDivider(width, styles));
 		}
 		const headerLines = lines.length;
-		const available = Math.max(3, Math.floor((this.context.tui.terminal.rows || 24) * 0.82) - 9);
-		this.rowsVisible = available;
+		let selectedLine = 0;
+		const rowLines: number[] = [];
 		try {
 			if (this.mode === "text") {
 				lines.push(
@@ -967,9 +1120,10 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 					),
 				);
 				lines.push(...required(this.editor).render(inner).map(row));
+				selectedLine = Math.max(0, lines.findIndex((line) => line.includes(CURSOR_MARKER)) - headerLines);
 				lines.push(row(styles.apply("palette.hint", this.msg(CatalogMessageId.workflowHintSaveInForm))));
 			} else if (this.mode === "confirm") {
-				lines.push(heading("Confirm"));
+				lines.push(heading(this.msg(CatalogMessageId.workflowStageConfirm)));
 				lines.push(
 					...wrapTextWithAnsi(sanitizeTerminalText(required(this.confirmation).label), inner)
 						.map((line) => styles.apply("palette.message.error", line))
@@ -998,19 +1152,19 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 				this.outputNext = output.nextOffset;
 				lines.push(
 					heading(
-						"Output",
+						this.msg(CatalogMessageId.workflowStageOutput),
 						`${Math.min(this.outputLine + 1, this.outputLines.length)}/${this.outputLines.length}${
 							this.outputNext === null ? "" : ` · ${this.msg(CatalogMessageId.workflowHeadingMetaMore)}`
 						}`,
 					),
 				);
-				lines.push(...this.outputLines.slice(this.outputLine, this.outputLine + available).map(row));
+				lines.push(...this.outputLines.map(row));
 			} else {
 				if (this.mode === "models") {
 					const marker = styles.apply("palette.marker", "→");
 					lines.push(
 						row(
-							`${marker} ${styles.apply("palette.label", padTerminalText("Search", 8))} ${
+							`${marker} ${styles.apply("palette.label", padTerminalText(catalogText(this.catalog, "jouzu.cli.modelPicker.searchLabel"), 8))} ${
 								this.modelSearch.render(Math.max(1, inner - 11)).join("") ?? ""
 							}`,
 						),
@@ -1031,7 +1185,7 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 								styles,
 							}),
 						);
-					lines.push(heading("Run", sanitizeTerminalText(run.status)));
+					lines.push(heading(this.msg(CatalogMessageId.workflowStageRun), sanitizeTerminalText(run.status)));
 					lines.push(detail(catalogMessage(CatalogMessageId.workflowFieldAgent), sanitizeTerminalText(run.role.id)));
 					lines.push(detail(catalogMessage(CatalogMessageId.workflowFieldModel), agentModelDisplay(run.model).label));
 					const thinking = run.thinkingLevel ?? run.role.thinking;
@@ -1071,9 +1225,7 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 				this.selected = Math.max(0, Math.min(this.selected, rows.length - 1));
 				const labelWidth = labelColumnWidth(rows);
 				let bodyStarted = lines.length > headerLines;
-				const budget = Math.max(3, available - rows.filter((item) => item.heading).length);
-				const start = Math.max(0, this.selected - budget + 1);
-				for (let index = start; index < Math.min(rows.length, start + budget); index++) {
+				for (let index = 0; index < rows.length; index++) {
 					const item = rows[index];
 					if (item.heading) {
 						if (bodyStarted) lines.push(row());
@@ -1081,6 +1233,8 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 					}
 					bodyStarted = true;
 					const selected = index === this.selected;
+					rowLines.push(lines.length - headerLines);
+					if (selected) selectedLine = lines.length - headerLines;
 					const aligned = item.value !== undefined || item.input !== undefined;
 					let value = item.value === undefined ? "" : sanitizeTerminalText(item.value);
 					if (item.input) {
@@ -1106,7 +1260,7 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 						),
 					);
 				}
-				if (!rows.length || (this.mode === "browse" && this.section === "runs" && rows.length === 2))
+				if (!rows.length)
 					lines.push(
 						row(
 							styles.apply(
@@ -1117,21 +1271,55 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 							),
 						),
 					);
+				else if (this.mode === "browse" && this.listedRuns().length === 0) {
+					// Keep an empty Runs heading below the definitions, so the pane always
+					// shows where live sessions appear without hiding role configuration.
+					if (bodyStarted) lines.push(row());
+					lines.push(
+						heading(
+							this.msg(CatalogMessageId.workflowLabelRuns),
+							this.msg(CatalogMessageId.workflowHeadingMetaRuns, { active: 0, count: "0" }),
+						),
+					);
+					lines.push(row(styles.apply("palette.empty", this.msg(CatalogMessageId.workflowEmptyNoChildRuns))));
+				}
 			}
 		} catch (error) {
 			this.message = sanitizeTerminalText(this.errorText(error, CatalogMessageId.workflowMessageCouldNotLoad));
 			this.messageLevel = "error";
 		}
-		if (this.message) {
-			const role = this.messageLevel === "error" ? "palette.message.error" : "palette.message.info";
-			lines.push(row());
-			lines.push(
-				...wrapTextWithAnsi(this.message, inner)
-					.slice(0, 3)
-					.map((line) => row(styles.apply(role, line))),
-			);
+		const body = lines.splice(headerLines);
+		const keyBar = renderPaletteKeyBar(this.hints(), inner, theme, styles, Math.max(1, height - 4));
+		while (lines.length > 1 && lines.length + keyBar.length + 2 > height) lines.pop();
+		const messageRole = this.messageLevel === "error" ? "palette.message.error" : "palette.message.info";
+		if (this.message)
+			body.push(...wrapTextWithAnsi(this.message, inner).map((text) => row(styles.apply(messageRole, text))));
+		const available = Math.max(1, height - lines.length - keyBar.length - 1);
+		let bodyRoom = available;
+		let showIndicator = false;
+		if (this.mode !== "output" && body.length > bodyRoom && available >= 2) {
+			// Reserve one visible position line rather than silently clipping the document.
+			bodyRoom = available - 1;
+			showIndicator = true;
 		}
-		lines.push(...renderPaletteKeyBar(this.hints(), inner, theme, styles).map(row));
+		this.viewportRoom = bodyRoom;
+		this.viewportTotal = body.length;
+		if (this.mode === "output") {
+			this.rowsVisible = Math.max(1, bodyRoom - 1);
+			this.outputLine = Math.max(0, Math.min(this.outputLine, body.length - 2));
+			if (bodyRoom > 1) lines.push(body[0]);
+			lines.push(...body.slice(this.outputLine + 1, this.outputLine + 1 + this.rowsVisible));
+		} else {
+			const start = this.viewportStart(body.length, bodyRoom, selectedLine);
+			this.scrollOffset = start;
+			this.rowsVisible = Math.max(1, rowLines.filter((index) => index >= start && index < start + bodyRoom).length);
+			lines.push(...body.slice(start, start + bodyRoom));
+			if (showIndicator) {
+				const end = Math.min(start + bodyRoom, body.length);
+				lines.push(row(styles.apply("palette.hint", this.scrollIndicator(start, end, body.length, inner))));
+			}
+		}
+		lines.push(...keyBar.map(row));
 		lines.push(renderTerminalFrameBorder(width, { ...frame, left: "╰", right: "╯" }));
 		return lines.map((line) => fitTerminalText(line, width));
 	}

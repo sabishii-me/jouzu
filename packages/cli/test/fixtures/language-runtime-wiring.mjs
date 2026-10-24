@@ -235,9 +235,8 @@ globalThis.__languageWiring = {
 			const opening = commands.get("catalogs").handler("", ctx);
 			assert.ok(panel, "the production Settings caller opened a panel");
 			panel.route({ view: "settings", query: "language" });
-			panel.handleInput("down");
-			if (scenario.action === "ui-only") {
-				panel.handleInput("\u001b[C");
+			if (scenario.action === "ui-only" || scenario.action === "ui-english") {
+				panel.handleInput(scenario.action === "ui-english" ? "\u001b[D" : "\u001b[C");
 			} else {
 				panel.handleInput("down");
 				if (scenario.action !== "artifact-only") panel.handleInput("\u001b[C");
@@ -246,7 +245,7 @@ globalThis.__languageWiring = {
 			}
 			observed.preview = snapshot();
 			panel.handleInput("enter");
-			if (scenario.environmentScope) panel.handleInput("\u001b[C");
+			observed.confirmation = panel.render(80).join("\n");
 			if (scenario.action === "cancel") {
 				panel.handleInput("escape");
 				panel.handleInput("escape");
@@ -267,13 +266,17 @@ globalThis.__languageWiring = {
 				panel.handleInput("enter");
 			}
 			observed.applied = snapshot();
+			observed.activeUiLocale = sessionUiOptions.catalog.locale;
+			observed.activeShortcutHint = sessionUiOptions.getHints?.(undefined)?.[0]?.text;
 			observed.rendered = panel.render(80).join("\n");
 			observed.nextPrompt = await composedPreamble();
 			observed.next = snapshot();
 			if (scenario.action === "reset") {
+				panel.route({ view: "settings", query: "language" });
 				panel.handleInput("r");
 				panel.handleInput("enter");
 				observed.resetStaged = snapshot();
+				observed.resetRendered = panel.render(80).join("\n");
 				observed.resetPrompt = await composedPreamble();
 				observed.reset = snapshot();
 			}

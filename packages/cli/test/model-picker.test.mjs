@@ -22,7 +22,7 @@ import {
 } from "../dist/model-picker.js";
 import { modelContextFit } from "../dist/model-picker-ranking.js";
 import { deriveProjectKey, emptyModelPickerState, ModelPickerStore } from "../dist/model-picker-state.js";
-import { JouzuPaletteRouter } from "../dist/palette.js";
+import { JouzuPaletteRouter, paletteHeightBudget } from "../dist/palette.js";
 import { resolveJouzuPaths } from "../dist/paths.js";
 import { createSessionUiStyles } from "../dist/session-ui/index.js";
 
@@ -325,7 +325,7 @@ function createComponent(overrides = {}) {
 	const component = new ModelPickerComponent({
 		context: {
 			tui: {
-				terminal: { rows: 30 },
+				terminal: overrides.terminal ?? { rows: 30 },
 				requestRender() {
 					calls.renders += 1;
 				},
@@ -368,7 +368,12 @@ test("Japanese model rows keep the current columns and query-preserving favorite
 		const lines = component.render(width);
 		assert.ok(lines.every((line) => visibleWidth(line) <= width));
 		assert.match(lines.join("\n"), /名前/u);
-		assert.doesNotMatch(lines.join("\n"), /Recent|Favorites|View/u);
+		assert.doesNotMatch(lines.join("\n"), /Recent|Favorites|View|Models|Workflow|Settings/u);
+		if (width >= 48) {
+			assert.match(stripSgr(lines[0]), /JOUZU · モデル/u);
+			assert.match(lines[1], /\[モデル\].*ワークフロー.*設定/u);
+		}
+		if (width >= 80) assert.match(lines.join("\n"), /コンテキスト/u);
 	}
 	component.handleInput("/");
 	component.handleInput("a");
@@ -382,6 +387,160 @@ test("Japanese model rows keep the current columns and query-preserving favorite
 	component.handleInput("escape");
 	assert.equal(component.snapshotRoute().query, undefined);
 	assert.equal(calls.close, 0);
+	component.dispose();
+});
+
+test("Models fills the shared height budget, pages visibly, and survives short-terminal resizing", () => {
+	const inventory = Array.from({ length: 100 }, (_, index) => ({
+		...rows()[1],
+		model: { ...rows()[1].model, modelId: `model-${index}`, name: `Model ${index} 日本語` },
+	}));
+	for (const locale of ["en", "ja"]) {
+		const terminal = { rows: 80 };
+		const { component } = createComponent({
+			terminal,
+			catalog: resolveCatalog(locale).bundle,
+			getRows: () => inventory,
+			keybindings: fakeKeybindings({ "tui.select.confirm": ["ctrl+shift+enter"] }),
+		});
+		for (const width of [24, 48, 80, 120]) {
+			const lines = component.render(width);
+			assert.equal(lines.length, paletteHeightBudget(terminal.rows));
+			assert.ok(lines.every((line) => visibleWidth(line) <= width));
+			assert.ok(lines.filter((line) => line.includes("Model ")).length > 12);
+			assert.match(stripSgr(lines.join("\n")), /Ctrl\+Shift\+Enter/u);
+			assert.match(lines.join("\n"), /Esc\/Ctrl\+C/u);
+		}
+		const pageSize = component.render(120).filter((line) => line.includes("Model ")).length;
+		component.handleInput("pageDown");
+		assert.match(stripSgr(component.render(120).join("\n")), new RegExp(`→.*Model ${pageSize}(?:\\s|$)`, "u"));
+		component.handleInput("\x1b[F");
+		for (const rows of [24, 16, 12, 8, 4, 1, 80]) {
+			terminal.rows = rows;
+			for (const width of [24, 48, 80, 120]) {
+				const lines = component.render(width);
+				assert.ok(lines.length <= paletteHeightBudget(rows));
+				assert.ok(lines.every((line) => visibleWidth(line) <= width));
+				if (rows >= 12) {
+					assert.match(stripSgr(lines.join("\n")), /→.*Model 99/u);
+					assert.match(lines.join("\n"), /Esc\/Ctrl\+C/u);
+					assert.ok(lines.at(-1).startsWith("╰"));
+				}
+			}
+		}
+		component.dispose();
+	}
+});
+
+test("Models scrolls a bounded viewport and marks hidden rows above and below", () => {
+	const inventory = Array.from({ length: 100 }, (_, index) => ({
+		...rows()[1],
+		model: { ...rows()[1].model, modelId: `model-${index}`, name: `Model ${index}` },
+	}));
+	const terminal = { rows: 24 };
+	const { component } = createComponent({ terminal, getRows: () => inventory });
+	const render = () => stripSgr(component.render(80).join("\n"));
+	const tall = render();
+	assert.match(tall, /→.*Model 0/u);
+	assert.match(tall, /█/u, "the scrollbar thumb marks the current position");
+	assert.match(tall, /▼/u, "the scrollbar marks content below the viewport");
+	assert.doesNotMatch(tall, /▲/u);
+
+	terminal.rows = 12;
+	let view = render();
+	assert.match(view, /→.*Model 0/u);
+	assert.match(view, /▼/u);
+	assert.doesNotMatch(view, /▲/u);
+
+	component.handleInput("down");
+	view = render();
+	assert.match(view, /→.*Model 1/u);
+	assert.match(view, /↕/u);
+	component.handleInput("up");
+	view = render();
+	assert.match(view, /→.*Model 0/u);
+	assert.match(view, /▼/u);
+
+	component.handleInput("pageDown");
+	view = render();
+	assert.match(view, /→.*Model 1/u);
+	assert.match(view, /↕/u, "one visible row reports both hidden sides");
+	component.handleInput("pageUp");
+	view = render();
+	assert.match(view, /→.*Model 0/u);
+	assert.match(view, /▼/u);
+
+	component.handleInput("\x1b[F");
+	view = render();
+	assert.match(view, /→.*Model 99/u);
+	assert.match(view, /▲/u);
+	assert.doesNotMatch(view, /▼/u);
+
+	component.handleInput("\x1b[H");
+	view = render();
+	assert.match(view, /→.*Model 0/u);
+	assert.match(view, /▼/u);
+
+	component.handleInput("/");
+	component.handleInput("\x1b[1;5F");
+	view = render();
+	assert.match(view, /→.*Model 99/u, "Ctrl+End reaches the last item while search holds focus");
+	assert.match(view, /▲/u);
+	component.handleInput("\x1b[1;5H");
+	view = render();
+	assert.match(view, /→.*Model 0/u, "Ctrl+Home returns to the first item while search holds focus");
+	assert.match(view, /▼/u);
+	component.dispose();
+});
+
+test("Models reserves wrapped messages and full action hints before allocating list rows", () => {
+	const terminal = { rows: 24 };
+	const { component } = createComponent({ terminal });
+	component.handleInput("enter");
+	for (const width of [24, 48, 80, 120]) {
+		const lines = component.render(width);
+		assert.ok(lines.length <= paletteHeightBudget(terminal.rows));
+		assert.ok(lines.every((line) => visibleWidth(line) <= width));
+		assert.match(lines.join("\n"), /→/u);
+		if (width >= 48) assert.match(lines.join("\n"), /→.*Tiny/u);
+		assert.match(lines.join("\n"), /Esc\/Ctrl\+C cancel/u);
+		const text = lines.join("").replaceAll(/[│\s]/gu, "");
+		assert.ok(text.includes("Entercompactandswitch"));
+		assert.ok(text.includes("Compacttheactivecontextandswitchtosmall/tiny?"));
+	}
+	component.dispose();
+});
+
+test("Models scrolls through every line of a long message in a short terminal", async () => {
+	const terminal = { rows: 16 };
+	const { component } = createComponent({
+		terminal,
+		getRows: () => [{ ...rows()[1], contextFit: "fits", model: { ...rows()[1].model, name: "Tiny" } }],
+		onRefresh: async () => {
+			throw new Error("network unreachable while reading the Office pool catalog; retry with /reload");
+		},
+	});
+	await new Promise((resolve) => setImmediate(resolve));
+	for (const width of [24, 48, 80, 120]) {
+		const lines = component.render(width);
+		assert.ok(lines.length <= paletteHeightBudget(terminal.rows));
+		assert.ok(lines.every((line) => visibleWidth(line) <= width));
+		assert.match(lines.join("\n"), /→.*Tiny/u);
+		assert.match(lines.join("\n"), /Esc\/Ctrl\+C close/u);
+		const seen = [...lines];
+		if (!lines.join("\n").includes("/reload")) {
+			for (let page = 0; page < 20; page += 1) {
+				component.handleInput("pageDown");
+				seen.push(...component.render(width));
+			}
+		}
+		const text = stripSgr(seen.join(" ")).replaceAll(/\s+/gu, " ");
+		assert.match(text, /Model refresh/u);
+		assert.match(text, /Office/u, "the middle of the message remains reachable");
+		assert.match(text, /\/reload/u, "the recovery tail remains reachable");
+		if (!lines.join("\n").includes("/reload")) component.handleInput("\u001b[1;5H");
+		assert.match(component.render(width).join("\n"), /Model refresh/u);
+	}
 	component.dispose();
 });
 
@@ -1246,7 +1405,8 @@ test("/about routes to Settings About and reports text outside the TUI", async (
 		},
 	};
 	await commands.get("about").handler("", ctx);
-	assert.match(rendered[0], /Settings \/ About/);
+	assert.match(rendered[0], /Settings/);
+	assert.match(rendered[0], /About/);
 	assert.match(rendered[0], /startup-build/);
 	await commands.get("about").handler("", { ...ctx, mode: "rpc" });
 	assert.deepEqual(notices, ["Running Jouzu startup-build\nPi test-pi"]);

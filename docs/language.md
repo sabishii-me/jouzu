@@ -21,7 +21,7 @@ These controls can be combined. Choosing Japanese UI does not select the JA prof
 
 The interface offers English (`en`) and Japanese (`ja`, preview). `auto` resolves a locale from the environment. The accepted Chinese locale tags, `zh-Hans` and `zh-Hant`, use the English UI fallback; they are valid response-language preferences, not offered Chinese interfaces.
 
-For one launch:
+To select a startup language when no preference is saved:
 
 ```sh
 jz --jouzu-ui-locale ja
@@ -29,13 +29,13 @@ jz --jouzu-ui-locale ja
 
 Startup precedence, highest first:
 
-1. `--jouzu-ui-locale`.
-2. `JOUZU_UI_LOCALE`.
-3. Saved `uiLocale`.
+1. Saved `uiLocale`. A confirmed Settings choice wins over launch inputs; saved `auto` follows the OS.
+2. `--jouzu-ui-locale`, when no preference is saved.
+3. `JOUZU_UI_LOCALE`, when neither a saved preference nor a CLI option applies.
 4. For `auto`, the first nonempty `LC_ALL`, `LC_MESSAGES` or `LANG`.
 5. English fallback if no offered locale matches.
 
-The locale environment does not select response or artifact languages. UI preview affects the Settings panel immediately; restart to use a saved UI change throughout the session. Pi-owned screens, third-party extensions and service-owned web pages have their own language boundaries.
+The locale environment does not select response or artifact languages. Preview changes the Settings panel immediately. Confirmation saves the choice and refreshes supported Jouzu and Pi screens. Screens that retain their opening language switch when reopened or after a restart; third-party extensions and service-owned web pages control their own language.
 
 ## Response language and artifacts
 
@@ -58,16 +58,11 @@ Fresh sessions resolve response language from the saved preference, then `auto`.
 
 A conversational request for another language is an instruction to the model, not a settings write. To change the configured default reliably, use the response-language control. Model compliance and translation quality are not guaranteed by prompt delivery.
 
-## Save or apply to this session
+## Save language preferences
 
-Open `/catalogs`, select **View → Language**, and change the desired fields. Arrow-key preview does not save. Press `Enter` to review and confirm the changes. To make an already-active session override permanent, focus its row, press `Enter`, choose **Saved setting**, and confirm; you do not need to change the language first.
+Open `/language`, or open Settings in the Palette. Language controls appear first, followed by account, catalog and About information in the same scrollable pane. Arrow-key preview does not save. Press `Enter` to review the exact requested changes, then `Enter` to confirm or `Esc` to cancel.
 
-| Scope | Storage | Future sessions |
-| --- | --- | --- |
-| Session | Overrides keyed to the current session | Does not establish a new default |
-| Saved setting (environment scope) | Requested preferences in `localization.json` | New sessions use the saved values |
-
-Saved scope persists response language and artifact preferences as well as UI locale. Unchanged preferences are retained. Applying a response/artifact change affects the current agent on its next turn, not a reply already in progress. Other running sessions are not silently reconfigured. A CLI or environment UI override can still mask the saved UI preference.
+Every confirmed change saves the requested preferences in `localization.json` for future sessions. UI locale, response language and artifact policy can be changed independently; unchanged preferences are retained. Applying a response/artifact change affects the current agent on its next turn, not a reply already in progress. Other running sessions are not silently reconfigured. A confirmed UI choice overrides CLI and environment inputs, including on later launches.
 
 Direct edits to `localization.json` take effect in a new session; they do not send an apply event to a running agent. Preserve unrelated fields and do not replace an unreadable or malformed file with an example. Version 1 settings remain readable; absent response/artifact fields resolve to defaults.
 
@@ -140,7 +135,7 @@ Run `jz doctor` or `jz doctor --json` to inspect resolved startup values, their 
 
 - Japanese menus but English replies: check response language, not only UI locale.
 - Japanese replies with response `auto`: check the JA profile and append/custom instructions.
-- Saved UI choice appears ignored: check CLI/environment overrides and restart.
+- Saved UI choice appears ignored: inspect the confirmation receipt and `jz doctor`; reopen the affected screen or restart if it retains its opening language.
 - Files use a different language from replies: inspect the artifact policy and project/task instructions.
 - A running child keeps an earlier language: its launch snapshot is intentional; use an explicit resume or a new child for the updated preference.
 - A custom prompt ignores response settings: it owns the preamble; update its instructions deliberately.

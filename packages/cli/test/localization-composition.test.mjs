@@ -187,6 +187,7 @@ function setupSettings(t, locale, count, warning) {
 		},
 	});
 	t.after(() => component.dispose());
+	component.route({ view: "settings", query: "catalogs" });
 	component.handleInput("a");
 	component.handleInput("Pool");
 	component.handleInput("down");

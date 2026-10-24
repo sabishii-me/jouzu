@@ -2,12 +2,11 @@
  * The Settings wiring for the catalog language view.
  *
  * These tests drive the compiled `dist/catalog-settings.js` Language view. They
- * pin the issue #76 acceptance items: a confirmed change goes through
- * `planLocalization` and `applyLocalization` and writes atomically with a
- * backup; the session and saved-setting scopes are respected; reset returns to
- * the defaults and shows the recovery; a change during each deferral condition
- * changes nothing and shows the reason; the receipt names the backup and the
- * transaction; and cancelling a preview writes nothing.
+ * pin the unified Settings acceptance items: a confirmed change always persists
+ * to `localization.json`; a saved fixed display language wins over a launch
+ * option, an environment value, and an older session override; preview and
+ * cancel write nothing; reset restores the saved display language and keeps
+ * saved response/artifact choices; and the confirmation has no scope chooser.
  *
  * The Display-language preview switches the Settings panel's own catalog, so a
  * test that keeps English assertions previews `en` from a saved `ja` (or
@@ -34,7 +33,12 @@ import {
 import { resolveJouzuPaths } from "../dist/paths.js";
 import { createSessionUiStyles } from "../dist/session-ui/index.js";
 import { terminalTextWidth } from "../dist/terminal-layout.js";
-import { LOCALIZATION_FILE_NAME, readLocalizationSettings } from "../dist/ui-locale.js";
+import {
+	LOCALIZATION_FILE_NAME,
+	readLocalizationConfig,
+	readLocalizationSettings,
+	resolveUiLocale,
+} from "../dist/ui-locale.js";
 
 const identityTheme = {
 	fg: (_role, value) => value,
@@ -99,55 +103,107 @@ function componentFor(paths, context, options = {}) {
 	return new CatalogSettingsComponent({
 		context,
 		paths,
-		env: {},
+		env: options.env ?? {},
 		sessionId: "s1",
+		...(options.uiLocaleCli ? { uiLocaleCli: options.uiLocaleCli } : {}),
 		...(options.activity ? { activity: options.activity } : {}),
 		...(options.onLanguageChanged ? { onLanguageChanged: options.onLanguageChanged } : {}),
+		...(options.onUiLocaleChanged ? { onUiLocaleChanged: options.onUiLocaleChanged } : {}),
 	});
 }
 
-/** Focus the Display-language row. */
+/** Focus the Display-language row. `/language` opens on it. */
 function focusDisplay(component) {
 	component.route({ view: "settings", query: "language" });
-	component.handleInput("down");
 }
 
 /** Focus the Response-language row. */
 function focusResponse(component) {
 	component.route({ view: "settings", query: "language" });
 	component.handleInput("down");
-	component.handleInput("down");
 }
 
-test("a confirmed session change applies through the operations and leaves the saved setting alone", (t) => {
-	const f = setup();
+test("short language confirmations keep every summary and recovery row reachable", (t) => {
+	const f = setup({ rows: 8, columns: 48 });
 	t.after(() => rmSync(f.root, { recursive: true, force: true }));
-	writeSettings(f.paths, { uiLocale: "ja" });
+	writeSettings(f.paths, { uiLocale: "en", responseLanguage: "en" });
 	const component = componentFor(f.paths, f.context);
-	focusDisplay(component);
+	focusResponse(component);
 	component.handleInput("\u001b[C");
-	component.handleInput("\u001b[C");
-	assert.match(component.render(90).join("\n"), /Display language.*English.*preview/u);
-
 	component.handleInput("enter");
-	let rendered = component.render(90).join("\n");
-	assert.match(rendered, /Apply language change/u);
-	assert.match(rendered, /This session only/u);
-	assert.match(rendered, /previous settings are backed up/u);
-
-	component.handleInput("enter");
-	rendered = component.render(90).join("\n");
-	assert.match(rendered, /Transaction:/u);
-	assert.match(rendered, /Applied to This session only/u);
-	assert.match(rendered, /English.*session/u);
-
-	const override = readLocalizationSessionOverride(f.paths.stateDir, "s1");
-	assert.equal(override.uiLocale, "en");
-	const saved = JSON.parse(readFileSync(settingsPath(f.paths), "utf8"));
-	assert.equal(saved.localization.uiLocale, "ja", "a session change leaves the saved setting alone");
+	const expected = component.renderLanguageConfirm(48, (value) => value, 100);
+	let seen = "";
+	for (let page = 0; page < 25; page++) {
+		const lines = component.render(48);
+		assert.ok(lines.length <= 6, lines.join("\n"));
+		seen += lines.join("\n");
+		component.handleInput("pageDown");
+	}
+	for (const row of expected) assert.ok(seen.includes(row.trim()), `reachable confirmation row: ${row}`);
+	assert.match(seen, /↑ \d+/u);
+	assert.equal(readLocalizationSettings(f.paths.configDir).settings.responseLanguage, "en");
+	component.handleInput("escape");
 });
 
-test("a session response-language change is recorded without a settings write", (t) => {
+for (const launch of [
+	{
+		name: "--jouzu-ui-locale",
+		options: { uiLocaleCli: "ja" },
+		fresh: (paths) => resolveUiLocale({ cli: "ja", config: readLocalizationConfig(paths.configDir), os: [] }),
+	},
+	{
+		name: "JOUZU_UI_LOCALE",
+		options: { env: { JOUZU_UI_LOCALE: "ja" } },
+		fresh: (paths) => resolveUiLocale({ env: "ja", config: readLocalizationConfig(paths.configDir), os: [] }),
+	},
+]) {
+	test(`a confirmed English choice persists over ${launch.name} and is not masked`, (t) => {
+		const f = setup();
+		t.after(() => rmSync(f.root, { recursive: true, force: true }));
+		const changed = [];
+		const component = componentFor(f.paths, f.context, {
+			...launch.options,
+			onUiLocaleChanged: (locale) => changed.push(locale),
+		});
+		focusDisplay(component);
+		assert.match(component.render(90).join("\n"), /Display language.*日本語.*(?:cli|env)/u);
+
+		// From Japanese the preference cycle reaches Automatic and then English.
+		component.handleInput("\u001b[C");
+		component.handleInput("\u001b[C");
+		assert.match(component.render(90).join("\n"), /Display language.*English.*preview/u);
+
+		component.handleInput("enter");
+		let rendered = component.render(90).join("\n");
+		assert.match(rendered, /Save language change/u);
+		assert.match(rendered, /Display language.*日本語.*English/u);
+		assert.doesNotMatch(rendered, /This session only|Saved setting|Apply range/u);
+
+		// The confirmation has no scope chooser: left/right changes nothing.
+		component.handleInput("\u001b[D");
+		assert.match(component.render(90).join("\n"), /Display language.*日本語.*English/u);
+
+		component.handleInput("enter");
+		rendered = component.render(90).join("\n");
+		assert.match(rendered, /Saved for future sessions/u);
+		assert.match(rendered, /English.*config/u);
+		assert.match(rendered, /restart Jouzu/u);
+		assert.deepEqual(changed, ["en"], "the host is told the post-save effective locale");
+		assert.equal(
+			JSON.parse(readFileSync(settingsPath(f.paths), "utf8")).localization.uiLocale,
+			"en",
+			"the confirmed display language is written",
+		);
+		assert.deepEqual(readLocalizationSessionOverride(f.paths.stateDir, "s1"), {});
+
+		const fresh = launch.fresh(f.paths);
+		assert.equal(fresh.effective, "en", "a fresh resolution uses the saved fixed preference");
+		assert.equal(fresh.source, "config");
+		assert.equal(fresh.requested, "en");
+	});
+}
+
+test("a confirmed response-language change persists instead of creating a session override", (t) => {
 	const f = setup();
 	t.after(() => rmSync(f.root, { recursive: true, force: true }));
 	const component = componentFor(f.paths, f.context);
@@ -156,10 +212,17 @@ test("a session response-language change is recorded without a settings write", 
 	component.handleInput("\u001b[C");
 	assert.match(component.render(90).join("\n"), /Response language.*日本語.*preview/u);
 	component.handleInput("enter");
+	assert.match(component.render(90).join("\n"), /Response language.*Automatic.*日本語/u);
 	component.handleInput("enter");
-	assert.match(component.render(90).join("\n"), /日本語.*session/u);
-	assert.equal(readLocalizationSessionOverride(f.paths.stateDir, "s1").responseLanguage, "ja");
-	assert.equal(existsSync(settingsPath(f.paths)), false);
+	const rendered = component.render(90).join("\n");
+	assert.match(rendered, /Saved for future sessions/u);
+	assert.match(rendered, /日本語.*config/u);
+	assert.equal(readLocalizationSessionOverride(f.paths.stateDir, "s1").responseLanguage, undefined);
+	assert.equal(
+		JSON.parse(readFileSync(settingsPath(f.paths), "utf8")).localization.responseLanguage,
+		"ja",
+		"the confirmed response language is written",
+	);
 });
 
 test("a saved-setting change applies to the current session and backs up the previous file", (t) => {
@@ -172,8 +235,6 @@ test("a saved-setting change applies to the current session and backs up the pre
 	component.handleInput("\u001b[C");
 
 	component.handleInput("enter");
-	component.handleInput("\u001b[C");
-	assert.match(component.render(90).join("\n"), /Saved setting/u);
 	component.handleInput("enter");
 
 	const lines = component.render(90);
@@ -227,7 +288,6 @@ test("Saved response and artifact choices persist before staging the next turn",
 	component.handleInput("\u001b[C");
 	assert.equal(existsSync(sessionStorePath(f.paths)), false, "previews do not write");
 	component.handleInput("enter");
-	component.handleInput("\u001b[C");
 	component.handleInput("enter");
 	assert.equal(callbacks.length, 1);
 	assert.equal(contract.currentContract(), before, "Apply does not change an in-progress turn");
@@ -265,12 +325,10 @@ for (const preview of [false, true]) {
 			component.handleInput("\u001b[D");
 		}
 		component.handleInput("save");
-		assert.ok(component.languageConfirm, "the effective Japanese value can enter scope confirmation");
-		assert.match(component.render(90).join("\n"), /This session only/u);
-		component.handleInput("\u001b[C");
+		assert.ok(component.languageConfirm, "the active Japanese value can enter confirmation");
 		const rendered = component.render(90).join("\n");
-		assert.match(rendered, /Saved setting/u);
-		assert.match(rendered, /Response language.*English.*日本語/u);
+		assert.doesNotMatch(rendered, /This session only|Saved setting/u);
+		assert.match(rendered, /Response language.*日本語.*日本語/u);
 		assert.deepEqual(component.languageConfirm.request, { responseLanguage: "ja" });
 		for (const width of [48, 80]) assert.ok(component.render(width).every((row) => terminalTextWidth(row) <= width));
 		component.handleInput("cancel");
@@ -278,7 +336,6 @@ for (const preview of [false, true]) {
 		assert.equal(readFileSync(sessionStorePath(f.paths), "utf8"), sessionBefore);
 		assert.equal(callbacks.length, 0);
 		component.handleInput("save");
-		component.handleInput("\u001b[C");
 		component.handleInput("save");
 		assert.deepEqual(JSON.parse(readFileSync(settingsPath(f.paths), "utf8")).localization, {
 			...saved,
@@ -310,7 +367,6 @@ test("Settings promotes only the focused partial artifact override", (t) => {
 	component.handleInput("down");
 	component.handleInput("enter");
 	assert.ok(component.languageConfirm);
-	component.handleInput("\u001b[C");
 	assert.deepEqual(component.languageConfirm.request, { artifactPolicy: { commits: "ja" } });
 	component.handleInput("enter");
 	assert.deepEqual(JSON.parse(readFileSync(settingsPath(f.paths), "utf8")).localization, {
@@ -334,7 +390,6 @@ test("Settings promotes only the focused display-language override", (t) => {
 	focusDisplay(component);
 	component.handleInput("enter");
 	assert.ok(component.languageConfirm);
-	component.handleInput("\u001b[C");
 	assert.deepEqual(component.languageConfirm.request, { uiLocale: "en" });
 	assert.match(component.render(90).join("\n"), /Display language.*日本語.*English/u);
 	component.handleInput("enter");
@@ -353,7 +408,6 @@ test("Settings can save the default artifact preset from a mixed effective polic
 	component.handleInput("\u001b[D");
 	component.handleInput("enter");
 	assert.ok(component.languageConfirm);
-	component.handleInput("\u001b[C");
 	component.handleInput("enter");
 	assert.deepEqual(readLocalizationSettings(f.paths.configDir).settings, {
 		schemaVersion: 2,
@@ -379,7 +433,6 @@ for (const operation of ["save", "reset"]) {
 			else {
 				component.handleInput("\u001b[C");
 				component.handleInput("enter");
-				component.handleInput("\u001b[C");
 			}
 			const rename = fs.renameSync;
 			const targets = [];
@@ -422,7 +475,7 @@ for (const operation of ["save", "reset"]) {
 	}
 }
 
-test("reset returns every language setting to its default and shows the recovery", (t) => {
+test("reset restores the saved display language and keeps saved response/artifact choices", (t) => {
 	const f = setup();
 	t.after(() => rmSync(f.root, { recursive: true, force: true }));
 	writeSettings(f.paths, { uiLocale: "ja", responseLanguage: "ja" });
@@ -439,13 +492,15 @@ test("reset returns every language setting to its default and shows the recovery
 	component.handleInput("r");
 	let rendered = component.render(90).join("\n");
 	assert.match(rendered, /Reset language settings/u);
-	assert.match(rendered, /Reset every language setting to its default/u);
+	assert.match(rendered, /Reset the saved display language to Automatic/u);
+	assert.match(rendered, /Saved response and artifact choices are kept/u);
 	assert.match(rendered, /previous settings are backed up/u);
 
 	component.handleInput("enter");
 	rendered = component.render(90).join("\n");
-	assert.match(rendered, /Reset to the defaults/u);
+	assert.match(rendered, /Saved display language reset to Automatic/u);
 	assert.match(rendered, /Transaction:/u);
+	assert.match(rendered, /restart Jouzu/u);
 
 	assert.deepEqual(readLocalizationSessionOverride(f.paths.stateDir, "s1"), {}, "the session override is cleared");
 	const saved = JSON.parse(readFileSync(settingsPath(f.paths), "utf8"));
@@ -547,7 +602,7 @@ test("the confirmation and hints render inside 48 columns and the overlay budget
 			rows.every((row) => terminalTextWidth(row) <= width),
 			`render fits ${width}`,
 		);
-		assert.ok(rows.length <= Math.min(Math.floor(16 * 0.82), 14), "render stays inside the overlay budget");
+		assert.ok(rows.length <= Math.min(14, Math.floor(16 * 0.9)), "render stays inside the overlay budget");
 	}
 	component.handleInput("escape");
 	component.handleInput("r");
@@ -557,6 +612,6 @@ test("the confirmation and hints render inside 48 columns and the overlay budget
 			rows.every((row) => terminalTextWidth(row) <= width),
 			`reset render fits ${width}`,
 		);
-		assert.ok(rows.length <= Math.min(Math.floor(16 * 0.82), 14));
+		assert.ok(rows.length <= Math.min(14, Math.floor(16 * 0.9)));
 	}
 });

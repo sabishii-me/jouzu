@@ -3,7 +3,12 @@ import type { SessionUiActivity, SessionUiActivityContext, SessionUiCatalog, Ses
 import { sessionUiText } from "./contracts.js";
 import { SessionStatusController } from "./controller.js";
 import { SESSION_UI_RUNTIME_IDS } from "./identity.js";
-import { type ModelCycleDirection, SessionPromptEditor } from "./prompt-frame.js";
+import {
+	createSlashCommandLocalizer,
+	createSlashCommandOwnershipState,
+	type ModelCycleDirection,
+	SessionPromptEditor,
+} from "./prompt-frame.js";
 import { SessionLineComponent } from "./session-line.js";
 import type { SessionStatusSnapshot } from "./snapshot.js";
 import { StatusBarComponent } from "./status-bar.js";
@@ -14,8 +19,8 @@ import { dashboardAvailableRows } from "./work-dashboard-height.js";
 
 export interface SessionUiExtensionOptions {
 	/**
-	 * The resolved catalog the Session UI renders its own text from. It reaches
-	 * the renderers once, here, and the render path never resolves a locale.
+	 * The catalog the Session UI reads its text from. It may forward to a newly
+	 * active bundle after a language change; the renderers read it on each frame.
 	 */
 	catalog: SessionUiCatalog;
 	dashboard?: {
@@ -41,14 +46,17 @@ export interface SessionUiExtensionOptions {
 }
 
 export function createSessionUiExtension(options: SessionUiExtensionOptions): InlineExtension {
-	// Resolve the display text once, when the renderers are created, so a render
-	// call formats no locale and the text cannot change mid-session.
+	// One text view over the mutable catalog. Its getters resolve the active locale
+	// on each read, so a language change reaches the next frame or completion
+	// without recreating the editor or losing its content.
 	const text = sessionUiText(options.catalog);
 	return {
 		name: SESSION_UI_RUNTIME_IDS.extension,
 		factory: (pi) => {
 			let controller: SessionStatusController | undefined;
 			let editorInstalled = false;
+			const slashCommandOwnership = createSlashCommandOwnershipState();
+			let localizeSlashCommand = createSlashCommandLocalizer(options.catalog, [], slashCommandOwnership);
 			// The Session Line renders as the prompt editor's first line. Pi moves a widget directly above
 			// the editor whenever it is registered again, so a widget cannot hold that position.
 			let sessionLine: SessionLineComponent | undefined;
@@ -67,6 +75,11 @@ export function createSessionUiExtension(options: SessionUiExtensionOptions): In
 
 			pi.on("session_start", (_event, ctx) => {
 				if (ctx.mode !== "tui") return;
+				try {
+					localizeSlashCommand = createSlashCommandLocalizer(options.catalog, pi.getCommands(), slashCommandOwnership);
+				} catch {
+					// Keep the previous ownership evidence if the command registry is unavailable.
+				}
 				controller?.dispose();
 				controller = new SessionStatusController({
 					run: (command, args, commandOptions) =>
@@ -136,7 +149,7 @@ export function createSessionUiExtension(options: SessionUiExtensionOptions): In
 						(tui, theme, keybindings) =>
 							new SessionPromptEditor(tui, theme, keybindings, stylesFor(ctx.ui.theme), {
 								topLine: (width) => sessionLine?.render(width)[0],
-								...(text.slashCommands ? { slashCommands: text.slashCommands } : {}),
+								slashCommandLocalizer: (command, description) => localizeSlashCommand(command, description),
 								...(options.onModelPicker ? { onModelPicker: options.onModelPicker } : {}),
 								...(options.onModelCycle ? { onModelCycle: options.onModelCycle } : {}),
 								...(options.onScopedModelsCommand ? { onScopedModelsCommand: options.onScopedModelsCommand } : {}),

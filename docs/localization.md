@@ -12,14 +12,15 @@ not establish the quality of its output.
 
 ## Choose a language
 
-For one launch, use:
+When no preference is saved, select a startup language with:
 
 ```bash
 jz --jouzu-ui-locale ja
 jz --jouzu-ui-locale en
 ```
 
-`JOUZU_UI_LOCALE` is the environment-variable alternative.
+`JOUZU_UI_LOCALE` is the environment-variable alternative. A preference confirmed
+in Settings overrides both launch inputs; saved `auto` follows the OS locale.
 [Language, locale and prompt instructions](language.md) explains identity, profiles,
 UI/response/artifact preferences, persistence and child inheritance in one place.
 See [Configuration](configuration.md#language) for the saved `localization.json`
@@ -29,8 +30,8 @@ code, commands, identifiers, or existing artifacts.
 
 The first-run prompt offers `English` and `日本語`, then asks for a response
 language separately. Chinese self-names appear as unavailable interface choices.
-The [Settings Language view](palette-ux.md#settings) previews language choices
-inside its own panel.
+The [Settings Language controls](palette-ux.md#settings) preview choices without
+writing them. Confirmation saves the choice and refreshes supported screens.
 
 ## Translation boundaries
 
@@ -38,7 +39,8 @@ inside its own panel.
 | --- | --- |
 | Jouzu catalog-backed labels and messages | Render from the English or Japanese catalog. Missing messages use English fallback. |
 | Jouzu browser adapter | Tool labels use the Jouzu catalog; `tff-fetch_url` and `tff-search_web` remain unchanged. |
-| Pi-owned screens and third-party extensions | Are outside the Jouzu catalog. Changing Jouzu's UI locale does not promise to change their text. |
+| Pi built-in settings, theme, thinking, trust, login, resume, tree and fork selectors | Jouzu translates their owned labels while preserving user text and restoring native state after rendering. Very narrow layouts can retain truncated native labels. |
+| Third-party extensions | Own their content; Jouzu does not translate arbitrary extension labels or output. |
 | Shisa account dashboard and sign-in | Open service-owned browser pages. Their language is controlled by the service. |
 | Commands, tool names, model IDs, paths, URLs, and diagnostic identifiers | Stay unchanged; see the [catalog glossary](localization-glossary.md). |
 | Model responses, tool output, and source errors | Are not UI translations. The response-language setting guides model explanations; quoted source text remains intact. |
