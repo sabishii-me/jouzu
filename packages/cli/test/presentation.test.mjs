@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { join } from "node:path";
 import { test } from "node:test";
+import { pathToFileURL } from "node:url";
+import { getPackageDir } from "@earendil-works/pi-coding-agent";
 import { resolveCatalog } from "../dist/locale-catalog.js";
 import {
 	brandDefaultSystemPrompt,
@@ -94,7 +97,8 @@ Guidelines:
 	assert.equal(brandDefaultSystemPrompt("You are a reviewer."), "You are a reviewer.");
 	assert.match(expected, /Available tools:\n- read: Read file contents\n- bg_task:/);
 	assert.match(expected, /Do not invent acronyms or use unexplained jargon/);
-	assert.match(expected, /Use `jouzu-clear-writing` for documentation/);
+	// The clear-writing pointer lives only in generated routing.
+	assert.doesNotMatch(expected, /jouzu-clear-writing/);
 	assert.match(expected, /Work directly by default/);
 	assert.match(
 		expected,
@@ -110,17 +114,12 @@ Guidelines:
 	assert.match(expected, /never search guessed package paths/);
 	assert.doesNotMatch(JOUZU_DEFAULT_GUIDANCE, /be concise/i);
 	assert.doesNotMatch(JOUZU_DEFAULT_GUIDANCE, /jouzu-core/);
-	assert.equal(
-		JOUZU_DEFAULT_GUIDANCE,
-		`${JOUZU_USER_COMMUNICATION_GUIDANCE}\n${JOUZU_REPOSITORY_WORK_GUIDANCE}\n${JOUZU_ASYNC_WAIT_GUIDANCE}`,
-	);
+	assert.equal(JOUZU_DEFAULT_GUIDANCE, `${JOUZU_USER_COMMUNICATION_GUIDANCE}\n${JOUZU_REPOSITORY_WORK_GUIDANCE}`);
 	assert.ok(JOUZU_DEFAULT_GUIDANCE.length <= 2000);
-	assert.match(expected, /Prefer completion notifications and flow-control waits over sleeping or polling/);
-	assert.match(expected, /When agent_wait is available and the producer returns a wait dependency/);
-	assert.match(expected, /omit work to use the current invocation/);
-	assert.match(expected, /After a waiting response.*end the turn/);
-	assert.match(expected, /A refused wait does not suspend work/);
-	assert.match(expected, /no completion notification or wait support.*bounded polling/);
+	// Asynchronous-work guidance is tool-dependent, so it is generated with the routing.
+	assert.doesNotMatch(expected, /completion notifications/);
+	assert.match(JOUZU_ASYNC_WAIT_GUIDANCE, /Prefer completion notifications over sleeping or polling/);
+	assert.match(JOUZU_ASYNC_WAIT_GUIDANCE, /Without completion notifications, poll on a bounded schedule/);
 
 	const routingOptions = {
 		customPrompt: undefined,
@@ -134,6 +133,19 @@ Guidelines:
 		systemPromptOptions: routingOptions,
 	});
 	assert.deepEqual(result, { systemPrompt: brandDefaultSystemPrompt(upstream, undefined, routing) });
+});
+
+test("brands the installed Pi default prompt and narrows its documentation section", async () => {
+	const { buildSystemPrompt } = await import(pathToFileURL(join(getPackageDir(), "dist/core/system-prompt.js")).href);
+	const upstream = buildSystemPrompt({ selectedTools: ["read", "bash"], cwd: "/workspace" });
+	const branded = brandDefaultSystemPrompt(upstream);
+	assert.notEqual(branded, upstream, "Pi's default identity no longer matches; Jouzu guidance would be dropped");
+	assert.match(branded, /operating inside Jouzu/);
+	assert.ok(branded.includes(JOUZU_DEFAULT_GUIDANCE));
+	assert.equal(branded.match(/<docs>/g)?.length, 1);
+	assert.match(branded, /<docs>\nPi documentation \(read only for Pi extension, SDK, theme, or TUI development\)/);
+	assert.doesNotMatch(branded, /docs\/keybindings\.md|docs\/models\.md|environment-variables/);
+	assert.match(branded, /<cwd>\n\/workspace\n<\/cwd>/);
 });
 
 test("generates stable capability routing from only active tools and skills", () => {

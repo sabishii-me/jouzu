@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- Remove repeated instructions from the default system prompt. A default Core session's prompt shrinks from about 22,000 to about 17,000 characters. Browser-tool parameter details move into the tool parameter descriptions.
+
 ### Fixed
 
 - Avoid loading an unused native HTTP library that prevented browser tools from starting on older Linux systems.

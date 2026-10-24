@@ -193,7 +193,7 @@ The files under `packages/cli/test/flow-*.test.mjs` substitute the provider, dri
 
 ### Workflow instructions
 
-`flow-wait-tools.test.mjs` checks wait guidance in the assembled system prompt, deduplication, and removal when wait tools are disabled. Extension-specific guidance follows the active background, task, and scheduling tools. `capability-routing.test.mjs` checks routing availability; `evals/core-capability-routing.json` includes long-running dependencies, replacement-job notifications, tasks awaiting a person, and status questions during a wait. The corpus records expected behavior; schema and routing tests do not measure model compliance.
+`flow-wait-tools.test.mjs` checks wait guidance in the assembled system prompt, deduplication, and removal when wait tools are disabled. Extension-specific guidance follows the active background and task tools. `capability-routing.test.mjs` checks routing availability and that asynchronous-work and untrusted-content guidance each appear once; `evals/core-capability-routing.json` includes long-running dependencies, replacement-job notifications, tasks awaiting a person, and status questions during a wait. The corpus records expected behavior; schema and routing tests do not measure model compliance.
 
 ### Flow journal checkpoints
 

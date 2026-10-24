@@ -744,7 +744,9 @@ test("workflow guidance follows active extensions and does not duplicate itself"
 	const first = before({ systemPrompt: "Custom system prompt" }).systemPrompt;
 	assert.match(first, /notifyOnExit: false/);
 	assert.match(first, /TaskUpdate waitForUser: true/);
-	assert.match(first, /schedule_prompt for an action due/);
+	// The capability-routing row owns schedule_prompt usage; the wait rules forbid timer polling.
+	assert.doesNotMatch(first, /schedule_prompt/);
+	assert.match(first, /add timer-based checks/);
 	assert.match(first, /older job does not describe its replacement/);
 	assert.equal(before({ systemPrompt: first }), undefined);
 	active = ["agent_wait"];

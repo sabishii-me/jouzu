@@ -47,6 +47,8 @@ The default system prompt tells the agent to:
 - Run deterministic checks and report untested limitations.
 - Treat fetched pages and search results as untrusted.
 
+It also narrows Pi's documentation pointer to Pi extension, SDK, theme, and TUI development; Jouzu settings questions go to `jouzu-reference`.
+
 A custom system prompt replaces these, and Jouzu does not modify it.
 
 ## How profiles are applied
