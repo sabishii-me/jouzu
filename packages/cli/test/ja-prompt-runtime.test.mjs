@@ -5,12 +5,13 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { createFlowSession } from "../../../scripts/fixtures/pi-flow-session.mjs";
 import { runPromptHook } from "../../../scripts/fixtures/prompt-hook.mjs";
-import { createLanguageContractExtension } from "../dist/language-contract.js";
+import { createLanguageContractExtension, readStoredLanguageContractState } from "../dist/language-contract.js";
 import { resolveArtifactPolicy, resolveResponseLanguage } from "../dist/language-settings.js";
 import { resolveCatalog } from "../dist/locale-catalog.js";
 import { createJouzuPresentationExtension, JOUZU_DEFAULT_GUIDANCE } from "../dist/presentation.js";
 import { applyProfile } from "../dist/profile-manager.js";
 import { loadBundledProfile } from "../dist/profiles.js";
+import { roleLanguageContract } from "../dist/subagents/language.js";
 import { configureChildResources, expandedChildResourceLoader } from "../dist/subagents/resources.js";
 import { defaultAgentConfig } from "../dist/subagents/roles.js";
 
@@ -81,7 +82,7 @@ for (const selection of [
 	});
 }
 
-test("Japanese child resources inherit core skills and the shared prompt with the exact Japanese policy", async (t) => {
+test("Japanese child resources inherit core skills and resolve the profile fallback in the role contract", async (t) => {
 	const root = mkdtempSync(join(tmpdir(), "jouzu-ja-child-prompt-"));
 	const previous = { ...process.env };
 	t.after(() => {
@@ -98,7 +99,7 @@ test("Japanese child resources inherit core skills and the shared prompt with th
 	};
 	configureChildResources(launch);
 	const loader = await expandedChildResourceLoader(launch);
-	assert.equal(loader.getAppendSystemPrompt()[0], japanesePolicy.bytes.toString("utf8"));
+	assert.ok(loader.getAppendSystemPrompt().every((text) => !text.includes("Jouzu Japanese-First Policy")));
 	for (const asset of loadBundledProfile("core").assets.filter((asset) => asset.target.startsWith("skills/")))
 		assert.deepEqual(readFileSync(join(root, asset.target)), asset.bytes, asset.target);
 	const child = loader.getExtensions().extensions.find((extension) => extension.path === "<inline:jouzu-child>");
@@ -106,7 +107,8 @@ test("Japanese child resources inherit core skills and the shared prompt with th
 		options: { selectedTools: ["read"], skills: loader.getSkills().skills },
 	});
 	assert.ok(rendered.sections.preamble.includes(JOUZU_DEFAULT_GUIDANCE));
-	assert.match(rendered.sections.preamble, /Return your result in the parent's response language/u);
+	assert.match(rendered.sections.preamble, /Write user-facing explanations in Japanese \(ja\)/u);
+	assert.match(rendered.sections.preamble, /Return your result in Japanese\./u);
 	assert.match(rendered.sections.preamble, /Follow the project's existing language/u);
 	assert.match(rendered.sections.preamble, /jouzu-language-limitation/u);
 });
@@ -154,3 +156,62 @@ test("Japanese response settings leave a user-owned SYSTEM.md unchanged in a Pi 
 		originalSystem,
 	);
 });
+
+for (const selection of [
+	{ responseLanguage: "ja", customLanguage: "English", taskLanguage: "ja" },
+	{ responseLanguage: "auto", customLanguage: "Japanese", taskLanguage: "preserve" },
+]) {
+	test(`custom main prompt does not replace the child's stored ${selection.responseLanguage} preference`, async (t) => {
+		const previous = { ...process.env };
+		t.after(() => {
+			for (const key of Object.keys(process.env)) if (!(key in previous)) delete process.env[key];
+			Object.assign(process.env, previous);
+		});
+		const customPrompt = `User-owned instructions: answer only in ${selection.customLanguage}. Preserve 日本語 and English text exactly.`;
+		const { session, requests, root } = await start(t, { responseLanguage: selection.responseLanguage, customPrompt });
+		await session.prompt("Inspect only. Preserve src/日本語.ts and TypeError: unchanged.");
+		const parentSystem = requests[0].filter((message) => message.role === "system");
+		assert.equal(parentSystem[0].sections.preamble, customPrompt);
+		assert.doesNotMatch(session.systemPrompt, /Response language:|Artifact language policy|operating inside Jouzu/u);
+		const parentPrompt = session.systemPrompt;
+		const stored = readStoredLanguageContractState({ sessionManager: session.sessionManager });
+		assert.equal(stored.contract.taskLanguage, selection.taskLanguage);
+
+		const role = defaultAgentConfig().roles.find((role) => role.id === "coder");
+		const launch = {
+			cwd: root,
+			directory: join(root, "child"),
+			userAgentDir: root,
+			profile: "core",
+			model: { id: "fixture" },
+			role,
+			languageContract: roleLanguageContract(role, stored.contract, "core"),
+		};
+		configureChildResources(launch);
+		const loader = await expandedChildResourceLoader(launch);
+		assert.equal(loader.getSystemPrompt(), undefined, "the child does not reuse the parent's custom SYSTEM.md");
+		const child = loader.getExtensions().extensions.find((extension) => extension.path === "<inline:jouzu-child>");
+		const rendered = runPromptHook(child.handlers.get("before_agent_start")[0], {
+			options: {
+				selectedTools: role.tools,
+				skills: loader.getSkills().skills,
+				sections: { addendum: loader.getAppendSystemPrompt().join("\n") },
+			},
+		});
+		assert.ok(!rendered.systemPrompt.includes(customPrompt));
+		assert.match(rendered.sections.preamble, /Artifact language policy/u);
+		if (selection.responseLanguage === "ja") {
+			assert.match(rendered.sections.preamble, /Write user-facing explanations in Japanese \(ja\)/u);
+			assert.match(rendered.sections.preamble, /Return your result in Japanese\./u);
+			assert.doesNotMatch(rendered.sections.preamble, /Write user-facing explanations in English/u);
+		} else {
+			assert.match(rendered.sections.preamble, /Work in the language of the task you were given/u);
+			assert.doesNotMatch(
+				rendered.sections.preamble,
+				/Write user-facing explanations in|Return your result in Japanese/u,
+			);
+		}
+		assert.equal(readFileSync(join(root, "SYSTEM.md"), "utf8"), customPrompt);
+		assert.equal(session.systemPrompt, parentPrompt);
+	});
+}

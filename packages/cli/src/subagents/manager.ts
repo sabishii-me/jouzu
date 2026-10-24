@@ -20,14 +20,13 @@ import type { JouzuPaths } from "../paths.js";
 import { ensurePrivateDirectory, writeFilePrivateAtomic } from "../private-fs.js";
 import { acquireProcessLock, type ProcessLock, ProcessLockError } from "../process-lock.js";
 import type { ChildContext } from "./context.js";
-import { parseLanguageLimitation, snapshotLanguageContract } from "./language.js";
+import { parseLanguageLimitation, roleLanguageContract, snapshotLanguageContract } from "./language.js";
 import type { WorkerCommand, WorkerEvent, WorkerLaunch } from "./protocol.js";
 import { captureReviewCandidate, type ReviewCandidate } from "./review.js";
 import {
 	type AgentRole,
 	type AgentThinkingLevel,
 	DEFAULT_WORKSPACE_WRITERS,
-	defaultLanguageContract,
 	digest,
 	isSameModelSelector,
 	parseAgentConfig,
@@ -492,7 +491,9 @@ export class SubagentManager {
 			auth: structuredClone(launch.auth),
 			// Snapshot the role's language contract at launch. A parent-side change
 			// after this point cannot reach the running child.
-			languageContract: snapshotLanguageContract(launch.languageContract ?? defaultLanguageContract(run.role)),
+			languageContract: snapshotLanguageContract(
+				launch.languageContract ?? roleLanguageContract(run.role, undefined, launch.profile),
+			),
 			task: run.review
 				? `${launch.task}\n\nReview candidate for workspace ${JSON.stringify(run.cwd)}: ${JSON.stringify(run.review.candidate)}. This identity covers only that workspace, not sibling repositories or the full assignment. Inspect the assigned scope independently. Return findings with severity, file/line, failure conditions and evidence, then coverage and checks you could not perform. A response is not approval to ship.`
 				: launch.task,

@@ -19,6 +19,7 @@
  */
 
 import {
+	artifactLanguageFor,
 	isLanguageContract,
 	LANGUAGE_CONTRACT_PRESERVE_EXACT,
 	type LanguageContract,
@@ -27,6 +28,7 @@ import {
 	type LanguageContractReturnLanguage,
 	languageContractId,
 } from "../language-contract.js";
+import { ARTIFACT_POLICY_FIELDS } from "../language-settings.js";
 import type { AgentRole } from "./roles.js";
 import { DEFAULT_ROLE_LANGUAGE_CONTRACTS, defaultLanguageContract } from "./roles.js";
 
@@ -91,7 +93,7 @@ export function snapshotLanguageContract(contract: LanguageContract): LanguageCo
 
 /** Whether a contract forbids rewriting history, summaries, quotes, tool results, and code. */
 export function forbidsHistoryRewrite(contract: LanguageContract): boolean {
-	return contract.taskLanguage === "preserve" && contract.artifactLanguage === "preserve";
+	return contract.artifactLanguage === "preserve" && !contract.artifactPolicy;
 }
 
 /**
@@ -110,7 +112,20 @@ export function buildRoleLanguageSection(contract: LanguageContract): string {
 		const name = languageName(contract.taskLanguage);
 		lines.push(`Write user-facing explanations in ${name} (${contract.taskLanguage}).`);
 	}
-	if (contract.artifactLanguage === "preserve") {
+	if (contract.artifactPolicy) {
+		lines.push("Artifact language policy (independent of response language):");
+		for (const field of ARTIFACT_POLICY_FIELDS) {
+			const language = contract.artifactPolicy[field];
+			const instruction =
+				language === "preserve"
+					? "Preserve the existing language."
+					: language === "project"
+						? "Follow the project's existing language."
+						: `Use ${languageName(language)} (${language}).`;
+			lines.push(`- ${field}: ${instruction}`);
+		}
+		lines.push("Apply these choices to requested work, not as a request to translate existing files or comments.");
+	} else if (contract.artifactLanguage === "preserve") {
 		lines.push("Do not translate or rewrite existing files, comments, documentation, or code.");
 	} else if (contract.artifactLanguage === "project") {
 		lines.push("Follow the project's existing language for comments, documentation, commits, and reviews.");
@@ -129,7 +144,7 @@ export function buildRoleLanguageSection(contract: LanguageContract): string {
 	lines.push(
 		forbidsHistoryRewrite(contract)
 			? "Never translate or rewrite history, summaries, quotes, tool results, or code."
-			: "Preserve history, summaries, quotations, and tool results, including quoted code. Do not translate existing source solely to satisfy a language preference; edit source code when the assignment requires it.",
+			: "Preserve history, summaries, quotations, and tool results, including quoted code. Do not translate task input or existing source solely to satisfy a language preference; edit source code when the assignment requires it.",
 		`If you cannot return a reliable result in the requested language, report it as a limitation with the tag ${LANGUAGE_LIMITATION_TAG} instead of translating through another model.`,
 	);
 	return lines.join("\n");
@@ -164,15 +179,27 @@ export function hasLanguageLimitation(text: string | undefined): boolean {
 	return parseLanguageLimitation(text) !== undefined;
 }
 
-/** Resolve a role's return language from the active parent contract, then freeze it. */
+/** Resolve caller preferences without widening the role's artifact or structured-output contract. */
 export function roleLanguageContract(
 	role: Pick<AgentRole, "id" | "judging">,
 	parent?: LanguageContract,
+	profile?: "core" | "ja",
 ): LanguageContract {
 	const contract = defaultLanguageContract(role);
-	if (contract.returnLanguage !== "parent-response-language" || !parent || parent.taskLanguage === "preserve") {
-		return snapshotLanguageContract(contract);
-	}
-	const content = { ...contract, returnLanguage: parent.taskLanguage };
+	if (contract.returnLanguage !== "parent-response-language") return snapshotLanguageContract(contract);
+	const language =
+		parent && parent.taskLanguage !== "preserve"
+			? parent.taskLanguage
+			: parent && parent.returnLanguage !== "structured" && parent.returnLanguage !== "parent-response-language"
+				? parent.returnLanguage
+				: profile === "ja"
+					? "ja"
+					: undefined;
+	const artifactPolicy = contract.artifactLanguage !== "preserve" ? parent?.artifactPolicy : undefined;
+	const content = {
+		...contract,
+		...(language ? { taskLanguage: language, returnLanguage: language } : {}),
+		...(artifactPolicy ? { artifactPolicy, artifactLanguage: artifactLanguageFor(artifactPolicy) } : {}),
+	};
 	return snapshotLanguageContract({ ...content, contractId: languageContractId(content) });
 }

@@ -1,5 +1,26 @@
 [
 	{
+		"file": "packages/cli/src/subagents/language.ts",
+		"kind": "conditional-branch",
+		"text": "Preserve the existing language.",
+		"category": "model-facing",
+		"reason": "Inherited per-field artifact policy in the child model prompt, not a translated interface label."
+	},
+	{
+		"file": "packages/cli/src/subagents/language.ts",
+		"kind": "conditional-branch",
+		"text": "Follow the project's existing language.",
+		"category": "model-facing",
+		"reason": "Inherited per-field artifact policy in the child model prompt, not a translated interface label."
+	},
+	{
+		"file": "packages/cli/src/subagents/language.ts",
+		"kind": "conditional-branch",
+		"text": "Use {…} ({…}).",
+		"category": "model-facing",
+		"reason": "Names the inherited artifact language in the child model prompt; the language tag is preserved."
+	},
+	{
 		"file": "packages/cli/src/language-contract.ts",
 		"kind": "conditional-branch",
 		"text": "Preserve the existing language.",
@@ -30,7 +51,7 @@
 	{
 		"file": "packages/cli/src/subagents/language.ts",
 		"kind": "conditional-branch",
-		"text": "Preserve history, summaries, quotations, and tool results, including quoted code. Do not translate existing source solely to satisfy a language preference; edit source code when the assignment requires it.",
+		"text": "Preserve history, summaries, quotations, and tool results, including quoted code. Do not translate task input or existing source solely to satisfy a language preference; edit source code when the assignment requires it.",
 		"category": "model-facing",
 		"reason": "Child model instruction distinguishes language preservation from authorized coding work; it is not interface text."
 	},

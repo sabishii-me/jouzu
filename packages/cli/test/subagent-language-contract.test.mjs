@@ -15,6 +15,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { runPromptHook } from "../../../scripts/fixtures/prompt-hook.mjs";
 import {
 	buildLanguageContract,
 	buildResponseLanguageSection,
@@ -23,6 +24,7 @@ import {
 	languageContractId,
 } from "../dist/language-contract.js";
 import { resolveArtifactPolicy, resolveResponseLanguage } from "../dist/language-settings.js";
+import { resolveCatalog } from "../dist/locale-catalog.js";
 import { createWorkflowIntegration } from "../dist/subagents/integration.js";
 import {
 	BACKGROUND_MONITOR_LANGUAGE_CONTRACT,
@@ -37,7 +39,7 @@ import {
 	snapshotLanguageContract,
 } from "../dist/subagents/language.js";
 import { SubagentManager, workerEnvironment } from "../dist/subagents/manager.js";
-import { configureChildResources } from "../dist/subagents/resources.js";
+import { configureChildResources, expandedChildResourceLoader } from "../dist/subagents/resources.js";
 import {
 	DEFAULT_ROLE_LANGUAGE_CONTRACTS,
 	defaultAgentConfig,
@@ -52,6 +54,36 @@ const byId = (id) => roles.find((role) => role.id === id);
 // reads the id and the judging flag, so a minimal fixture is enough.
 const researcher = { id: "researcher", judging: false };
 const model = { id: "test", provider: "test", api: "openai-completions" };
+const mixedArtifacts = { comments: "preserve", documentation: "ja", commits: "en", reviews: "project" };
+
+function parentContract(response = "auto", artifacts = mixedArtifacts) {
+	return buildLanguageContract({
+		responseLanguage: resolveResponseLanguage({ config: response }),
+		artifactPolicy: resolveArtifactPolicy({ config: artifacts }),
+	});
+}
+
+async function childRenderer(launch) {
+	configureChildResources(launch);
+	const loader = await expandedChildResourceLoader(launch);
+	const child = loader.getExtensions().extensions.find((extension) => extension.path === "<inline:jouzu-child>");
+	return () =>
+		runPromptHook(child.handlers.get("before_agent_start")[0], {
+			options: {
+				selectedTools: launch.role.tools,
+				skills: loader.getSkills().skills,
+				sections: { addendum: loader.getAppendSystemPrompt().join("\n") },
+			},
+		}).systemPrompt;
+}
+
+function preserveEnvironment(t) {
+	const previous = { ...process.env };
+	t.after(() => {
+		for (const key of Object.keys(process.env)) if (!(key in previous)) delete process.env[key];
+		Object.assign(process.env, previous);
+	});
+}
 
 function fixture() {
 	const root = mkdtempSync(join(tmpdir(), "jouzu-role-language-"));
@@ -97,27 +129,91 @@ test("every default role resolves to its own family's frozen language contract",
 	}
 });
 
-test("parent response inheritance changes only return language and preserves role-specific contracts", () => {
+test("caller language and artifact preferences reach ordinary roles without widening role permissions", () => {
 	for (const response of ["auto", "en", "ja", "zh-Hans", "zh-Hant"]) {
-		const parent = buildLanguageContract({
-			responseLanguage: resolveResponseLanguage({ config: response }),
-			artifactPolicy: resolveArtifactPolicy({ config: { comments: "ja" } }),
-		});
+		const parent = parentContract(response);
 		for (const role of [byId("coder"), byId("reviewer"), researcher, { id: "compactor" }, { id: "monitor" }]) {
 			const base = defaultLanguageContract(role);
 			const resolved = roleLanguageContract(role, parent);
+			const conversational = base.returnLanguage === "parent-response-language";
+			const producesArtifacts = conversational && base.artifactLanguage !== "preserve";
 			assert.equal(resolved.contractId, languageContractId(resolved));
 			assert.ok(Object.isFrozen(resolved));
-			assert.equal(resolved.taskLanguage, base.taskLanguage);
+			assert.equal(resolved.taskLanguage, conversational && response !== "auto" ? response : base.taskLanguage);
 			assert.equal(resolved.artifactLanguage, base.artifactLanguage);
-			assert.equal(resolved.artifactPolicy, base.artifactPolicy);
+			assert.deepEqual(resolved.artifactPolicy, producesArtifacts ? mixedArtifacts : undefined);
 			assert.deepEqual(resolved.preserveExact, base.preserveExact);
-			assert.equal(
-				resolved.returnLanguage,
-				response !== "auto" && base.returnLanguage === "parent-response-language" ? response : base.returnLanguage,
-			);
+			assert.equal(resolved.returnLanguage, conversational && response !== "auto" ? response : base.returnLanguage);
+			const section = buildRoleLanguageSection(resolved);
+			if (conversational && response !== "auto") assert.match(section, /Write user-facing explanations/);
+			else assert.doesNotMatch(section, /Write user-facing explanations/);
+			if (base.artifactLanguage === "preserve") {
+				assert.ok(forbidsHistoryRewrite(resolved));
+				assert.match(section, /Never translate or rewrite history, summaries, quotes, tool results, or code/);
+				assert.match(section, /Do not translate or rewrite existing files/);
+				assert.doesNotMatch(section, /edit source code when the assignment requires it|Artifact language policy/);
+			}
 		}
 	}
+});
+
+test("JA profile is a fallback for conversational roles, not an override or a structured-role instruction", () => {
+	for (const role of [byId("coder"), byId("reviewer"), researcher, { id: "compactor" }, { id: "monitor" }]) {
+		const base = defaultLanguageContract(role);
+		const conversational = base.returnLanguage === "parent-response-language";
+		for (const profile of ["core", "ja"]) {
+			for (const response of [undefined, "auto", "en", "ja"]) {
+				const resolved = roleLanguageContract(role, response ? parentContract(response) : undefined, profile);
+				const fixed = response && response !== "auto" ? response : profile === "ja" ? "ja" : undefined;
+				assert.equal(resolved.taskLanguage, conversational && fixed ? fixed : base.taskLanguage);
+				assert.equal(resolved.returnLanguage, conversational && fixed ? fixed : base.returnLanguage);
+			}
+		}
+	}
+});
+
+test("a preserved caller task with a concrete return language outranks the profile fallback", () => {
+	const parent = { ...parentContract("auto"), returnLanguage: "en" };
+	const resolved = roleLanguageContract(byId("coder"), parent, "ja");
+	assert.equal(resolved.taskLanguage, "en");
+	assert.equal(resolved.returnLanguage, "en");
+	const next = roleLanguageContract(byId("reviewer"), resolved, "ja");
+	assert.equal(next.taskLanguage, "en");
+	assert.equal(next.returnLanguage, "en");
+	assert.deepEqual(next.artifactPolicy, mixedArtifacts);
+	assert.equal(roleLanguageContract(byId("coder"), { ...parent, taskLanguage: "ja" }).returnLanguage, "ja");
+});
+
+test("per-field artifact instructions replace the generic project rule and do not imply translation", () => {
+	const parent = parentContract("ja");
+	const resolved = roleLanguageContract(byId("coder"), parent);
+	const section = buildRoleLanguageSection(resolved);
+	assert.match(section, /comments: Preserve the existing language\./);
+	assert.match(section, /documentation: Use Japanese \(ja\)\./);
+	assert.match(section, /commits: Use English \(en\)\./);
+	assert.match(section, /reviews: Follow the project's existing language\./);
+	assert.doesNotMatch(section, /Follow the project's existing language for comments/);
+	assert.match(section, /not as a request to translate existing files or comments/);
+	assert.match(section, /Do not translate task input or existing source solely to satisfy a language preference/);
+	assert.match(section, /Preserve commands, identifiers, paths, source error text, quoted text exactly/);
+	assert.ok(Object.isFrozen(resolved.artifactPolicy));
+	parent.artifactPolicy.documentation = "en";
+	assert.equal(resolved.artifactPolicy.documentation, "ja");
+	assert.notEqual(resolved.contractId, roleLanguageContract(byId("coder"), parent).contractId);
+
+	const preserve = roleLanguageContract(
+		byId("coder"),
+		parentContract("auto", {
+			comments: "preserve",
+			documentation: "preserve",
+			commits: "preserve",
+			reviews: "preserve",
+		}),
+	);
+	assert.equal(preserve.artifactLanguage, "preserve");
+	assert.equal(forbidsHistoryRewrite(preserve), false, "preserving artifact language does not prohibit assigned edits");
+	assert.match(buildRoleLanguageSection(preserve), /edit source code when the assignment requires it/);
+	assert.doesNotMatch(buildRoleLanguageSection(preserve), /Do not translate or rewrite existing files/);
 });
 
 test("a language snapshot retains and freezes a full artifact policy", () => {
@@ -237,7 +333,42 @@ test("a parent change after launch does not reach a running child", async () => 
 	}
 });
 
-test("production child dispatch snapshots the active parent response language after next-turn Apply", async (t) => {
+test("queued children retain their requested language and artifact policy while direct launches resolve JA", async () => {
+	const f = fixture();
+	try {
+		f.manager.setConcurrency(1);
+		const first = f.manager.launch({ role: byId("coder"), model, auth: {}, cwd: f.root, task: "First", profile: "ja" });
+		assert.equal(f.children[0].launch.languageContract.taskLanguage, "ja");
+		assert.equal(f.children[0].launch.languageContract.returnLanguage, "ja");
+		const source = structuredClone(roleLanguageContract(byId("coder"), parentContract("en")));
+		const queued = f.manager.launch({
+			role: byId("coder"),
+			model,
+			auth: {},
+			cwd: f.root,
+			task: "Queued",
+			languageContract: source,
+		});
+		assert.equal(queued.status, "queued");
+		assert.equal(f.children.length, 1);
+		source.taskLanguage = "ja";
+		source.returnLanguage = "ja";
+		source.artifactPolicy.documentation = "en";
+		await f.manager.stop(first.id);
+		const launched = f.children[1].launch.languageContract;
+		assert.equal(launched.taskLanguage, "en");
+		assert.equal(launched.returnLanguage, "en");
+		assert.equal(launched.artifactPolicy.documentation, "ja");
+		assert.ok(Object.isFrozen(launched.artifactPolicy));
+		assert.equal(launched.contractId, languageContractId(launched));
+	} finally {
+		await f.manager.dispose();
+		rmSync(f.root, { recursive: true, force: true });
+	}
+});
+
+async function workflowFixture(t, { response = "en", profile = "core", uiLocale = "en", withParent = true } = {}) {
+	preserveEnvironment(t);
 	const root = mkdtempSync(join(tmpdir(), "jouzu-child-parent-language-"));
 	const paths = { agentDir: join(root, "agent"), configDir: join(root, "config"), stateDir: join(root, "state") };
 	const children = [];
@@ -275,15 +406,17 @@ test("production child dispatch snapshots the active parent response language af
 		for (const handler of handlers.get(event) ?? []) await handler(data, ctx);
 	};
 	const language = createLanguageContractExtension({
-		responseLanguage: resolveResponseLanguage({ config: "en" }),
+		responseLanguage: resolveResponseLanguage({ config: response }),
 		artifactPolicy: resolveArtifactPolicy({}),
 	});
-	language.extension.factory(api);
+	if (withParent) language.extension.factory(api);
 	const integration = createWorkflowIntegration(
 		paths,
-		(launch, _emit, exit) => {
+		(launch, emit, exit) => {
 			const child = {
 				launch,
+				emit,
+				exit,
 				send() {},
 				async stop() {
 					exit(false);
@@ -292,7 +425,7 @@ test("production child dispatch snapshots the active parent response language af
 			children.push(child);
 			return child;
 		},
-		{ dashboardVisibility() {} },
+		{ dashboardVisibility() {}, profile: () => profile, catalog: resolveCatalog(uiLocale).bundle },
 	);
 	integration.register(api, async () => true);
 	t.after(async () => {
@@ -300,20 +433,133 @@ test("production child dispatch snapshots the active parent response language af
 		rmSync(root, { recursive: true, force: true });
 	});
 	await emit("session_start", { reason: "startup" });
-	language.applyLanguage(resolveResponseLanguage({ session: "ja" }));
-	const first = await integration.service.launch("coder", "Inspect the assigned source.");
-	assert.equal(children[0].launch.profile, "core");
-	assert.equal(children[0].launch.languageContract.returnLanguage, "en", "staged language is not active yet");
-	await integration.service.stop(first.id);
+	return { root, language, integration, children, emit };
+}
+
+test("production child dispatch snapshots active preferences on launch and resolves them again on resume", async (t) => {
+	const { language, integration, children, emit } = await workflowFixture(t);
+	language.applyLanguage(
+		resolveResponseLanguage({ session: "ja" }),
+		resolveArtifactPolicy({ session: mixedArtifacts }),
+	);
+	const task = "Inspect `src/日本語.ts`; preserve `TypeError: unchanged` and quoted English text.";
+	const first = await integration.service.launch("coder", task);
+	const original = children[0].launch;
+	assert.equal(original.profile, "core");
+	assert.equal(original.task, task);
+	assert.equal(original.languageContract.returnLanguage, "en", "staged language is not active yet");
+	assert.equal(original.languageContract.artifactPolicy.documentation, "project");
+	const renderOriginal = await childRenderer(original);
+	assert.match(renderOriginal(), /Write user-facing explanations in English \(en\)/);
+	const savedContext = readFileSync(original.parentContextFile, "utf8");
+	const sessionFile = join(original.directory, "session.jsonl");
+	const history = `${JSON.stringify({ type: "message", message: { role: "user", content: task } })}\n`;
+	writeFileSync(sessionFile, history);
+	children[0].emit({ type: "ready", sessionFile, sessionId: "child-language" });
+
 	await emit("before_agent_start", { systemPromptOptions: { sections: {} } });
-	await integration.service.launch("coder", "Inspect the assigned source.");
+	const second = await integration.service.launch("coder", task);
 	const contract = children[1].launch.languageContract;
 	assert.equal(contract.returnLanguage, "ja");
-	assert.equal(contract.taskLanguage, "preserve");
+	assert.equal(contract.taskLanguage, "ja");
 	assert.equal(contract.artifactLanguage, "project");
+	assert.deepEqual(contract.artifactPolicy, mixedArtifacts);
 	assert.ok(Object.isFrozen(contract));
-	assert.match(buildRoleLanguageSection(contract), /Return your result in Japanese\./u);
-	assert.equal(children[0].launch.languageContract.returnLanguage, "en", "the earlier launch keeps its snapshot");
+	assert.ok(Object.isFrozen(contract.artifactPolicy));
+	const currentPrompt = (await childRenderer(children[1].launch))();
+	assert.match(currentPrompt, /Write user-facing explanations in Japanese \(ja\)/);
+	assert.match(currentPrompt, /Return your result in Japanese\./);
+	assert.match(currentPrompt, /documentation: Use Japanese \(ja\)/);
+	assert.match(currentPrompt, /commits: Use English \(en\)/);
+	assert.doesNotMatch(currentPrompt, /Follow the project's existing language for comments/);
+	assert.equal(original.languageContract.returnLanguage, "en", "the running launch keeps its snapshot");
+	assert.match(renderOriginal(), /Return your result in English\./);
+	await integration.service.stop(second.id);
+	children[0].emit({ type: "result", status: "completed", text: "Original English result." });
+	children[0].exit(true);
+
+	const resumed = await integration.service.resume(first.id, "Continue the assigned work.");
+	const followUp = children[2].launch;
+	assert.equal(resumed.previousRunId, first.id);
+	assert.equal(followUp.sessionFile, sessionFile);
+	assert.equal(followUp.parentContextFile, original.parentContextFile);
+	assert.equal(readFileSync(followUp.parentContextFile, "utf8"), savedContext);
+	assert.equal(readFileSync(sessionFile, "utf8"), history);
+	assert.equal(followUp.languageContract.returnLanguage, "ja", "explicit resume inherits the current caller");
+	assert.deepEqual(followUp.languageContract.artifactPolicy, mixedArtifacts);
+	assert.match((await childRenderer(followUp))(), /Write user-facing explanations in Japanese \(ja\)/);
+	assert.equal(original.languageContract.returnLanguage, "en");
+});
+
+for (const selection of [
+	{ response: "ja", profile: "core", uiLocale: "en", expected: "Japanese" },
+	{ response: "en", profile: "core", uiLocale: "ja", expected: "English" },
+	{ response: "auto", profile: "core", uiLocale: "ja" },
+	{ response: "auto", profile: "ja", uiLocale: "en", expected: "Japanese" },
+	{ response: "en", profile: "ja", uiLocale: "ja", expected: "English" },
+	{ withParent: false, profile: "ja", uiLocale: "en", expected: "Japanese" },
+]) {
+	test(`dispatch renders caller language in child resources: ${JSON.stringify(selection)}`, async (t) => {
+		const { integration, children } = await workflowFixture(t, selection);
+		await integration.service.launch("coder", "Inspect only; preserve English task text.");
+		const prompt = (await childRenderer(children[0].launch))();
+		assert.doesNotMatch(prompt, /Jouzu Japanese-First Policy/);
+		if (selection.expected) {
+			assert.match(prompt, new RegExp(`Write user-facing explanations in ${selection.expected}`));
+			assert.match(prompt, new RegExp(`Return your result in ${selection.expected}\\.`));
+			assert.doesNotMatch(prompt, /Work in the language of the task you were given/);
+		} else {
+			assert.doesNotMatch(prompt, /Write user-facing explanations in|Return your result in (Japanese|English)/);
+			assert.match(prompt, /Work in the language of the task you were given/);
+		}
+	});
+}
+
+test("child resources preserve specialized role boundaries even with the JA profile and caller policy", async (t) => {
+	preserveEnvironment(t);
+	const root = mkdtempSync(join(tmpdir(), "jouzu-child-role-language-"));
+	t.after(() => rmSync(root, { recursive: true, force: true }));
+	for (const id of ["researcher", "compactor", "monitor"]) {
+		const role = { ...byId("coder"), id, tools: ["read"], instructions: "Read-only assignment." };
+		const contract = roleLanguageContract(role, parentContract("ja"), "ja");
+		const prompt = (
+			await childRenderer({
+				cwd: root,
+				directory: join(root, id),
+				profile: "ja",
+				role,
+				model,
+				languageContract: contract,
+			})
+		)();
+		assert.match(prompt, /Do not translate or rewrite existing files/);
+		assert.match(prompt, /Never translate or rewrite history, summaries, quotes, tool results, or code/);
+		assert.doesNotMatch(prompt, /edit source code when the assignment requires it|Artifact language policy/);
+		assert.doesNotMatch(prompt, /Jouzu Japanese-First Policy/);
+		if (id === "researcher") assert.match(prompt, /Write user-facing explanations in Japanese \(ja\)/);
+		else assert.doesNotMatch(prompt, /Write user-facing explanations|Return your result in Japanese/);
+	}
+});
+
+test("child resource rendering freezes the supplied conversational and per-field policy", async (t) => {
+	preserveEnvironment(t);
+	const root = mkdtempSync(join(tmpdir(), "jouzu-child-resource-snapshot-"));
+	t.after(() => rmSync(root, { recursive: true, force: true }));
+	const contract = structuredClone(roleLanguageContract(byId("coder"), parentContract("ja")));
+	const render = await childRenderer({
+		cwd: root,
+		directory: root,
+		role: byId("coder"),
+		model,
+		languageContract: contract,
+	});
+	const before = render();
+	contract.taskLanguage = "en";
+	contract.returnLanguage = "en";
+	contract.artifactPolicy.documentation = "en";
+	assert.equal(render(), before);
+	assert.match(before, /Write user-facing explanations in Japanese \(ja\)/);
+	assert.match(before, /documentation: Use Japanese \(ja\)/);
 });
 
 // --- T17: workerEnvironment is independent of the UI locale -----------------

@@ -198,6 +198,7 @@ export function createWorkflowIntegration(
 		const settings = SettingsManager.create(active.cwd, paths.agentDir);
 		if (settings.drainErrors().length)
 			throw new Error(catalogText(catalog, CatalogMessageId.subagentCacheWarmingSettingsUnreadable));
+		const profile = options.profile?.() ?? "core";
 		return targetManager.launch(
 			{
 				cacheWarming: settings.getCacheWarmingMode(),
@@ -212,10 +213,10 @@ export function createWorkflowIntegration(
 				cwd,
 				userAgentDir: paths.agentDir,
 				runtimeStateDir: paths.stateDir,
-				profile: options.profile?.() ?? "core",
-				// Resolve the parent's active response language, not a staged Settings change.
+				profile,
+				// Resolve active caller preferences, not a staged Settings change, on launch and resume.
 				// The manager freezes this launch contract; later parent changes cannot reach it.
-				languageContract: roleLanguageContract(role, readStoredLanguageContractState(active)?.contract),
+				languageContract: roleLanguageContract(role, readStoredLanguageContractState(active)?.contract, profile),
 				context: childContext,
 				task,
 				textguardFiles: options.textguardFiles === true,

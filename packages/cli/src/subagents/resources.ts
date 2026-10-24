@@ -20,9 +20,8 @@ import { loadBundledProfile } from "../profiles.js";
 import { inspectReleaseExtensions, omitOptionalReleaseExtensionFailures } from "../release-extensions.js";
 import { createResponsesToolSchemaExtension } from "../responses-tool-schema.js";
 import { createToolArgumentExtension } from "../tool-arguments.js";
-import { buildRoleLanguageSection, snapshotLanguageContract } from "./language.js";
+import { buildRoleLanguageSection, roleLanguageContract, snapshotLanguageContract } from "./language.js";
 import type { WorkerLaunch } from "./protocol.js";
-import { defaultLanguageContract } from "./roles.js";
 
 /** Cancel worker-local schedules before restored flow receipts inspect their state. */
 function disableChildSchedules(directory: string, warn: (message: string) => void): number {
@@ -104,7 +103,7 @@ export async function expandedChildResourceLoader(
 	// Snapshot the contract when the child's resources are built. This is the
 	// child's own copy: a parent-side language change after launch never reaches it.
 	const languageSection = buildRoleLanguageSection(
-		snapshotLanguageContract(launch.languageContract ?? defaultLanguageContract(launch.role)),
+		snapshotLanguageContract(launch.languageContract ?? roleLanguageContract(launch.role, undefined, launch.profile)),
 	);
 	const bundledSkills: string[] = [];
 	for (const asset of profile.assets) {
@@ -154,8 +153,10 @@ export async function expandedChildResourceLoader(
 		systemPromptOverride: () => undefined,
 		appendSystemPromptOverride: () =>
 			[
+				// The role contract resolves JA's fallback. Do not append a second language
+				// instruction that conflicts with explicit preferences or structured-only roles.
 				...profile.assets
-					.filter((asset) => asset.target === "APPEND_SYSTEM.md")
+					.filter((asset) => asset.target === "APPEND_SYSTEM.md" && profile.id !== "ja")
 					.map((asset) => asset.bytes.toString("utf8")),
 				launch.role.instructions,
 				buildModelGuidance(launch.model.id, launch.role.tools),
