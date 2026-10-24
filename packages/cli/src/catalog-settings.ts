@@ -56,6 +56,7 @@ import {
 	type LocalizationApplyResult,
 	type LocalizationField,
 	type LocalizationPlan,
+	LocalizationRecoveryError,
 	type LocalizationRequest,
 	type LocalizationScope,
 	type LocalizationSessionOverride,
@@ -1079,54 +1080,67 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 		this.tui.requestRender();
 	}
 
-	/**
-	 * The request the current previews would apply, with one row per changed item.
-	 * An item whose preview equals its current value contributes nothing, so a
-	 * no-op confirmation is not offered.
-	 */
-	private pendingLanguageChange(): {
-		request: LocalizationRequest;
-		rows: Array<{ field: LocalizationField; from: string; to: string }>;
-	} {
+	/** Keep explicit previews until scope selection; equal effective values can still be saved. */
+	private pendingLanguageRequest(): LocalizationRequest {
+		if (!this.previewActive) {
+			// Enter on one session-overridden row can promote it without previewing
+			// a different value. Do not promote other rows or fill absent policy fields.
+			const override = this.sessionOverride();
+			if (this.languageFocused === "ui" && override.uiLocale !== undefined) return { uiLocale: override.uiLocale };
+			if (this.languageFocused === "response" && override.responseLanguage !== undefined) {
+				return { responseLanguage: override.responseLanguage };
+			}
+			if (this.languageFocused === "artifact" && override.artifactPolicy !== undefined) {
+				return { artifactPolicy: override.artifactPolicy };
+			}
+			return {};
+		}
+		return {
+			...(this.previewUiLocale !== undefined ? { uiLocale: this.previewUiLocale } : {}),
+			...(this.previewResponseLanguage !== undefined ? { responseLanguage: this.previewResponseLanguage } : {}),
+			...(this.previewArtifactPolicy !== undefined
+				? { artifactPolicy: artifactPolicyForPreset(this.previewArtifactPolicy) }
+				: {}),
+		};
+	}
+
+	/** Compare the confirmed request with the destination scope, not only the effective session. */
+	private languageChangeRows(
+		request: LocalizationRequest,
+		scope: LocalizationScope,
+	): Array<{ field: LocalizationField; from: string; to: string }> {
 		const state = this.languageState();
-		const request: {
-			uiLocale?: UiLocalePreference;
-			responseLanguage?: ResponseLanguagePreference;
-			artifactPolicy?: ArtifactPolicy;
-		} = {};
+		const saved = this.savedLanguageState().settings;
+		const uiLocale = scope === "environment" ? (saved?.uiLocale ?? "auto") : state.uiLocale.requested;
+		const responseLanguage =
+			scope === "environment" ? (saved?.responseLanguage ?? "auto") : state.responseLanguage.effective;
+		const artifactPolicy =
+			scope === "environment"
+				? resolveArtifactPolicy({ config: saved?.artifactPolicy }).effective
+				: state.artifactPolicy.effective;
 		const rows: Array<{ field: LocalizationField; from: string; to: string }> = [];
-		if (this.previewUiLocale !== undefined && this.previewUiLocale !== state.uiLocale.requested) {
-			request.uiLocale = this.previewUiLocale;
+		if (request.uiLocale !== undefined) {
 			rows.push({
 				field: "uiLocale",
-				from: languageSelfName(state.uiLocale.effective, this.catalog),
-				to: languageSelfName(this.previewEffectiveUiLocale(this.previewUiLocale), this.catalog),
+				from: this.responseLanguageLabel(uiLocale),
+				to: this.responseLanguageLabel(request.uiLocale),
 			});
 		}
-		if (
-			this.previewResponseLanguage !== undefined &&
-			this.previewResponseLanguage !== state.responseLanguage.effective
-		) {
-			request.responseLanguage = this.previewResponseLanguage;
+		if (request.responseLanguage !== undefined) {
 			rows.push({
 				field: "responseLanguage",
-				from: this.responseLanguageLabel(state.responseLanguage.effective),
-				to: this.responseLanguageLabel(this.previewResponseLanguage),
+				from: this.responseLanguageLabel(responseLanguage),
+				to: this.responseLanguageLabel(request.responseLanguage),
 			});
 		}
-		if (
-			this.previewArtifactPolicy !== undefined &&
-			this.previewArtifactPolicy !== artifactPresetFor(state.artifactPolicy.effective)
-		) {
-			const policy = artifactPolicyForPreset(this.previewArtifactPolicy);
-			request.artifactPolicy = policy;
+		if (request.artifactPolicy !== undefined) {
 			rows.push({
 				field: "artifactPolicy",
-				from: formatArtifactPolicy(state.artifactPolicy.effective),
-				to: formatArtifactPolicy(policy),
+				from: formatArtifactPolicy(artifactPolicy),
+				to: formatArtifactPolicy({ ...artifactPolicy, ...request.artifactPolicy }),
 			});
 		}
-		return { request, rows };
+		return rows;
 	}
 
 	/** Plan one scope and keep the plan for the confirmation summary. */
@@ -1154,8 +1168,8 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 			this.showDeferralMessage(deferral);
 			return;
 		}
-		const pending = this.pendingLanguageChange();
-		if (pending.rows.length === 0) {
+		const request = this.pendingLanguageRequest();
+		if (Object.keys(request).length === 0) {
 			this.message = {
 				level: "info",
 				text: catalogText(this.catalog, LOCALIZATION_SETTINGS_MESSAGE_IDS.noChange),
@@ -1164,7 +1178,7 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 			this.tui.requestRender();
 			return;
 		}
-		this.languageConfirm = this.planLanguageChange("session", pending.request);
+		this.languageConfirm = this.planLanguageChange("session", request);
 		this.message = undefined;
 		this.messageOffset = 0;
 		this.tui.requestRender();
@@ -1232,9 +1246,12 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 		} catch (error) {
 			this.message = {
 				level: "error",
-				text: catalogText(this.catalog, LOCALIZATION_SETTINGS_MESSAGE_IDS.applyFailed, {
-					message: sanitizeTerminalText(error instanceof Error ? error.message : String(error)),
-				}),
+				text:
+					error instanceof LocalizationRecoveryError
+						? sanitizeTerminalText(error.message)
+						: catalogText(this.catalog, LOCALIZATION_SETTINGS_MESSAGE_IDS.applyFailed, {
+								message: sanitizeTerminalText(error instanceof Error ? error.message : String(error)),
+							}),
 			};
 		}
 		this.messageOffset = 0;
@@ -1281,9 +1298,12 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 		} catch (error) {
 			this.message = {
 				level: "error",
-				text: catalogText(this.catalog, LOCALIZATION_SETTINGS_MESSAGE_IDS.resetFailed, {
-					message: sanitizeTerminalText(error instanceof Error ? error.message : String(error)),
-				}),
+				text:
+					error instanceof LocalizationRecoveryError
+						? sanitizeTerminalText(error.message)
+						: catalogText(this.catalog, LOCALIZATION_SETTINGS_MESSAGE_IDS.resetFailed, {
+								message: sanitizeTerminalText(error instanceof Error ? error.message : String(error)),
+							}),
 			};
 		}
 		this.messageOffset = 0;
@@ -1366,7 +1386,7 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 				),
 			},
 		];
-		for (const row of this.pendingLanguageChange().rows) {
+		for (const row of this.languageChangeRows(confirm.request, confirm.scope)) {
 			items.push({
 				rank: 1,
 				text: line(

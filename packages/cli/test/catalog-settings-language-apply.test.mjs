@@ -18,12 +18,19 @@
  */
 
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import fs, { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { CatalogSettingsComponent } from "../dist/catalog-settings.js";
-import { LOCALIZATION_SESSION_FILE_NAME, readLocalizationSessionOverride } from "../dist/localization-ops.js";
+import { createLanguageContractExtension } from "../dist/language-contract.js";
+import { resolveArtifactPolicy, resolveResponseLanguage } from "../dist/language-settings.js";
+import {
+	applyLocalization,
+	LOCALIZATION_SESSION_FILE_NAME,
+	readLocalizationSessionOverride,
+} from "../dist/localization-ops.js";
 import { resolveJouzuPaths } from "../dist/paths.js";
 import { createSessionUiStyles } from "../dist/session-ui/index.js";
 import { terminalTextWidth } from "../dist/terminal-layout.js";
@@ -95,6 +102,7 @@ function componentFor(paths, context, options = {}) {
 		env: {},
 		sessionId: "s1",
 		...(options.activity ? { activity: options.activity } : {}),
+		...(options.onLanguageChanged ? { onLanguageChanged: options.onLanguageChanged } : {}),
 	});
 }
 
@@ -189,6 +197,230 @@ test("a saved-setting change applies to the current session and backs up the pre
 		"the saved-setting change reaches the current session",
 	);
 });
+
+test("Saved response and artifact choices persist before staging the next turn", (t) => {
+	const f = setup();
+	t.after(() => rmSync(f.root, { recursive: true, force: true }));
+	writeSettings(f.paths, { uiLocale: "en", responseLanguage: "en", artifactPolicy: { commits: "en" } });
+	const handlers = new Map();
+	const contract = createLanguageContractExtension({
+		responseLanguage: resolveResponseLanguage({ config: "en" }),
+		artifactPolicy: resolveArtifactPolicy({ config: { commits: "en" } }),
+	});
+	contract.extension.factory({ on: (event, handler) => handlers.set(event, handler), appendEntry() {} });
+	handlers.get("session_start")({ reason: "startup" }, { sessionManager: { getEntries: () => [] } });
+	const before = contract.currentContract();
+	const callbacks = [];
+	const component = componentFor(f.paths, f.context, {
+		onLanguageChanged(language) {
+			callbacks.push(language);
+			const saved = readLocalizationSettings(f.paths.configDir).settings;
+			assert.equal(saved.responseLanguage, "ja");
+			assert.equal(saved.artifactPolicy.commits, "preserve");
+			assert.equal(language.responseLanguage.source, "config");
+			contract.applyLanguage(language.responseLanguage, language.artifactPolicy);
+		},
+	});
+	focusResponse(component);
+	component.handleInput("\u001b[C");
+	component.handleInput("down");
+	component.handleInput("\u001b[C");
+	assert.equal(existsSync(sessionStorePath(f.paths)), false, "previews do not write");
+	component.handleInput("enter");
+	component.handleInput("\u001b[C");
+	component.handleInput("enter");
+	assert.equal(callbacks.length, 1);
+	assert.equal(contract.currentContract(), before, "Apply does not change an in-progress turn");
+	assert.deepEqual(readLocalizationSessionOverride(f.paths.stateDir, "s1"), {});
+	handlers.get("before_agent_start")();
+	assert.equal(contract.currentContract().taskLanguage, "ja");
+	assert.equal(contract.currentContract().artifactPolicy.commits, "preserve");
+	assert.match(contract.currentSection(), /Response language: Japanese/u);
+});
+
+for (const preview of [false, true]) {
+	test(`Settings promotes a session response to Saved setting ${preview ? "after previewing the same value" : "from the focused row"}`, (t) => {
+		const f = setup({
+			keybindings: fakeKeybindings({ "tui.select.confirm": ["save"], "tui.select.cancel": ["cancel"] }),
+		});
+		t.after(() => rmSync(f.root, { recursive: true, force: true }));
+		const saved = {
+			uiLocale: "en",
+			responseLanguage: "en",
+			artifactPolicy: { commits: "zh-Hant", comments: "preserve" },
+		};
+		writeSettings(f.paths, saved);
+		applyLocalization(f.paths, {
+			sessionId: "s1",
+			scope: "session",
+			request: { responseLanguage: "ja", artifactPolicy: { reviews: "ja" } },
+		});
+		const settingsBefore = readFileSync(settingsPath(f.paths), "utf8");
+		const sessionBefore = readFileSync(sessionStorePath(f.paths), "utf8");
+		const callbacks = [];
+		const component = componentFor(f.paths, f.context, { onLanguageChanged: (language) => callbacks.push(language) });
+		focusResponse(component);
+		if (preview) {
+			component.handleInput("\u001b[C");
+			component.handleInput("\u001b[D");
+		}
+		component.handleInput("save");
+		assert.ok(component.languageConfirm, "the effective Japanese value can enter scope confirmation");
+		assert.match(component.render(90).join("\n"), /This session only/u);
+		component.handleInput("\u001b[C");
+		const rendered = component.render(90).join("\n");
+		assert.match(rendered, /Saved setting/u);
+		assert.match(rendered, /Response language.*English.*日本語/u);
+		assert.deepEqual(component.languageConfirm.request, { responseLanguage: "ja" });
+		for (const width of [48, 80]) assert.ok(component.render(width).every((row) => terminalTextWidth(row) <= width));
+		component.handleInput("cancel");
+		assert.equal(readFileSync(settingsPath(f.paths), "utf8"), settingsBefore);
+		assert.equal(readFileSync(sessionStorePath(f.paths), "utf8"), sessionBefore);
+		assert.equal(callbacks.length, 0);
+		component.handleInput("save");
+		component.handleInput("\u001b[C");
+		component.handleInput("save");
+		assert.deepEqual(JSON.parse(readFileSync(settingsPath(f.paths), "utf8")).localization, {
+			...saved,
+			responseLanguage: "ja",
+		});
+		assert.deepEqual(readLocalizationSessionOverride(f.paths.stateDir, "s1"), { artifactPolicy: { reviews: "ja" } });
+		assert.equal(callbacks.length, 1);
+		assert.equal(callbacks[0].responseLanguage.effective, "ja");
+		assert.equal(callbacks[0].responseLanguage.source, "config");
+	});
+}
+
+test("Settings promotes only the focused partial artifact override", (t) => {
+	const f = setup();
+	t.after(() => rmSync(f.root, { recursive: true, force: true }));
+	const saved = {
+		uiLocale: "en",
+		responseLanguage: "en",
+		artifactPolicy: { comments: "preserve", documentation: "zh-Hans", commits: "en", reviews: "project" },
+	};
+	writeSettings(f.paths, saved);
+	applyLocalization(f.paths, {
+		sessionId: "s1",
+		scope: "session",
+		request: { responseLanguage: "ja", artifactPolicy: { commits: "ja" } },
+	});
+	const component = componentFor(f.paths, f.context);
+	focusResponse(component);
+	component.handleInput("down");
+	component.handleInput("enter");
+	assert.ok(component.languageConfirm);
+	component.handleInput("\u001b[C");
+	assert.deepEqual(component.languageConfirm.request, { artifactPolicy: { commits: "ja" } });
+	component.handleInput("enter");
+	assert.deepEqual(JSON.parse(readFileSync(settingsPath(f.paths), "utf8")).localization, {
+		...saved,
+		artifactPolicy: { ...saved.artifactPolicy, commits: "ja" },
+	});
+	assert.deepEqual(readLocalizationSessionOverride(f.paths.stateDir, "s1"), { responseLanguage: "ja" });
+});
+
+test("Settings promotes only the focused display-language override", (t) => {
+	const f = setup();
+	t.after(() => rmSync(f.root, { recursive: true, force: true }));
+	const saved = { uiLocale: "ja", responseLanguage: "zh-Hant", artifactPolicy: { reviews: "en" } };
+	writeSettings(f.paths, saved);
+	applyLocalization(f.paths, {
+		sessionId: "s1",
+		scope: "session",
+		request: { uiLocale: "en", responseLanguage: "ja" },
+	});
+	const component = componentFor(f.paths, f.context);
+	focusDisplay(component);
+	component.handleInput("enter");
+	assert.ok(component.languageConfirm);
+	component.handleInput("\u001b[C");
+	assert.deepEqual(component.languageConfirm.request, { uiLocale: "en" });
+	assert.match(component.render(90).join("\n"), /Display language.*日本語.*English/u);
+	component.handleInput("enter");
+	assert.deepEqual(JSON.parse(readFileSync(settingsPath(f.paths), "utf8")).localization, { ...saved, uiLocale: "en" });
+	assert.deepEqual(readLocalizationSessionOverride(f.paths.stateDir, "s1"), { responseLanguage: "ja" });
+});
+
+test("Settings can save the default artifact preset from a mixed effective policy", (t) => {
+	const f = setup();
+	t.after(() => rmSync(f.root, { recursive: true, force: true }));
+	writeSettings(f.paths, { uiLocale: "en", responseLanguage: "auto", artifactPolicy: { commits: "zh-Hant" } });
+	const component = componentFor(f.paths, f.context);
+	focusResponse(component);
+	component.handleInput("down");
+	component.handleInput("\u001b[C");
+	component.handleInput("\u001b[D");
+	component.handleInput("enter");
+	assert.ok(component.languageConfirm);
+	component.handleInput("\u001b[C");
+	component.handleInput("enter");
+	assert.deepEqual(readLocalizationSettings(f.paths.configDir).settings, {
+		schemaVersion: 2,
+		uiLocale: "en",
+		responseLanguage: "auto",
+		artifactPolicy: { comments: "preserve", documentation: "project", commits: "project", reviews: "project" },
+	});
+});
+
+for (const operation of ["save", "reset"]) {
+	for (const recoveryFails of [false, true]) {
+		test(`Settings ${operation} reports ${recoveryFails ? "incomplete recovery" : "failure after recovery"} when the session-store rename fails`, (t) => {
+			const f = setup();
+			t.after(() => rmSync(f.root, { recursive: true, force: true }));
+			writeSettings(f.paths, { uiLocale: "en", responseLanguage: "en" });
+			applyLocalization(f.paths, { sessionId: "s1", scope: "session", request: { responseLanguage: "ja" } });
+			const settingsBefore = readFileSync(settingsPath(f.paths), "utf8");
+			const sessionBefore = readFileSync(sessionStorePath(f.paths), "utf8");
+			const callbacks = [];
+			const component = componentFor(f.paths, f.context, { onLanguageChanged: (language) => callbacks.push(language) });
+			focusResponse(component);
+			if (operation === "reset") component.handleInput("r");
+			else {
+				component.handleInput("\u001b[C");
+				component.handleInput("enter");
+				component.handleInput("\u001b[C");
+			}
+			const rename = fs.renameSync;
+			const targets = [];
+			let secondFailed = false;
+			t.mock.method(fs, "renameSync", (source, target) => {
+				targets.push(target);
+				if (target === sessionStorePath(f.paths)) {
+					secondFailed = true;
+					throw new Error("session-store rename failed");
+				}
+				if (recoveryFails && secondFailed) throw new Error("restore rename failed");
+				return rename(source, target);
+			});
+			syncBuiltinESMExports();
+			try {
+				component.handleInput("enter");
+			} finally {
+				t.mock.restoreAll();
+				syncBuiltinESMExports();
+			}
+			assert.deepEqual(targets.slice(0, 2), [settingsPath(f.paths), sessionStorePath(f.paths)]);
+			assert.equal(readFileSync(sessionStorePath(f.paths), "utf8"), sessionBefore);
+			assert.equal(callbacks.length, 0, "failed persistence must not stage a new language contract");
+			assert.ok(
+				operation === "reset" ? component.languageResetConfirm : component.languageConfirm,
+				"confirmation is retained",
+			);
+			if (recoveryFails) {
+				assert.notEqual(readFileSync(settingsPath(f.paths), "utf8"), settingsBefore);
+				assert.match(component.message.text, /could not be restored/u);
+				assert.doesNotMatch(component.message.text, /was not saved|was not reset/u);
+			} else {
+				assert.equal(readFileSync(settingsPath(f.paths), "utf8"), settingsBefore);
+				assert.match(component.message.text, /session-store rename failed/u);
+			}
+			for (const width of [48, 80]) assert.ok(component.render(width).every((row) => terminalTextWidth(row) <= width));
+			component.handleInput("enter");
+			assert.equal(callbacks.length, 1, "a successful retry stages the contract once");
+		});
+	}
+}
 
 test("reset returns every language setting to its default and shows the recovery", (t) => {
 	const f = setup();

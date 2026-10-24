@@ -107,7 +107,7 @@ globalThis.fetch = async () => {
 };
 
 const { resolveJouzuPaths } = await import(dist("paths.js"));
-const { LOCALIZATION_FILE_NAME } = await import(dist("ui-locale.js"));
+const { LOCALIZATION_FILE_NAME, readLocalizationSettings } = await import(dist("ui-locale.js"));
 const { LOCALIZATION_SESSION_FILE_NAME, readLocalizationSessionOverride } = await import(dist("localization-ops.js"));
 const paths = resolveJouzuPaths({ homeOverride: scenario.home });
 const settingsFile = join(paths.configDir, LOCALIZATION_FILE_NAME);
@@ -145,7 +145,11 @@ globalThis.__languageWiring = {
 		languageContract = contract;
 	},
 	languageSaved(language) {
-		observed.callbacks.push({ language, persisted: readLocalizationSessionOverride(paths.stateDir, sessionId) });
+		observed.callbacks.push({
+			language,
+			persisted: readLocalizationSessionOverride(paths.stateDir, sessionId),
+			saved: readLocalizationSettings(paths.configDir),
+		});
 	},
 	async run(args, options) {
 		observed.piArgs = args;

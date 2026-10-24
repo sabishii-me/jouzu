@@ -160,14 +160,25 @@ for (const environmentScope of [false, true]) {
 		assert.deepEqual(observed.preview, observed.initial);
 		assert.deepEqual(observed.applied, observed.initial, "Apply only stages the contract");
 		assert.equal(observed.callbacks.length, 1);
-		assert.equal(observed.callbacks[0].persisted.responseLanguage, "ja", "persistence precedes the callback");
-		assert.equal(observed.callbacks[0].language.responseLanguage.source, "session");
+		const callback = observed.callbacks[0];
+		assert.equal(callback.language.responseLanguage.source, environmentScope ? "config" : "session");
+		if (environmentScope) {
+			assert.deepEqual(callback.persisted, {}, "no session override shadows the saved values");
+			assert.equal(callback.saved.settings.responseLanguage, "ja", "persistence precedes the callback");
+			assert.equal(callback.saved.settings.artifactPolicy.commits, "preserve");
+			const fresh = run(t, { rawSettings: observed.settingsAfter });
+			assert.equal(fresh.initial.contract.taskLanguage, "ja", "a new launch resolves the saved response language");
+			assert.deepEqual(fresh.initial.contract.artifactPolicy, observed.next.contract.artifactPolicy);
+			assert.equal(fresh.sessionFile, undefined, "fresh resolution needs no session store");
+		} else {
+			assert.equal(callback.persisted.responseLanguage, "ja", "persistence precedes the callback");
+			assert.equal(observed.settingsAfter, observed.settingsBefore, "session scope preserves the saved defaults");
+		}
 		assert.equal(observed.next.epochs, observed.initial.epochs + 1);
 		assert.equal(observed.next.contract.taskLanguage, "ja");
 		assert.equal(observed.next.contract.artifactPolicy.commits, "preserve");
 		assert.match(observed.nextPrompt, /Response language: Japanese \(ja\)/u);
 		assert.match(observed.nextPrompt, /commits: Preserve the existing language/u);
-		assert.equal(observed.settingsAfter, observed.settingsBefore, "response/artifact choices remain session-scoped");
 	});
 }
 

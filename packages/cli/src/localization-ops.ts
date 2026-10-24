@@ -12,8 +12,8 @@
  * The environment save and the session override are separate:
  *
  * - The environment save is `<configDir>/localization.json`. It is the saved
- *   default for this Jouzu environment. `saveLocalizationConfig` persists the
- *   display language and preserves the rest of the language contract.
+ *   default for this Jouzu environment. `saveLocalizationConfig` persists every
+ *   requested language field and preserves unspecified fields.
  * - The session override is `<stateDir>/localization-session.json`, a map from
  *   session id to the values that session asked for. It applies to that
  *   process only and never rewrites the environment save.
@@ -29,33 +29,27 @@
  * ## Scope
  *
  * `applyLocalization` with `scope: "session"` records the request in the
- * session store only. With `scope: "environment"` it persists the display
- * language to the environment save, drops that session's display-language
- * override so the saved value reaches the current session, records the
- * requested response language and artifact policy in the current session's
- * override, and returns a notice for every other known session. It never edits
- * another session's override, so another session's input is unchanged.
- *
- * The shared writer persists the display language. Environment-wide
- * persistence of the response language and the artifact policy belongs to the
- * profile migration, which reuses these plan and apply parts.
+ * session store only. With `scope: "environment"` it persists every requested
+ * field, removes only the matching current-session overrides, and returns a
+ * notice for every other known session when saved settings change. Artifact
+ * fields are merged independently. It never edits another session's override.
  *
  * ## Safety
  *
- * A write is atomic, goes through `saveLocalizationConfig` or
- * `writeFilePrivateAtomic`, and compares the file against the revision read
- * before the operation. A settings file that cannot be read (a symlink, a
- * non-regular file, an oversized file, malformed content, or a newer schema) is
- * never overwritten: the plan reports a conflict and the previous values stay
- * on disk.
+ * Each file is replaced atomically; the two files are not a transaction. If a
+ * session-store write fails after saving settings, the prior settings revision
+ * is restored under its lock unless another save has replaced it. Failed or
+ * conflicting recovery is reported explicitly. A settings file that cannot be
+ * read (a symlink, a non-regular file, an oversized file, malformed content, or
+ * a newer schema) is never overwritten.
  *
  * ## Receipt
  *
  * `applyLocalization` and `resetLocalization` return a receipt: `changed`, the
  * `plan`, a `transactionId`, the `backupDir` when a file was replaced, and the
- * notices for other sessions. `resetLocalization` returns every language
- * setting to its default: it clears the current session's override and resets
- * the saved display language to `auto`.
+ * notices for other sessions. `resetLocalization` clears the current session's
+ * overrides and resets the saved display language to `auto`. Saved response
+ * language and artifact preferences remain the defaults for that session.
  */
 
 import { randomUUID } from "node:crypto";
@@ -65,6 +59,7 @@ import { defaultCatalog } from "./cli-messages.js";
 import {
 	ARTIFACT_POLICY_FIELDS,
 	formatArtifactPolicy,
+	hasArtifactPolicyFields,
 	isResponseLanguagePreference,
 	type PartialArtifactPolicy,
 	parseArtifactPolicy,
@@ -90,6 +85,7 @@ import {
 	readLocalizationConfigSnapshot,
 	readLocalizationSettings,
 	resolveUiLocale,
+	restoreLocalizationConfig,
 	saveLocalizationConfig,
 	type UiLocale,
 	type UiLocalePreference,
@@ -203,6 +199,20 @@ export class LocalizationConfigError extends Error {
 	constructor(message: string) {
 		super(message);
 		this.name = "LocalizationConfigError";
+	}
+}
+
+/** A failed session write whose preceding settings save could not be restored. */
+export class LocalizationRecoveryError extends LocalizationConfigError {
+	readonly recoveryError: unknown;
+
+	constructor(cause: unknown, recoveryError: unknown) {
+		super(
+			"Saved language settings could not be restored after the session update failed. Reopen Language settings before retrying.",
+		);
+		this.name = "LocalizationRecoveryError";
+		this.cause = cause;
+		this.recoveryError = recoveryError;
 	}
 }
 
@@ -354,6 +364,28 @@ function writeSessionStore(stateDir: string, overrides: Record<string, Localizat
 	writeFilePrivateAtomic(sessionStorePath(stateDir), contents, stateDir);
 }
 
+/** Called under the session lock; a failed second write must not silently keep the first. */
+function writeSessionStoreWithRecovery(
+	paths: JouzuPaths,
+	overrides: Record<string, LocalizationSessionOverride>,
+	previous: LocalizationConfigSnapshot,
+	written: LocalizationConfigSnapshot | undefined,
+	catalog: CatalogBundle,
+): void {
+	try {
+		writeSessionStore(paths.stateDir, overrides);
+	} catch (error) {
+		if (written !== undefined) {
+			try {
+				restoreLocalizationConfig(paths, previous, written, catalog);
+			} catch (recoveryError) {
+				throw new LocalizationRecoveryError(error, recoveryError);
+			}
+		}
+		throw error;
+	}
+}
+
 function withSessionLock<T>(paths: JouzuPaths, operation: () => T): T {
 	const release = acquireStateLock({
 		path: sessionLockPath(paths.stateDir),
@@ -372,6 +404,32 @@ function artifactPolicyEquals(
 	right: PartialArtifactPolicy | undefined,
 ): boolean {
 	return ARTIFACT_POLICY_FIELDS.every((field) => left?.[field] === right?.[field]);
+}
+
+function artifactPatchChanges(
+	request: PartialArtifactPolicy | undefined,
+	current: PartialArtifactPolicy | undefined,
+): boolean {
+	return ARTIFACT_POLICY_FIELDS.some((field) => request?.[field] !== undefined && request[field] !== current?.[field]);
+}
+
+/** Only explicitly saved fields stop using the current session's override. */
+function overrideAfterEnvironmentSave(
+	current: LocalizationSessionOverride,
+	request: LocalizationRequest,
+): LocalizationSessionOverride {
+	const next = { ...current };
+	if (request.uiLocale !== undefined) delete next.uiLocale;
+	if (request.responseLanguage !== undefined) delete next.responseLanguage;
+	if (request.artifactPolicy !== undefined && current.artifactPolicy !== undefined) {
+		const artifactPolicy = { ...current.artifactPolicy };
+		for (const field of ARTIFACT_POLICY_FIELDS) {
+			if (request.artifactPolicy[field] !== undefined) delete artifactPolicy[field];
+		}
+		if (hasArtifactPolicyFields(artifactPolicy)) next.artifactPolicy = artifactPolicy;
+		else delete next.artifactPolicy;
+	}
+	return next;
 }
 
 function overrideEquals(left: LocalizationSessionOverride, right: LocalizationSessionOverride): boolean {
@@ -548,24 +606,31 @@ export function planLocalization(paths: JouzuPaths, options: LocalizationPlanOpt
 			if (request.uiLocale !== undefined && request.uiLocale !== configPreference) {
 				actions.push(setAction("environment", "uiLocale", "environment-default", request.uiLocale));
 			}
-			if (override.uiLocale !== undefined) {
+			if (request.uiLocale !== undefined && override.uiLocale !== undefined) {
 				actions.push(clearAction("session", "uiLocale", "environment-default"));
 			}
-			if (request.responseLanguage !== undefined && request.responseLanguage !== override.responseLanguage) {
-				actions.push(setAction("session", "responseLanguage", "environment-current-session", request.responseLanguage));
+			if (request.responseLanguage !== undefined) {
+				if (request.responseLanguage !== settings?.responseLanguage) {
+					actions.push(setAction("environment", "responseLanguage", "environment-default", request.responseLanguage));
+				}
+				if (override.responseLanguage !== undefined) {
+					actions.push(clearAction("session", "responseLanguage", "environment-default"));
+				}
 			}
-			if (
-				request.artifactPolicy !== undefined &&
-				!artifactPolicyEquals(request.artifactPolicy, override.artifactPolicy)
-			) {
+			if (artifactPatchChanges(request.artifactPolicy, settings?.artifactPolicy)) {
 				actions.push(
 					setAction(
-						"session",
+						"environment",
 						"artifactPolicy",
-						"environment-current-session",
+						"environment-default",
 						formatArtifactPolicy(request.artifactPolicy),
 					),
 				);
+			}
+			if (
+				!artifactPolicyEquals(override.artifactPolicy, overrideAfterEnvironmentSave(override, request).artifactPolicy)
+			) {
+				actions.push(clearAction("session", "artifactPolicy", "environment-default"));
 			}
 		}
 	}
@@ -643,42 +708,41 @@ function applyEnvironmentScope(
 	return withSessionLock(paths, () => {
 		const overrides = readLocalizationSessionOverrides(paths.stateDir);
 		const current = overrides[options.sessionId] ?? {};
-		const nextOverride: LocalizationSessionOverride = {
-			...(current.responseLanguage !== undefined ? { responseLanguage: current.responseLanguage } : {}),
-			...(current.artifactPolicy !== undefined ? { artifactPolicy: current.artifactPolicy } : {}),
-			...(request.responseLanguage !== undefined ? { responseLanguage: request.responseLanguage } : {}),
-			...(request.artifactPolicy !== undefined ? { artifactPolicy: request.artifactPolicy } : {}),
-		};
+		const nextOverride = overrideAfterEnvironmentSave(current, request);
 		const nextStore = { ...overrides };
 		const cleaned = cleanOverride(nextOverride);
 		if (cleaned === undefined) delete nextStore[options.sessionId];
 		else nextStore[options.sessionId] = cleaned;
 		const storeChanged = !storesEqual(overrides, nextStore);
 
-		const uiLocale = request.uiLocale;
+		const settings = readSettingsForResolution(paths.configDir, catalog);
 		const settingsChanged =
-			uiLocale !== undefined && (snapshot.state.status !== "ok" || snapshot.state.preference !== uiLocale);
+			(request.uiLocale !== undefined &&
+				(snapshot.state.status !== "ok" || snapshot.state.preference !== request.uiLocale)) ||
+			(request.responseLanguage !== undefined && settings?.responseLanguage !== request.responseLanguage) ||
+			artifactPatchChanges(request.artifactPolicy, settings?.artifactPolicy);
 
 		let backupDir: string | undefined;
 		if (settingsChanged && existsSync(settingsPath)) {
 			backupDir = backupLocalizationFile(paths, "environment", transactionId, settingsPath);
 		}
-		if (settingsChanged && uiLocale !== undefined) {
-			saveLocalizationConfig(location, uiLocale, snapshot, catalog);
+		if (storeChanged && backupDir === undefined && existsSync(sessionStorePath(paths.stateDir))) {
+			backupDir = backupLocalizationFile(paths, "session", transactionId, sessionStorePath(paths.stateDir));
+		}
+		let written: LocalizationConfigSnapshot | undefined;
+		if (settingsChanged) {
+			const uiLocale = request.uiLocale ?? settings?.uiLocale ?? DEFAULT_UI_LOCALE_PREFERENCE;
+			written = saveLocalizationConfig(location, uiLocale, snapshot, catalog, request);
 		}
 		if (storeChanged) {
-			const store = sessionStorePath(paths.stateDir);
-			if (backupDir === undefined && existsSync(store)) {
-				backupDir = backupLocalizationFile(paths, "session", transactionId, store);
-			}
-			writeSessionStore(paths.stateDir, nextStore);
+			writeSessionStoreWithRecovery(paths, nextStore, snapshot, written, catalog);
 		}
 		return {
 			changed: settingsChanged || storeChanged,
 			plan,
 			transactionId,
 			...(backupDir ? { backupDir } : {}),
-			notices: noticesFor(nextStore, options.sessionId),
+			notices: settingsChanged ? noticesFor(nextStore, options.sessionId) : [],
 		};
 	});
 }
@@ -688,11 +752,12 @@ function applyEnvironmentScope(
  *
  * The plan runs first; a conflict raises `LocalizationConflictError` and writes
  * nothing. A session-scoped apply writes only the current session's override.
- * An environment-scoped apply persists the display language, drops the current
- * session's display-language override, records the requested response language
- * and artifact policy in the current session's override, and returns a notice
- * for every other known session. The write is atomic and compares the file
- * against the revision read before the operation.
+ * An environment-scoped apply persists requested fields and clears only their
+ * matching current-session overrides, so the saved values take effect. Other
+ * known sessions receive a notice when saved settings change; their overrides
+ * are untouched. Each file write is atomic; saved settings use revision checks.
+ * A failed session-store write attempts to restore the saved settings. The
+ * two-file operation is not atomic.
  */
 export function applyLocalization(paths: JouzuPaths, options: LocalizationPlanOptions): LocalizationApplyResult {
 	const catalog = options.catalog ?? defaultCatalog();
@@ -736,14 +801,13 @@ function planReset(paths: JouzuPaths, options: LocalizationResetOptions, catalog
 }
 
 /**
- * Reset every language setting to its default.
+ * Reset the display language and clear the current session's overrides.
  *
- * The current session's override is cleared, and the saved display language is
- * reset to `auto`. The saved response language and artifact policy are
- * preserved by the shared writer; the migration issue owns their environment
- * reset. A settings file that cannot be read keeps its previous values and
- * raises `LocalizationConflictError`. Every other known session receives a
- * notice; its override is not edited.
+ * The saved display language is reset to `auto`. Saved response-language and
+ * artifact preferences are preserved and become effective in this session.
+ * A settings file that cannot be read keeps its previous values and raises
+ * `LocalizationConflictError`. Other known sessions receive a notice when
+ * saved settings change; their overrides are not edited.
  */
 export function resetLocalization(paths: JouzuPaths, options: LocalizationResetOptions): LocalizationApplyResult {
 	const catalog = options.catalog ?? defaultCatalog();
@@ -768,22 +832,22 @@ export function resetLocalization(paths: JouzuPaths, options: LocalizationResetO
 		if (settingsChanged && existsSync(settingsPath)) {
 			backupDir = backupLocalizationFile(paths, "environment", transactionId, settingsPath);
 		}
+		if (storeChanged && backupDir === undefined && existsSync(sessionStorePath(paths.stateDir))) {
+			backupDir = backupLocalizationFile(paths, "session", transactionId, sessionStorePath(paths.stateDir));
+		}
+		let written: LocalizationConfigSnapshot | undefined;
 		if (settingsChanged) {
-			saveLocalizationConfig(location, DEFAULT_UI_LOCALE_PREFERENCE, snapshot, catalog);
+			written = saveLocalizationConfig(location, DEFAULT_UI_LOCALE_PREFERENCE, snapshot, catalog);
 		}
 		if (storeChanged) {
-			const store = sessionStorePath(paths.stateDir);
-			if (backupDir === undefined && existsSync(store)) {
-				backupDir = backupLocalizationFile(paths, "session", transactionId, store);
-			}
-			writeSessionStore(paths.stateDir, nextStore);
+			writeSessionStoreWithRecovery(paths, nextStore, snapshot, written, catalog);
 		}
 		return {
 			changed: settingsChanged || storeChanged,
 			plan,
 			transactionId,
 			...(backupDir ? { backupDir } : {}),
-			notices: noticesFor(nextStore, options.sessionId),
+			notices: settingsChanged ? noticesFor(nextStore, options.sessionId) : [],
 		};
 	});
 }

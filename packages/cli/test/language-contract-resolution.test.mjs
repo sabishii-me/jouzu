@@ -174,6 +174,40 @@ test("a UI-locale save preserves the saved responseLanguage and artifactPolicy",
 	}
 });
 
+test("a language save merges explicit artifact fields and rejects invalid patches", () => {
+	const root = makeDir("jouzu-language-patch-");
+	const configDir = join(root, "config");
+	const stateDir = join(root, "state");
+	mkdirSync(configDir, { recursive: true });
+	try {
+		writeFileSync(join(configDir, LOCALIZATION_FILE_NAME), V2_FILE);
+		const snapshot = readLocalizationConfigSnapshot(configDir);
+		for (const patch of [
+			{ responseLanguage: "fr" },
+			{ artifactPolicy: { comments: "fr" } },
+			{ artifactPolicy: { unknown: "en" } },
+			{ artifactPolicy: null },
+		]) {
+			assert.throws(() => saveLocalizationConfig({ configDir, stateDir }, "en", snapshot, undefined, patch));
+			assert.equal(readFileSync(join(configDir, LOCALIZATION_FILE_NAME), "utf8"), V2_FILE);
+		}
+		saveLocalizationConfig({ configDir, stateDir }, "en", snapshot, undefined, {
+			responseLanguage: "auto",
+			artifactPolicy: { commits: "preserve", reviews: undefined },
+		});
+		const settings = readLocalizationSettings(configDir).settings;
+		assert.equal(settings.responseLanguage, "auto");
+		assert.deepEqual(settings.artifactPolicy, {
+			comments: "preserve",
+			documentation: "project",
+			commits: "preserve",
+			reviews: "en",
+		});
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
 test("a save of a migrated version 1 file writes the version 2 schema without inventing values", () => {
 	const root = makeDir("jouzu-language-save-v1-");
 	const configDir = join(root, "config");

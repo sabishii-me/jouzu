@@ -61,7 +61,7 @@
  * asserted as correct by this issue.
  */
 
-import { existsSync, lstatSync, readFileSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { catalogText, defaultCatalog } from "./cli-messages.js";
 import { type HumanLocale, protectedSourceError } from "./human-messages.js";
@@ -73,7 +73,7 @@ import {
 	type ResponseLanguagePreference,
 } from "./language-settings.js";
 import type { CatalogBundle } from "./locale-catalog.js";
-import { writeFilePrivateAtomic } from "./private-fs.js";
+import { validatePrivateDirectory, writeFilePrivateAtomic } from "./private-fs.js";
 import { acquireStateLock } from "./state-lock.js";
 
 /** The supported UI locale values. This is the same set the display context carries. */
@@ -560,14 +560,59 @@ function isUnusable(state: LocalizationConfigState, revision: LocalizationConfig
 	return revision.kind === "rejected" || state.status === "invalid" || state.status === "future";
 }
 
+function acquireLocalizationConfigLock(location: LocalizationConfigLocation, catalog: CatalogBundle): () => void {
+	return acquireStateLock({
+		path: join(location.stateDir, LOCALIZATION_LOCK_FILE_NAME),
+		describe: "localization settings",
+		onBusy: (inspection) =>
+			new UiLocaleConfigError(
+				inspection.status === "invalid"
+					? catalogText(catalog, UI_LOCALE_MESSAGE_IDS.lockNotRegularFile)
+					: catalogText(catalog, UI_LOCALE_MESSAGE_IDS.lockBusy),
+			),
+	});
+}
+
 /**
- * An optional change to apply alongside the UI-locale save. `responseLanguage`
- * is written as the new response-language preference; an absent value leaves the
- * stored one untouched. The first-run language choice uses it to record the
- * interface and response languages in one atomic write.
+ * Restore the exact pre-save bytes after a dependent write fails. This is
+ * compensation, not a multi-file transaction: readers may have observed the
+ * saved revision. The settings lock and revision comparison prevent recovery
+ * from overwriting a later save. An absent original file is removed only when
+ * its current bytes still match the revision this operation wrote.
+ */
+export function restoreLocalizationConfig(
+	location: LocalizationConfigLocation,
+	previous: LocalizationConfigSnapshot,
+	written: LocalizationConfigSnapshot,
+	catalog: CatalogBundle = defaultCatalog(),
+): void {
+	if (isUnusable(previous.state, previous.revision) || isUnusable(written.state, written.revision)) {
+		throw new UiLocaleConfigError("refusing to overwrite localization settings that could not be read");
+	}
+	const release = acquireLocalizationConfigLock(location, catalog);
+	try {
+		validatePrivateDirectory(location.configDir);
+		const current = readLocalizationConfigSnapshot(location.configDir, catalog);
+		if (!revisionEquals(current.revision, written.revision)) throw new UiLocaleConflictError();
+		const path = join(location.configDir, LOCALIZATION_FILE_NAME);
+		if (previous.revision.kind === "file") {
+			writeFilePrivateAtomic(path, previous.revision.contents, location.configDir);
+		} else if (previous.revision.kind === "absent" && current.revision.kind === "file") {
+			unlinkSync(path);
+		}
+	} finally {
+		release();
+	}
+}
+
+/**
+ * An optional change to apply alongside the UI-locale save. An absent response
+ * language or artifact field leaves its saved value untouched. The first-run
+ * choice and Settings use this patch to save requested fields atomically.
  */
 export interface LocalizationSavePatch {
 	readonly responseLanguage?: ResponseLanguagePreference;
+	readonly artifactPolicy?: PartialArtifactPolicy;
 }
 
 /**
@@ -602,19 +647,14 @@ export function saveLocalizationConfig(
 	if (patch.responseLanguage !== undefined && !isResponseLanguagePreference(patch.responseLanguage)) {
 		throw new UiLocaleConfigError(`unsupported response language preference: ${patch.responseLanguage}`);
 	}
+	const artifactPolicy = patch.artifactPolicy === undefined ? undefined : parseArtifactPolicy(patch.artifactPolicy);
+	if (patch.artifactPolicy !== undefined && artifactPolicy === undefined) {
+		throw new UiLocaleConfigError("unsupported artifact policy");
+	}
 	if (isUnusable(snapshot.state, snapshot.revision)) {
 		throw new UiLocaleConfigError("refusing to overwrite localization settings that could not be read");
 	}
-	const release = acquireStateLock({
-		path: join(location.stateDir, LOCALIZATION_LOCK_FILE_NAME),
-		describe: "localization settings",
-		onBusy: (inspection) =>
-			new UiLocaleConfigError(
-				inspection.status === "invalid"
-					? catalogText(catalog, UI_LOCALE_MESSAGE_IDS.lockNotRegularFile)
-					: catalogText(catalog, UI_LOCALE_MESSAGE_IDS.lockBusy),
-			),
-	});
+	const release = acquireLocalizationConfigLock(location, catalog);
 	try {
 		// Check and replace under the lock, so two sessions cannot both pass the
 		// comparison and then both write, which would drop one update.
@@ -635,6 +675,9 @@ export function saveLocalizationConfig(
 			...base,
 			uiLocale: validated,
 			...(patch.responseLanguage !== undefined ? { responseLanguage: patch.responseLanguage } : {}),
+			...(artifactPolicy !== undefined && Object.keys(artifactPolicy).length > 0
+				? { artifactPolicy: { ...base.artifactPolicy, ...artifactPolicy } }
+				: {}),
 		});
 		if (Buffer.byteLength(contents) > LOCALIZATION_MAX_BYTES) {
 			throw new UiLocaleConfigError(`localization settings exceed ${LOCALIZATION_MAX_BYTES} bytes`);
