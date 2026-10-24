@@ -194,6 +194,12 @@ export function buildCapabilityRoutingGuidance(options: BuildSystemPromptOptions
 		"Use the browser path only when normal fetch cannot do the job.",
 	);
 	add(
+		skills.has("jouzu-reference"),
+		"Jouzu configuration, language, model catalogs, profiles, session or trace files, controls, or troubleshooting",
+		"read `jouzu-reference` at its listed `<location>`",
+		"Use the actual session tools for live state; slash commands are user actions, and user-only settings and restart requirements stay with the user.",
+	);
+	add(
 		skills.has("jouzu-source-check"),
 		"Fact-checking or source comparison",
 		"read `jouzu-source-check` at its listed `<location>`",

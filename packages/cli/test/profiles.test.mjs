@@ -50,6 +50,11 @@ test("bundled Core and JA profiles resolve exact ordered assets", () => {
 			"skills/jouzu-anti-slop/SKILL.md",
 			"skills/jouzu-clear-writing/SKILL.md",
 			"skills/jouzu-delegation/SKILL.md",
+			"skills/jouzu-reference/references/configuration.md",
+			"skills/jouzu-reference/references/controls.md",
+			"skills/jouzu-reference/references/history.md",
+			"skills/jouzu-reference/references/models.md",
+			"skills/jouzu-reference/SKILL.md",
 			"skills/jouzu-source-check/SKILL.md",
 		],
 	);
@@ -61,11 +66,61 @@ test("bundled Core and JA profiles resolve exact ordered assets", () => {
 			"skills/jouzu-anti-slop/SKILL.md",
 			"skills/jouzu-clear-writing/SKILL.md",
 			"skills/jouzu-delegation/SKILL.md",
+			"skills/jouzu-reference/references/configuration.md",
+			"skills/jouzu-reference/references/controls.md",
+			"skills/jouzu-reference/references/history.md",
+			"skills/jouzu-reference/references/models.md",
+			"skills/jouzu-reference/SKILL.md",
 			"skills/jouzu-source-check/SKILL.md",
 		],
 	);
-	assert.equal(core.manifestSha256, "48eba8f9d46b14c108a57e537f8e3b1b8f857889c20f02d03ae4e60f17abad6d");
-	assert.equal(ja.manifestSha256, "b0f603c67a4c79037f433be1c18ec16c4b0d23edbd8de2025f82644b138df8d1");
+	assert.equal(core.manifestSha256, "9b3b6bb21c4f5872af08e08c4588ca385aed09338561b1a820c27ffe61841958");
+	assert.equal(ja.manifestSha256, "c3d1fce4fc55c0a33be3bdf158e53c093656138a25d91bf8a654f8c2ee735c15");
+});
+
+test("reference skill has compact entry and offline links in both profiles", () => {
+	for (const id of ["core", "ja"]) {
+		const assets = loadBundledProfile(id).assets;
+		const base = "skills/jouzu-reference/";
+		const entry = assets.find((asset) => asset.target === `${base}SKILL.md`).bytes.toString("utf8");
+		assert.match(entry, /^---\nname: jouzu-reference\n/);
+		assert.ok(entry.length < 2200, "keep the entry point compact; load detail on demand");
+		const links = [...entry.matchAll(/\]\((references\/[a-z-]+\.md)\)/g)].map((match) => match[1]);
+		assert.equal(links.length, 4);
+		for (const link of links) {
+			const asset = assets.find((candidate) => candidate.target === `${base}${link}`);
+			assert.ok(asset, `${id}: missing offline reference ${link}`);
+			assert.equal(digest(asset.bytes), asset.sha256);
+			assert.match(asset.bytes.toString("utf8"), /^# /);
+			assert.ok(asset.bytes.length < 6000, "keep each topic a compact lookup");
+		}
+	}
+});
+
+test("reference targets allow Markdown only inside a Jouzu skill references directory", () => {
+	for (const target of [
+		"skills/jouzu-reference/references/configuration.md",
+		"skills/jouzu-reference/references/run.sh",
+		"skills/jouzu-reference/references/../settings.json",
+		"skills/jouzu-reference/references/nested/file.md",
+		"skills/other/references/configuration.md",
+		"skills/jouzu-reference/settings.json",
+	]) {
+		const root = fixtureRoot();
+		try {
+			baseManifests(root);
+			const manifest = JSON.parse(readFileSync(join(root, "core", "manifest.json"), "utf8"));
+			manifest.assets[0].target = target;
+			writeManifest(root, "core", manifest);
+			if (target === "skills/jouzu-reference/references/configuration.md") {
+				assert.equal(loadProfileFromRoot(root, "core").assets[0].target, target);
+			} else {
+				assert.throws(() => loadProfileFromRoot(root, "core"), ProfileManifestError);
+			}
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	}
 });
 
 test("bundled skills declare bounded public workflows", () => {

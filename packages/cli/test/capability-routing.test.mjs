@@ -136,6 +136,27 @@ test("Core keeps repository discipline inline and generates bounded decision-tim
 	assert.match(routing, /Existing prose needs a filler-removal pass/);
 });
 
+test("Jouzu product questions route to the reference only when the skill is bundled", () => {
+	const skill = { name: "jouzu-reference" };
+	const routing = buildCapabilityRoutingGuidance({ selectedTools: ["read"], skills: [skill] });
+	assert.match(routing, /read `jouzu-reference` at its listed `<location>`/);
+	assert.match(
+		routing,
+		/Jouzu configuration, language, model catalogs, profiles, session or trace files, controls, or troubleshooting/,
+	);
+	assert.match(routing, /Use the actual session tools for live state/);
+	assert.match(routing, /slash commands are user actions/);
+	assert.match(routing, /user-only settings and restart requirements/);
+	// The route is generated routing, not part of the inline default guidance.
+	assert.doesNotMatch(JOUZU_DEFAULT_GUIDANCE, /jouzu-reference/);
+	assert.doesNotMatch(buildCapabilityRoutingGuidance({ selectedTools: ["read"], skills: [] }), /jouzu-reference/);
+	assert.doesNotMatch(buildCapabilityRoutingGuidance({ selectedTools: ["read"] }), /jouzu-reference/);
+	assert.doesNotMatch(
+		buildCapabilityRoutingGuidance({ selectedTools: ["read"], skills: [{ name: "jouzu-clear-writing" }] }),
+		/jouzu-reference/,
+	);
+});
+
 test("delegation routes to the skill only when both tool and skill are available", () => {
 	const skill = { name: "jouzu-delegation" };
 	const routing = buildCapabilityRoutingGuidance({ selectedTools: ["subagent"], skills: [skill] });

@@ -163,6 +163,33 @@ test("generates stable capability routing from only active tools and skills", ()
 	assert.notEqual(changed, guidance);
 });
 
+test("the Jouzu reference route appears only for its skill and never reaches a custom prompt", async () => {
+	const upstream = `You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.
+
+Available tools:
+- read: Read file contents`;
+	const options = { customPrompt: undefined, selectedTools: ["read"], skills: [{ name: "jouzu-reference" }] };
+	const routing = buildCapabilityRoutingGuidance(options);
+	assert.match(routing, /read `jouzu-reference` at its listed `<location>`/);
+	assert.doesNotMatch(
+		buildCapabilityRoutingGuidance({ ...options, skills: [{ name: "jouzu-clear-writing" }] }),
+		/jouzu-reference/,
+	);
+	// A user-owned prompt is returned unchanged, so the route never reaches it.
+	assert.equal(brandDefaultSystemPrompt(upstream, "user-owned prompt", routing), upstream);
+
+	const { handlers } = installExtension();
+	const branded = await handlers.get("before_agent_start")({ systemPrompt: upstream, systemPromptOptions: options });
+	assert.deepEqual(branded, { systemPrompt: brandDefaultSystemPrompt(upstream, undefined, routing) });
+	assert.match(branded.systemPrompt, /Jouzu configuration, language, model catalogs/);
+
+	const custom = await handlers.get("before_agent_start")({
+		systemPrompt: upstream,
+		systemPromptOptions: { ...options, customPrompt: "user-owned prompt" },
+	});
+	assert.equal(custom, undefined);
+});
+
 test("describes VCC session continuity without claiming infinite context", () => {
 	const guidance = buildCapabilityRoutingGuidance({
 		selectedTools: ["vcc_recall"],

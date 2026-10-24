@@ -99,14 +99,14 @@ test("a non-interactive first run uses Core without recording Japanese consent",
 		assert.equal(result.stdout.trim(), piVersion);
 		const state = JSON.parse(readFileSync(join(jouzuHome, "state", "profile-state.json"), "utf8"));
 		assert.equal(state.activeProfile, "core");
-		assert.equal(state.profileVersion, 14);
+		assert.equal(state.profileVersion, 15);
 		assert.equal(existsSync(join(jouzuHome, "state", "profile-choice.json")), false);
 	} finally {
 		rmSync(temp, { recursive: true, force: true });
 	}
 });
 
-test("Core registers its four optional skills and review prompt", () => {
+test("Core registers its five optional skills and review prompt", () => {
 	const temp = mkdtempSync(join(tmpdir(), "jouzu-core-skills-"));
 	try {
 		const result = run(
@@ -123,6 +123,7 @@ test("Core registers its four optional skills and review prompt", () => {
 				"skill:jouzu-anti-slop",
 				"skill:jouzu-clear-writing",
 				"skill:jouzu-delegation",
+				"skill:jouzu-reference",
 				"skill:jouzu-source-check",
 			],
 		);

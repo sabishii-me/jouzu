@@ -193,6 +193,7 @@ function assertPackedSurfaces(installedCli, probe, cwd, env, profile) {
 		"skill:jouzu-anti-slop",
 		"skill:jouzu-clear-writing",
 		"skill:jouzu-delegation",
+		"skill:jouzu-reference",
 		"skill:jouzu-source-check",
 		"skill:multiloop",
 		"status",
@@ -202,6 +203,13 @@ function assertPackedSurfaces(installedCli, probe, cwd, env, profile) {
 		assert.ok(surfaces.commands.includes(command), `${profile}: missing command ${command}`);
 	}
 	assert.equal(surfaces.commands.includes("skill:jouzu-core"), false);
+	const referenceDir = resolve(env.JOUZU_HOME, "agent", "skills", "jouzu-reference");
+	const entry = readFileSync(resolve(referenceDir, "SKILL.md"), "utf8");
+	const links = [...entry.matchAll(/\]\((references\/[a-z-]+\.md)\)/g)].map((match) => match[1]);
+	assert.equal(links.length, 4, `${profile}: expected four offline references`);
+	for (const link of links) {
+		assert.match(readFileSync(resolve(referenceDir, link), "utf8"), /^# /);
+	}
 	assert.equal(rpcResponse(result.stdout, "probe").success, true);
 	assert.equal(rpcResponse(result.stdout, "commands").success, true);
 }

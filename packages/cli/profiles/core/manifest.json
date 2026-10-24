@@ -1,8 +1,33 @@
 {
   "schemaVersion": 1,
   "id": "core",
-  "version": 14,
+  "version": 15,
   "assets": [
+    {
+      "source": "assets/jouzu-reference-skill.md",
+      "target": "skills/jouzu-reference/SKILL.md",
+      "sha256": "568a7aa781327952c8c17c05bb83f1b1f937a4c16e90659dabc653696881b7da"
+    },
+    {
+      "source": "assets/jouzu-reference/configuration.md",
+      "target": "skills/jouzu-reference/references/configuration.md",
+      "sha256": "6e2974428b087a33e096e35d19d675d23e12315f3a7cea5eda017f8528651a26"
+    },
+    {
+      "source": "assets/jouzu-reference/models.md",
+      "target": "skills/jouzu-reference/references/models.md",
+      "sha256": "d1b169b4832514ef08ceb6dd4c846fc2a741cb59f0e932504e4e774fdfde2e99"
+    },
+    {
+      "source": "assets/jouzu-reference/history.md",
+      "target": "skills/jouzu-reference/references/history.md",
+      "sha256": "86840ec61b771c609a30998629cc45846fd38c0d31d888bceaf4d7093afc40de"
+    },
+    {
+      "source": "assets/jouzu-reference/controls.md",
+      "target": "skills/jouzu-reference/references/controls.md",
+      "sha256": "b07aed140d4b8b48609975ee22e708aca6a389c72e5b35aa9dd52460ded3ef26"
+    },
     {
       "source": "assets/jouzu-delegation-skill.md",
       "target": "skills/jouzu-delegation/SKILL.md",
