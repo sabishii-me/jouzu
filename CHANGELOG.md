@@ -4,7 +4,7 @@
 
 ### Changed
 
-- Remove repeated instructions from the default system prompt. A default Core session's prompt shrinks from about 22,000 to about 17,000 characters. Browser-tool parameter details move into the tool parameter descriptions.
+- Remove repeated instructions from the default system prompt and shorten the task tool descriptions. A default Core session sends about 17,000 characters of system prompt instead of 22,000, and about 38,000 characters of tool definitions instead of 50,000. The multiloop iteration tools are offered only while a loop or goal is running. Browser-tool parameter details move into the tool parameter descriptions.
 
 ### Fixed
 

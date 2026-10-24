@@ -34,7 +34,7 @@ export function flowWaitGuidance(activeTools: readonly string[]): string[] {
 			: []),
 		...(tools.has("TaskUpdate")
 			? [
-					"For a task awaiting a person, use TaskUpdate waitForUser: true; for an explicit task pause, use paused: true. Clear the corresponding field when ready to resume. Use blockedBy for task dependencies. A description saying 'blocked' does not suspend automatic task continuation.",
+					"For a task awaiting a person, use TaskUpdate waitForUser: true; for an explicit task pause, use paused: true. Clear the corresponding field when ready to resume.",
 				]
 			: []),
 	];
