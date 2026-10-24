@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createFastModeExtension, FAST_MODE_STATUS } from "../dist/fast-mode.js";
 import { loadCatalog } from "../dist/locale-catalog.js";
+import { PI_SETTINGS_ITEM_IDS, withPiUiLocalization } from "../dist/pi-ui-localization.js";
 import { renderScrollbackTranscript } from "../dist/scrollback.js";
 import {
 	createSessionUiStyles,
@@ -120,4 +121,150 @@ test("every built-in Pi slash command and bundled command has a localized Japane
 		formatSlashCommandDescription("<provider> — Configure provider authentication", jaText.slashCommands.login),
 		"<provider> — プロバイダー認証を設定",
 	);
+});
+
+test("withPiUiLocalization localizes Pi /settings, submenus, and selector components in Japanese and restores prototypes", async () => {
+	const pi = await import("../node_modules/@earendil-works/pi-coding-agent/dist/index.js");
+	const tui = await import("../node_modules/@earendil-works/pi-tui/dist/index.js");
+	const { TrustSelectorComponent } = await import(
+		"../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/components/trust-selector.js"
+	);
+	pi.initTheme("dark");
+	tui.setCapabilityOverrides({ images: "kitty" });
+
+	const settingsConfig = {
+		autoCompact: true,
+		showImages: true,
+		imageWidthCells: 80,
+		autoResizeImages: true,
+		blockImages: false,
+		enableSkillCommands: true,
+		steeringMode: "one-at-a-time",
+		followUpMode: "one-at-a-time",
+		transport: "auto",
+		sessionShareDestination: "auto",
+		httpIdleTimeoutMs: 300000,
+		cacheWarmingMode: "off",
+		hideThinkingBlock: false,
+		mermaidRenderingMode: "final",
+		showCacheMissNotices: false,
+		collapseChangelog: true,
+		quietStartup: true,
+		enableInstallTelemetry: false,
+		defaultProjectTrust: "ask",
+		doubleEscapeAction: "tree",
+		treeFilterMode: "default",
+		warnings: {},
+		modelThinkingLevels: {},
+		availableDefaultModels: [],
+		showHardwareCursor: true,
+		editorPaddingX: 0,
+		outputPad: 1,
+		autocompleteMaxVisible: 5,
+		clearOnShrink: false,
+		showTerminalProgress: true,
+		tuiMode: "fullscreen",
+		fullscreenExitOutput: "resume-hint",
+		fullscreenScrollbar: "auto",
+		fullscreenCopyOnSelect: true,
+		fullscreenWheelScrollLines: "auto",
+		currentTheme: "dark",
+		terminalTheme: "dark",
+		availableThemes: ["dark", "light", "system"],
+	};
+
+	await withPiUiLocalization(
+		catalog,
+		async () => {
+			const selector = new pi.SettingsSelectorComponent(settingsConfig, {
+				onCancel() {},
+				onWarningsChange() {},
+				onThemeChange() {},
+			});
+			const list = selector.getSettingsList();
+			for (const item of list.items) {
+				assert.ok(item.id in PI_SETTINGS_ITEM_IDS, `missing PI_SETTINGS_ITEM_IDS entry for ${item.id}`);
+			}
+			const renderedSettings = tui.stripTerminalSequences(selector.render(100).join("\n"));
+			assert.match(renderedSettings, /自動圧縮/u);
+			assert.match(renderedSettings, /コンテキストが大きくなったときに自動で圧縮します/u);
+			assert.match(renderedSettings, /入力して検索 · Enter\/Space で変更 · Esc でキャンセル/u);
+
+			// Search in /settings matches both Japanese and original English labels.
+			list.applyFilter("テーマ");
+			assert.equal(
+				list.filteredItems.some((item) => item.id === "theme"),
+				true,
+			);
+			list.applyFilter("theme");
+			assert.equal(
+				list.filteredItems.some((item) => item.id === "theme"),
+				true,
+			);
+
+			// Theme submenu and Automatic Theme submenu
+			const themeItem = list.items.find((item) => item.id === "theme");
+			const themeSubmenu = themeItem.submenu("dark/light", () => {});
+			const renderedAutoTheme = tui.stripTerminalSequences(themeSubmenu.render(100).join("\n"));
+			assert.match(renderedAutoTheme, /自動テーマ/u);
+			assert.match(renderedAutoTheme, /ライトテーマ/u);
+			assert.match(renderedAutoTheme, /ダークテーマ/u);
+
+			// ThinkingSelectorComponent (/thinking)
+			const thinking = new pi.ThinkingSelectorComponent(
+				"medium",
+				["off", "low", "medium", "high"],
+				() => {},
+				() => {},
+				() => {},
+				"medium",
+			);
+			const renderedThinking = tui.stripTerminalSequences(thinking.render(100).join("\n"));
+			assert.match(renderedThinking, /思考レベル/u);
+			assert.match(renderedThinking, /標準の推論（約 8k トークン） · 既定/u);
+
+			// TrustSelectorComponent (/trust)
+			const trust = new TrustSelectorComponent({
+				cwd: "/workspace/sample",
+				savedDecision: null,
+				projectTrusted: false,
+				onSelect() {},
+				onCancel() {},
+			});
+			const renderedTrust = tui.stripTerminalSequences(trust.render(100).join("\n"));
+			assert.match(renderedTrust, /プロジェクトの信頼設定/u);
+			assert.match(renderedTrust, /保存された設定: なし/u);
+			assert.match(renderedTrust, /現在のセッション: 未信頼/u);
+			assert.match(renderedTrust, /信頼する/u);
+			assert.match(renderedTrust, /信頼しない/u);
+
+			// OAuthSelectorComponent (/login, /logout)
+			const oauth = new pi.OAuthSelectorComponent(
+				"login",
+				[{ id: "anthropic", name: "Anthropic", authType: "oauth", subscription: true }],
+				() => {},
+				() => {},
+			);
+			const renderedOauth = tui.stripTerminalSequences(oauth.render(100).join("\n"));
+			assert.match(renderedOauth, /設定するプロバイダーを選択:/u);
+			assert.match(renderedOauth, /未設定/u);
+
+			// UserMessageSelectorComponent (/fork)
+			const fork = new pi.UserMessageSelectorComponent(
+				[{ id: "m1", text: "Hello 日本語" }],
+				() => {},
+				() => {},
+			);
+			const renderedFork = tui.stripTerminalSequences(fork.render(100).join("\n"));
+			assert.match(renderedFork, /メッセージからフォーク/u);
+			assert.match(renderedFork, /メッセージ 1 \/ 1/u);
+		},
+		pi,
+	);
+
+	// After withPiUiLocalization finishes, English rendering is restored.
+	const englishSelector = new pi.SettingsSelectorComponent(settingsConfig, { onCancel() {} });
+	const englishRendered = tui.stripTerminalSequences(englishSelector.render(100).join("\n"));
+	assert.match(englishRendered, /Auto-compact/u);
+	assert.doesNotMatch(englishRendered, /自動圧縮/u);
 });

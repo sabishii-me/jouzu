@@ -52,6 +52,7 @@ import {
 import { projectDefaultAppliesAtStartup } from "./model-picker-state.js";
 import { resolveJouzuPaths } from "./paths.js";
 import { offerPiConfigurationImport, PiImportError } from "./pi-import.js";
+import { withPiUiLocalization } from "./pi-ui-localization.js";
 import { buildPreRuntimeContext } from "./pre-runtime.js";
 import { writeProfileChoice } from "./profile-choice.js";
 import {
@@ -766,10 +767,13 @@ export async function runMainCli(args: string[]): Promise<void> {
 				releaseDiagnostics,
 			],
 		});
-	const runPi = () =>
-		usesReleaseExtensions(parsed.args)
-			? withReleaseExtensionConflictPolicy(pi, releaseExtensionStatus, startPi)
-			: startPi();
+	const runPi = () => {
+		const execute = () =>
+			usesReleaseExtensions(parsed.args)
+				? withReleaseExtensionConflictPolicy(pi, releaseExtensionStatus, startPi)
+				: startPi();
+		return interactiveStartup ? withPiUiLocalization(preRuntime.catalog.bundle, execute, pi) : execute();
+	};
 	try {
 		await withJouzuOutput(runPi, {
 			interactive: interactiveStartup,
