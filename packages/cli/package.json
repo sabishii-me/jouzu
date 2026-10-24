@@ -45,6 +45,13 @@
 	"publishConfig": {
 		"access": "public"
 	},
+	"overrides": {
+		"body-parser": "2.4.0",
+		"fast-uri": "3.1.9",
+		"ip-address": "10.7.4",
+		"undici": "8.12.3",
+		"zod": "4.6.7"
+	},
 	"dependencies": {
 		"@napi-rs/canvas": "1.0.13",
 		"@earendil-works/pi-ai": "1.4.0",
