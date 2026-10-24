@@ -583,33 +583,32 @@ test("renders the pre-launch help and argument errors in the selected locale", (
  * shared `dist/locales` untouched, so this test stays safe while other test
  * files run in parallel.
  */
-test("a damaged ja catalog keeps the pre-launch display and doctor in English", () => {
-	const temp = mkdtempSync(join(packageRoot, ".damaged-catalog-"));
-	try {
-		const damagedCli = join(temp, "cli.js");
-		const damagedRun = (args) => {
-			const home = mkdtempSync(join(tmpdir(), "jouzu-damaged-home-"));
-			try {
-				return spawnSync(process.execPath, [damagedCli, "--jouzu-home", home, ...args], {
-					encoding: "utf8",
-					timeout: 30_000,
-					env: { ...scrubbedEnv(), JOUZU_HOME: home, PI_OFFLINE: "1", JOUZU_UI_LOCALE: "ja" },
-					input: "",
-				});
-			} finally {
-				rmSync(home, { recursive: true, force: true });
-			}
-		};
-		const englishHelp = run(["--help"], { env: { JOUZU_UI_LOCALE: "en" } });
-		const englishDoctorStatus = piLock.compatibilityStatus === "qualified" ? 0 : 1;
-		const cjk = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]/u;
-		const jaSource = readFileSync(join(packageRoot, "dist", "locales", "ja", "cli.ftl"), "utf8");
-		cpSync(join(packageRoot, "dist"), temp, { recursive: true });
-		for (const damage of [
-			["truncated", (source) => source.slice(0, 120)],
-			["digest-mismatched", (source) => `${source}\n# damaged catalog probe\n`],
-		]) {
-			const [label, mutate] = damage;
+for (const [label, mutate] of [
+	["truncated", (source) => source.slice(0, 120)],
+	["digest-mismatched", (source) => `${source}\n# damaged catalog probe\n`],
+]) {
+	test(`a ${label} ja catalog keeps the pre-launch display and doctor in English`, () => {
+		const temp = mkdtempSync(join(packageRoot, ".damaged-catalog-"));
+		try {
+			const damagedCli = join(temp, "cli.js");
+			const damagedRun = (args) => {
+				const home = mkdtempSync(join(tmpdir(), "jouzu-damaged-home-"));
+				try {
+					return spawnSync(process.execPath, [damagedCli, "--jouzu-home", home, ...args], {
+						encoding: "utf8",
+						timeout: 30_000,
+						env: { ...scrubbedEnv(), JOUZU_HOME: home, PI_OFFLINE: "1", JOUZU_UI_LOCALE: "ja" },
+						input: "",
+					});
+				} finally {
+					rmSync(home, { recursive: true, force: true });
+				}
+			};
+			const englishHelp = run(["--help"], { env: { JOUZU_UI_LOCALE: "en" } });
+			const englishDoctorStatus = piLock.compatibilityStatus === "qualified" ? 0 : 1;
+			const cjk = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]/u;
+			const jaSource = readFileSync(join(packageRoot, "dist", "locales", "ja", "cli.ftl"), "utf8");
+			cpSync(join(packageRoot, "dist"), temp, { recursive: true });
 			writeFileSync(join(temp, "locales", "ja", "cli.ftl"), mutate(jaSource));
 
 			const help = damagedRun(["--help"]);
@@ -626,11 +625,11 @@ test("a damaged ja catalog keeps the pre-launch display and doctor in English", 
 			assert.match(doctor.stdout, /Jouzu doctor/u, label);
 			assert.doesNotMatch(doctor.stdout, cjk, `${label}: doctor must render English`);
 			assert.match(doctor.stdout, /Jouzu could not read its interface catalog/u, label);
+		} finally {
+			rmSync(temp, { recursive: true, force: true });
 		}
-	} finally {
-		rmSync(temp, { recursive: true, force: true });
-	}
-});
+	});
+}
 
 test("startup reads the UI locale option, environment, and saved setting without writing", () => {
 	const temp = mkdtempSync(join(tmpdir(), "jouzu-ui-locale-cli-"));

@@ -24,7 +24,7 @@ import {
 	readRuntimeCatalogVersion,
 } from "./catalog-lock.mjs";
 import { packedTarballEntry } from "./pack-output.mjs";
-import { downloadPublished, upgradeVersions } from "./published-upgrade.mjs";
+import { downloadPublished, installedCatalogSnapshot, upgradeVersions } from "./published-upgrade.mjs";
 import { smokePhase } from "./smoke-phase.mjs";
 
 const root = resolve(import.meta.dirname, "..");
@@ -437,9 +437,7 @@ try {
 		const rollbackHome = join(temp, "rollback-home");
 		const userConfig = configurationFixture(rollbackHome);
 		await installCurrent(current, rollbackPrefix);
-		const rollbackLocales = join(installedPackageRoot(rollbackPrefix), "dist", "locales");
-		const catalogBefore = fileDigest(join(rollbackLocales, "ja", "cli.ftl"));
-		assertInstalledCatalogs(rollbackPrefix, "installed current release");
+		const catalogBefore = installedCatalogSnapshot(installedPackageRoot(rollbackPrefix), currentVersion);
 		if (current.catalog && broken.catalog) {
 			// Built artifacts carry their own catalog digest. When the artifacts come
 			// from JOUZU_UPDATE_* variables the digest is unknown, so the rollback check
@@ -479,11 +477,10 @@ try {
 				env: { ...env, JOUZU_NO_UPDATE: "1" },
 			});
 			assert.match(version.stdout, new RegExp(`^jouzu ${escapeRegex(currentVersion)}$`, "m"));
-			assertInstalledCatalogs(rollbackPrefix, "restored install");
-			assert.equal(
-				fileDigest(join(rollbackLocales, "ja", "cli.ftl")),
+			assert.deepEqual(
+				installedCatalogSnapshot(installedPackageRoot(rollbackPrefix), currentVersion),
 				catalogBefore,
-				"rollback must restore the previous catalog",
+				"rollback must restore the previous catalogs, including their absence in releases through 0.2.1",
 			);
 			const state = JSON.parse(readFileSync(join(rollbackHome, "state", "self-update.json"), "utf8"));
 			assert.equal(state.lastResult, "failed");

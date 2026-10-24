@@ -1,7 +1,19 @@
 import assert from "node:assert/strict";
-import { writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { assertInstalledCatalogLock, computeCatalogDigests } from "./catalog-lock.mjs";
 import { digest } from "./release-artifact.mjs";
+
+export function installedCatalogSnapshot(packageRoot, version) {
+	assert.match(version, /^\d+\.\d+\.\d+$/);
+	const locales = join(packageRoot, "dist", "locales");
+	if (/^0\.(?:[01]\.\d+|2\.[01])$/.test(version)) {
+		assert.equal(existsSync(locales), false, "releases through 0.2.1 must not retain candidate locale files");
+		return null;
+	}
+	assertInstalledCatalogLock(packageRoot);
+	return computeCatalogDigests(locales);
+}
 
 export function upgradeVersions(candidate, published) {
 	const parse = (value) => {
