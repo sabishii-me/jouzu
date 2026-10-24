@@ -7,7 +7,7 @@ A profile is a set of instructions, skills, and prompts that Jouzu installs into
 | `core` (default) | Default instructions, five optional skills, and the `jouzu-review` prompt. Selects no provider or response language. |
 | `ja` (preview) | Everything in `core`, plus Japanese responses. Code, commands, identifiers, paths, URLs, logs, and error messages stay unchanged. |
 
-The UI locale does not select a response language. The `responseLanguage` setting in [Configuration](configuration.md#language) supplies a separate response-language instruction. To use language settings without the `ja` profile's Japanese instruction, select `core`.
+The UI locale does not select a response language. See [Language, locale and prompt instructions](language.md) for how identity, shared guidance, profiles, response settings, artifact policies and custom prompts combine. To use language settings without the JA profile's independent Japanese instruction, select Core.
 
 ## Choose a profile
 
@@ -50,9 +50,9 @@ The default system prompt tells the agent to:
 
 It also includes today's date and narrows Pi's documentation pointer to Pi extension, SDK, theme, and TUI development; Jouzu settings questions go to `jouzu-reference`.
 
-Jouzu adds these as named sections of Pi's prompt. Ordinary conversation does not change them, but changes such as a new date or response-language preference produce section updates. On routes that support mid-conversation system messages, Pi can preserve the leading message and send the update later. Otherwise, Pi folds the update into the leading system message. Provider support, tool declarations and cache policy determine whether a cached prefix can be reused; named sections alone do not guarantee a cache hit.
+Jouzu adds these as named sections of Pi's prompt. Changes such as a new date or response-language preference produce section updates; provider support determines whether those remain later updates or are folded into the leading message. See [instruction changes and caching](language.md#when-instructions-change-and-what-caching-means).
 
-A custom system prompt replaces these, and Jouzu does not modify it.
+A custom system prompt owns the preamble; Jouzu does not replace it with default guidance or language settings. Other resources and extensions may still add instructions. See [custom prompt boundaries](language.md#identity-guidance-and-custom-prompts).
 
 ## How profiles are applied
 

@@ -40,6 +40,8 @@ When multiple clients are attached to the pane's session, Jouzu selects the most
 
 ## Language
 
+[Language, locale and prompt instructions](language.md) is the complete guide to independent UI/response/artifact settings, Core/JA profiles, custom prompts, child inheritance, precedence and apply timing.
+
 The UI locale, the response language, and the artifact policy are stored in `localization.json` in the Jouzu configuration directory, the parent of the `agent` directory listed in the README's [State and isolation](../README.md#state-and-isolation) table:
 
 | Platform | `localization.json` |
@@ -70,21 +72,13 @@ The UI locale, the response language, and the artifact policy are stored in `loc
 
 The UI locale, response language, and artifact policy are separate settings. Changing `uiLocale` does not change `responseLanguage` or `artifactPolicy`, and no language setting selects a model, provider, or region.
 
-The first interactive launch offers `English` and `日本語` as interface choices, then asks for the response language separately. The Chinese names (`简体中文`, `繁體中文`) appear as unavailable interface choices; they remain valid response-language preferences. Skipping the interface choice or running non-interactively writes no language choice. Settings **Language** can preview a candidate inside the panel without saving it; see [Palette](palette-ux.md#settings). To set persistent response and artifact preferences, edit `localization.json` and start a new session.
+Use Settings **Language** to preview changes, then choose **Session** for temporary overrides or **Saved setting** to persist the requested UI, response and artifact preferences. Response and artifact changes apply to the current agent on its next turn; restart for a saved UI change throughout the interface. Direct file edits apply to a new session. See the [scope and timing rules](language.md#save-or-apply-to-this-session).
 
 ### Startup resolution
 
-| Setting | Order, highest first |
-| --- | --- |
-| `uiLocale` | `--jouzu-ui-locale`, `JOUZU_UI_LOCALE`, saved setting, locale environment, English fallback |
-| `responseLanguage` | saved setting, built-in `auto` |
-| `artifactPolicy` (per field) | saved setting, built-in default |
+See [UI precedence](language.md#ui-locale) and [response/artifact resolution](language.md#response-language-and-artifacts). `jz doctor` reports resolved startup values and their sources; it does not inspect another running session's live overrides.
 
-For `auto`, the first non-empty value of `LC_ALL`, `LC_MESSAGES`, or `LANG` supplies the locale candidate. These variables do not set the response language. `jz doctor` reports the resolved values and their sources.
-
-A `schemaVersion: 1` file is read as the version 2 shape in memory. Its `uiLocale` is kept, and `responseLanguage` and `artifactPolicy` fall through to their built-in values until the file is saved in the version 2 schema.
-
-The CLI does not load a repository's `.jouzu/localization.json` as a trusted artifact policy. Use the saved `artifactPolicy` in the Jouzu configuration directory; `jz doctor` reports the project policy as `untrusted`.
+Version 1 settings remain readable. The CLI does not trust repository `.jouzu/localization.json` files as automatic artifact-policy sources; use the user configuration above.
 
 ## Importing from Pi
 

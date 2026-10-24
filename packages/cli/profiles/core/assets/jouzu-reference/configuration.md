@@ -63,9 +63,11 @@ Startup escape hatch: `jz --jouzu-ui-locale en` (keep the installation's home ov
 
 In Settings: `/catalogs` → **View** row → **Language** → **Display language** → **English**. Arrow keys preview in the panel without saving. Enter opens confirmation; choose **environment** scope and confirm. Restart when ready for whole-interface English. CLI/environment overrides can mask the saved value.
 
-Session scope writes a session override. Environment scope persists **UI only**; panel response/artifact changes remain session-scoped and affect subsequent turns, not an active reply. Reset clears session overrides and saves UI `auto`, preserving saved response/artifact defaults.
+Session scope writes a session override. **Saved setting** (environment scope) persists requested UI, response and artifact preferences; response/artifact changes also apply on the next turn, not an active reply. Other running sessions keep their active choices. Reset clears this session's overrides and saves UI `auto`, preserving saved response/artifact defaults.
 
 For an authorized file fallback, read `localization.json`, change only `localization.uiLocale` to `en`, preserve other fields, validate JSON, and report restart required. Never replace a malformed file with the example. Persistent response/artifact edits also take effect at a new session. “Answer in English” does not authorize UI, artifact, profile or model changes.
+
+See the public [language guide](https://github.com/shisa-ai/jouzu/blob/main/docs/language.md) for the complete identity/profile/locale model; this reference remains usable offline. Children snapshot the caller's active response language and applicable per-field artifact policy; UI locale does not select child language.
 
 ## Other settings
 

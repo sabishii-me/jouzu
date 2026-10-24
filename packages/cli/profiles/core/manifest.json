@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "core",
-  "version": 15,
+  "version": 16,
   "assets": [
     {
       "source": "assets/jouzu-reference-skill.md",
@@ -11,7 +11,7 @@
     {
       "source": "assets/jouzu-reference/configuration.md",
       "target": "skills/jouzu-reference/references/configuration.md",
-      "sha256": "6e2974428b087a33e096e35d19d675d23e12315f3a7cea5eda017f8528651a26"
+      "sha256": "32dc147efe8a24e2b3c267ca5b6bb39faee70e06a9b5ee794a3d4335c7555032"
     },
     {
       "source": "assets/jouzu-reference/models.md",

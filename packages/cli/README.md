@@ -132,6 +132,7 @@ Building also requires Go (for [textguard-go](https://github.com/shisa-ai/textgu
 | [Voice input](https://github.com/shisa-ai/jouzu/blob/main/docs/voice.md) | Dictation setup and commands |
 | [Session interface](https://github.com/shisa-ai/jouzu/blob/main/docs/interface.md) | Dashboard, Session Line, Status Bar |
 | [Session labels](https://github.com/shisa-ai/jouzu/blob/main/docs/session-labels.md) | Automatic session naming |
+| [Language and locale](https://github.com/shisa-ai/jouzu/blob/main/docs/language.md) | UI, responses, artifacts, profiles and child inheritance |
 | [Profiles](https://github.com/shisa-ai/jouzu/blob/main/docs/profiles.md) | `core` and `ja`, bundled skills, conflicts |
 | [Keybindings](https://github.com/shisa-ai/jouzu/blob/main/docs/keybindings.md) | Default keys and terminal support |
 | [Configuration](https://github.com/shisa-ai/jouzu/blob/main/docs/configuration.md) | Locations, Pi import, environment variables |

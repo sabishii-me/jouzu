@@ -19,9 +19,11 @@ jz --jouzu-ui-locale ja
 jz --jouzu-ui-locale en
 ```
 
-`JOUZU_UI_LOCALE` is the environment-variable alternative. See
-[Configuration](configuration.md#language) for the saved `localization.json`
-settings and resolution order. The UI locale, response language, and artifact
+`JOUZU_UI_LOCALE` is the environment-variable alternative.
+[Language, locale and prompt instructions](language.md) explains identity, profiles,
+UI/response/artifact preferences, persistence and child inheritance in one place.
+See [Configuration](configuration.md#language) for the saved `localization.json`
+shape. The UI locale, response language, and artifact
 policy are separate settings; changing the UI locale does not translate source
 code, commands, identifiers, or existing artifacts.
 
