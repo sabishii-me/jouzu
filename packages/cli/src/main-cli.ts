@@ -22,6 +22,7 @@ import { createDoctorReport } from "./doctor.js";
 import { createFastModeExtension, FAST_MODE_STATUS } from "./fast-mode.js";
 import { CliMessageId, protectedSourceError } from "./human-messages.js";
 import { isInteractivePiStartup, usesMachineReadableStdout } from "./interactive-startup.js";
+import { formatKeyId } from "./keybinding-hints.js";
 import {
 	applyKeybindings,
 	ensureDefaultKeybindings,
@@ -586,14 +587,23 @@ export async function runMainCli(args: string[]): Promise<void> {
 	const voice = (await import("./voice/integration.js")).createVoiceExtension(paths, {
 		catalog: preRuntime.catalog.bundle,
 	});
-	const effectiveKeyText = (action: "app.model.select" | "app.model.cycleForward") => pi.keyText(action) || "unbound";
-	// The Session Line's shortcut hint is catalog text. The keys are resolved at
-	// launch and injected, so the message itself carries no key notation.
-	const paletteShortcutHint = catalogText(preRuntime.catalog.bundle, SESSION_UI_MESSAGE_IDS.hintPaletteShortcuts, {
-		select: effectiveKeyText("app.model.select"),
-		cycle: effectiveKeyText("app.model.cycleForward"),
-		help: "Ctrl+/",
-	});
+	const effectiveKeyText = (action: "app.model.select" | "app.model.cycleForward") => {
+		const raw = pi.keyText(action);
+		return raw
+			? raw
+					.split("/")
+					.map((key) => formatKeyId(key))
+					.join("/")
+			: "unbound";
+	};
+	// The Session Line's shortcut hint is catalog text. Pi installs app-level
+	// keybindings when the TUI starts, so resolve them when rendering hints.
+	const paletteShortcutHint = () =>
+		catalogText(preRuntime.catalog.bundle, SESSION_UI_MESSAGE_IDS.hintPaletteShortcuts, {
+			select: effectiveKeyText("app.model.select"),
+			cycle: effectiveKeyText("app.model.cycleForward"),
+			help: "Ctrl+/",
+		});
 	const sessionUi = createSessionUiExtension({
 		catalog: preRuntime.catalog.bundle,
 		dashboard: {
@@ -656,7 +666,7 @@ export async function runMainCli(args: string[]): Promise<void> {
 		getHints: () => [
 			{
 				id: "palette.shortcuts",
-				text: paletteShortcutHint,
+				text: paletteShortcutHint(),
 				priority: 10,
 				role: "muted",
 			},

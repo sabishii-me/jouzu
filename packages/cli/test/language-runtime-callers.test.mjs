@@ -63,6 +63,7 @@ test("main applies first-run display and independent response choices in the sam
 	const observed = run(t, { settings, choice: { uiLocale: "ja", responseLanguage: "zh-Hant" } });
 	assert.equal(observed.prompts, 1);
 	assert.deepEqual(Object.values(observed.catalogs), ["ja", "ja", "ja", "ja", "ja"]);
+	assert.equal(observed.shortcutHint, "Ctrl+L モデル · Ctrl+P お気に入り · Ctrl+/ ヘルプ");
 	assert.equal(observed.profile, "core");
 	assert.equal(observed.initial.contract.taskLanguage, "zh-Hant");
 	assert.equal(observed.initial.contract.artifactPolicy.commits, "en", "the untrusted project contributes nothing");

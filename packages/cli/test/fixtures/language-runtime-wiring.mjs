@@ -78,6 +78,7 @@ wrap(
 import { createSessionUiExtension as original } from ${JSON.stringify(dist("session-ui/index.js"))};
 export function createSessionUiExtension(options) {
 	globalThis.__languageWiring.observed.catalogs.sessionUi = options.catalog.locale;
+	globalThis.__languageWiring.captureSessionUi(options);
 	return original(options);
 }`,
 );
@@ -90,6 +91,7 @@ registerHooks({
 				shortCircuit: true,
 				url: `data:text/javascript,${encodeURIComponent(`
 export * from ${JSON.stringify(resolved.url)};
+export function keyText(action) { return globalThis.__languageWiring.keyText(action); }
 export async function main(args, options) { return globalThis.__languageWiring.run(args, options); }
 `)}`,
 			};
@@ -138,11 +140,23 @@ const promptEvent = {
 	systemPromptOptions: { customPrompt: undefined, selectedTools: ["read"], skills: [] },
 };
 
+let sessionUiOptions;
+let tuiStarted = false;
+
 globalThis.__languageWiring = {
 	observed,
 	choice: scenario.choice,
 	captureContract(contract) {
 		languageContract = contract;
+	},
+	captureSessionUi(options) {
+		sessionUiOptions = options;
+	},
+	keyText(action) {
+		if (!tuiStarted) return "";
+		if (action === "app.model.select") return "ctrl+l";
+		if (action === "app.model.cycleForward") return "ctrl+p";
+		return "";
 	},
 	languageSaved(language) {
 		observed.callbacks.push({
@@ -152,8 +166,10 @@ globalThis.__languageWiring = {
 		});
 	},
 	async run(args, options) {
+		tuiStarted = true;
 		observed.piArgs = args;
 		observed.agentDir = process.env.PI_CODING_AGENT_DIR;
+		observed.shortcutHint = sessionUiOptions?.getHints?.(undefined)?.[0]?.text;
 		const handlers = new Map();
 		const commands = new Map();
 		const entries = [];
