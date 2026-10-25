@@ -50,6 +50,7 @@ for (const source of src) {
 assertFresh([join(root, "upstream", "pi.lock.json")], join(cli, "dist", "pi.lock.json"), "Pi lock");
 assertTreeFresh(join(cli, "profiles"), join(cli, "dist", "profiles"), "bundled profile");
 assertTreeFresh(join(cli, "catalog"), join(cli, "dist", "catalog"), "catalog schema");
+assertTreeFresh(join(cli, "locales"), join(cli, "dist", "locales"), "locale catalog");
 assertFresh(
 	[join(cli, "release-extensions.json")],
 	join(cli, "dist", "release-extensions.json"),

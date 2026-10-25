@@ -1,5 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { InlineExtension, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { CatalogMessageId, catalogText, defaultCatalog } from "../cli-messages.js";
+import type { CatalogBundle } from "../locale-catalog.js";
+import { setPromptSections } from "../prompt-sections.js";
 import { retainAutomaticWork } from "./automatic-work.js";
 import { FLOW_OFF_MESSAGE } from "./flow-off-message.js";
 import type { PiFlowAttachment } from "./pi-attachment.js";
@@ -8,14 +11,12 @@ import type { FlowWaitHandle } from "./wait-state.js";
 import { WAIT_ADJUSTMENT_NOTICES, waitToolResponse } from "./wait-tool-response.js";
 
 export const FLOW_WAIT_GUIDANCE = [
-	"Flow control coordinates automated continuations, dependency waits, and completion notifications. Workflow tools track the requested work; a wait holds its next automatic turn while a dependency runs. Ending your turn leaves that work and its background jobs in place.",
-	"Continue independent work while dependencies run. When remaining work depends on asynchronous execution, copy the producer's waitDependency into agent_wait.on and supply a bounded deadline. Omit work to suspend the current task or session; dependency work metadata does not restrict which task can wait on it.",
-	"State the dependency in the reason and choose a hard deadline with bounded slack for its expected duration. The returned expiresAt is the effective deadline after the session cap; expiry is a decision point, not proof the job stopped.",
-	"Request health only with a policy name offered for that execution. Otherwise omit health and checkAfter (or pass null); the wait is deadline-only. The until predicate, such as terminal, is not a health policy. checkAfter needs a monitored dependency. Health may end a wait early as unhealthy or health-unknown; it never extends the deadline.",
-	"After agent_wait returns waiting and no independent work remains, briefly state what is running, what will unblock you, and what you will verify, then end the turn. Trust completion delivery; do not poll status, add timer-based checks, or create extra continuations merely to stay active. Inspect logs for a concrete diagnostic question or an explicit user request.",
+	"Flow control coordinates automated continuations, dependency waits, and completion notifications. Workflow tools track the requested work; a wait holds its next automatic turn while a dependency runs. Ending your turn leaves that work and its background jobs in place. A user message whose text is a JSON object with flowInput is a flow delivery: kind user carries what the user typed; work, result, wait, and alert come from Jouzu, not the user.",
+	"Continue independent work while dependencies run. When remaining work depends on asynchronous execution, copy the producer's waitDependency into agent_wait.on and supply a bounded deadline. Omit work to suspend the current task or session; dependency work metadata does not restrict which task can wait on it. A refused wait installs nothing and does not suspend work.",
+	"After agent_wait returns waiting and no independent work remains, briefly state what is running, what will unblock you, and what you will verify, then end the turn. Trust completion delivery; do not poll status, add timer-based checks, or create extra continuations merely to stay active. Inspect logs for a concrete diagnostic question or an explicit user request. For a system without completion notifications, poll on a bounded schedule and explain the limit.",
 	"On a wake, match each result's producer and execution identity to the work you are waiting for. A stopped or completed older job does not describe its replacement. Notifications can be batched; inspect every relevant result and retrieve omitted details when needed. Verify output and completion criteria before marking requested work complete.",
 	"After user input or context restoration, use the supplied wait state and preserve pending work. A status question does not renew or replace a wait. At expiry or dependency failure, decide whether to repair, stop, or declare a new wait; do not retry the wait automatically.",
-	"When work changes, cancel or explicitly replace its affected wait and update the owning work. Replacement requires replaceToken. agent_wait_cancel removes only the dependency gate; it does not stop the process or complete the work.",
+	"When work changes, cancel or explicitly replace its affected wait and update the owning work. agent_wait_cancel removes only the dependency gate; it does not stop the process or complete the work.",
 	"The user can inspect holds with /flow and build identity with /flow runtime, pause or resume automation, or use /flow clear to release a stuck hold. These are user slash commands, not shell commands or agent tools. Report remaining blockers; do not claim reset delivered pending work.",
 ];
 
@@ -32,12 +33,7 @@ export function flowWaitGuidance(activeTools: readonly string[]): string[] {
 			: []),
 		...(tools.has("TaskUpdate")
 			? [
-					"For a task awaiting a person, use TaskUpdate waitForUser: true; for an explicit task pause, use paused: true. Clear the corresponding field when ready to resume. Use blockedBy for task dependencies. A description saying 'blocked' does not suspend automatic task continuation.",
-				]
-			: []),
-		...(tools.has("schedule_prompt")
-			? [
-					"Use schedule_prompt for an action due at an explicit time or on a recurring schedule, not to poll a running job that already reports completion.",
+					"For a task awaiting a person, use TaskUpdate waitForUser: true; for an explicit task pause, use paused: true. Clear the corresponding field when ready to resume.",
 				]
 			: []),
 	];
@@ -50,6 +46,8 @@ export interface FlowWaitToolOptions {
 	enabled?(): boolean;
 	maxDurationMs: number;
 	now?(): number;
+	/** The resolved catalog the tool labels read their display text from. */
+	catalog?: CatalogBundle;
 }
 interface WaitArguments {
 	work?: string;
@@ -61,7 +59,12 @@ interface WaitArguments {
 	checkAfter?: string;
 }
 const string = { type: "string", minLength: 1, maxLength: 512 };
-const reason = { type: "string", minLength: 1, maxLength: 4096 };
+const reason = {
+	type: "string",
+	minLength: 1,
+	maxLength: 4096,
+	description: "The dependency being waited for, stated so a later reader knows what unblocks the work.",
+};
 const waitSchema = {
 	type: "object",
 	additionalProperties: false,
@@ -74,11 +77,17 @@ const waitSchema = {
 				"Work to suspend. Omit or pass null to use the current task or session. This is attribution, not permission to use a dependency.",
 		},
 		reason,
-		deadline: { type: "string", pattern: "^[1-9][0-9]*(ms|s|m|h|d)$" },
+		deadline: {
+			type: "string",
+			pattern: "^[1-9][0-9]*(ms|s|m|h|d)$",
+			description:
+				"Hard deadline with bounded slack for the expected duration, such as 30m or 8h. The returned expiresAt is the effective deadline after the session cap; expiry is a decision point, not proof the job stopped.",
+		},
 		checkAfter: {
 			type: ["string", "null"],
 			pattern: "^[1-9][0-9]*(ms|s|m|h|d)$",
-			description: "Omit or pass null unless a dependency supplies a health policy. Must be shorter than deadline.",
+			description:
+				"Omit or pass null unless a dependency supplies a health policy; without one the wait is deadline-only. Must be shorter than deadline.",
 		},
 		mode: {
 			type: ["string", "null"],
@@ -108,7 +117,7 @@ const waitSchema = {
 						...string,
 						type: ["string", "null"],
 						description:
-							"Copy only a health policy offered by the producer; otherwise omit or pass null. Do not copy until here.",
+							"Copy only a health policy offered by the producer; otherwise omit or pass null. Do not copy until here. Health may end a wait early as unhealthy or health-unknown; it never extends the deadline.",
 					},
 					work: {
 						type: ["object", "null"],
@@ -225,6 +234,7 @@ export function createFlowWaitExtension(options: FlowWaitToolOptions): InlineExt
 		throw new FlowLedgerError("capacity", "Invalid session wait duration limit.");
 	const maxDurationMs = options.maxDurationMs;
 	const now = options.now ?? Date.now;
+	const catalog = options.catalog ?? defaultCatalog();
 	const requireEnabled = () => {
 		if (options.enabled && !options.enabled()) throw new FlowLedgerError("stale", FLOW_OFF_MESSAGE);
 	};
@@ -253,15 +263,12 @@ export function createFlowWaitExtension(options: FlowWaitToolOptions): InlineExt
 				// would be instructions it cannot follow.
 				if (options.enabled && !options.enabled()) return;
 				const missing = flowWaitGuidance(pi.getActiveTools()).filter((line) => !event.systemPrompt.includes(line));
-				if (missing.length)
-					return {
-						systemPrompt: `${event.systemPrompt}\n\nFlow control and workflow coordination:\n${missing.join("\n")}`,
-					};
+				return setPromptSections(event, { flow_control: missing.join("\n") || undefined });
 			});
 			pi.registerTool({
 				name: "agent_wait",
 				exposure: "model-only",
-				label: "Wait for dependencies",
+				label: catalogText(catalog, CatalogMessageId.flowWaitLabel),
 				description:
 					"Wait for asynchronous dependencies as the current task or invocation. Copy each producer's waitDependency into on and supply reason and deadline. Omit optional fields, or use null if the interface requires them. Top-level work selects the work to suspend, not the child/job to wait for; normally omit it or pass null. Never invent dependency metadata or use until as a health policy. A waiting result holds this work until completion, failure, cancellation, a health decision, or the capped deadline. Replacing a live wait requires its exact replaceToken.",
 				promptSnippet: "agent_wait: wait for exact asynchronous dependencies with a hard deadline.",
@@ -389,7 +396,7 @@ export function createFlowWaitExtension(options: FlowWaitToolOptions): InlineExt
 			pi.registerTool({
 				name: "agent_wait_cancel",
 				exposure: "model-only",
-				label: "Cancel dependency wait",
+				label: catalogText(catalog, CatalogMessageId.flowWaitCancelLabel),
 				description:
 					"Idempotently remove a wait gate by token and reason. This leaves its process and requested work active.",
 				promptSnippet: "agent_wait_cancel: remove a dependency gate without stopping its job or completing its work.",

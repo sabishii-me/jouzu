@@ -66,8 +66,8 @@
 		{
 			"name": "@lhl/pi-tasks",
 			"version": "0.6.1",
-			"source": "git+https://github.com/lhl/pi-tasks.git#3626078819db11d90e394d77752577956063b71d",
-			"commit": "3626078819db11d90e394d77752577956063b71d",
+			"source": "git+https://github.com/lhl/pi-tasks.git#ec7eb8625a98b15926fba7377f22614c12b524d7",
+			"commit": "ec7eb8625a98b15926fba7377f22614c12b524d7",
 			"repository": "https://github.com/lhl/pi-tasks",
 			"license": "MIT",
 			"licenseEvidence": "LICENSE",
@@ -77,8 +77,8 @@
 		{
 			"name": "pi-multiloop",
 			"version": "0.4.1",
-			"source": "git+https://github.com/lhl/pi-multiloop.git#689cb09350da503a857eebc5f2c1e1edbbd41feb",
-			"commit": "689cb09350da503a857eebc5f2c1e1edbbd41feb",
+			"source": "git+https://github.com/lhl/pi-multiloop.git#4b79f551c901f85c73141025c42e1df0b818009b",
+			"commit": "4b79f551c901f85c73141025c42e1df0b818009b",
 			"repository": "https://github.com/lhl/pi-multiloop",
 			"license": "MIT",
 			"licenseEvidence": "LICENSE",

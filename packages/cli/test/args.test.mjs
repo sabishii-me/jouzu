@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { isBlockedPiSelfUpdate, parseJouzuArgs, UsageError } from "../dist/args.js";
+import { formatHelp, isBlockedPiSelfUpdate, parseJouzuArgs, UsageError } from "../dist/args.js";
+import { loadCatalog } from "../dist/locale-catalog.js";
 
 test("forwards Pi arguments without reconstructing them", () => {
 	const unicodeArgs = ["--provider", "openai", "@仕様 書.md", "日本語のメッセージ"];
@@ -172,6 +173,23 @@ test("parses Jouzu self-update operations without taking Pi package updates", ()
 	});
 });
 
+test("parses the UI locale option and rejects duplicates or unsupported values", () => {
+	assert.deepEqual(parseJouzuArgs(["--jouzu-ui-locale", "ja", "doctor"]), {
+		kind: "doctor",
+		options: { uiLocale: "ja" },
+		json: false,
+	});
+	assert.deepEqual(parseJouzuArgs(["--jouzu-ui-locale=auto", "pi", "--help"]), {
+		kind: "pi",
+		options: { uiLocale: "auto" },
+		args: ["--help"],
+	});
+	assert.throws(() => parseJouzuArgs(["--jouzu-ui-locale", "ja", "--jouzu-ui-locale", "en"]), UsageError);
+	assert.throws(() => parseJouzuArgs(["--jouzu-ui-locale", "fr"]), UsageError);
+	assert.throws(() => parseJouzuArgs(["--jouzu-ui-locale", "ja-JP"]), UsageError);
+	assert.throws(() => parseJouzuArgs(["--jouzu-ui-locale"]), UsageError);
+});
+
 test("rejects invalid Jouzu options", () => {
 	assert.throws(() => parseJouzuArgs(["--jouzu-profile", "other"]), UsageError);
 	assert.throws(() => parseJouzuArgs(["--jouzu-home"]), UsageError);
@@ -185,6 +203,22 @@ test("rejects invalid Jouzu options", () => {
 	assert.throws(() => parseJouzuArgs(["keybindings", "other"]), UsageError);
 	assert.throws(() => parseJouzuArgs(["keybindings", "apply", "--json"]), UsageError);
 	assert.throws(() => parseJouzuArgs(["keybindings", "plan", "--json", "--json"]), UsageError);
+});
+
+test("formatHelp keeps the protected layout and renders from the catalog", () => {
+	const en = formatHelp(loadCatalog("en"));
+	assert.match(en, /^Jouzu agentic AI environment\n\nUsage:\n/u);
+	assert.match(en, /^ {2}profile apply Apply the selected profile with conflicts and backups$/mu);
+	assert.match(en, /^ {2}--jouzu-textguard-strict {18}Withhold every flagged input until approved$/mu);
+	assert.match(
+		en,
+		/^ {2}--jouzu-ui-locale <auto\|en\|ja\|zh-Hans\|zh-Hant>\n {44}UI language; auto follows the OS locale$/mu,
+	);
+	// Protected command, option, and placeholder text is identical in both locales.
+	const ja = formatHelp(loadCatalog("ja"));
+	assert.match(ja, /Jouzu エージェント型 AI 環境/u);
+	assert.match(ja, /jouzu catalog accept <revision> --digest <sha256> \[--source <source-id>\]/u);
+	assert.match(ja, /--jouzu-ui-locale <auto\|en\|ja\|zh-Hans\|zh-Hant>/u);
 });
 
 test("blocks only Pi runtime self-update forms", () => {

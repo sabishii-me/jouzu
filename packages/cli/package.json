@@ -1,6 +1,6 @@
 {
 	"name": "jouzu",
-	"version": "0.2.1",
+	"version": "0.2.2",
 	"description": "Agentic AI environment built on the Pi coding agent harness",
 	"type": "module",
 	"bin": {
@@ -16,8 +16,8 @@
 		"THIRD_PARTY_NOTICES.md"
 	],
 	"scripts": {
-		"build": "node ../../scripts/install-release-extensions.mjs && node ../../scripts/apply-vcc-goals.mjs && node ../../scripts/apply-task-flow.mjs && node ../../scripts/apply-code-previews.mjs && node ../../scripts/apply-pi-content-policy.mjs && node ../../scripts/apply-pi-path-utils.mjs && node ../../scripts/apply-pi-terminal-clipboard.mjs && node ../../scripts/configure-release-packlists.mjs && tsc -p tsconfig.json && node ../../scripts/copy-session-ui.mjs && node ../../scripts/prepare-cli.mjs && node ../../scripts/copy-pi-lock.mjs dist/pi.lock.json && node ../../scripts/copy-profiles.mjs && node ../../scripts/copy-catalog.mjs && node ../../scripts/copy-release-extensions.mjs && node ../../scripts/build-textguard.mjs",
-		"check": "tsc -p tsconfig.json --noEmit",
+		"build": "node ../../scripts/install-release-extensions.mjs && node ../../scripts/apply-vcc-goals.mjs && node ../../scripts/apply-task-flow.mjs && node ../../scripts/apply-code-previews.mjs && node ../../scripts/apply-pi-content-policy.mjs && node ../../scripts/apply-pi-path-utils.mjs && node ../../scripts/apply-pi-terminal-clipboard.mjs && node ../../scripts/configure-release-packlists.mjs && tsc -p tsconfig.json && node ../../scripts/copy-session-ui.mjs && node ../../scripts/prepare-cli.mjs && node ../../scripts/copy-pi-lock.mjs dist/pi.lock.json && node ../../scripts/copy-profiles.mjs && node ../../scripts/copy-catalog.mjs && node ../../scripts/copy-locales.mjs && node ../../scripts/copy-release-extensions.mjs && node ../../scripts/build-textguard.mjs",
+		"check": "tsc -p tsconfig.json --noEmit && node ../../scripts/check-locales.mjs && node ../../scripts/check-direct-strings.mjs",
 		"test": "node ../../scripts/check-dist-fresh.mjs && node ../../scripts/run-tests.mjs --test-skip-pattern=@endurance test/*.test.mjs",
 		"test:full": "node ../../scripts/check-dist-fresh.mjs && node ../../scripts/run-tests.mjs test/*.test.mjs",
 		"test:endurance": "node ../../scripts/check-dist-fresh.mjs && node ../../scripts/run-tests.mjs --test-name-pattern=@endurance test/flow-assembly-endurance.test.mjs test/flow-continuation-retention.test.mjs test/flow-session-ingress-retirement.test.mjs test/flow-submissions.test.mjs test/flow-tool-retention.test.mjs test/flow-wait-retention.test.mjs"
@@ -45,6 +45,13 @@
 	"publishConfig": {
 		"access": "public"
 	},
+	"overrides": {
+		"body-parser": "2.4.0",
+		"fast-uri": "3.1.9",
+		"ip-address": "10.7.4",
+		"undici": "8.12.3",
+		"zod": "4.6.7"
+	},
 	"dependencies": {
 		"@napi-rs/canvas": "1.0.13",
 		"@earendil-works/pi-ai": "1.4.0",
@@ -54,7 +61,8 @@
 		"@earendil-works/pi-server": "1.1.0",
 		"@earendil-works/pi-telemetry": "1.4.0",
 		"@earendil-works/pi-tui": "1.4.0",
-		"@lhl/pi-tasks": "git+https://github.com/lhl/pi-tasks.git#3626078819db11d90e394d77752577956063b71d",
+		"@fluent/bundle": "0.19.1",
+		"@lhl/pi-tasks": "git+https://github.com/lhl/pi-tasks.git#ec7eb8625a98b15926fba7377f22614c12b524d7",
 		"@picovoice/pvrecorder-node": "1.2.9",
 		"get-east-asian-width": "1.7.0",
 		"marked": "18.1.1",
@@ -63,7 +71,7 @@
 		"@vanillagreen/pi-background-tasks": "git+https://github.com/shisa-ai/kendex.git#1ab9fef053de921ea9d1741bf547cfed47808147",
 		"esbuild": "0.28.2",
 		"pi-code-previews": "0.1.36",
-		"pi-multiloop": "git+https://github.com/lhl/pi-multiloop.git#689cb09350da503a857eebc5f2c1e1edbbd41feb",
+		"pi-multiloop": "git+https://github.com/lhl/pi-multiloop.git#4b79f551c901f85c73141025c42e1df0b818009b",
 		"pi-schedule-prompt": "0.4.1",
 		"pi-skill-dollar": "git+https://github.com/lhl/pi-skill-dollar.git#d4225d96a9121a7d14735758464f18416b603d50",
 		"pi-webaio": "git+https://github.com/shisa-ai/pi-webaio.git#f65ae726bc95c50dc0e2c5a0ea95c2cdfb9a1bc2",

@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import { CatalogMessageId, catalogText, defaultCatalog } from "../cli-messages.js";
+import type { CatalogBundle } from "../locale-catalog.js";
 import { chooseFlowIntent, type FlowAdmissionGates, type FlowIntent, initialFlowAdmission } from "./admission.js";
 import { retiredByReceipt, retiredMemberHash, retiredWorkHash } from "./attempt-retention.js";
 import { type FlowInputItem, FlowModelInput } from "./model-input.js";
@@ -117,6 +119,7 @@ export class SessionFlowController {
 		private readonly host: FlowControllerHost,
 		private readonly maxInputBytes: number,
 		private readonly maxResultBytes: number = maxInputBytes,
+		private readonly catalog: CatalogBundle = defaultCatalog(),
 	) {
 		if (![maxInputBytes, maxResultBytes].every((limit) => Number.isSafeInteger(limit) && limit > 0))
 			throw new FlowLedgerError("capacity", "Invalid controller input byte limit.");
@@ -320,7 +323,12 @@ export class SessionFlowController {
 					items.push(...(await this.descriptors(producer, signal)));
 				} catch (error) {
 					if (signal.aborted) return;
-					this.held.set(producer.namespace, error instanceof Error ? error.message : "Producer state unavailable.");
+					this.held.set(
+						producer.namespace,
+						error instanceof Error
+							? error.message
+							: catalogText(this.catalog, CatalogMessageId.flowControllerProducerState),
+					);
 				}
 			}
 			state.retiredAttempts = await this.host.ledger.retired({
@@ -478,7 +486,10 @@ export class SessionFlowController {
 						this.deferredDecisions.push({
 							id: extra.id,
 							producer: extra.producer,
-							reason: error instanceof Error ? error.message : "Wait decision input unavailable.",
+							reason:
+								error instanceof Error
+									? error.message
+									: catalogText(this.catalog, CatalogMessageId.flowControllerWaitDecisionInput),
 						});
 					}
 				}
@@ -494,7 +505,12 @@ export class SessionFlowController {
 							selectedResults.push({ intent, producer: owner, metadata });
 						} catch (error) {
 							if (signal.aborted) return;
-							this.held.set(owner.namespace, error instanceof Error ? error.message : "Result metadata unavailable.");
+							this.held.set(
+								owner.namespace,
+								error instanceof Error
+									? error.message
+									: catalogText(this.catalog, CatalogMessageId.flowControllerResultMetadata),
+							);
 							if (intent.id === choice.intent.id) {
 								skipped = true;
 								return;
@@ -525,7 +541,7 @@ export class SessionFlowController {
 							this.deferredResults = members.map((member) => ({
 								id: member.id,
 								producer: member.producer,
-								reason: "Aggregate metadata exceeds available capacity.",
+								reason: catalogText(this.catalog, CatalogMessageId.flowControllerAggregateCapacity),
 							}));
 							selectedResults.length = 0;
 							choice.resultSamples = [];
@@ -588,9 +604,15 @@ export class SessionFlowController {
 									this.deferredResults.push({
 										id: result.id,
 										producer: namespace,
-										reason: "Result exceeds the remaining composed-input capacity.",
+										reason: catalogText(this.catalog, CatalogMessageId.flowControllerResultCapacity),
 									});
-								else this.held.set(namespace, error instanceof Error ? error.message : "Result input unavailable.");
+								else
+									this.held.set(
+										namespace,
+										error instanceof Error
+											? error.message
+											: catalogText(this.catalog, CatalogMessageId.flowControllerResultInput),
+									);
 							}
 						}
 					}
@@ -598,7 +620,12 @@ export class SessionFlowController {
 				if (!(await valid())) return;
 			} catch (error) {
 				if (signal.aborted) return;
-				this.held.set(producer.namespace, error instanceof Error ? error.message : "Producer input unavailable.");
+				this.held.set(
+					producer.namespace,
+					error instanceof Error
+						? error.message
+						: catalogText(this.catalog, CatalogMessageId.flowControllerProducerInput),
+				);
 				skipped = true;
 				return;
 			}

@@ -429,3 +429,65 @@ test("long histories have bounded output and readable detail pages", () => {
 	assert.match(third, /Input: old-20/);
 	assert.doesNotMatch(third, /Input: old-0\n/);
 });
+
+test("a resolved Japanese catalog localizes the flow status and leaves the English default unchanged", async () => {
+	const { resolveCatalog } = await import("../dist/locale-catalog.js");
+	const ja = resolveCatalog("ja").bundle;
+	// The captured summary and stage are display text: the catalog resolves them at capture time.
+	const described = describeFlowInput(
+		record(
+			"s2",
+			{ kind: "extension", id: "<inline:jouzu>" },
+			{ customType: "jouzu-compaction-continue", content: [] },
+			"sendCustomMessage",
+		),
+	);
+	assert.equal(described.summary, "Continue after compaction");
+	assert.equal(
+		describeFlowInput(
+			record(
+				"s2",
+				{ kind: "extension", id: "<inline:jouzu>" },
+				{ customType: "jouzu-compaction-continue", content: [] },
+				"sendCustomMessage",
+			),
+			ja,
+		).summary,
+		"圧縮後の継続",
+	);
+	// The default English rendering is byte-identical; the Japanese bundle resolves the same IDs.
+	const status = projectFlowStatus(
+		scope,
+		[input("continuation", { nativeRequests: [request] })],
+		[],
+		[],
+		[],
+		[],
+		undefined,
+		context,
+	);
+	assert.match(formatFlowStatus(status, 60_000), /Required input was removed or changed during context preparation\./);
+	assert.match(
+		formatFlowStatus(status, 60_000, {}, ja),
+		/必要な入力が context preparation 中に削除または変更されました。/,
+	);
+});
+
+test("a Japanese session classifies the localized unavailable sentinel and renders the report labels in Japanese", async () => {
+	const { resolveCatalog } = await import("../dist/locale-catalog.js");
+	const { catalogText, CatalogMessageId } = await import("../dist/cli-messages.js");
+	const ja = resolveCatalog("ja").bundle;
+	// The submission view writes this reason from the session bundle, so the report must resolve
+	// the same bundle to keep the unavailable-versus-pending classification.
+	const unavailable = catalogText(ja, CatalogMessageId.flowSubmissionUnavailable);
+	assert.notEqual(unavailable, UNAVAILABLE_INPUT_REASON);
+	const status = projectFlowStatus(scope, [input("old", { reason: unavailable })], [], [], [], [], undefined, {
+		inputs: { old: { sender: "You", summary: "/flow", kind: "command", acceptedAt: 0 } },
+		requests: {},
+		tasks: [],
+	});
+	const text = formatFlowStatus(status, 0, {}, ja);
+	assert.match(text, /未配信の入力/, "the undelivered-input heading is Japanese");
+	assert.match(text, /コマンドは実行されませんでした/, "the held-input action line is Japanese");
+	assert.doesNotMatch(text, /Undelivered input|Command was not run/, "no English report label survives");
+});

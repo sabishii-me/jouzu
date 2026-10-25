@@ -71,6 +71,7 @@ async function setup(t, scan = evidence, options = {}) {
 	createTextGuardReviewExtension(runtime, {
 		terminal: () => dimensions,
 		writeDiagnostic: (text) => messages.push(text),
+		...(options.catalog ? { catalog: options.catalog } : {}),
 	})({
 		on: (name, handler) => events.set(name, handler),
 		registerCommand: (name, command) => commands.set(name, command),
@@ -233,10 +234,10 @@ test("an accidental confirm lands on Back and withholds", async (t) => {
 
 test("reports offer dismiss instead of approval and dismissal sticks", async (t) => {
 	const f = await setup(t, infoEvidence);
-	// Findings that blocked nothing stay out of the default list and keep their own view.
+	// Findings that did not block content stay out of the default list and keep their own view.
 	assert.equal((await f.open()).component, undefined);
 	assert.match(f.messages.at(-1), /nothing waiting for a decision/);
-	assert.match(f.messages.at(-1), /1 finding blocked nothing/);
+	assert.match(f.messages.at(-1), /1 finding did not block content/);
 	const { pending, component } = await f.open("reports");
 	assert.match(clean(component.render(48)), /0 withheld · 1 delivered/);
 	component.handleInput(ENTER);
@@ -500,6 +501,57 @@ test("reload failure does not print exception details", async (t) => {
 	await pending;
 	assert.match(f.messages.at(-1), /Run \/reload/);
 	assert.doesNotMatch(f.messages.join("\n"), /secret exception/);
+});
+
+test("a resolved Japanese catalog localizes the review view and leaves the English default unchanged", async (t) => {
+	const { resolveCatalog } = await import("../dist/locale-catalog.js");
+	const ja = resolveCatalog("ja").bundle;
+	const f = await setup(t, evidence, { catalog: ja });
+	const review = f.policy.reviews()[0];
+	const snapshot = f.policy.admission.snapshotFor(review.id);
+	// The default English rendering is byte-identical to the base build.
+	const english = flat(reviewLines(review, snapshot).join("\n"));
+	assert.match(english, /Source: /);
+	assert.match(english, /Content fingerprint \(SHA-256\): [a-f0-9]{64}/);
+	assert.match(english, /bidi control character/);
+	// The Japanese bundle resolves the same IDs.
+	const japanese = flat(reviewLines(review, snapshot, true, ja).join("\n"));
+	const t9n = (id, args) => ja.format(`jouzu.cli.textguard.${id}`, args);
+	const includes = (text, expected, message) => assert.ok(dense(text).includes(dense(expected)), message ?? expected);
+	includes(japanese, t9n("review.source", { source: "" }));
+	const fingerprint = dense(t9n("review.fingerprint", { digest: "" }));
+	const afterFingerprint = dense(japanese).split(fingerprint)[1] ?? "";
+	assert.match(afterFingerprint, /^[a-f0-9]{64}/u, "the fingerprint label renders from the ja catalog");
+	includes(
+		japanese,
+		t9n("finding.locatedLine", {
+			severity: t9n("severity.error"),
+			name: t9n("kind.bidiControl"),
+			codepoint: " U+202E",
+			location: t9n("location.line", { line: 1, column: 1 }),
+		}),
+	);
+	includes(japanese, t9n("kind.bidiControl.explanation"));
+	includes(japanese, t9n("review.flaggedHeading"));
+	includes(japanese, t9n("review.riskNotice"));
+	for (const label of ["Source:", "Content fingerprint", "bidi control character", "Scans reduce risk"])
+		assert.equal(japanese.includes(label), false, `English label survives: ${label}`);
+
+	// The overlay chrome resolves from the same bundle: header, summary, status, and hints.
+	const { pending, component } = await f.open();
+	const list = clean(component.render(48));
+	includes(list, t9n("list.header"));
+	includes(list, t9n("list.summary", { withheld: 1, delivered: 0 }));
+	includes(list, t9n("status.withheld"));
+	for (const label of ["TextGuard review", "withheld · ", "Delivered", "Report   "])
+		assert.equal(list.includes(label), false, `English chrome survives: ${label}`);
+	component.handleInput(ENTER);
+	const detail = clean(component.render(48));
+	includes(detail, t9n("detail.withheld"));
+	includes(detail, t9n("action.allowSession"));
+	component.handleInput(ESC);
+	component.handleInput(ESC);
+	await pending;
 });
 
 test("the component renders a bounded list for many items", async (t) => {

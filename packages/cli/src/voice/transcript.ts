@@ -1,5 +1,6 @@
+import { CatalogMessageId, catalogMessage } from "../cli-messages.js";
 import { sanitizeTerminalText } from "../terminal-layout.js";
-import { VoiceError } from "./errors.js";
+import { VoiceError, voiceError } from "./errors.js";
 
 export const MAX_TRANSCRIPT_CHARS = 64_000;
 export type VoiceSegmentState = "live" | "pending" | "final" | "failed";
@@ -22,12 +23,13 @@ export class VoiceReviewRequired extends VoiceError {
 
 function identifier(value: unknown): string {
 	if (typeof value !== "string" || !value || value.length > 256)
-		throw new VoiceError("Voice returned an invalid segment identifier.");
+		throw voiceError(catalogMessage(CatalogMessageId.voiceTranscriptInvalidIdentifier));
 	return value;
 }
 function time(value: unknown): number | undefined {
 	if (value === undefined) return undefined;
-	if (!Number.isSafeInteger(value) || Number(value) < 0) throw new VoiceError("Voice returned an invalid audio range.");
+	if (!Number.isSafeInteger(value) || Number(value) < 0)
+		throw voiceError(catalogMessage(CatalogMessageId.voiceTranscriptInvalidAudioRange));
 	return Number(value);
 }
 
@@ -82,7 +84,7 @@ export class VoiceTranscript {
 		const startMs = time(event.audio_start_ms) ?? previous?.startMs;
 		const endMs = time(event.audio_end_ms) ?? previous?.endMs;
 		if (startMs !== undefined && endMs !== undefined && endMs <= startMs)
-			throw new VoiceError("Voice returned an invalid audio range.");
+			throw voiceError(catalogMessage(CatalogMessageId.voiceTranscriptInvalidAudioRange));
 		let text = previous?.text ?? "";
 		if (isResult) {
 			if (typeof event.text !== "string" || event.text.length > MAX_TRANSCRIPT_CHARS) this.tooLarge();
@@ -105,11 +107,11 @@ export class VoiceTranscript {
 			if (event.replaces_audio_range_ms !== undefined) {
 				const range = event.replaces_audio_range_ms;
 				if (!Array.isArray(range) || range.length !== 2)
-					throw new VoiceError("Voice returned an invalid replacement range.");
+					throw voiceError(catalogMessage(CatalogMessageId.voiceTranscriptInvalidReplacementRange));
 				const from = time(range[0]);
 				const to = time(range[1]);
 				if (from === undefined || to === undefined || to <= from)
-					throw new VoiceError("Voice returned an invalid replacement range.");
+					throw voiceError(catalogMessage(CatalogMessageId.voiceTranscriptInvalidReplacementRange));
 				replacementRange = { from, to, owner: id };
 				for (const segment of this.segments.values()) {
 					if (
@@ -233,6 +235,6 @@ export class VoiceTranscript {
 	}
 
 	private tooLarge(): never {
-		throw new VoiceError("Voice transcription reached its text or segment limit. Record a shorter passage.");
+		throw voiceError(catalogMessage(CatalogMessageId.voiceTranscriptTooLarge));
 	}
 }

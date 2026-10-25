@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
-import { createServer } from "node:http";
 import { test } from "node:test";
-import { assembledSession, installedProducerExtensions, syntheticProducer } from "./fixtures/flow-assembly.mjs";
+import { deferred } from "../../../scripts/fixtures/pi-flow-session.mjs";
+import {
+	afterFlowCleanup,
+	assembledSession,
+	installedProducerExtensions,
+	syntheticProducer,
+} from "./fixtures/flow-assembly.mjs";
+import { controlledBackground } from "./fixtures/flow-background-gate.mjs";
 import { campaignScript, liveWait } from "./fixtures/flow-campaign.mjs";
 
 const settle = () => new Promise((resolve) => setImmediate(resolve));
@@ -83,9 +89,10 @@ test("ledger retirement is refused while controller work is active", async (t) =
 });
 
 test("a blocked lane holds its continuation across idle maintenance", async (t) => {
+	const background = await controlledBackground(t);
 	const f = await assembledSession(t, {
 		producerExtensions: await installedProducerExtensions(),
-		script: campaignScript({ goal: "Hold across maintenance" }),
+		script: campaignScript({ command: background.command, goal: "Hold across maintenance" }),
 	});
 	await f.session.prompt("start the sweep and wait");
 	const wait = await liveWait(f.ingress, "the lane is blocked on one live wait");
@@ -281,6 +288,7 @@ test("a provider call outside compaction is still refused without a request chec
 });
 
 test("result pages survive compaction and recent-index retirement", async (t) => {
+	const background = await controlledBackground(t);
 	const f = await assembledSession(t, {
 		producerExtensions: await installedProducerExtensions(),
 		// One recent entry is kept, so compaction has something to drop after a few turns.
@@ -288,9 +296,11 @@ test("result pages survive compaction and recent-index retirement", async (t) =>
 		script: (body, index) =>
 			!body.tools?.length && body.messages?.[0]?.content?.startsWith?.("You are a context summarization")
 				? { text: "summary" }
-				: campaignScript({ command: "sleep 0.3 && echo swept" })(body, index),
+				: campaignScript({ command: background.command })(body, index),
 	});
 	await f.session.prompt("start the sweep and wait");
+	await liveWait(f.ingress, "the dependency stays live until the campaign is waiting");
+	await background.release();
 	// The composed wake carries a result manifest, and its reference lands in the model's context.
 	await until(
 		() => f.bodies.some((body) => JSON.stringify(body.messages).includes("flow-results:")),
@@ -406,31 +416,32 @@ test("pending result pages remain readable during history retirement", async (t)
 	assert.deepEqual(f.errors, []);
 });
 
-test("a composed wake is recorded as notification-only", async (t) => {
-	let connected;
-	const request = new Promise((resolve) => {
-		connected = resolve;
-	});
-	const server = createServer((_request, response) => connected(response));
-	t.after(async () => {
-		server.closeAllConnections();
-		await new Promise((resolve) => server.close(resolve));
-	});
-	await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-	const source = `fetch('http://127.0.0.1:${server.address().port}').then(r => r.text()).then(console.log)`;
+test("a composed wake is recorded as notification-only", { timeout: 30_000 }, async (t) => {
+	const background = await controlledBackground(t);
+	const wakeEntered = deferred(),
+		releaseWake = deferred();
+	const script = campaignScript({ command: background.command });
 	const f = await assembledSession(t, {
 		producerExtensions: await installedProducerExtensions(),
-		script: campaignScript({ command: `${JSON.stringify(process.execPath)} -e ${JSON.stringify(source)}` }),
+		script: async (body, index) => {
+			if (index === 4) {
+				wakeEntered.resolve(body);
+				await releaseWake.promise;
+			}
+			return script(body, index);
+		},
 	});
+	afterFlowCleanup(t, () => releaseWake.resolve());
 	await f.session.prompt("start the sweep and wait");
-	// A fast job can finish before agent_wait runs, producing no deferred wait decision. Release
-	// this real background process only after its wait is persisted, rather than guessing a delay.
-	await liveWait(f.ingress, "the background process is still pending when the wait is declared");
-	(await request).end("swept");
-	await until(
-		() => f.bodies.some((body) => JSON.stringify(body.messages).includes('kind\\":\\"wait')),
-		"the composed wake to be delivered",
-	);
+	assert.equal(f.bodies.length, 4, "the campaign declares its wait before the dependency finishes");
+	// A job that finishes before declaration resolves agent_wait inline and needs no wait wake.
+	// Release only after a live wait exists, so this test always exercises a composed wake.
+	const wait = await liveWait(f.ingress);
+	await background.release();
+	const body = await wakeEntered.promise;
+	assert.ok(JSON.stringify(body.messages.at(-1)).includes('kind\\":\\"wait'), "the wake carries a wait decision");
+	assert.ok(JSON.stringify(body.messages.at(-1)).includes(wait.token), "the decision names the declared wait");
+	// Keep the response open while reading both records, before idle maintenance can retire them.
 	const requests = await f.ingress.branch().attachment.nativeRequests.snapshot();
 	const ledger = await f.ingress.branch().attachment.ledger.snapshot();
 	const flagged = new Map(
@@ -444,9 +455,13 @@ test("a composed wake is recorded as notification-only", async (t) => {
 	// withholds no-reply permission unconditionally.
 	const recorded = requests.filter((request) => flagged.has(request.id));
 	assert.ok(recorded.length, "the composed wake reached the ledger");
+	assert.equal(recorded.length, flagged.size, "every ledger request has a matching native receipt");
 	assert.deepEqual(
 		recorded.map((request) => flagged.get(request.id)),
 		recorded.map(() => false),
 	);
+	releaseWake.resolve();
+	await f.session.waitForIdle();
+	assert.equal(f.bodies.length, 5, "the dependency produces one composed wake");
 	assert.deepEqual(f.errors, []);
 });

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable, Writable } from "node:stream";
 import { test } from "node:test";
+import { resolveCatalog } from "../dist/locale-catalog.js";
 import {
 	ProfileChoiceError,
 	parseJapaneseSupportAnswer,
@@ -53,6 +54,26 @@ test("the first-run prompt explains the optional profile before accepting consen
 	assert.match(output, /optional Japanese-support profile/);
 	assert.match(output, /Existing profile files are checked for conflicts/);
 	assert.match(output, /\[y\/N\]/);
+});
+
+test("the first-run prompt renders the Japanese catalog and keeps the answer meaning", async () => {
+	let output = "";
+	const ja = resolveCatalog("ja").bundle;
+	const profile = await promptForJapaneseSupport(
+		Readable.from(["はい\n"]),
+		new Writable({
+			write(chunk, _encoding, callback) {
+				output += chunk.toString();
+				callback();
+			},
+		}),
+		ja,
+	);
+	assert.equal(profile, "ja");
+	assert.ok(output.includes(ja.format("jouzu.cli.profile.choice.intro")));
+	assert.ok(output.includes(ja.format("jouzu.cli.profile.choice.conflict")));
+	assert.ok(output.includes(`${ja.format("jouzu.cli.profile.choice.question")} `));
+	assert.doesNotMatch(output, /optional Japanese-support profile/);
 });
 
 test("profile choice parsing rejects malformed and unsafe state", () => {

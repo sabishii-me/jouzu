@@ -153,12 +153,10 @@ async function runGuardedWorker(
 	signal.addEventListener("abort", abort, { once: true });
 	try {
 		if (modelFallbackMessage) throw new Error("Model: the requested model could not be restored.");
+		// The tools option already enforces the role allowlist. Keep session_start's
+		// activation choices so extensions can withhold tools until they are needed.
 		await session.bindExtensions({ mode: "print", onError: (error) => failureController.abort(error) });
 		signal.throwIfAborted();
-		session.setActiveToolsByName([
-			...tools,
-			...resources.getExtensions().extensions.flatMap((extension) => [...extension.tools.keys()]),
-		]);
 		onSession(session);
 		if (!process.connected && process.send) throw new Error("Parent disconnected.");
 		let lastText = "";

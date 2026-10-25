@@ -14,12 +14,13 @@ import { CompactionRequestController, registerCompactionRequest } from "../compa
 import { FlowLedgerError } from "../flow-control/receipt-ledger.js";
 import { assertScheduleJob } from "../flow-control/schedule-waits.js";
 import { buildModelGuidance } from "../model-guidance.js";
-import { brandDefaultSystemPrompt, buildCapabilityRoutingGuidance } from "../presentation.js";
+import { applyJouzuPromptSections, buildCapabilityRoutingGuidance } from "../presentation.js";
 import { validatePrivateDirectory, writeFilePrivateAtomic } from "../private-fs.js";
 import { loadBundledProfile } from "../profiles.js";
 import { inspectReleaseExtensions, omitOptionalReleaseExtensionFailures } from "../release-extensions.js";
 import { createResponsesToolSchemaExtension } from "../responses-tool-schema.js";
 import { createToolArgumentExtension } from "../tool-arguments.js";
+import { buildRoleLanguageSection, roleLanguageContract, snapshotLanguageContract } from "./language.js";
 import type { WorkerLaunch } from "./protocol.js";
 
 /** Cancel worker-local schedules before restored flow receipts inspect their state. */
@@ -99,6 +100,11 @@ export async function expandedChildResourceLoader(
 ) {
 	const compaction = new CompactionRequestController();
 	const profile = loadBundledProfile(launch.profile ?? "core");
+	// Snapshot the contract when the child's resources are built. This is the
+	// child's own copy: a parent-side language change after launch never reaches it.
+	const languageSection = buildRoleLanguageSection(
+		snapshotLanguageContract(launch.languageContract ?? roleLanguageContract(launch.role, undefined, launch.profile)),
+	);
 	const bundledSkills: string[] = [];
 	for (const asset of profile.assets) {
 		if (!asset.target.startsWith("skills/")) continue;
@@ -147,8 +153,10 @@ export async function expandedChildResourceLoader(
 		systemPromptOverride: () => undefined,
 		appendSystemPromptOverride: () =>
 			[
+				// The role contract resolves JA's fallback. Do not append a second language
+				// instruction that conflicts with explicit preferences or structured-only roles.
 				...profile.assets
-					.filter((asset) => asset.target === "APPEND_SYSTEM.md")
+					.filter((asset) => asset.target === "APPEND_SYSTEM.md" && profile.id !== "ja")
 					.map((asset) => asset.bytes.toString("utf8")),
 				launch.role.instructions,
 				buildModelGuidance(launch.model.id, launch.role.tools),
@@ -193,13 +201,12 @@ export async function expandedChildResourceLoader(
 				name: "jouzu-child",
 				factory: (pi) => {
 					registerCompactionRequest(pi, compaction);
-					pi.on("before_agent_start", (event) => ({
-						systemPrompt: brandDefaultSystemPrompt(
-							event.systemPrompt,
-							undefined,
-							buildCapabilityRoutingGuidance(event.systemPromptOptions),
-						),
-					}));
+					pi.on("before_agent_start", (event) => {
+						applyJouzuPromptSections(event.systemPromptOptions, {
+							capabilityRouting: buildCapabilityRoutingGuidance(event.systemPromptOptions),
+							responseLanguageSection: languageSection,
+						});
+					});
 				},
 			},
 		],

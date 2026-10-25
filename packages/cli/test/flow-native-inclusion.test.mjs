@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { deferred } from "../../../scripts/fixtures/pi-flow-session.mjs";
 import { nativeProjectionDelivered, nativeSourceDelivered } from "../dist/flow-control/native-inclusion.js";
-import { assembledSession, installedProducerExtensions } from "./fixtures/flow-assembly.mjs";
+import { afterFlowCleanup, assembledSession, installedProducerExtensions } from "./fixtures/flow-assembly.mjs";
+import { controlledBackground } from "./fixtures/flow-background-gate.mjs";
 import { campaignScript } from "./fixtures/flow-campaign.mjs";
 
 const hash = "a".repeat(64);
@@ -76,26 +78,60 @@ test("a projection acknowledges delivery only when it converted intact", () => {
 });
 
 test("the two layers agree on every request a real campaign produces", async (t) => {
+	const background = await controlledBackground(t);
+	const wakeEntered = deferred(),
+		releaseWake = deferred(),
+		wakeSettled = deferred();
+	const script = campaignScript({ command: background.command, goal: "Compare inclusion layers" });
 	const f = await assembledSession(t, {
 		producerExtensions: await installedProducerExtensions(),
-		script: campaignScript({ command: "sleep 0.3 && echo swept", goal: "Compare inclusion layers" }),
+		script: async (body, index) => {
+			if (index === 4) {
+				wakeEntered.resolve();
+				await releaseWake.promise;
+			}
+			return script(body, index);
+		},
+	});
+	afterFlowCleanup(t, () => releaseWake.resolve());
+	const store = f.ingress.branch().attachment.nativeRequests;
+	const finish = store.finish.bind(store);
+	const seen = new Map();
+	let wakeId;
+	// Capture each terminal receipt before the next request or idle maintenance can retire it.
+	t.mock.method(store, "finish", async (...args) => {
+		await finish(...args);
+		const record = (await store.snapshot()).find((request) => request.id === args[0]);
+		assert.ok(record, `finished request ${args[0]} remains available at settlement`);
+		seen.set(record.id, record);
+		if (record.id === wakeId) wakeSettled.resolve();
 	});
 	await f.session.prompt("start the sweep and wait");
-	// The dependency sleeps only 0.3s, so on a loaded host it can finish before this check.
-	// The test needs the campaign to have declared its wait, not to observe it still live.
+	assert.equal(f.bodies.length, 4, "the campaign starts its lane, job, and wait before replying");
 	const waits = await f.ingress.branch().attachment.waits.snapshot();
 	assert.equal(waits.length, 1, "the campaign declares one wait");
-	assert.ok(["waiting", "resolved"].includes(waits[0].state), `the wait is live or resolved, not ${waits[0].state}`);
-	// Idle maintenance retires superseded requests within about a second, so accumulate each one as
-	// it appears rather than snapshotting once at the end and finding it already retired.
-	const seen = new Map();
-	const deadline = Date.now() + 3000;
-	while (Date.now() < deadline) {
-		for (const request of await f.ingress.branch().attachment.nativeRequests.snapshot()) seen.set(request.id, request);
-		await new Promise((resolve) => setTimeout(resolve, 50));
-	}
+	assert.equal(waits[0].state, "waiting", "the dependency remains gated until the wait is recorded");
+	await background.release();
+	await wakeEntered.promise;
+	const pending = (await store.snapshot()).filter((request) => request.outcome === undefined);
+	assert.equal(pending.length, 1, "the wake request is waiting for its provider response");
+	const inFlight = pending[0];
+	wakeId = inFlight.id;
+	assert.ok(inFlight.payload, "the wake reached the provider");
+	assert.ok(inFlight.sourceCapture?.members.length, "the wake carries retained sources");
+	// Model delivery precedes the provider's outcome. A polling collector can retain this snapshot
+	// after the request succeeds and is retired, so it cannot infer non-delivery from no outcome.
+	for (const member of inFlight.sourceCapture.members)
+		assert.equal(nativeSourceDelivered(inFlight, member.index), true, `in-flight source ${member.index}`);
+	releaseWake.resolve();
+	await wakeSettled.promise;
+	await f.session.waitForIdle();
+	assert.equal(inFlight.outcome, undefined, "a pre-response snapshot does not acquire the later outcome");
+	assert.equal(seen.get(wakeId)?.outcome, "success", "settlement captures the wake's completed receipt");
 
 	const requests = [...seen.values()];
+	assert.equal(f.bodies.length, 5, "the dependency produces one composed wake");
+	assert.equal(requests.length, f.bodies.length, "every provider request has a captured terminal receipt");
 	assert.ok(requests.length >= 2, `the campaign made several provider requests, saw ${requests.length}`);
 	assert.ok(
 		requests.some((request) => request.sourceCapture?.members.length),
@@ -105,12 +141,14 @@ test("the two layers agree on every request a real campaign produces", async (t)
 	// real-fixture agreement is proven where that path already runs: the ingress, wait-observation,
 	// and background-results suites exercise it once their readers move to the model layer.
 	// Every retained source in a successful request reached the adapter as composed.
-	for (const request of requests)
+	for (const request of requests) {
+		assert.equal(request.outcome, "success", `request ${request.id} completed successfully`);
 		for (const member of request.sourceCapture?.members ?? [])
 			assert.equal(
 				nativeSourceDelivered(request, member.index),
 				request.outcome === "success",
 				`request ${request.id} source ${member.index}`,
 			);
+	}
 	assert.deepEqual(f.errors, []);
 });

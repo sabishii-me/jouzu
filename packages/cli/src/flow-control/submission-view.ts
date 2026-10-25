@@ -1,3 +1,5 @@
+import { CatalogMessageId, catalogText, defaultCatalog } from "../cli-messages.js";
+import type { CatalogBundle } from "../locale-catalog.js";
 import { completedWithoutNativeInput } from "./native-admission.js";
 import type { NativeRequest } from "./native-request-store.js";
 import { type NativeSubmissionRequestView, projectNativeSubmissionRequests } from "./native-submission-view.js";
@@ -5,7 +7,13 @@ import { type FlowAttempt, FlowLedgerError, type FlowLedgerState } from "./recei
 import { flowMemberIncluded } from "./request-retention.js";
 import type { RetainedSubmission } from "./submission-store.js";
 
-export const UNAVAILABLE_INPUT_REASON = "Input was not dispatched and cannot be delivered. Submit it again to run it.";
+/**
+ * The English default for the unavailable-input reason. Every display path resolves the
+ * same ID from the session bundle, and the report compares against that resolution, so a
+ * ja session classifies an unavailable input without reading this constant. Tests build
+ * their fixtures with it, which is why it stays exported.
+ */
+export const UNAVAILABLE_INPUT_REASON = catalogText(defaultCatalog(), CatalogMessageId.flowSubmissionUnavailable);
 
 export interface FlowSubmissionView {
 	id: string;
@@ -38,6 +46,7 @@ export function projectFlowSubmissions(
 	records: RetainedSubmission[],
 	ledger: FlowLedgerState,
 	nativeRequests?: NativeRequest[],
+	catalog: CatalogBundle = defaultCatalog(),
 ): FlowSubmissionView[] {
 	const native = nativeRequests ? projectNativeSubmissionRequests(records, nativeRequests) : undefined;
 	const byId = new Map(records.map((record) => [record.id, record]));
@@ -81,7 +90,7 @@ export function projectFlowSubmissions(
 				admission: "held",
 				delivery: "none",
 				attemptIds: [],
-				reason: UNAVAILABLE_INPUT_REASON,
+				reason: catalogText(catalog, CatalogMessageId.flowSubmissionUnavailable),
 			};
 		const attempts = links.get(record.id) ?? [];
 		const claims = record.dispatch?.queueClaims ?? [];
@@ -172,13 +181,15 @@ export function projectFlowSubmissions(
 			admission !== "held"
 				? undefined
 				: ((nativeContextCancellations?.some((item) => item.removal === "unconfirmed")
-						? "Deferred context cancellation requires removal reconciliation."
+						? catalogText(catalog, CatalogMessageId.flowSubmissionDeferredContextCancellation)
 						: undefined) ??
 					(nativeQueueCancellations?.some((item) => item.removal === "unconfirmed")
-						? "Queue cancellation requires removal reconciliation."
+						? catalogText(catalog, CatalogMessageId.flowSubmissionQueueCancellation)
 						: undefined) ??
 					admissionHolds[0]?.reason ??
-					(delivery === "uncertain" ? "Sent, but whether the model received it is not known." : undefined));
+					(delivery === "uncertain"
+						? catalogText(catalog, CatalogMessageId.flowSubmissionDeliveryUnknown)
+						: undefined));
 		return {
 			id: record.id,
 			revision: record.revision,

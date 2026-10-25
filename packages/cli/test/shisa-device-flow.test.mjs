@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, wri
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { catalogMessageText, defaultCatalog } from "../dist/cli-messages.js";
 import { resolveJouzuPaths } from "../dist/paths.js";
 import {
 	classifyShisaTokenResponse,
@@ -198,8 +199,8 @@ test("poll classification maps the frozen v0.3 wire errors", () => {
 	]) {
 		const classification = classifyShisaTokenResponse(400, { error }, 5);
 		assert.equal(classification.kind, "failed");
-		assert.match(classification.message, new RegExp(expected, "i"));
-		assert.doesNotMatch(classification.message, /device_code|link_token|shsk:/iu);
+		assert.match(catalogMessageText(defaultCatalog(), classification.message), new RegExp(expected, "i"));
+		assert.doesNotMatch(catalogMessageText(defaultCatalog(), classification.message), /device_code|link_token|shsk:/iu);
 	}
 	const complete = classifyShisaTokenResponse(200, TOKEN_BODY, 5);
 	assert.equal(complete.kind, "complete");

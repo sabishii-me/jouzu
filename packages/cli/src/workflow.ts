@@ -1,5 +1,15 @@
-import { Editor, type Focusable, Input, matchesKey, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { CURSOR_MARKER, Editor, type Focusable, Input, matchesKey, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import {
+	CatalogError,
+	CatalogMessageId,
+	type CatalogMessageRef,
+	catalogMessage,
+	catalogMessageText,
+	catalogText,
+	defaultCatalog,
+} from "./cli-messages.js";
 import { formatEffectiveKeybinding, formatEffectiveKeyPair } from "./keybinding-hints.js";
+import type { CatalogBundle } from "./locale-catalog.js";
 import {
 	compactNumber,
 	type PaletteComponent,
@@ -7,6 +17,7 @@ import {
 	type PaletteKeyHint,
 	type PaletteRoute,
 	paletteChoice,
+	paletteHeightBudget,
 	paletteInnerWidth,
 	renderPaletteDivider,
 	renderPaletteField,
@@ -40,24 +51,33 @@ import {
 } from "./terminal-layout.js";
 
 function required<T>(value: T | undefined): T {
-	if (value === undefined) throw new Error("Workflow form is unavailable. Cancel and reopen it.");
+	if (value === undefined) throw new CatalogError(catalogMessage(CatalogMessageId.workflowErrorFormUnavailable));
 	return value;
 }
 
 type Mode = "browse" | "role" | "models" | "text" | "task" | "run" | "output" | "confirm" | "limit";
-const MODE_TITLES: Record<Mode, string> = {
-	browse: "",
-	role: " · Edit agent",
-	models: " · Choose model",
-	text: " · Edit text",
-	task: " · Assignment",
-	run: " · Run",
-	output: " · Output",
-	confirm: " · Confirm",
-	limit: " · Concurrency",
+/**
+ * The title suffix for each form stage, as a catalog ID. The text stage names
+ * the field it is editing in render, so it has no entry here. `browse` carries
+ * no suffix, so it is absent.
+ */
+const MODE_TITLE_IDS: Partial<Record<Exclude<Mode, "text">, CatalogMessageId>> = {
+	role: CatalogMessageId.workflowStageEditAgent,
+	models: CatalogMessageId.workflowStageChooseModel,
+	task: CatalogMessageId.workflowRowAssignment,
+	run: CatalogMessageId.workflowStageRun,
+	output: CatalogMessageId.workflowStageOutput,
+	confirm: CatalogMessageId.workflowStageConfirm,
+	limit: CatalogMessageId.workflowRowConcurrency,
 };
 interface Row {
 	label: string;
+	/** What this row is in the unified browse pane; other modes leave it unset. */
+	kind?: "setting" | "role" | "add-agent" | "run";
+	/** Stable role or run identity, used to keep selection across refreshes. */
+	refId?: string;
+	/** Stable identity for a row whose action logic must survive translation. */
+	id?: string;
 	/** Override the shared label column, for a control that is not a list row. */
 	labelWidth?: number;
 	/** Override the label color, for a row whose label is its identity. */
@@ -87,8 +107,6 @@ const LABEL_COLUMN_MINIMUM = 8;
  * unbounded metadata at 48 columns.
  */
 const RUN_LABEL_MAXIMUM = 18;
-/** Width of a standalone control label, matched to the Models view. */
-const CONTROL_LABEL_COLUMN = 8;
 /** Width shared by the session-setting rows, so their values line up. */
 const SETTINGS_LABEL_COLUMN = 13;
 
@@ -110,7 +128,8 @@ const makeInput = (text: string) => {
 
 export class WorkflowComponent implements PaletteComponent, Focusable {
 	private mode: Mode = "browse";
-	private section: "agents" | "runs" = "agents";
+	/** Browse rows render roles before runs; this is the area a deep link or refresh lands on. */
+	private pendingLanding?: "agents" | "runs";
 	private selected = 0;
 	private outputLine = 0;
 	private outputLines: string[] = [];
@@ -135,39 +154,77 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 	private message = "";
 	private messageLevel: "info" | "error" = "info";
 	private readonly wordmark: string;
+	private readonly catalog: CatalogBundle;
 	private _focused = false;
 	private closed = false;
 	private unsubscribe: () => void;
 	private rowsVisible = 8;
-	private listedRunIds: string[] = [];
+	private scrollOffset = 0;
+	private scrollFollowsSelection = true;
+	private viewportRoom = 1;
+	private viewportTotal = 0;
+	private listedRowKeys: string[] = [];
 	constructor(
 		private readonly context: PaletteComponentContext,
 		private readonly service: WorkflowService,
 		initialRoute: PaletteRoute = { view: "workflow" },
 	) {
-		// A fresh `/workflow` open lands on live work: Runs while children are queued or running,
-		// and definitions otherwise. An explicit route, such as the View toggle or /subagents, wins.
-		this.section =
+		// `/workflow` lands on live work while children are queued or running, and on
+		// definitions otherwise. `/subagents` passes `runs` to land on the run list.
+		// Roles and their controls always stay above runs in the same browse pane.
+		this.pendingLanding =
 			initialRoute.query === "runs" || (initialRoute.query === undefined && service.runs().some(isActiveRun))
 				? "runs"
 				: "agents";
 		this.wordmark = renderBrandGradient("JOUZU", detectBannerColorMode());
+		// A caller without a resolved catalog (a unit test, for example) renders
+		// English rather than a second copy of the text.
+		this.catalog = context.catalog ?? defaultCatalog();
 		this.unsubscribe = service.subscribe(() => {
 			if (this.closed) return;
-			if (this.mode === "browse" && this.section === "runs" && this.selected >= 2) {
-				const selectedId = this.listedRunIds[this.selected - 2];
-				const runs = this.listedRuns();
-				const index = runs.findIndex((run) => run.id === selectedId);
-				if (index >= 0) this.selected = index + 2;
-				this.listedRunIds = runs.map((run) => run.id);
+			if (this.mode === "browse") {
+				// Runs and roles can be inserted above the selected row. Keep the same
+				// row selected by identity instead of by index.
+				const previousKey = this.listedRowKeys[this.selected];
+				try {
+					const rows = this.rows();
+					const index = previousKey === undefined ? -1 : this.listedRowKeys.indexOf(previousKey);
+					if (index >= 0) this.selected = index;
+					else this.selected = Math.min(this.selected, Math.max(0, rows.length - 1));
+				} catch {
+					// A failed refresh is reported by render in the message area.
+				}
 			}
 			this.context.tui.requestRender();
 		});
 	}
-	/** Active runs lead the Runs view; each group keeps the manager's newest-first order. */
+	/** Active runs lead the run list; each group keeps the manager's newest-first order. */
 	private listedRuns(): AgentRun[] {
 		const runs = this.service.runs();
 		return [...runs.filter(isActiveRun), ...runs.filter((run) => !isActiveRun(run))];
+	}
+	/** One catalog message for this view. */
+	private msg(id: CatalogMessageId, args?: Record<string, string | number>): string {
+		return catalogText(this.catalog, id, args);
+	}
+	/**
+	 * Render a caught error. A `required` invariant throws a `CatalogError`, whose
+	 * `Error.message` is the English default; resolve it from this view's bundle
+	 * instead so the Workflow message area localizes.
+	 */
+	private errorText(error: unknown, fallback: CatalogMessageId): string {
+		if (error instanceof CatalogError) return catalogMessageText(this.catalog, error.catalogMessage);
+		return error instanceof Error ? error.message : this.msg(fallback);
+	}
+	/** The title suffix for the current stage, or an empty string for browse. */
+	private stageSuffix(): string {
+		const id =
+			this.mode === "text"
+				? this.textReturn === "task"
+					? CatalogMessageId.workflowStageEditAssignment
+					: CatalogMessageId.workflowStageEditInstructions
+				: MODE_TITLE_IDS[this.mode];
+		return id ? ` · ${this.msg(id)}` : "";
 	}
 	get focused(): boolean {
 		return this._focused;
@@ -185,12 +242,23 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 		return this.mode === "browse" && !this.busy;
 	}
 	snapshotRoute(): PaletteRoute {
-		return { view: "workflow", query: this.section };
+		if (this.mode === "run" || this.mode === "output") return { view: "workflow", query: "runs" };
+		if (this.mode !== "browse") return { view: "workflow", query: "agents" };
+		try {
+			const row = this.rows()[this.selected];
+			return { view: "workflow", query: row?.kind === "run" ? "runs" : "agents" };
+		} catch {
+			return { view: "workflow", query: "agents" };
+		}
 	}
 	route(route: PaletteRoute): void {
 		if (!this.allowsGlobalNavigation()) return;
-		this.section = route.query === "runs" ? "runs" : "agents";
+		this.pendingLanding =
+			route.query === "runs" || (route.query === undefined && this.service.runs().some(isActiveRun))
+				? "runs"
+				: "agents";
 		this.selected = 0;
+		this.resetViewport();
 	}
 	invalidate(): void {
 		this.editor?.invalidate();
@@ -203,21 +271,91 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 		this.mode = mode;
 		this.syncFocus();
 		this.selected = 0;
+		this.resetViewport();
 		this.message = "";
 		this.messageLevel = "info";
 		this.context.tui.requestRender();
 	}
-	private async perform(label: string, action: () => Promise<void>): Promise<void> {
+	private resetViewport(): void {
+		this.scrollOffset = 0;
+		this.scrollFollowsSelection = true;
+		this.viewportRoom = 1;
+		this.viewportTotal = 0;
+	}
+	/** Scroll the document by one page without moving row selection. */
+	private scrollPage(delta: number): void {
+		this.scrollFollowsSelection = false;
+		const room = Math.max(1, this.viewportRoom);
+		const maximum = Math.max(0, this.viewportTotal - room);
+		this.scrollOffset = Math.max(0, Math.min(this.scrollOffset + delta * room, maximum));
+	}
+	/** Keep the selected row visible, or preserve a manual page offset. */
+	private viewportStart(total: number, room: number, selectedLine: number): number {
+		const maximum = Math.max(0, total - room);
+		let start = Math.max(0, Math.min(this.scrollOffset, maximum));
+		if (this.scrollFollowsSelection) {
+			if (selectedLine < start) start = selectedLine;
+			else if (selectedLine >= start + room) start = selectedLine - room + 1;
+			start = Math.max(0, Math.min(start, maximum));
+		}
+		return start;
+	}
+	/** One-line position and above/below indicator for an overflowing document. */
+	private scrollIndicator(start: number, end: number, total: number, innerWidth: number): string {
+		const range = `${start + 1}-${Math.min(end, total)}/${total}`;
+		const above = start > 0 ? "↑" : " ";
+		const below = end < total ? "↓" : " ";
+		const position = `${above} ${range} ${below}`;
+		const keys = formatEffectiveKeyPair(this.context.keybindings, "tui.select.pageUp", "tui.select.pageDown");
+		const full = `${position} · ${keys}`;
+		return fitTerminalText(terminalTextWidth(full) <= innerWidth ? full : position, innerWidth, "…");
+	}
+	/** Stable identity for a browse row, so refresh can keep the same row selected. */
+	private rowKey(row: Row): string {
+		if (row.kind === "run") return `run:${row.refId}`;
+		if (row.kind === "role") return `role:${row.refId}`;
+		if (row.kind === "add-agent") return "add-agent";
+		return `row:${row.id ?? row.label}`;
+	}
+	/** Move a deep-link or refresh landing onto the first role or run row. */
+	private applyLanding(rows: readonly Row[]): void {
+		const target = this.pendingLanding;
+		if (!target) return;
+		this.pendingLanding = undefined;
+		const index = rows.findIndex((row) => row.kind === (target === "runs" ? "run" : "role"));
+		if (index >= 0) {
+			this.selected = index;
+			return;
+		}
+		if (target === "runs") {
+			const addAgent = rows.findIndex((row) => row.kind === "add-agent");
+			if (addAgent >= 0) {
+				this.selected = addAgent;
+				return;
+			}
+		}
+		this.selected = 0;
+	}
+	/** Select a browse row by stable key, used when returning from a form or a run. */
+	private returnToBrowse(key: string): void {
+		this.pendingLanding = undefined;
+		this.setMode("browse");
+		const rows = this.rows();
+		const index = rows.findIndex((row) => this.rowKey(row) === key);
+		this.selected = Math.max(index, 0);
+	}
+	private async perform(label: CatalogMessageRef, action: () => Promise<void>): Promise<void> {
 		if (this.busy) return;
 		this.busy = true;
-		this.message = `${label}…`;
+		const labelText = catalogMessageText(this.catalog, label);
+		this.message = this.msg(CatalogMessageId.workflowMessageRunning, { label: labelText });
 		this.context.tui.requestRender();
 		try {
 			await action();
-			this.message = `${label} complete.`;
+			this.message = this.msg(CatalogMessageId.workflowMessageComplete, { label: labelText });
 			this.messageLevel = "info";
 		} catch (error) {
-			this.message = sanitizeTerminalText(error instanceof Error ? error.message : "Operation failed. Retry.");
+			this.message = sanitizeTerminalText(this.errorText(error, CatalogMessageId.workflowMessageOperationFailedRetry));
 			this.messageLevel = "error";
 		} finally {
 			this.busy = false;
@@ -259,7 +397,7 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 	private requireSaved(): void {
 		const saved = this.snapshot?.config.roles.find((role) => role.id === this.originalId);
 		if (JSON.stringify(saved) !== JSON.stringify(this.draftValue()))
-			throw new Error("Save or cancel your edits before using this definition.");
+			throw new Error(catalogText(this.catalog, CatalogMessageId.workflowErrorSaveOrCancelEdits));
 	}
 	private save(): void {
 		const role = this.draftValue();
@@ -269,8 +407,8 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 		if (index >= 0) config.roles[index] = role;
 		else config.roles.push(role);
 		this.service.save({ config, revision: snapshot.revision });
-		this.setMode("browse");
-		this.message = `Saved ${role.id}.`;
+		this.returnToBrowse(`role:${role.id}`);
+		this.message = this.msg(CatalogMessageId.workflowMessageSaved, { agent: role.id });
 		this.messageLevel = "info";
 	}
 	/**
@@ -288,8 +426,8 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 		const snapshot = this.service.roles();
 		const value = Number(required(this.concurrencyInput).getValue().trim());
 		this.service.save({ ...snapshot, config: { ...snapshot.config, maxConcurrent: value } });
-		this.setMode("browse");
-		this.message = `Concurrency set to ${value}.`;
+		this.returnToBrowse("row:concurrency");
+		this.message = this.msg(CatalogMessageId.workflowMessageConcurrencySet, { value });
 		this.messageLevel = "info";
 	}
 	private toggleWorkspaceWriters(): void {
@@ -298,11 +436,16 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 		this.service.save({ ...snapshot, config: { ...snapshot.config, workspaceWriters: next } });
 		this.message =
 			next === "parallel"
-				? "Child writers may share a workspace; concurrent edits to the same files can conflict."
-				: "Child writers run one at a time per workspace.";
+				? this.msg(CatalogMessageId.workflowMessageChildWritersParallel)
+				: this.msg(CatalogMessageId.workflowMessageChildWritersSerial);
 		this.messageLevel = "info";
 	}
-	private openText(title: string, text: string, back: "role" | "task", commit: (text: string) => void): void {
+	private openText(
+		title: CatalogMessageRef,
+		text: string,
+		back: "role" | "task",
+		commit: (text: string) => void,
+	): void {
 		const identity = (value: string) => value;
 		this.editor = new Editor(this.context.tui, {
 			borderColor: identity,
@@ -320,22 +463,23 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 		this.textReturn = back;
 		this.textCommit = commit;
 		this.setMode("text");
-		this.message = title;
+		this.message = catalogMessageText(this.catalog, title);
 		this.messageLevel = "info";
 	}
 	private toggleSubagents(): void {
 		const enabled = !this.service.subagentsEnabled();
 		const apply = () => {
-			void this.perform(enabled ? "Enabling subagents" : "Disabling subagents", async () => {
+			const label = catalogMessage(
+				enabled ? CatalogMessageId.workflowActionEnablingSubagents : CatalogMessageId.workflowActionDisablingSubagents,
+			);
+			void this.perform(label, async () => {
 				await this.service.setSubagentsEnabled(enabled);
-				this.setMode("browse");
-				this.selected = 1;
+				this.returnToBrowse("row:subagents");
 			});
 		};
 		if (!enabled && this.service.runs().some(isActiveRun)) {
 			this.confirmation = {
-				label:
-					"Disable subagents and stop all queued and running children in this session? Changes already made remain.",
+				label: this.msg(CatalogMessageId.workflowConfirmDisableSubagents),
 				back: "browse",
 				action: apply,
 			};
@@ -344,7 +488,7 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 	}
 	private startTask(action: "launch" | "steer" | "resume", role?: AgentRole): void {
 		if (!this.service.subagentsEnabled())
-			throw new Error("Subagents are off. Enable them in Workflow before assigning work.");
+			throw new Error(catalogText(this.catalog, CatalogMessageId.workflowErrorSubagentsOff));
 		if (role) this.draft = role;
 		this.task = "";
 		this.workspace = "";
@@ -353,83 +497,105 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 	}
 	private run(): AgentRun {
 		const run = this.service.runs().find((item) => item.id === this.runId);
-		if (!run) throw new Error("Agent run was not found.");
+		if (!run) throw new Error(catalogText(this.catalog, CatalogMessageId.workflowErrorRunNotFound));
 		return run;
 	}
 	private rows(): Row[] {
 		if (this.mode === "browse") {
+			const snapshot = this.service.roles();
+			const roles = snapshot.config.roles;
+			const runs = this.listedRuns();
+			const active = runs.filter(isActiveRun).length;
+			// Roles and their controls are part of the same browse pane as runs, so
+			// editing stays reachable while children are queued, running, or disabled.
 			const rows: Row[] = [
 				{
-					label: "View",
-					labelWidth: CONTROL_LABEL_COLUMN,
-					value: paletteChoice(this.section === "agents" ? "Agents" : "Runs"),
-					choice: () => {
-						this.section = this.section === "agents" ? "runs" : "agents";
-						this.selected = 0;
-					},
-					run: () => {
-						this.section = this.section === "agents" ? "runs" : "agents";
-					},
-				},
-				{
-					label: "Subagents",
+					kind: "setting",
+					id: "subagents",
+					label: this.msg(CatalogMessageId.workflowRowSubagents),
 					labelWidth: 9,
-					value: paletteChoice(this.service.subagentsEnabled() ? "On" : "Off"),
-					meta: "this session",
+					value: paletteChoice(
+						this.service.subagentsEnabled()
+							? this.msg(CatalogMessageId.workflowValueOn)
+							: this.msg(CatalogMessageId.workflowValueOff),
+					),
+					meta: this.msg(CatalogMessageId.workflowMetaThisSession),
 					choice: () => this.toggleSubagents(),
 				},
+				{
+					kind: "setting",
+					id: "concurrency",
+					label: this.msg(CatalogMessageId.workflowRowConcurrency),
+					labelWidth: SETTINGS_LABEL_COLUMN,
+					value: String(snapshot.config.maxConcurrent),
+					meta: `${CONCURRENCY_BOUNDS.minimum}–${CONCURRENCY_BOUNDS.maximum}`,
+					hint: this.msg(CatalogMessageId.paletteActionEdit),
+					run: () => this.openConcurrency(),
+				},
+				{
+					kind: "setting",
+					id: "child-writers",
+					label: this.msg(CatalogMessageId.workflowRowChildWriters),
+					labelWidth: SETTINGS_LABEL_COLUMN,
+					value: paletteChoice(
+						snapshot.config.workspaceWriters === "parallel"
+							? this.msg(CatalogMessageId.workflowValueInParallel)
+							: this.msg(CatalogMessageId.workflowValueOneAtATime),
+					),
+					choice: () => this.toggleWorkspaceWriters(),
+				},
+				...roles.map((role, index) => ({
+					kind: "role" as const,
+					refId: role.id,
+					label: role.id,
+					labelRole: "palette.identity" as const,
+					value: agentModelSelectorLabel(role.model, this.service.models()),
+					...(this.service.activeRole() === role.id ? { meta: this.msg(CatalogMessageId.workflowMetaInSession) } : {}),
+					...(index === 0
+						? {
+								heading: this.msg(CatalogMessageId.workflowLabelAgents),
+								headingMeta: this.msg(CatalogMessageId.workflowHeadingMetaDefined, {
+									count: String(roles.length),
+								}),
+							}
+						: {}),
+					run: () => this.edit(role),
+				})),
+				{
+					kind: "add-agent",
+					label: this.msg(CatalogMessageId.workflowRowAddAgent),
+					...(roles.length === 0
+						? {
+								heading: this.msg(CatalogMessageId.workflowLabelAgents),
+								headingMeta: this.msg(CatalogMessageId.workflowHeadingMetaDefined, { count: "0" }),
+							}
+						: {}),
+					run: () => this.edit(),
+				},
+				...runs.map((run, index) => ({
+					kind: "run" as const,
+					refId: run.id,
+					label: fitTerminalText(run.role.id, RUN_LABEL_MAXIMUM),
+					labelRole: "palette.identity" as const,
+					value: run.status,
+					meta: run.currentTool ?? run.task.replace(/\s+/g, " "),
+					...(index === 0
+						? {
+								heading: this.msg(CatalogMessageId.workflowLabelRuns),
+								headingMeta: this.msg(CatalogMessageId.workflowHeadingMetaRuns, {
+									active,
+									count: String(runs.length),
+								}),
+							}
+						: {}),
+					run: () => {
+						this.runId = run.id;
+						this.setMode("run");
+					},
+				})),
 			];
-			if (this.section === "agents") {
-				const snapshot = this.service.roles();
-				const roles = snapshot.config.roles;
-				rows.push(
-					{
-						label: "Concurrency",
-						labelWidth: SETTINGS_LABEL_COLUMN,
-						value: String(snapshot.config.maxConcurrent),
-						meta: `${CONCURRENCY_BOUNDS.minimum}–${CONCURRENCY_BOUNDS.maximum}`,
-						hint: "edit",
-						run: () => this.openConcurrency(),
-					},
-					{
-						label: "Child writers",
-						labelWidth: SETTINGS_LABEL_COLUMN,
-						value: paletteChoice(snapshot.config.workspaceWriters === "parallel" ? "In parallel" : "One at a time"),
-						choice: () => this.toggleWorkspaceWriters(),
-					},
-					...roles.map((role, index) => ({
-						label: role.id,
-						labelRole: "palette.identity" as const,
-						value: agentModelSelectorLabel(role.model, this.service.models()),
-						...(this.service.activeRole() === role.id ? { meta: "in session" } : {}),
-						...(index === 0 ? { heading: "Agents", headingMeta: `${roles.length} defined` } : {}),
-						run: () => this.edit(role),
-					})),
-				);
-				rows.push({ label: "+ Add agent", run: () => this.edit() });
-			} else {
-				const runs = this.listedRuns();
-				const active = runs.filter(isActiveRun).length;
-				this.listedRunIds = runs.map((run) => run.id);
-				rows.push(
-					...runs.map((run, index) => ({
-						label: fitTerminalText(run.role.id, RUN_LABEL_MAXIMUM),
-						labelRole: "palette.identity" as const,
-						value: run.status,
-						meta: run.currentTool ?? run.task.replace(/\s+/g, " "),
-						...(index === 0
-							? {
-									heading: "Runs",
-									headingMeta: `${active ? `${active} running · ` : ""}${runs.length} in session`,
-								}
-							: {}),
-						run: () => {
-							this.runId = run.id;
-							this.setMode("run");
-						},
-					})),
-				);
-			}
+			this.listedRowKeys = rows.map((row) => this.rowKey(row));
+			this.applyLanding(rows);
 			return rows;
 		}
 		if (this.mode === "role") {
@@ -437,10 +603,14 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 			const cycle = <T>(values: readonly T[], current: T, delta: number) =>
 				values[(values.indexOf(current) + delta + values.length) % values.length];
 			const rows: Row[] = [
-				{ label: "Role ID", heading: "Definition", input: this.fields.get("id") },
-				{ label: "Description", input: this.fields.get("description") },
 				{
-					label: "Model",
+					label: this.msg(CatalogMessageId.workflowRowRoleId),
+					heading: this.msg(CatalogMessageId.workflowLabelDefinition),
+					input: this.fields.get("id"),
+				},
+				{ label: this.msg(CatalogMessageId.workflowRowDescription), input: this.fields.get("description") },
+				{
+					label: this.msg(CatalogMessageId.workflowRowModel),
 					value: agentModelSelectorLabel(role.model, this.service.models()),
 					meta: "›",
 					run: () => {
@@ -449,15 +619,17 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 					},
 				},
 				{
-					label: "Placement",
+					label: this.msg(CatalogMessageId.workflowRowPlacement),
 					value: paletteChoice(role.placement),
 					choice: (delta) => {
 						role.placement = cycle(["main", "child", "both"], role.placement, delta);
 					},
 				},
 				{
-					label: "Review only",
-					value: paletteChoice(role.judging ? "Yes" : "No"),
+					label: this.msg(CatalogMessageId.workflowRowReviewOnly),
+					value: paletteChoice(
+						role.judging ? this.msg(CatalogMessageId.workflowValueYes) : this.msg(CatalogMessageId.workflowValueNo),
+					),
 					choice: () => {
 						role.judging = !role.judging;
 						if (role.judging) {
@@ -466,34 +638,45 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 						}
 					},
 				},
-				{ label: "Child tools", input: this.fields.get("tools") },
+				{ label: this.msg(CatalogMessageId.workflowRowChildTools), input: this.fields.get("tools") },
 				{
-					label: "Thinking",
-					value: paletteChoice(role.thinking === "same" ? "Same as main" : role.thinking),
+					label: this.msg(CatalogMessageId.workflowRowThinking),
+					value: paletteChoice(
+						role.thinking === "same" ? catalogText(this.catalog, "jouzu.cli.workflow.sameAsMain") : role.thinking,
+					),
 					choice: (delta) => {
 						role.thinking = cycle(ROLE_THINKING_LEVELS, role.thinking, delta);
 					},
 				},
-				{ label: "Timeout (seconds)", input: this.fields.get("timeoutSeconds") },
-				{ label: "Maximum turns", input: this.fields.get("maxTurns") },
+				{ label: this.msg(CatalogMessageId.workflowRowTimeoutSeconds), input: this.fields.get("timeoutSeconds") },
+				{ label: this.msg(CatalogMessageId.workflowRowMaximumTurns), input: this.fields.get("maxTurns") },
 				{
-					label: "Instructions",
-					value: `${role.instructions.length} characters`,
+					label: this.msg(CatalogMessageId.workflowRowInstructions),
+					value: this.msg(CatalogMessageId.workflowValueCharacters, { count: String(role.instructions.length) }),
 					meta: "›",
 					run: () =>
-						this.openText("Edit instructions", role.instructions, "role", (text) => {
-							role.instructions = text;
-						}),
+						this.openText(
+							catalogMessage(CatalogMessageId.workflowStageEditInstructions),
+							role.instructions,
+							"role",
+							(text) => {
+								role.instructions = text;
+							},
+						),
 				},
-				{ label: "Save", heading: "Actions", run: () => this.save() },
+				{
+					label: this.msg(CatalogMessageId.workflowRowSave),
+					heading: this.msg(CatalogMessageId.workflowLabelActions),
+					run: () => this.save(),
+				},
 			];
 			if (this.originalId) {
 				if (role.placement !== "child")
 					rows.push({
-						label: "Use in main session",
+						label: this.msg(CatalogMessageId.workflowRowUseInMainSession),
 						run: () => {
 							this.requireSaved();
-							void this.perform("Applying agent", async () => {
+							void this.perform(catalogMessage(CatalogMessageId.workflowActionApplyingAgent), async () => {
 								await this.service.activate(required(this.originalId));
 								this.setMode("browse");
 							});
@@ -501,8 +684,10 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 					});
 				if (role.placement !== "main")
 					rows.push({
-						label: "Launch agent…",
-						...(!this.service.subagentsEnabled() ? { value: "Unavailable: subagents off" } : {}),
+						label: this.msg(CatalogMessageId.workflowRowLaunchAgent),
+						...(!this.service.subagentsEnabled()
+							? { value: this.msg(CatalogMessageId.workflowValueUnavailableSubagentsOff) }
+							: {}),
 						run: () => {
 							this.requireSaved();
 							this.startTask(
@@ -512,7 +697,7 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 						},
 					});
 				rows.push({
-					label: "Duplicate as new agent",
+					label: this.msg(CatalogMessageId.workflowRowDuplicateAsNewAgent),
 					run: () => {
 						const copy = this.draftValue();
 						copy.id = `${copy.id}-copy`;
@@ -521,11 +706,11 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 					},
 				});
 				rows.push({
-					label: "Delete definition…",
+					label: this.msg(CatalogMessageId.workflowRowDeleteDefinition),
 					run: () => {
 						this.requireSaved();
 						this.confirmation = {
-							label: `Delete ${this.originalId}? Existing runs remain.`,
+							label: this.msg(CatalogMessageId.workflowRowDeleteConfirm, { agent: required(this.originalId) }),
 							back: "role",
 							action: () => {
 								const snapshot = required(this.snapshot);
@@ -543,19 +728,23 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 					},
 				});
 			}
-			rows.push({ label: "Cancel", run: () => this.setMode("browse") });
+			rows.push({ label: this.msg(CatalogMessageId.workflowRowCancel), run: () => this.setMode("browse") });
 			return rows;
 		}
 		if (this.mode === "limit")
 			return [
 				{
-					label: "Concurrency",
-					heading: "Setting",
+					label: this.msg(CatalogMessageId.workflowRowConcurrency),
+					heading: this.msg(CatalogMessageId.workflowLabelSetting),
 					input: required(this.concurrencyInput),
 					meta: `${CONCURRENCY_BOUNDS.minimum}–${CONCURRENCY_BOUNDS.maximum}`,
 				},
-				{ label: "Save", heading: "Actions", run: () => this.saveConcurrency() },
-				{ label: "Cancel", run: () => this.setMode("browse") },
+				{
+					label: this.msg(CatalogMessageId.workflowRowSave),
+					heading: this.msg(CatalogMessageId.workflowLabelActions),
+					run: () => this.saveConcurrency(),
+				},
+				{ label: this.msg(CatalogMessageId.workflowRowCancel), run: () => this.setMode("browse") },
 			];
 		if (this.mode === "models") {
 			const query = this.modelSearch.getValue().toLowerCase();
@@ -568,11 +757,11 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 			// The literal value stays visible in the value column so the saved selector is unambiguous.
 			if (`${SAME_MODEL} same as this session`.includes(query))
 				rows.push({
-					label: "Same as this session",
+					label: this.msg(CatalogMessageId.workflowRowSameAsThisSession),
 					labelRole: "palette.identity",
 					value: SAME_MODEL,
-					heading: "Models",
-					headingMeta: "follows the session model",
+					heading: this.msg(CatalogMessageId.workflowLabelModels),
+					headingMeta: this.msg(CatalogMessageId.workflowHeadingMetaFollowsSessionModel),
 					run: () => choose(SAME_MODEL),
 				});
 			rows.push(
@@ -583,7 +772,7 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 						label: agentModelDisplay(model).name,
 						labelRole: "palette.identity" as const,
 						value: agentModelDisplay(model).source,
-						...(index === 0 && rows.length === 0 ? { heading: "Models" } : {}),
+						...(index === 0 && rows.length === 0 ? { heading: this.msg(CatalogMessageId.workflowLabelModels) } : {}),
 						run: () => choose(`${model.provider}/${model.id}`),
 					})),
 			);
@@ -592,12 +781,14 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 		if (this.mode === "task")
 			return [
 				{
-					label: "Assignment",
-					heading: "Task",
-					value: this.task.length ? `${this.task.length} characters` : "Write a task",
+					label: this.msg(CatalogMessageId.workflowRowAssignment),
+					heading: this.msg(CatalogMessageId.workflowLabelTask),
+					value: this.task.length
+						? this.msg(CatalogMessageId.workflowValueCharacters, { count: String(this.task.length) })
+						: this.msg(CatalogMessageId.workflowValueWriteTask),
 					meta: "›",
 					run: () =>
-						this.openText("Edit assignment", this.task, "task", (text) => {
+						this.openText(catalogMessage(CatalogMessageId.workflowStageEditAssignment), this.task, "task", (text) => {
 							this.task = text;
 						}),
 				},
@@ -605,15 +796,20 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 				...(this.taskAction === "launch"
 					? [
 							{
-								label: "Workspace",
+								label: this.msg(CatalogMessageId.workflowRowWorkspace),
 								value: this.workspace || this.service.cwd(),
 								meta: this.workspace ? undefined : "default",
 								run: () => {
 									const current = this.workspace || this.service.cwd();
-									this.openText("Edit workspace", current, "task", (text) => {
-										const next = text.trim();
-										this.workspace = next === this.service.cwd() ? "" : next;
-									});
+									this.openText(
+										catalogMessage(CatalogMessageId.workflowStageEditWorkspace),
+										current,
+										"task",
+										(text) => {
+											const next = text.trim();
+											this.workspace = next === this.service.cwd() ? "" : next;
+										},
+									);
 								},
 							},
 						]
@@ -621,14 +817,15 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 				{
 					label:
 						this.taskAction === "launch"
-							? "Launch agent"
+							? this.msg(CatalogMessageId.workflowActionLaunchAgent)
 							: this.taskAction === "steer"
-								? "Send message"
-								: "Resume agent",
-					heading: "Actions",
+								? this.msg(CatalogMessageId.workflowActionSendMessage)
+								: this.msg(CatalogMessageId.workflowActionResumeAgent),
+					heading: this.msg(CatalogMessageId.workflowLabelActions),
 					run: () => {
-						void this.perform("Sending task", async () => {
-							if (!this.task.trim()) throw new Error("Write an assignment before sending it.");
+						void this.perform(catalogMessage(CatalogMessageId.workflowActionSendingTask), async () => {
+							if (!this.task.trim())
+								throw new Error(catalogText(this.catalog, CatalogMessageId.workflowErrorWriteAssignment));
 							if (this.taskAction === "steer") this.service.steer(required(this.runId), this.task);
 							else {
 								const run =
@@ -645,14 +842,14 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 						});
 					},
 				},
-				{ label: "Cancel", run: () => this.setMode(this.runId ? "run" : "browse") },
+				{ label: this.msg(CatalogMessageId.workflowRowCancel), run: () => this.setMode(this.runId ? "run" : "browse") },
 			];
 		if (this.mode === "run") {
 			const run = this.run();
 			return [
 				{
-					label: "Read output",
-					heading: "Actions",
+					label: this.msg(CatalogMessageId.workflowRowReadOutput),
+					heading: this.msg(CatalogMessageId.workflowLabelActions),
 					run: () => {
 						this.outputOffset = 0;
 						this.outputLine = 0;
@@ -662,15 +859,15 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 				},
 				...(isActiveRun(run)
 					? [
-							{ label: "Send a message…", run: () => this.startTask("steer") },
+							{ label: this.msg(CatalogMessageId.workflowRowSendMessage), run: () => this.startTask("steer") },
 							{
-								label: "Stop agent…",
+								label: this.msg(CatalogMessageId.workflowRowStopAgent),
 								run: () => {
 									this.confirmation = {
-										label: `Stop ${run.role.id}? Changes already made remain.`,
+										label: this.msg(CatalogMessageId.workflowRowStopConfirm, { agent: run.role.id }),
 										back: "run",
 										action: () => {
-											void this.perform("Stopping agent", async () => {
+											void this.perform(catalogMessage(CatalogMessageId.workflowActionStoppingAgent), async () => {
 												await this.service.stop(run.id);
 												this.setMode("run");
 											});
@@ -682,27 +879,35 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 						]
 					: [
 							{
-								label: "Resume with a task…",
-								...(!this.service.subagentsEnabled() ? { value: "Unavailable: subagents off" } : {}),
+								label: this.msg(CatalogMessageId.workflowRowResumeWithTask),
+								...(!this.service.subagentsEnabled()
+									? { value: this.msg(CatalogMessageId.workflowValueUnavailableSubagentsOff) }
+									: {}),
 								run: () => this.startTask("resume"),
 							},
 						]),
 				{
-					label: "Back to runs",
-					run: () => {
-						this.section = "runs";
-						this.setMode("browse");
-					},
+					label: this.msg(CatalogMessageId.workflowRowBackToRuns),
+					run: () => this.returnToBrowse(`run:${run.id}`),
 				},
 			];
 		}
 		return [];
 	}
 	handleInput(data: string): void {
-		if (this.busy) return;
 		const key = this.context.keybindings;
-		this.message = "";
-		this.messageLevel = "info";
+		const paging = key.matches(data, "tui.select.pageUp") || key.matches(data, "tui.select.pageDown");
+		if (this.busy) {
+			if (paging) {
+				this.scrollPage(key.matches(data, "tui.select.pageUp") ? -1 : 1);
+				this.context.tui.requestRender();
+			}
+			return;
+		}
+		if (!paging) {
+			this.message = "";
+			this.messageLevel = "info";
+		}
 		try {
 			if (this.mode === "text") {
 				if (key.matches(data, "tui.select.cancel")) {
@@ -721,16 +926,23 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 					this.selected = 2;
 				} else if (this.mode === "confirm") this.setMode(required(this.confirmation).back);
 				else if (this.mode === "output" || this.mode === "task") this.setMode(this.runId ? "run" : "browse");
+				else if (this.mode === "role") this.returnToBrowse(this.originalId ? `role:${this.originalId}` : "add-agent");
+				else if (this.mode === "limit") this.returnToBrowse("row:concurrency");
 				else this.setMode("browse");
 				return;
 			}
 			if (this.mode === "confirm") {
 				if (key.matches(data, "tui.select.confirm")) this.confirmation?.action();
+				else if (key.matches(data, "tui.select.pageUp") || key.matches(data, "tui.select.pageDown")) {
+					this.scrollPage(key.matches(data, "tui.select.pageUp") ? -1 : 1);
+					this.context.tui.requestRender();
+				}
 				return;
 			}
 			if (this.mode === "output") {
 				if (key.matches(data, "tui.select.pageDown") || key.matches(data, "tui.select.confirm")) {
-					if (this.outputLine + this.rowsVisible < this.outputLines.length) this.outputLine += this.rowsVisible;
+					if (this.outputLine + this.rowsVisible < Math.max(this.outputLines.length, this.viewportTotal - 1))
+						this.outputLine += this.rowsVisible;
 					else if (this.outputNext !== null) {
 						this.outputHistory.push(this.outputOffset);
 						this.outputOffset = this.outputNext;
@@ -747,58 +959,101 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 				this.context.tui.requestRender();
 				return;
 			}
+			const pageUp = key.matches(data, "tui.select.pageUp");
+			const pageDown = key.matches(data, "tui.select.pageDown");
+			if ((pageUp || pageDown) && this.mode !== "browse" && this.mode !== "models") {
+				this.scrollPage(pageUp ? -1 : 1);
+				this.context.tui.requestRender();
+				return;
+			}
 			const rows = this.rows();
+			if (!this.scrollFollowsSelection && !pageUp && !pageDown && key.matches(data, "tui.select.confirm")) {
+				// Reveal the selection before Enter can activate an offscreen control.
+				this.scrollFollowsSelection = true;
+				this.context.tui.requestRender();
+				return;
+			}
 			this.selected = Math.min(this.selected, Math.max(0, rows.length - 1));
-			if (key.matches(data, "tui.select.up")) this.selected = Math.max(0, this.selected - 1);
-			else if (key.matches(data, "tui.select.down")) this.selected = Math.min(rows.length - 1, this.selected + 1);
-			else if (key.matches(data, "tui.select.pageUp")) this.selected = Math.max(0, this.selected - this.rowsVisible);
-			else if (key.matches(data, "tui.select.pageDown"))
-				this.selected = Math.min(rows.length - 1, this.selected + this.rowsVisible);
-			else if (key.matches(data, "tui.select.confirm")) {
+			if (key.matches(data, "tui.select.up")) {
+				this.selected = Math.max(0, this.selected - 1);
+				this.scrollFollowsSelection = true;
+			} else if (key.matches(data, "tui.select.down")) {
+				this.selected = Math.min(rows.length - 1, this.selected + 1);
+				this.scrollFollowsSelection = true;
+			} else if (pageUp || pageDown) {
+				if (!this.scrollFollowsSelection) this.scrollPage(pageUp ? -1 : 1);
+				else if (pageDown) {
+					if (this.selected < rows.length - 1)
+						this.selected = Math.min(rows.length - 1, this.selected + this.rowsVisible);
+					else this.scrollPage(1);
+				} else if (this.selected > 0) this.selected = Math.max(0, this.selected - this.rowsVisible);
+				else this.scrollPage(-1);
+			} else if (key.matches(data, "tui.select.confirm")) {
 				const row = rows[this.selected];
 				if (row?.input) {
 					if (this.mode === "role") this.save();
 					else this.saveConcurrency();
 				} else if (row?.choice) row.choice(1);
 				else row?.run?.();
-			} else if (matchesKey(data, "ctrl+home")) this.selected = 0;
-			else if (matchesKey(data, "ctrl+end")) this.selected = Math.max(0, rows.length - 1);
-			else if (this.mode === "models") {
+			} else if (matchesKey(data, "ctrl+home")) {
+				this.selected = 0;
+				this.scrollOffset = 0;
+				this.scrollFollowsSelection = true;
+			} else if (matchesKey(data, "ctrl+end")) {
+				this.selected = Math.max(0, rows.length - 1);
+				this.scrollFollowsSelection = true;
+			} else if (this.mode === "models") {
 				this.modelSearch.handleInput(data);
 				this.selected = 0;
-			} else if (rows[this.selected]?.input) rows[this.selected].input?.handleInput(data);
-			else if (this.mode === "browse" && rows[this.selected]?.label === "Subagents" && matchesKey(data, "space"))
+				this.scrollFollowsSelection = true;
+			} else if (rows[this.selected]?.input) {
+				if (!this.scrollFollowsSelection) this.scrollFollowsSelection = true;
+				else rows[this.selected].input?.handleInput(data);
+			} else if (this.mode === "browse" && rows[this.selected]?.id === "subagents" && matchesKey(data, "space"))
 				this.toggleSubagents();
 			else if (matchesKey(data, "left")) rows[this.selected]?.choice?.(-1);
 			else if (matchesKey(data, "right")) rows[this.selected]?.choice?.(1);
-			else if (matchesKey(data, "home")) this.selected = 0;
-			else if (matchesKey(data, "end")) this.selected = Math.max(0, rows.length - 1);
+			else if (matchesKey(data, "home")) {
+				this.selected = 0;
+				this.scrollOffset = 0;
+				this.scrollFollowsSelection = true;
+			} else if (matchesKey(data, "end")) {
+				this.selected = Math.max(0, rows.length - 1);
+				this.scrollFollowsSelection = true;
+			}
 		} catch (error) {
-			this.message = sanitizeTerminalText(error instanceof Error ? error.message : "Operation failed.");
+			this.message = sanitizeTerminalText(this.errorText(error, CatalogMessageId.workflowMessageOperationFailed));
 			this.messageLevel = "error";
 		}
 		this.context.tui.requestRender();
 	}
 	private hints(): PaletteKeyHint[] {
+		if (this.busy) return [];
 		const keybindings = this.context.keybindings;
 		const confirm = formatEffectiveKeybinding(keybindings, "tui.select.confirm");
 		const cancel = formatEffectiveKeybinding(keybindings, "tui.select.cancel");
 		const move = formatEffectiveKeyPair(keybindings, "tui.select.up", "tui.select.down");
 		if (this.mode === "text")
 			return [
-				{ key: cancel, label: "return to form" },
-				{ key: "Enter", label: "newline" },
+				{ key: cancel, label: this.msg(CatalogMessageId.paletteActionReturnToForm) },
+				{ key: "Enter", label: this.msg(CatalogMessageId.paletteActionNewline) },
 			];
 		if (this.mode === "output")
 			return [
-				{ key: formatEffectiveKeybinding(keybindings, "tui.select.pageDown"), label: "next" },
-				{ key: formatEffectiveKeybinding(keybindings, "tui.select.pageUp"), label: "previous" },
-				{ key: cancel, label: "back" },
+				{
+					key: formatEffectiveKeybinding(keybindings, "tui.select.pageDown"),
+					label: this.msg(CatalogMessageId.paletteActionNext),
+				},
+				{
+					key: formatEffectiveKeybinding(keybindings, "tui.select.pageUp"),
+					label: this.msg(CatalogMessageId.paletteActionPrevious),
+				},
+				{ key: cancel, label: this.msg(CatalogMessageId.paletteActionBack) },
 			];
 		if (this.mode === "confirm")
 			return [
-				{ key: confirm, label: "confirm" },
-				{ key: cancel, label: "cancel" },
+				{ key: confirm, label: this.msg(CatalogMessageId.paletteActionConfirm) },
+				{ key: cancel, label: this.msg(CatalogMessageId.paletteActionCancel) },
 			];
 		let selected: Row | undefined;
 		try {
@@ -806,23 +1061,36 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 		} catch {}
 		const fallback =
 			this.mode === "browse"
-				? this.section === "agents"
-					? "edit agent"
-					: "inspect run"
-				: (selected?.label.replace(/[…›]/g, "").trim().toLowerCase() ?? "select");
-		const primary = selected?.input ? "save" : selected?.choice ? "change" : (selected?.hint ?? fallback);
+				? selected?.kind === "run"
+					? this.msg(CatalogMessageId.workflowHintInspectRun)
+					: this.msg(CatalogMessageId.workflowHintEditAgent)
+				: (selected?.label.replace(/[…›]/g, "").trim().toLowerCase() ??
+					this.msg(CatalogMessageId.workflowStageChooseModel));
+		const primary = selected?.input
+			? this.msg(CatalogMessageId.settingsHintSave)
+			: selected?.choice
+				? this.msg(CatalogMessageId.paletteActionChange)
+				: (selected?.hint ?? fallback);
 		const hints: PaletteKeyHint[] = [
 			{ key: confirm, label: primary },
-			{ key: move, label: "move" },
+			{ key: move, label: this.msg(CatalogMessageId.paletteActionMove) },
 		];
-		if (selected?.choice) hints.push({ key: "←→", label: "change" });
-		if (this.mode === "browse" && selected?.label === "Subagents") hints.push({ key: "Space", label: "toggle" });
-		if (this.mode === "browse") hints.push({ key: "Tab", label: "section" });
-		hints.push({ key: cancel, label: this.mode === "browse" ? "close" : "cancel" });
+		if (selected?.choice) hints.push({ key: "←→", label: this.msg(CatalogMessageId.paletteActionChange) });
+		if (this.mode === "browse" && selected?.id === "subagents")
+			hints.push({ key: "Space", label: this.msg(CatalogMessageId.paletteActionToggle) });
+		if (this.mode === "browse") hints.push({ key: "Tab", label: this.msg(CatalogMessageId.paletteActionSection) });
+		hints.push({
+			key: cancel,
+			label: this.msg(
+				this.mode === "browse" ? CatalogMessageId.paletteActionClose : CatalogMessageId.paletteActionCancel,
+			),
+		});
 		return hints;
 	}
 	render(width: number): string[] {
-		if (width < 12) return [fitTerminalText("Workflow", width)];
+		const view = this.msg(CatalogMessageId.paletteTabWorkflow);
+		const height = paletteHeightBudget(Number(this.context.tui.terminal?.rows ?? 24));
+		if (width < 12 || height < 4) return [fitTerminalText(view, Math.max(1, width))];
 		const inner = paletteInnerWidth(width);
 		const { theme, styles } = this.context;
 		const style = (value: string) => styles.apply("palette.border", value);
@@ -830,30 +1098,32 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 		const row = (value = "") => renderTerminalFrameRow(value, width, frame);
 		const heading = (label: string, meta = "") => row(renderPaletteHeading(label, inner, theme, styles, meta));
 		// The text editor serves two fields, so its title names the one in hand.
-		const stage =
-			this.mode === "text"
-				? this.textReturn === "task"
-					? " · Edit assignment"
-					: " · Edit instructions"
-				: MODE_TITLES[this.mode];
-		const title = `${this.wordmark} ${theme.bold(styles.apply("palette.title", `· Workflow${stage}`))}${
-			this.busy ? ` ${styles.apply("palette.count", "· Busy")}` : ""
+		const stage = this.stageSuffix();
+		const title = `${this.wordmark} ${theme.bold(styles.apply("palette.title", this.msg(CatalogMessageId.paletteViewTitle, { view, stage })))}${
+			this.busy ? ` ${styles.apply("palette.count", this.msg(CatalogMessageId.workflowTitleBusy))}` : ""
 		}`;
 		const lines = [renderTerminalFrameTitle(title, width, frame)];
 		if (this.mode === "browse") {
-			lines.push(row(renderPaletteTabs("workflow", theme, styles)));
+			lines.push(row(renderPaletteTabs("workflow", theme, styles, this.catalog)));
 			lines.push(renderPaletteDivider(width, styles));
 		}
 		const headerLines = lines.length;
-		const available = Math.max(3, Math.floor((this.context.tui.terminal.rows || 24) * 0.82) - 9);
-		this.rowsVisible = available;
+		let selectedLine = 0;
+		const rowLines: number[] = [];
 		try {
 			if (this.mode === "text") {
-				lines.push(heading(this.textReturn === "task" ? "Assignment" : "Instructions"));
+				lines.push(
+					heading(
+						this.textReturn === "task"
+							? this.msg(CatalogMessageId.workflowRowAssignment)
+							: this.msg(CatalogMessageId.workflowRowInstructions),
+					),
+				);
 				lines.push(...required(this.editor).render(inner).map(row));
-				lines.push(row(styles.apply("palette.hint", "Changes are saved only with Save in the form.")));
+				selectedLine = Math.max(0, lines.findIndex((line) => line.includes(CURSOR_MARKER)) - headerLines);
+				lines.push(row(styles.apply("palette.hint", this.msg(CatalogMessageId.workflowHintSaveInForm))));
 			} else if (this.mode === "confirm") {
-				lines.push(heading("Confirm"));
+				lines.push(heading(this.msg(CatalogMessageId.workflowStageConfirm)));
 				lines.push(
 					...wrapTextWithAnsi(sanitizeTerminalText(required(this.confirmation).label), inner)
 						.map((line) => styles.apply("palette.message.error", line))
@@ -882,19 +1152,19 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 				this.outputNext = output.nextOffset;
 				lines.push(
 					heading(
-						"Output",
+						this.msg(CatalogMessageId.workflowStageOutput),
 						`${Math.min(this.outputLine + 1, this.outputLines.length)}/${this.outputLines.length}${
-							this.outputNext === null ? "" : " · more"
+							this.outputNext === null ? "" : ` · ${this.msg(CatalogMessageId.workflowHeadingMetaMore)}`
 						}`,
 					),
 				);
-				lines.push(...this.outputLines.slice(this.outputLine, this.outputLine + available).map(row));
+				lines.push(...this.outputLines.map(row));
 			} else {
 				if (this.mode === "models") {
 					const marker = styles.apply("palette.marker", "→");
 					lines.push(
 						row(
-							`${marker} ${styles.apply("palette.label", padTerminalText("Search", 8))} ${
+							`${marker} ${styles.apply("palette.label", padTerminalText(catalogText(this.catalog, "jouzu.cli.modelPicker.searchLabel"), 8))} ${
 								this.modelSearch.render(Math.max(1, inner - 11)).join("") ?? ""
 							}`,
 						),
@@ -903,10 +1173,10 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 				if (this.mode === "run") {
 					const run = this.run();
 					const tokens = run.usage.input + run.usage.output + run.usage.cacheRead + run.usage.cacheWrite;
-					const detail = (label: string, value: string) =>
+					const detail = (label: CatalogMessageRef, value: string) =>
 						row(
 							renderPaletteField({
-								label,
+								label: catalogMessageText(this.catalog, label),
 								value,
 								labelWidth: 10,
 								innerWidth: inner,
@@ -915,31 +1185,47 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 								styles,
 							}),
 						);
-					lines.push(heading("Run", sanitizeTerminalText(run.status)));
-					lines.push(detail("Agent", sanitizeTerminalText(run.role.id)));
-					lines.push(detail("Model", agentModelDisplay(run.model).label));
-					lines.push(detail("Thinking", run.thinkingLevel ?? run.role.thinking));
-					lines.push(detail("Workspace", sanitizeTerminalText(run.cwd)));
-					if (run.context)
-						lines.push(
-							detail("Context", `${run.context.mode} · parent lookup ${run.context.parentLookup ? "on" : "off"}`),
-						);
-					lines.push(detail("Model ID", `${run.model.provider}/${run.model.id}`));
+					lines.push(heading(this.msg(CatalogMessageId.workflowStageRun), sanitizeTerminalText(run.status)));
+					lines.push(detail(catalogMessage(CatalogMessageId.workflowFieldAgent), sanitizeTerminalText(run.role.id)));
+					lines.push(detail(catalogMessage(CatalogMessageId.workflowFieldModel), agentModelDisplay(run.model).label));
+					const thinking = run.thinkingLevel ?? run.role.thinking;
 					lines.push(
 						detail(
-							"Usage",
-							`${compactNumber(tokens)} tokens · ${run.usage.cost === null ? "cost unknown" : `$${run.usage.cost.toFixed(4)}`}`,
+							catalogMessage(CatalogMessageId.workflowRowThinking),
+							thinking === "same" ? catalogText(this.catalog, "jouzu.cli.workflow.sameAsMain") : thinking,
 						),
 					);
-					if (run.result) lines.push(detail("Result", sanitizeTerminalText(run.result)));
+					lines.push(detail(catalogMessage(CatalogMessageId.workflowFieldWorkspace), sanitizeTerminalText(run.cwd)));
+					if (run.context)
+						lines.push(
+							detail(
+								catalogMessage(CatalogMessageId.workflowFieldContext),
+								catalogText(
+									this.catalog,
+									run.context.parentLookup
+										? CatalogMessageId.workflowFieldContextLookupOn
+										: CatalogMessageId.workflowFieldContextLookupOff,
+									{ mode: run.context.mode },
+								),
+							),
+						);
+					lines.push(
+						detail(catalogMessage(CatalogMessageId.workflowFieldModelId), `${run.model.provider}/${run.model.id}`),
+					);
+					lines.push(
+						detail(
+							catalogMessage(CatalogMessageId.workflowFieldUsage),
+							`${compactNumber(tokens, this.catalog)} tokens · ${run.usage.cost === null ? this.msg(CatalogMessageId.workflowValueCostUnknown) : `$${run.usage.cost.toFixed(4)}`}`,
+						),
+					);
+					if (run.result)
+						lines.push(detail(catalogMessage(CatalogMessageId.workflowFieldResult), sanitizeTerminalText(run.result)));
 				}
 				const rows = this.rows();
 				this.selected = Math.max(0, Math.min(this.selected, rows.length - 1));
 				const labelWidth = labelColumnWidth(rows);
 				let bodyStarted = lines.length > headerLines;
-				const budget = Math.max(3, available - rows.filter((item) => item.heading).length);
-				const start = Math.max(0, this.selected - budget + 1);
-				for (let index = start; index < Math.min(rows.length, start + budget); index++) {
+				for (let index = 0; index < rows.length; index++) {
 					const item = rows[index];
 					if (item.heading) {
 						if (bodyStarted) lines.push(row());
@@ -947,6 +1233,8 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 					}
 					bodyStarted = true;
 					const selected = index === this.selected;
+					rowLines.push(lines.length - headerLines);
+					if (selected) selectedLine = lines.length - headerLines;
 					const aligned = item.value !== undefined || item.input !== undefined;
 					let value = item.value === undefined ? "" : sanitizeTerminalText(item.value);
 					if (item.input) {
@@ -972,30 +1260,66 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 						),
 					);
 				}
-				if (!rows.length || (this.mode === "browse" && this.section === "runs" && rows.length === 2))
+				if (!rows.length)
 					lines.push(
 						row(
 							styles.apply(
 								"palette.empty",
-								this.mode === "models" ? "No matching models. Edit the search." : "No child runs in this session.",
+								this.mode === "models"
+									? this.msg(CatalogMessageId.workflowEmptyNoMatchingModels)
+									: this.msg(CatalogMessageId.workflowEmptyNoChildRuns),
 							),
 						),
 					);
+				else if (this.mode === "browse" && this.listedRuns().length === 0) {
+					// Keep an empty Runs heading below the definitions, so the pane always
+					// shows where live sessions appear without hiding role configuration.
+					if (bodyStarted) lines.push(row());
+					lines.push(
+						heading(
+							this.msg(CatalogMessageId.workflowLabelRuns),
+							this.msg(CatalogMessageId.workflowHeadingMetaRuns, { active: 0, count: "0" }),
+						),
+					);
+					lines.push(row(styles.apply("palette.empty", this.msg(CatalogMessageId.workflowEmptyNoChildRuns))));
+				}
 			}
 		} catch (error) {
-			this.message = sanitizeTerminalText(error instanceof Error ? error.message : "Could not load Workflow.");
+			this.message = sanitizeTerminalText(this.errorText(error, CatalogMessageId.workflowMessageCouldNotLoad));
 			this.messageLevel = "error";
 		}
-		if (this.message) {
-			const role = this.messageLevel === "error" ? "palette.message.error" : "palette.message.info";
-			lines.push(row());
-			lines.push(
-				...wrapTextWithAnsi(this.message, inner)
-					.slice(0, 3)
-					.map((line) => row(styles.apply(role, line))),
-			);
+		const body = lines.splice(headerLines);
+		const keyBar = renderPaletteKeyBar(this.hints(), inner, theme, styles, Math.max(1, height - 4));
+		while (lines.length > 1 && lines.length + keyBar.length + 2 > height) lines.pop();
+		const messageRole = this.messageLevel === "error" ? "palette.message.error" : "palette.message.info";
+		if (this.message)
+			body.push(...wrapTextWithAnsi(this.message, inner).map((text) => row(styles.apply(messageRole, text))));
+		const available = Math.max(1, height - lines.length - keyBar.length - 1);
+		let bodyRoom = available;
+		let showIndicator = false;
+		if (this.mode !== "output" && body.length > bodyRoom && available >= 2) {
+			// Reserve one visible position line rather than silently clipping the document.
+			bodyRoom = available - 1;
+			showIndicator = true;
 		}
-		lines.push(...renderPaletteKeyBar(this.hints(), inner, theme, styles).map(row));
+		this.viewportRoom = bodyRoom;
+		this.viewportTotal = body.length;
+		if (this.mode === "output") {
+			this.rowsVisible = Math.max(1, bodyRoom - 1);
+			this.outputLine = Math.max(0, Math.min(this.outputLine, body.length - 2));
+			if (bodyRoom > 1) lines.push(body[0]);
+			lines.push(...body.slice(this.outputLine + 1, this.outputLine + 1 + this.rowsVisible));
+		} else {
+			const start = this.viewportStart(body.length, bodyRoom, selectedLine);
+			this.scrollOffset = start;
+			this.rowsVisible = Math.max(1, rowLines.filter((index) => index >= start && index < start + bodyRoom).length);
+			lines.push(...body.slice(start, start + bodyRoom));
+			if (showIndicator) {
+				const end = Math.min(start + bodyRoom, body.length);
+				lines.push(row(styles.apply("palette.hint", this.scrollIndicator(start, end, body.length, inner))));
+			}
+		}
+		lines.push(...keyBar.map(row));
 		lines.push(renderTerminalFrameBorder(width, { ...frame, left: "╰", right: "╯" }));
 		return lines.map((line) => fitTerminalText(line, width));
 	}

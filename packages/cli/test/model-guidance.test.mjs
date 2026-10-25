@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { runPromptHook } from "../../../scripts/fixtures/prompt-hook.mjs";
 import { buildModelGuidance } from "../dist/model-guidance.js";
 import { createJouzuPresentationExtension } from "../dist/presentation.js";
 import { childResourceLoader } from "../dist/subagents/worker.js";
@@ -23,7 +24,7 @@ function assertRecoveryGuidance(prompt) {
 	for (const clause of [
 		"diagnosis and failure reports are intermediate results, not completion",
 		"Do not weaken checks, bypass failures, or silently reduce the requested scope",
-		"If the user requested review or diagnosis only, respect that boundary",
+		"If the user explicitly requests diagnosis only, review only, or otherwise limits changes, respect that boundary",
 		"Keep the original deliverables active while resolving prerequisites",
 		"apply that instruction in the same turn",
 		"Preserve running jobs and pending work across follow-up messages",
@@ -41,9 +42,9 @@ function assertRecoveryGuidance(prompt) {
 
 test("Astra guidance follows the selected model on every turn without accumulating", async () => {
 	const before = hook();
-	const event = { systemPrompt: base, systemPromptOptions: { selectedTools: ["read"] } };
+	const turn = (ctx) => runPromptHook(before, { systemPrompt: base, options: { selectedTools: ["read"] }, ctx });
 	const astra = { model: { id: "gpt-6-astra", provider: "configured-provider" } };
-	const first = await before(event, astra);
+	const first = turn(astra);
 	assert.match(first.systemPrompt, /carry authorized work through implementation/);
 	assert.match(
 		first.systemPrompt,
@@ -66,17 +67,27 @@ test("Astra guidance follows the selected model on every turn without accumulati
 	assert.match(first.systemPrompt, /use them selectively for bounded, coherent work packages/);
 	assert.match(first.systemPrompt, /A task list is an execution aid, not proof of completion/);
 	assert.doesNotMatch(first.systemPrompt, /Use `subagent`/);
-	const other = await before(event, { model: { id: "gpt-5.6-sol" } });
+	const other = turn({ model: { id: "gpt-5.6-sol" } });
 	assert.doesNotMatch(other.systemPrompt, /carry authorized work through implementation/);
-	assert.deepEqual(await before(event, astra), first);
-	assert.equal(await before({ ...event, systemPrompt: first.systemPrompt }, astra), undefined);
+	// Each run starts from fresh options, so guidance is set once per turn and never accumulates.
+	assert.deepEqual(turn(astra).sections, first.sections);
+	assert.equal(first.systemPrompt.split("carry authorized work through implementation").length, 2);
 });
 
 test("delegation guidance describes only the active Jouzu tool", () => {
-	assert.match(buildModelGuidance("gpt-6-astra", ["subagent"]), /Discover configured roles first/);
+	assert.match(buildModelGuidance("gpt-6-astra", ["subagent"]), /Follow its role-discovery and assignment contract/);
 	assert.doesNotMatch(buildModelGuidance("gpt-6-astra", ["read"]), /subagent|configured roles/);
 	for (const id of [undefined, "gpt-6-astra-preview", "custom-gpt-6-astra", "gpt-5.6-sol"])
 		assert.equal(buildModelGuidance(id, ["subagent"]), "");
+});
+
+test("Astra guidance keeps one scope boundary and evidence rule after deduplication", () => {
+	const guidance = buildModelGuidance("gpt-6-astra", ["subagent"]);
+	assert.equal(guidance.match(/respect that boundary/g)?.length, 1);
+	assert.equal(guidance.match(/do not mark work complete or report success without the required evidence/g)?.length, 1);
+	assert.match(guidance, /Use task dependencies, user-input holds, pauses, or agent_wait for blocked work/);
+	assert.match(guidance, /verify child evidence and the integrated result before reporting completion/);
+	assert.ok(guidance.length < 5650, "keep this wording-only pass below the prior 5981-character guidance");
 });
 
 test("child sessions receive the same model guidance as main sessions", async (t) => {
@@ -100,15 +111,13 @@ test("child sessions receive the same model guidance as main sessions", async (t
 	assert.doesNotMatch(other.join("\n"), /carry authorized work through implementation/);
 });
 
-test("explicit custom system prompts remain user-owned", async () => {
-	assert.equal(
-		await hook()(
-			{
-				systemPrompt: "Review only.",
-				systemPromptOptions: { customPrompt: "Review only.", selectedTools: ["subagent"] },
-			},
-			{ model: { id: "gpt-6-astra" } },
-		),
-		undefined,
-	);
+test("explicit custom system prompts remain user-owned", () => {
+	const run = runPromptHook(hook(), {
+		systemPrompt: "Review only.",
+		options: { customPrompt: "Review only.", selectedTools: ["subagent"] },
+		ctx: { model: { id: "gpt-6-astra" } },
+	});
+	assert.equal(run.result, undefined);
+	assert.deepEqual(run.sections, {});
+	assert.equal(run.systemPrompt, "Review only.");
 });

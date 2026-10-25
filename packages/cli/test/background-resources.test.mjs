@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { existsSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { mkdir, mkdtemp, open, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
@@ -46,6 +46,11 @@ await build({
 });
 const api = await import(pathToFileURL(output).href);
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+// Bounded observation: 100 samples 10 ms apart, then the same predicate as a final assertion.
+const until = async (predicate, label) => {
+	for (let attempt = 0; attempt < 100 && !predicate(); attempt++) await pause(10);
+	assert.equal(predicate(), true, `waiting for ${label}`);
+};
 const deferred = () => {
 	let resolve;
 	const promise = new Promise((done) => {
@@ -350,7 +355,12 @@ test("pathological output retains terminal completion and publication waits for 
 	const emit = async (name, ...args) => {
 		for (const handler of handlers.get(name) ?? []) await handler(...args);
 	};
+	const flushGate = deferred();
+	let releaseChild = () => {};
 	t.after(async () => {
+		// Unblock the fixture child and any gated log flush so shutdown never waits on them.
+		releaseChild();
+		flushGate.resolve();
 		await emit("session_shutdown");
 		if (oldAgent === undefined) delete process.env.PI_CODING_AGENT_DIR;
 		else process.env.PI_CODING_AGENT_DIR = oldAgent;
@@ -373,32 +383,60 @@ test("pathological output retains terminal completion and publication waits for 
 		ui: { notify: (message) => notices.push(message), setWidget() {} },
 	};
 	await emit("session_start", {}, ctx);
-	const flushGate = deferred();
 	let flushReached = false;
 	const originalFlush = api.taskLogs.flush.bind(api.taskLogs);
 	t.mock.method(api.taskLogs, "flush", (file) => {
 		flushReached = true;
 		return Promise.resolve(originalFlush(file)).then(() => flushGate.promise);
 	});
-	const script =
-		"process.stdout.write('a'.repeat(10000)+'!'); setTimeout(()=>process.stdout.write('a'.repeat(10000)+'!'),120); setTimeout(()=>process.exit(0),300)";
+	// The child writes its first chunk, then waits for the test's second write and for its
+	// release, so no assertion depends on how long the child or a settle timer lives.
+	const chunk = `${"a".repeat(10000)}!`;
+	const secondWrite = join(runDirectory, "second-write");
+	const releaseFile = join(runDirectory, "release-child");
+	const script = [
+		"const { existsSync } = require('node:fs');",
+		"const chunk = 'a'.repeat(10000) + '!';",
+		`const second = ${JSON.stringify(secondWrite)}, release = ${JSON.stringify(releaseFile)}; let wroteSecond = false;`,
+		"process.stdout.write(chunk);",
+		"const timer = setInterval(() => {",
+		"if (!wroteSecond && existsSync(second)) { wroteSecond = true; process.stdout.write(chunk); }",
+		"if (existsSync(release)) { clearInterval(timer); process.exit(0); }",
+		"}, 5);",
+	].join(" ");
 	const launched = await tools.get("bg_task").execute("launch", {
 		action: "spawn",
 		command: `${api.shellQuote(process.execPath)} -e ${api.shellQuote(script)}`,
 		notifyOnOutput: true,
 		notifyPattern: "/(a+)+$/",
 	});
-	for (let attempt = 0; attempt < 100 && !flushReached; attempt++) await pause(10);
-	assert.equal(flushReached, true);
+	releaseChild = () => writeFileSync(releaseFile, "");
+	const warnings = () => notices.filter((message) => /output matching is disabled/.test(message)).length;
+	const inventory = () => api.backgroundFlowSource.inventory("resource-integration")[0];
+	await until(() => warnings() === 1, "the disabled-matching warning");
+	assert.equal(
+		inventory().outputBytes,
+		Buffer.byteLength(chunk),
+		"the first chunk reached the task before the second write",
+	);
+	await writeFile(secondWrite, "");
+	await until(() => inventory().outputBytes === 2 * Buffer.byteLength(chunk), "the second chunk");
+	await until(
+		() => inventory().wakeEvents?.some((event) => event.droppedReason === "notify-pattern-no-match"),
+		"the disabled matcher to drop the second output",
+	);
+	assert.equal(warnings(), 1, "the disabled matcher warns once");
+	releaseChild();
+	await until(() => flushReached, "the child exit to reach the gated log flush");
 	assert.equal(messages.length, 0, "no completion before the delayed flush");
-	assert.equal(api.backgroundFlowSource.inventory("resource-integration")[0].status, "running");
-	assert.equal(notices.filter((message) => /output matching is disabled/.test(message)).length, 1);
+	assert.equal(inventory().status, "running");
+	assert.equal(warnings(), 1);
 	flushGate.resolve();
-	for (let attempt = 0; attempt < 100 && messages.length === 0; attempt++) await pause(10);
+	await until(() => messages.length === 1, "the completion message");
 	assert.equal(messages.length, 1);
-	assert.equal(api.backgroundFlowSource.inventory("resource-integration")[0].status, "completed");
+	assert.equal(inventory().status, "completed");
 	const log = await readFile(launched.details.task.logFile, "utf8");
-	assert.equal(log, `${"a".repeat(10000)}!`.repeat(2));
+	assert.equal(log, chunk.repeat(2));
 	const inspected = await tools.get("bg_task").execute("inspect", { action: "log", id: launched.details.task.id });
 	assert.match(inspected.content[0].text, /completed/);
 	assert.match(inspected.content[0].text, /truncated/);
@@ -411,7 +449,7 @@ test("pathological output retains terminal completion and publication waits for 
 		action: "spawn",
 		command: `${api.shellQuote(process.execPath)} -e "process.stdout.write('partial')"`,
 	});
-	for (let attempt = 0; attempt < 100 && messages.length < 2; attempt++) await pause(10);
+	await until(() => messages.length === 2, "the disk-failure completion");
 	assert.equal(messages.length, 2);
 	assert.match(messages[1].content, /log may be incomplete/i);
 	assert.match(messages[1].details.tasks[0].logWarning, /log may be incomplete/i);
@@ -425,7 +463,7 @@ test("pathological output retains terminal completion and publication waits for 
 		action: "spawn",
 		command: `${api.shellQuote(process.execPath)} -e "process.stdout.write('partial')"`,
 	});
-	for (let attempt = 0; attempt < 100 && results.snapshot().length === 0; attempt++) await pause(10);
+	await until(() => results.snapshot().length > 0, "the flow result");
 	assert.match(results.snapshot()[0].warnings[0], /log may be incomplete/i);
 	lease.close();
 	t.mock.restoreAll();
@@ -449,7 +487,7 @@ test("pathological output retains terminal completion and publication waits for 
 	ctx.sessionManager.getSessionId = () => "resource-restored";
 	snapshot.sessionId = "resource-restored";
 	await emit("session_start", {}, ctx);
-	for (let attempt = 0; attempt < 100 && messages.length < 3; attempt++) await pause(10);
+	await until(() => messages.length === 3, "the restored-task completion");
 	assert.equal(messages.length, 3);
 	assert.equal(messages[2].details.tasks[0].id, "bg-restored");
 	assert.equal(messages[2].details.tasks[0].startedAt, snapshot.startedAt);

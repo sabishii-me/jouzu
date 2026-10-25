@@ -32,9 +32,37 @@ Review changes to:
 - editor input routing, autocomplete, keybindings, and terminal protocols;
 - custom editors, overlays, themes, width calculation, IME behavior, and no-color rendering;
 - extension lifecycle, provider registration, commands, tools, events, and project trust;
+- system prompt sections, section diffs and their update framing, and the `preamble` section override that `pi-content-policy` patches into `dist/core/system-prompt.js` (retire it when Pi accepts a preamble section);
 - session files, compaction, branch navigation, usage, and resume behavior;
 - provider catalogs, authentication, request serialization, routing, usage, and pricing; and
 - updater, package manager, Windows, RPC, JSON, and print-mode behavior.
+
+### Localization re-inspection
+
+Jouzu translates catalog-backed text in its own interface. Pi-owned screens, third-party extension text, and service-owned account pages are outside that catalog. The Jouzu-built browser adapter uses the Jouzu catalog for tool labels. `packages/cli/src/release-surface-record.ts` records display surfaces and the owner version associated with each row's `recheckOn` value.
+
+A surface needs a re-inspection when its installed owner version no longer matches the recorded pin. Compare:
+
+- the installed `@earendil-works/pi-coding-agent` version with `RELEASE_SURFACE_PI_PROVENANCE.version` and the coding-agent version in `upstream/pi.lock.json`;
+- each third-party bundled extension's installed package version with its `version` in `packages/cli/release-extensions.json` and the `recheckOn` pin on its surface rows. The Jouzu-built `jouzu-camoufox-adapter` ships with this repository and has no separately installed package version to compare, so `packages/cli/test/release-surface-record.test.mjs` skips it; and
+- the service rows, which carry `service@unversioned`: there is no version to compare, so re-inspect them whenever a linked account or sign-in screen changes.
+
+A changed version makes the affected rows stale until they are checked against the installed package. A matching version alone does not prove that the recorded disposition is correct. `packages/cli/test/release-surface-record.test.mjs` checks version agreement; inspect the rendering paths and rerun the affected tests before updating a record.
+
+When the Pi version changes, re-inspect:
+
+- every `pi.*` display entry point and its `localizationHook`: inspect message catalogs, `language` or `locale` settings, and catalog formats rather than carrying forward a `none-known` value without checking;
+- the localization extension points offered to the host and to bundled extensions;
+- IME behavior and no-color rendering, because the record covers text layout, width calculation, and terminal-protocol surfaces; and
+- the extension lifecycle, because the record assumes the pinned version's extension events, commands, tools, and project trust.
+
+When a third-party bundled extension version changes, re-inspect:
+
+- the strings the extension displays, against its `upstream-owned` rows;
+- the tool names it registers, which stay protected values and are not translated; and
+- its status labels, against its `.status` row.
+
+When a service screen changes, re-inspect the supported languages of the account dashboard and sign-in screens. Billing is handled by the service and the CLI has no screen for it, so billing is not a recorded row. Jouzu does not guarantee those screens from its own catalog; the service rows stay `out-of-scope`.
 
 ### Source deviations
 

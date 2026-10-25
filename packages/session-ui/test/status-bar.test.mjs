@@ -11,6 +11,15 @@ import {
 
 const styles = createSessionUiStyles({ fg: (_role, value) => value }, { colorEnabled: false });
 
+// The status bar's own text, resolved once for the active catalog.
+const text = {
+	noModel: "no model",
+	attention: "attention",
+	statusHealth: "! status",
+	statusContextUnknown: "ctx ?",
+	statusDetached: "detached",
+};
+
 function snapshot(overrides = {}) {
 	return {
 		schemaVersion: 1,
@@ -48,7 +57,7 @@ function snapshot(overrides = {}) {
 }
 
 test("renders the useful provider-neutral status facts without cost or quota", () => {
-	const rendered = renderStatusBar(snapshot(), 120, styles);
+	const rendered = renderStatusBar(snapshot(), 120, styles, text);
 	assert.equal(terminalTextWidth(rendered), 120);
 	assert.match(rendered, /日本語 project/);
 	assert.match(rendered, /main \[!\?↑\]/);
@@ -66,6 +75,7 @@ test("maps context pressure and unknown usage to distinct semantic styles", () =
 	]) {
 		const segments = buildStatusBarSegments(
 			snapshot({ context: { status: "known", observedAt: 1, value: { tokens: 1, window: 100, percent } } }),
+			text,
 		);
 		assert.equal(segments.find(({ id }) => id === "context").style, style);
 	}
@@ -77,6 +87,7 @@ test("maps context pressure and unknown usage to distinct semantic styles", () =
 				value: { scope: "active_branch", inputTokens: 1, outputTokens: 2, unknownMessageCount: 1 },
 			},
 		}),
+		text,
 	);
 	assert.deepEqual(
 		partial.find(({ id }) => id === "tokens").fragments.map(({ style }) => style),
@@ -86,14 +97,14 @@ test("maps context pressure and unknown usage to distinct semantic styles", () =
 
 test("degrades by semantic priority and never wraps or exceeds the terminal", () => {
 	for (let width = 1; width <= 120; width += 1) {
-		const rendered = renderStatusBar(snapshot(), width, styles);
+		const rendered = renderStatusBar(snapshot(), width, styles, text);
 		assert.equal(terminalTextWidth(rendered), width, `width ${width}`);
 		assert.equal(rendered.includes("\n"), false);
 	}
-	const medium = renderStatusBar(snapshot(), 40, styles);
+	const medium = renderStatusBar(snapshot(), 40, styles, text);
 	assert.match(medium, /19%/);
 	assert.doesNotMatch(medium, /v24\.16\.0/);
-	const narrow = renderStatusBar(snapshot(), 5, styles);
+	const narrow = renderStatusBar(snapshot(), 5, styles, text);
 	assert.equal(narrow.trim(), "19%");
 });
 
@@ -103,8 +114,8 @@ test("protects health before context and strips controls from external labels", 
 		git: { status: "error", observedAt: 1 },
 		runtime: { status: "unknown", observedAt: 1 },
 	});
-	assert.equal(renderStatusBar(unhealthy, 1, styles), "!");
-	const wide = renderStatusBar(unhealthy, 80, styles);
+	assert.equal(renderStatusBar(unhealthy, 1, styles, text), "!");
+	const wide = renderStatusBar(unhealthy, 80, styles, text);
 	assert.match(wide, /! status/);
 	assert.match(wide, /危険/);
 	assert.doesNotMatch(wide, /\[31m/);
@@ -129,7 +140,7 @@ test("protects health before context and strips controls from external labels", 
 });
 
 test("exposes reusable status segments with deterministic compaction", () => {
-	const segments = buildStatusBarSegments(snapshot());
+	const segments = buildStatusBarSegments(snapshot(), text);
 	assert.deepEqual(
 		segments.map(({ id }) => id),
 		["workspace", "git", "runtime", "context", "tokens"],
@@ -172,7 +183,7 @@ test("exposes reusable status segments with deterministic compaction", () => {
 
 test("keeps the status bar on session context and leaves loop state to the Session Line", () => {
 	for (let width = 1; width <= 120; width++) {
-		const line = renderStatusBar(snapshot(), width, styles);
+		const line = renderStatusBar(snapshot(), width, styles, text);
 		assert.equal(terminalTextWidth(line), width);
 		assert.equal(line.includes("multiloop"), false);
 		assert.equal(line.includes("\n"), false);

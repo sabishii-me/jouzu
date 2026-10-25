@@ -80,3 +80,10 @@ test("pane updates on events without reinstalling and clears on hide/session shu
 	assert.equal(widgets.length, 4);
 	dashboard.dispose();
 });
+
+test("the dashboard overflow suffix resolves from the catalog", async () => {
+	const { resolveCatalog } = await import("../dist/locale-catalog.js");
+	const runs = [run("completed"), run("running"), run("queued"), run("failed")];
+	assert.match(renderSubagentDashboard(runs, 80, 32, theme, resolveCatalog("en").bundle).at(-1), /\+1 more/u);
+	assert.match(renderSubagentDashboard(runs, 80, 32, theme, resolveCatalog("ja").bundle).at(-1), /他に 1 件/u);
+});

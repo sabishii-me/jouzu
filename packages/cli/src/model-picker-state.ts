@@ -67,7 +67,7 @@ export interface ModelPickerState {
 
 export interface ModelPickerStateLoadResult {
 	state: ModelPickerState;
-	warning?: string;
+	/** The corrupt file's new path; the caller renders the warning from its catalog. */
 	quarantinePath?: string;
 }
 
@@ -384,7 +384,6 @@ export function loadModelPickerState(
 		renameSync(path, quarantinePath);
 		return {
 			state: emptyModelPickerState(),
-			warning: `Unreadable model picker state was preserved at ${quarantinePath}`,
 			quarantinePath,
 		};
 	}

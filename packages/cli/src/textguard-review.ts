@@ -1,7 +1,10 @@
 import type { ExtensionContext, ExtensionFactory, KeybindingsManager, Theme } from "@earendil-works/pi-coding-agent";
-import { type Component, type TUI, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { type Component, type TUI, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { CatalogMessageId, catalogText, defaultCatalog } from "./cli-messages.js";
+import { protectedCommand } from "./human-messages.js";
 import { formatEffectiveKeybinding } from "./keybinding-hints.js";
-import { type ScanEvidence, type ScanFinding, UNAVAILABLE_TEXT } from "./textguard.js";
+import type { CatalogBundle } from "./locale-catalog.js";
+import { type ScanEvidence, type ScanFinding, summarizeEvidence, UNAVAILABLE_REASON_MESSAGE_ID } from "./textguard.js";
 import { type ContentReview, type ContentSnapshot, displayLabel, escapeInvisible } from "./textguard-admission.js";
 import type { TextGuardAlert, TextGuardMode } from "./textguard-policy.js";
 import type { TextGuardRuntime } from "./textguard-runtime.js";
@@ -9,18 +12,27 @@ import type { TextGuardRuntime } from "./textguard-runtime.js";
 /** Native scans attach the offending code point; injected evidence may not. */
 type ReviewFinding = ScanFinding & { codepoint?: string };
 
-const ALLOW_SESSION = "Allow for this session";
-const ALLOW_ALWAYS = "Always allow this exact content";
-const DISMISS = "Dismiss report";
-const ENABLE = "Turn scanning back on";
-const BACK = "Back";
+/** Stable identity for a review action, so the decision logic survives translation. */
+type ReviewActionId = "allow-session" | "allow-always" | "dismiss" | "back";
+
+interface ReviewAction {
+	id: ReviewActionId;
+	label: string;
+}
+
+/** The catalog ID for each decision action's label. */
+const ACTION_LABEL_ID: Record<ReviewActionId, CatalogMessageId> = {
+	"allow-session": CatalogMessageId.textguardActionAllowSession,
+	"allow-always": CatalogMessageId.textguardActionAllowAlways,
+	dismiss: CatalogMessageId.textguardActionDismiss,
+	back: CatalogMessageId.textguardActionBack,
+};
 
 /** What each mode does, for a confirmation the user reads once. */
-const MODE_TEXT: Record<TextGuardMode, string> = {
-	guarded:
-		"TextGuard scans again. Flagged web results reach the model labelled as untrusted data; flagged skills stay withheld until you approve them.",
-	strict: "TextGuard now withholds every flagged input until you approve it with /textguard.",
-	off: "TextGuard is off for this session. Content is admitted unscanned until you run /textguard on.",
+const MODE_TEXT_ID: Record<TextGuardMode, CatalogMessageId> = {
+	guarded: CatalogMessageId.textguardModeGuarded,
+	strict: CatalogMessageId.textguardModeStrict,
+	off: CatalogMessageId.textguardModeOff,
 };
 /** What the user may type after /textguard to choose a mode. */
 const MODE_ARGS: Record<string, TextGuardMode | undefined> = {
@@ -31,103 +43,199 @@ const MODE_ARGS: Record<string, TextGuardMode | undefined> = {
 };
 const MODE_LABEL: Record<TextGuardMode, string> = { guarded: "on", strict: "strict", off: "off" };
 /** Shown above the list whenever scanning is not in its default mode. */
-const MODE_BANNER: Record<TextGuardMode, string> = {
-	guarded: "",
-	strict: "strict mode — every flagged input is withheld",
-	off: "scanning off for this session",
+const MODE_BANNER_ID: Record<TextGuardMode, CatalogMessageId | undefined> = {
+	guarded: undefined,
+	strict: CatalogMessageId.textguardBannerStrict,
+	off: CatalogMessageId.textguardBannerOff,
 };
 
-/** A human name and one-sentence explanation for each finding kind the scanner reports. */
-const KIND_TEXT: Record<string, [name: string, explanation: string]> = {
-	bidi_control: [
-		"bidi control character",
-		"This character can reverse the order in which text is displayed, so what you read can differ from what is processed.",
-	],
-	ansi_escape: ["terminal escape sequence", "This sequence can change terminal colors or hide text on screen."],
-	invisible_char: ["invisible character", "This character changes the text without appearing on screen."],
-	combining_abuse: ["stacked combining marks", "Stacked accent characters can disguise what a letter really is."],
-	soft_hyphen: ["soft hyphen", "This invisible character can split words to evade exact matching."],
-	tag_character: ["Unicode tag character", "Tag characters can hide extra text inside ordinary-looking content."],
-	variation_selector: [
-		"variation selector",
-		"This invisible character can change how the character next to it renders.",
-	],
-	split_token: [
-		"split keyword",
-		'A protected keyword such as "system" or "instructions" appears split by separator characters, a common way to hide prompt injection.',
-	],
-	decoded: ["encoded text", "Part of the content was stored in an encoded form and was decoded before scanning."],
-	normalized: ["normalization change", "Part of the content was rewritten during normalization before scanning."],
-	stripped: ["removed characters", "Part of the content was removed during normalization before scanning."],
-};
-
-const SEVERITY_LABEL = {
-	error: "Error (blocks this content)",
-	warn: "Warning",
-	info: "Information",
+/**
+ * The catalog IDs for the alert detail a user reads. The model banner carries
+ * its own fixed English copy in `textguard-policy.ts`, so these messages are
+ * the user-facing half of the split and resolve from the active catalog.
+ */
+const DETAIL_MESSAGE_ID = {
+	unavailable: "jouzu.cli.textguard.detail.unavailable",
+	errors: "jouzu.cli.textguard.detail.errors",
+	errorsWithKinds: "jouzu.cli.textguard.detail.errorsWithKinds",
+	warnings: "jouzu.cli.textguard.detail.warnings",
+	none: "jouzu.cli.textguard.detail.none",
 } as const;
 
+/**
+ * The catalog IDs for the finding kinds the scanner reports. The kind
+ * identifier itself (`bidi_control`, a `yara:` rule, or another scanner token)
+ * is a protected value passed as an argument; these IDs carry the human name
+ * and the one-sentence explanation the review overlay shows.
+ */
+const KIND_MESSAGE_ID: Record<string, [name: string, explanation: string]> = {
+	bidi_control: ["jouzu.cli.textguard.kind.bidiControl", "jouzu.cli.textguard.kind.bidiControl.explanation"],
+	ansi_escape: ["jouzu.cli.textguard.kind.ansiEscape", "jouzu.cli.textguard.kind.ansiEscape.explanation"],
+	invisible_char: ["jouzu.cli.textguard.kind.invisibleChar", "jouzu.cli.textguard.kind.invisibleChar.explanation"],
+	combining_abuse: ["jouzu.cli.textguard.kind.combiningAbuse", "jouzu.cli.textguard.kind.combiningAbuse.explanation"],
+	soft_hyphen: ["jouzu.cli.textguard.kind.softHyphen", "jouzu.cli.textguard.kind.softHyphen.explanation"],
+	tag_character: ["jouzu.cli.textguard.kind.tagCharacter", "jouzu.cli.textguard.kind.tagCharacter.explanation"],
+	variation_selector: [
+		"jouzu.cli.textguard.kind.variationSelector",
+		"jouzu.cli.textguard.kind.variationSelector.explanation",
+	],
+	split_token: ["jouzu.cli.textguard.kind.splitToken", "jouzu.cli.textguard.kind.splitToken.explanation"],
+	decoded: ["jouzu.cli.textguard.kind.decoded", "jouzu.cli.textguard.kind.decoded.explanation"],
+	normalized: ["jouzu.cli.textguard.kind.normalized", "jouzu.cli.textguard.kind.normalized.explanation"],
+	stripped: ["jouzu.cli.textguard.kind.stripped", "jouzu.cli.textguard.kind.stripped.explanation"],
+};
+
+/** The fallback kind name and explanation for a bundled `yara:` rule and for an unknown kind. */
+const BUNDLED_RULE_MESSAGE_ID = [
+	"jouzu.cli.textguard.kind.bundledRule",
+	"jouzu.cli.textguard.kind.bundledRule.explanation",
+] as const;
+const FLAGGED_PATTERN_MESSAGE_ID = [
+	"jouzu.cli.textguard.kind.flaggedPattern",
+	"jouzu.cli.textguard.kind.flaggedPattern.explanation",
+] as const;
+
+/** The catalog IDs for the review body, the finding location, and the simple counts line. */
+const REVIEW_MESSAGE_ID = {
+	source: "jouzu.cli.textguard.review.source",
+	fingerprint: "jouzu.cli.textguard.review.fingerprint",
+	notRetained: "jouzu.cli.textguard.review.notRetained",
+	flaggedHeading: "jouzu.cli.textguard.review.flaggedHeading",
+	riskNotice: "jouzu.cli.textguard.review.riskNotice",
+	findingsTruncated: "jouzu.cli.textguard.review.findingsTruncated",
+	countsLine: "jouzu.cli.textguard.counts.line",
+	locationCharacter: "jouzu.cli.textguard.location.character",
+	locationLine: "jouzu.cli.textguard.location.line",
+} as const;
+
+/** The catalog IDs for the review overlay chrome. */
+const CHROME_MESSAGE_ID = {
+	offTitle: "jouzu.cli.textguard.off.title",
+	offBody: "jouzu.cli.textguard.off.body",
+	hintSelect: "jouzu.cli.textguard.hint.select",
+	hintOpen: "jouzu.cli.textguard.hint.open",
+	hintClose: "jouzu.cli.textguard.hint.close",
+	hintAction: "jouzu.cli.textguard.hint.action",
+	hintScroll: "jouzu.cli.textguard.hint.scroll",
+	hintBack: "jouzu.cli.textguard.hint.back",
+	listHeader: "jouzu.cli.textguard.list.header",
+	listSummary: "jouzu.cli.textguard.list.summary",
+	statusWithheld: "jouzu.cli.textguard.status.withheld",
+	statusDelivered: "jouzu.cli.textguard.status.delivered",
+	statusReport: "jouzu.cli.textguard.status.report",
+	listProgress: "jouzu.cli.textguard.list.progress",
+	listNotices: "jouzu.cli.textguard.list.notices",
+	detailProgress: "jouzu.cli.textguard.detail.progress",
+	commandDescription: "jouzu.cli.textguard.commandDescription",
+} as const;
+
+/** The list column the three status words are padded to, in display columns. */
+const STATUS_WIDTH = 9;
+
+/** The catalog ID for each severity word the verdict line and the finding line use. */
+const SEVERITY_LABEL_ID: Record<ScanFinding["severity"], CatalogMessageId> = {
+	error: CatalogMessageId.textguardSeverityError,
+	warn: CatalogMessageId.textguardSeverityWarn,
+	info: CatalogMessageId.textguardSeverityInfo,
+};
+
 /** Human location for a finding offset, measured in the exact scanned text when it is retained. */
-function location(finding: ReviewFinding, body?: string): string {
+function location(finding: ReviewFinding, catalog: CatalogBundle, body?: string): string {
 	const offset = finding.offset;
 	if (offset === null) return "";
-	if (typeof body !== "string" || offset > body.length) return `character ${offset} of the content, counting from 0`;
+	if (typeof body !== "string" || offset > body.length)
+		return catalogText(catalog, REVIEW_MESSAGE_ID.locationCharacter, { offset });
 	const before = body.slice(0, offset);
 	const line = (before.match(/\n/g) ?? []).length + 1;
 	const column = offset - (before.lastIndexOf("\n") + 1) + 1;
-	return `line ${line}, column ${column}`;
+	return catalogText(catalog, REVIEW_MESSAGE_ID.locationLine, { line, column });
 }
 
-function describeFinding(finding: ReviewFinding, body?: string): string[] {
-	let entry = KIND_TEXT[finding.kind];
-	if (!entry && finding.kind.startsWith("yara:"))
-		entry = [
-			`bundled detection rule (${escapeInvisible(finding.kind.slice(5))}) match`,
-			"A bundled detection rule matched a pattern associated with attacks; the rule does not know whether this content is malicious.",
-		];
-	if (!entry)
-		entry = [`flagged pattern ${displayLabel(finding.kind)}`, "The scanner matched a pattern it considers suspicious."];
-	const [name, explanation] = entry;
-	const where = location(finding, body);
-	return [
-		`${SEVERITY_LABEL[finding.severity]}: ${name}${finding.codepoint ? ` ${finding.codepoint}` : ""}${where ? ` at ${where}` : ""}.`,
-		explanation,
-	];
+function describeFinding(finding: ReviewFinding, catalog: CatalogBundle, body?: string): string[] {
+	const known = KIND_MESSAGE_ID[finding.kind];
+	const bundled = known === undefined && finding.kind.startsWith("yara:");
+	const [nameId, explanationId] = known ?? (bundled ? BUNDLED_RULE_MESSAGE_ID : FLAGGED_PATTERN_MESSAGE_ID);
+	const name = bundled
+		? catalogText(catalog, nameId, { rule: escapeInvisible(finding.kind.slice(5)) })
+		: known
+			? catalogText(catalog, nameId)
+			: catalogText(catalog, nameId, { kind: displayLabel(finding.kind) });
+	const severity = catalogText(catalog, SEVERITY_LABEL_ID[finding.severity]);
+	const codepoint = finding.codepoint ? ` ${finding.codepoint}` : "";
+	const where = location(finding, catalog, body);
+	const line = where
+		? catalogText(catalog, CatalogMessageId.textguardFindingLocatedLine, { severity, name, codepoint, location: where })
+		: catalogText(catalog, CatalogMessageId.textguardFindingLine, { severity, name, codepoint });
+	return [line, catalogText(catalog, explanationId)];
 }
 
-function countsLine(evidence: ScanEvidence, withheld: boolean): string {
+function countsLine(evidence: ScanEvidence, withheld: boolean, catalog: CatalogBundle): string {
 	const counts = evidence.severityCounts ?? { info: 0, warn: 0, error: 0 };
 	const errors = counts.error ?? 0;
 	const warnings = counts.warn ?? 0;
 	const notes = counts.info ?? 0;
-	const nonBlocking = [
-		warnings ? `${warnings} warning${warnings === 1 ? "" : "s"}` : "",
-		notes ? `${notes} informational finding${notes === 1 ? "" : "s"}` : "",
-	].filter(Boolean);
 	const blocking =
 		errors === 0
-			? "No errors"
+			? catalogText(catalog, CatalogMessageId.textguardCountsNoErrors)
 			: withheld
-				? `${errors} error${errors === 1 ? "" : "s"} that block${errors === 1 ? "s" : ""} this content until you approve it`
-				: `${errors} error-level finding${errors === 1 ? "" : "s"}; the content reached the model labelled as untrusted data`;
-	return nonBlocking.length ? `${blocking}; ${nonBlocking.join(" and ")} do not block it.` : `${blocking}.`;
+				? catalogText(catalog, CatalogMessageId.textguardCountsBlocking, { count: errors })
+				: catalogText(catalog, CatalogMessageId.textguardCountsDelivered, { count: errors });
+	const warningClause = warnings
+		? catalogText(catalog, CatalogMessageId.textguardCountsWarning, { count: warnings })
+		: "";
+	const noteClause = notes ? catalogText(catalog, CatalogMessageId.textguardCountsInformational, { count: notes }) : "";
+	if (!warningClause && !noteClause) return catalogText(catalog, REVIEW_MESSAGE_ID.countsLine, { blocking });
+	if (warningClause && noteClause)
+		return catalogText(catalog, CatalogMessageId.textguardCountsNonBlockingBoth, {
+			blocking,
+			warnings: warningClause,
+			notes: noteClause,
+		});
+	if (warningClause)
+		return catalogText(catalog, CatalogMessageId.textguardCountsNonBlockingWarnings, {
+			blocking,
+			warnings: warningClause,
+		});
+	return catalogText(catalog, CatalogMessageId.textguardCountsNonBlockingNotes, { blocking, notes: noteClause });
 }
 
-function evidenceLines(review: ContentReview, withheld: boolean, body?: string): string[] {
+/** One short clause naming what the scan found, for the alert detail a user reads. */
+function describeEvidenceForUser(evidence: ScanEvidence, catalog: CatalogBundle): string {
+	const summary = summarizeEvidence(evidence);
+	if (summary.status === "unavailable")
+		return catalogText(catalog, DETAIL_MESSAGE_ID.unavailable, {
+			reason: catalogText(catalog, UNAVAILABLE_REASON_MESSAGE_ID[summary.reason]),
+		});
+	if (summary.status === "errors")
+		return catalogText(catalog, summary.kinds ? DETAIL_MESSAGE_ID.errorsWithKinds : DETAIL_MESSAGE_ID.errors, {
+			count: summary.count,
+			kinds: summary.kinds,
+		});
+	if (summary.status === "warnings") return catalogText(catalog, DETAIL_MESSAGE_ID.warnings, { count: summary.count });
+	return catalogText(catalog, DETAIL_MESSAGE_ID.none);
+}
+
+function evidenceLines(review: ContentReview, withheld: boolean, catalog: CatalogBundle, body?: string): string[] {
 	const evidence = review.evidence;
 	if (evidence.status === "unavailable") {
-		const reason = UNAVAILABLE_TEXT[evidence.reason ?? "scanner"];
+		const reason = catalogText(catalog, UNAVAILABLE_REASON_MESSAGE_ID[evidence.reason ?? "scanner"]);
 		return [
-			`The check did not finish: ${reason}.`,
-			withheld
-				? "This content stays withheld unless you approve it."
-				: "The content reached the model labelled as untrusted data.",
+			catalogText(catalog, "jouzu.cli.textguard.evidence.unavailable", { reason }),
+			catalogText(
+				catalog,
+				withheld ? CatalogMessageId.textguardEvidenceWithheld : CatalogMessageId.textguardEvidenceDelivered,
+			),
 		];
 	}
-	const lines = [countsLine(evidence, withheld)];
-	for (const finding of evidence.findings) lines.push(...describeFinding(finding, body));
+	const lines = [countsLine(evidence, withheld, catalog)];
+	for (const finding of evidence.findings) lines.push(...describeFinding(finding, catalog, body));
 	if (evidence.findingCount !== undefined && evidence.findingCount > evidence.findings.length)
-		lines.push(`Showing the first ${evidence.findings.length} of ${evidence.findingCount} findings.`);
+		lines.push(
+			catalogText(catalog, REVIEW_MESSAGE_ID.findingsTruncated, {
+				shown: evidence.findings.length,
+				total: evidence.findingCount,
+			}),
+		);
 	return lines;
 }
 
@@ -144,22 +252,25 @@ function displayContent(text: string): string {
  * fingerprint, findings with explanations and locations, and the escaped
  * content when retained. The review component wraps these at render width.
  */
-export function reviewLines(review: ContentReview, snapshot?: ContentSnapshot, withheld = true): string[] {
+export function reviewLines(
+	review: ContentReview,
+	snapshot?: ContentSnapshot,
+	withheld = true,
+	catalog: CatalogBundle = defaultCatalog(),
+): string[] {
 	const body = snapshot?.body;
 	const lines = [
-		`Source: ${snapshot ? displayLabel(snapshot.source) : review.displaySource}`,
-		`Content fingerprint (SHA-256): ${review.contentDigest}`,
+		catalogText(catalog, REVIEW_MESSAGE_ID.source, {
+			source: snapshot ? displayLabel(snapshot.source) : review.displaySource,
+		}),
+		catalogText(catalog, REVIEW_MESSAGE_ID.fingerprint, { digest: review.contentDigest }),
 		"",
-		...evidenceLines(review, withheld, body),
+		...evidenceLines(review, withheld, catalog, body),
 		"",
 	];
-	if (body === undefined) lines.push("The flagged content itself is not retained for viewing here.");
-	else
-		lines.push(
-			"Flagged content (controls and invisible characters shown as escapes):",
-			...displayContent(body).split("\n"),
-		);
-	lines.push("", "Scans reduce risk but cannot prove content is safe. You decide whether to allow it.");
+	if (body === undefined) lines.push(catalogText(catalog, REVIEW_MESSAGE_ID.notRetained));
+	else lines.push(catalogText(catalog, REVIEW_MESSAGE_ID.flaggedHeading), ...displayContent(body).split("\n"));
+	lines.push("", catalogText(catalog, REVIEW_MESSAGE_ID.riskNotice));
 	return lines;
 }
 
@@ -190,6 +301,8 @@ export interface ReviewComponentDeps {
 	mode?: TextGuardMode;
 	/** Count of items in the other view, named in the footer so neither list hides the other. */
 	otherView?: { count: number; hint: string };
+	/** The resolved catalog the review view renders its human text from. */
+	catalog: CatalogBundle;
 }
 
 /**
@@ -200,6 +313,7 @@ export interface ReviewComponentDeps {
  */
 export function createReviewComponent(deps: ReviewComponentDeps): Component {
 	const { theme, keybindings } = deps;
+	const catalog = deps.catalog;
 	const items = [...deps.items];
 	const mode = deps.mode ?? "guarded";
 	const outcome: ReviewOutcome = {};
@@ -214,8 +328,15 @@ export function createReviewComponent(deps: ReviewComponentDeps): Component {
 
 	const hint = (action: Parameters<typeof formatEffectiveKeybinding>[1]) =>
 		formatEffectiveKeybinding(keybindings, action);
-	const actions = (item: ReviewItem): string[] =>
-		item.withheld ? [ALLOW_SESSION, ALLOW_ALWAYS, BACK] : [DISMISS, BACK];
+	const actionIds = (item: ReviewItem): ReviewActionId[] =>
+		item.withheld ? ["allow-session", "allow-always", "back"] : ["dismiss", "back"];
+	const actions = (item: ReviewItem): ReviewAction[] =>
+		actionIds(item).map((id) => ({ id, label: catalogText(catalog, ACTION_LABEL_ID[id]) }));
+	/** Join the resolved key-hint fragments with the middle-dot separator the footer uses. */
+	const hintLine = (parts: ReadonlyArray<readonly [id: string, keys: string]>): string =>
+		parts.map(([id, keys]) => catalogText(catalog, id, { keys })).join(" · ");
+	/** Pad a status word to the fixed list column so the source labels line up. */
+	const padStatus = (text: string): string => text + " ".repeat(Math.max(0, STATUS_WIDTH - visibleWidth(text)));
 
 	const wrapDetail = (width: number): string[] => {
 		if (wrapCache?.width === width) return wrapCache.lines;
@@ -227,7 +348,7 @@ export function createReviewComponent(deps: ReviewComponentDeps): Component {
 	const enterDetail = () => {
 		const item = items[selected];
 		if (!item) return;
-		detailLines = reviewLines(item.review, deps.snapshotFor(item.review.id), item.withheld);
+		detailLines = reviewLines(item.review, deps.snapshotFor(item.review.id), item.withheld, catalog);
 		wrapCache = undefined;
 		// Default to denial: the cursor starts on the non-approving action.
 		const itemActions = actions(item);
@@ -240,12 +361,12 @@ export function createReviewComponent(deps: ReviewComponentDeps): Component {
 		const item = items[selected];
 		if (!item) return;
 		const action = actions(item)[actionIndex];
-		if (action === ALLOW_SESSION || action === ALLOW_ALWAYS) {
-			outcome.approval = { id: item.review.id, persist: action === ALLOW_ALWAYS };
+		if (action.id === "allow-session" || action.id === "allow-always") {
+			outcome.approval = { id: item.review.id, persist: action.id === "allow-always" };
 			deps.done(outcome);
 			return;
 		}
-		if (action === DISMISS) {
+		if (action.id === "dismiss") {
 			deps.dismiss(item.review.id);
 			items.splice(selected, 1);
 			if (items.length === 0) {
@@ -259,40 +380,53 @@ export function createReviewComponent(deps: ReviewComponentDeps): Component {
 	};
 
 	const renderOff = (width: number): string[] => [
-		truncateToWidth(theme.bold(theme.fg("accent", "TextGuard — scanning off for this session")), width, ""),
+		truncateToWidth(theme.bold(theme.fg("accent", catalogText(catalog, CHROME_MESSAGE_ID.offTitle))), width, ""),
 		"",
-		...wrapTextWithAnsi(
-			theme.fg("dim", "Content is admitted unscanned. Skills and web results are not checked."),
+		...wrapTextWithAnsi(theme.fg("dim", catalogText(catalog, CHROME_MESSAGE_ID.offBody)), width),
+		"",
+		truncateToWidth(
+			theme.fg("accent", `> ${catalogText(catalog, CatalogMessageId.textguardActionEnable)}`),
 			width,
+			"…",
 		),
-		"",
-		truncateToWidth(theme.fg("accent", `> ${ENABLE}`), width, "…"),
 		"",
 		theme.fg(
 			"dim",
-			truncateToWidth(`${hint("tui.select.confirm")} select · ${hint("tui.select.cancel")} close`, width, "…"),
+			truncateToWidth(
+				hintLine([
+					[CHROME_MESSAGE_ID.hintSelect, hint("tui.select.confirm")],
+					[CHROME_MESSAGE_ID.hintClose, hint("tui.select.cancel")],
+				]),
+				width,
+				"…",
+			),
 		),
 	];
 
 	const renderList = (width: number, height: number): string[] => {
 		const withheld = items.filter((item) => item.withheld).length;
-		const header = theme.bold(theme.fg("accent", "TextGuard review"));
-		const summary = theme.fg("dim", ` ${withheld} withheld · ${items.length - withheld} delivered`);
+		const header = theme.bold(theme.fg("accent", catalogText(catalog, CHROME_MESSAGE_ID.listHeader)));
+		const summary = theme.fg(
+			"dim",
+			` ${catalogText(catalog, CHROME_MESSAGE_ID.listSummary, { withheld, delivered: items.length - withheld })}`,
+		);
 		const lines = [truncateToWidth(`${header}${summary}`, width, ""), ""];
-		if (mode !== "guarded") lines.push(theme.fg("warning", truncateToWidth(MODE_BANNER[mode], width, "…")), "");
-		const hints =
-			`${hint("tui.select.up")}/${hint("tui.select.down")} select · ` +
-			`${hint("tui.select.confirm")} open · ${hint("tui.select.cancel")} close`;
+		if (mode !== "guarded") {
+			const banner = MODE_BANNER_ID[mode];
+			if (banner) lines.push(theme.fg("warning", truncateToWidth(catalogText(catalog, banner), width, "…")), "");
+		}
+		const hints = hintLine([
+			[CHROME_MESSAGE_ID.hintSelect, `${hint("tui.select.up")}/${hint("tui.select.down")}`],
+			[CHROME_MESSAGE_ID.hintOpen, hint("tui.select.confirm")],
+			[CHROME_MESSAGE_ID.hintClose, hint("tui.select.cancel")],
+		]);
 		const footer: string[] = [];
 		if (deps.otherView && deps.otherView.count > 0)
 			footer.push(...wrapTextWithAnsi(theme.fg("dim", `${deps.otherView.count} ${deps.otherView.hint}`), width));
 		if (deps.notices > 0)
 			footer.push(
 				...wrapTextWithAnsi(
-					theme.fg(
-						"dim",
-						`${deps.notices} check${deps.notices === 1 ? "" : "s"} could not identify the complete content; that content cannot be approved.`,
-					),
+					theme.fg("dim", catalogText(catalog, CHROME_MESSAGE_ID.listNotices, { count: deps.notices })),
 					width,
 				),
 			);
@@ -305,14 +439,20 @@ export function createReviewComponent(deps: ReviewComponentDeps): Component {
 		for (const [index, item] of window.entries()) {
 			const current = listScroll + index === selected;
 			const status = item.withheld
-				? theme.fg("warning", "Withheld ")
+				? theme.fg("warning", padStatus(catalogText(catalog, CHROME_MESSAGE_ID.statusWithheld)))
 				: blocking(item.review)
-					? theme.fg("warning", "Delivered")
-					: theme.fg("dim", "Report   ");
+					? theme.fg("warning", padStatus(catalogText(catalog, CHROME_MESSAGE_ID.statusDelivered)))
+					: theme.fg("dim", padStatus(catalogText(catalog, CHROME_MESSAGE_ID.statusReport)));
 			const label = item.review.displaySource;
 			lines.push(truncateToWidth(`${current ? theme.fg("accent", "> ") : "  "}${status} ${label}`, width, "…"));
 		}
-		if (items.length > budget) lines.push(theme.fg("dim", `  (${selected + 1}/${items.length})`));
+		if (items.length > budget)
+			lines.push(
+				theme.fg(
+					"dim",
+					`  ${catalogText(catalog, CHROME_MESSAGE_ID.listProgress, { current: selected + 1, total: items.length })}`,
+				),
+			);
 		lines.push("", ...footer);
 		return lines;
 	};
@@ -327,19 +467,25 @@ export function createReviewComponent(deps: ReviewComponentDeps): Component {
 			theme.fg(
 				"accent",
 				item.withheld
-					? "TextGuard review — withheld content"
+					? catalogText(catalog, CatalogMessageId.textguardDetailWithheld)
 					: blocking(item.review)
-						? "TextGuard review — delivered with findings"
-						: "TextGuard review — scan report",
+						? catalogText(catalog, CatalogMessageId.textguardDetailDelivered)
+						: catalogText(catalog, CatalogMessageId.textguardDetailReport),
 			),
 		);
 		const itemActions = actions(item);
-		const hints =
-			`${hint("tui.select.up")}/${hint("tui.select.down")} action · ` +
-			`${hint("tui.select.pageUp")}/${hint("tui.select.pageDown")} scroll · ` +
-			`${hint("tui.select.confirm")} select · ${hint("tui.select.cancel")} back`;
+		const hints = hintLine([
+			[CHROME_MESSAGE_ID.hintAction, `${hint("tui.select.up")}/${hint("tui.select.down")}`],
+			[CHROME_MESSAGE_ID.hintScroll, `${hint("tui.select.pageUp")}/${hint("tui.select.pageDown")}`],
+			[CHROME_MESSAGE_ID.hintSelect, hint("tui.select.confirm")],
+			[CHROME_MESSAGE_ID.hintBack, hint("tui.select.cancel")],
+		]);
 		const actionLines = itemActions.map((action, index) =>
-			truncateToWidth(index === actionIndex ? theme.fg("accent", `> ${action}`) : `  ${action}`, width, "…"),
+			truncateToWidth(
+				index === actionIndex ? theme.fg("accent", `> ${action.label}`) : `  ${action.label}`,
+				width,
+				"…",
+			),
 		);
 		const chrome = 1 + 1 + actionLines.length + 1 + 1;
 		const budget = Math.max(1, height - chrome);
@@ -349,7 +495,14 @@ export function createReviewComponent(deps: ReviewComponentDeps): Component {
 		const lines = [truncateToWidth(header, width, ""), ...window];
 		if (body.length > budget)
 			lines.push(
-				theme.fg("dim", `  (lines ${bodyScroll + 1}-${Math.min(bodyScroll + budget, body.length)} of ${body.length})`),
+				theme.fg(
+					"dim",
+					`  ${catalogText(catalog, CHROME_MESSAGE_ID.detailProgress, {
+						start: bodyScroll + 1,
+						end: Math.min(bodyScroll + budget, body.length),
+						total: body.length,
+					})}`,
+				),
 			);
 		lines.push("", ...actionLines, "", theme.fg("dim", truncateToWidth(hints, width, "…")));
 		return lines;
@@ -408,8 +561,14 @@ export function createTextGuardReviewExtension(
 	options: {
 		writeDiagnostic?: (text: string) => void;
 		terminal?: () => { columns: number; rows: number; dumb: boolean };
+		/** The resolved catalog the review view renders its human text from. */
+		catalog?: CatalogBundle;
 	} = {},
 ): ExtensionFactory {
+	const catalog = options.catalog ?? defaultCatalog();
+	/** Render one catalog message for this extension's notifications and view. */
+	const msg = (id: CatalogMessageId, args?: Parameters<typeof catalogText>[2]): string =>
+		catalogText(catalog, id, args);
 	const writeDiagnostic =
 		options.writeDiagnostic ??
 		((text: string) => {
@@ -431,14 +590,27 @@ export function createTextGuardReviewExtension(
 		};
 		const alertText = (alert: TextGuardAlert, interactive: boolean): string => {
 			const source = alert.source.length > 96 ? `${alert.source.slice(0, 96)}…` : alert.source;
+			const detail = describeEvidenceForUser(alert.evidence, catalog);
 			if (alert.kind === "advisory")
-				return `TextGuard flagged ${source}: ${alert.detail}. The content reached the model labelled as untrusted data${interactive ? "; /textguard shows the report" : ""}.`;
+				return msg(CatalogMessageId.textguardAlertFlagged, {
+					source,
+					detail,
+					report: interactive
+						? msg(CatalogMessageId.textguardAlertAdvisoryReport, { command: protectedCommand("/textguard") })
+						: "",
+				});
 			const next = alert.approvable
 				? interactive
-					? " Run /textguard to review and approve it."
-					: " Approve it with /textguard in an interactive session."
-				: " This content cannot be approved; retry the request.";
-			return `TextGuard withheld ${source}: ${alert.detail}.${next}`;
+					? ` ${msg(CatalogMessageId.textguardAlertApproveInteractive, { command: protectedCommand("/textguard") })}`
+					: ` ${msg(CatalogMessageId.textguardAlertApproveNonInteractive, { command: protectedCommand("/textguard") })}`
+				: ` ${msg(CatalogMessageId.textguardAlertNotApprovable)}`;
+			return msg(CatalogMessageId.textguardAlertWithheld, { source, detail, next });
+		};
+		/** The confirmation a mode change shows; the strict and off texts name the command. */
+		const modeText = (mode: TextGuardMode): string => {
+			if (mode === "strict") return msg(MODE_TEXT_ID[mode], { command: protectedCommand("/textguard") });
+			if (mode === "off") return msg(MODE_TEXT_ID[mode], { command: protectedCommand("/textguard on") });
+			return msg(MODE_TEXT_ID[mode]);
 		};
 		// Raised as content is admitted or withheld, so a blocked request is visible when it happens.
 		const showAlert = (alert: TextGuardAlert): boolean => {
@@ -461,57 +633,53 @@ export function createTextGuardReviewExtension(
 			// Only content still waiting for a decision notifies here, and only when no alert just
 			// named it. Non-blocking reports never interrupt the session.
 			if (pending.length && queued.length === 0) {
-				const noun = pending.length === 1 ? "item" : "items";
-				notify(
-					ctx,
-					`TextGuard: ${pending.length} ${noun} waiting for your review. ${ctx.mode === "tui" ? "Use /textguard to review." : "Content stays withheld. Review with /textguard in an interactive session."}`,
-				);
+				const advice =
+					ctx.mode === "tui"
+						? msg(CatalogMessageId.textguardReviewPending, { command: protectedCommand("/textguard") })
+						: msg(CatalogMessageId.textguardReviewPendingNonInteractive, {
+								command: protectedCommand("/textguard"),
+							});
+				notify(ctx, msg(CatalogMessageId.textguardReviewPendingSummary, { count: pending.length, advice }));
 			}
 		};
 		pi.on("session_start", report);
 		pi.on("agent_end", report);
 		pi.registerCommand("textguard", {
-			description: "Review TextGuard findings, or set scanning to on, strict, or off",
+			description: catalogText(catalog, CHROME_MESSAGE_ID.commandDescription),
 			handler: async (args, ctx) => {
 				context = ctx;
 				runtime.setAlertListener(showAlert);
 				const argument = args.trim().toLowerCase();
 				const requested = MODE_ARGS[argument];
 				if (argument && !requested && argument !== "reports") {
-					notify(
-						ctx,
-						"Use /textguard to review findings, /textguard reports for findings that did not block anything, or /textguard on, strict, or off to set scanning.",
-					);
+					notify(ctx, msg(CatalogMessageId.textguardCommandUsage));
 					return;
 				}
 				if (requested) {
 					if (!runtime.setMode(requested)) {
-						notify(ctx, `TextGuard is already set to ${MODE_LABEL[requested]}.`, "info");
+						notify(ctx, msg(CatalogMessageId.textguardModeAlreadySet, { mode: MODE_LABEL[requested] }), "info");
 						return;
 					}
-					notify(ctx, MODE_TEXT[requested], "info");
+					notify(ctx, modeText(requested), "info");
 					try {
 						await ctx.reload();
 					} catch {
-						notify(ctx, "TextGuard changed, but resources could not reload. Run /reload before retrying.");
+						notify(ctx, msg(CatalogMessageId.textguardReloadFailed));
 					}
 					return;
 				}
 				const dimensions = terminal();
 				if (ctx.mode !== "tui" || !ctx.hasUI || dimensions.dumb) {
-					notify(ctx, "TextGuard review requires an interactive terminal. Content stays withheld.");
+					notify(ctx, msg(CatalogMessageId.textguardReviewRequiresTerminal));
 					return;
 				}
 				if (dimensions.columns < 48 || dimensions.rows < 24) {
-					notify(
-						ctx,
-						"TextGuard review requires at least 48 columns and 24 rows. Resize the terminal and retry /textguard.",
-					);
+					notify(ctx, msg(CatalogMessageId.textguardReviewRequiresSize));
 					return;
 				}
 				const policy = runtime.forSession(ctx.sessionManager.getSessionId());
 				if (!policy) {
-					notify(ctx, "TextGuard review is unavailable for this session. Content stays withheld.");
+					notify(ctx, msg(CatalogMessageId.textguardReviewUnavailable));
 					return;
 				}
 				const open = (items: ReviewItem[], otherView: { count: number; hint: string }) =>
@@ -527,6 +695,7 @@ export function createTextGuardReviewExtension(
 								notices: policy.scanNotices().length,
 								mode: policy.currentMode(),
 								otherView,
+								catalog,
 								done,
 							}),
 						{
@@ -536,11 +705,11 @@ export function createTextGuardReviewExtension(
 					);
 				const applyMode = async (mode: TextGuardMode) => {
 					if (!runtime.setMode(mode)) return;
-					notify(ctx, MODE_TEXT[mode], "info");
+					notify(ctx, modeText(mode), "info");
 					try {
 						await ctx.reload();
 					} catch {
-						notify(ctx, "TextGuard changed, but resources could not reload. Run /reload before retrying.");
+						notify(ctx, msg(CatalogMessageId.textguardReloadFailed));
 					}
 				};
 				if (policy.currentMode() === "off") {
@@ -551,8 +720,8 @@ export function createTextGuardReviewExtension(
 				const pending = policy.reviews();
 				const pendingIds = new Set(pending.map((item) => item.id));
 				const reports = policy.scanReports().filter((item) => !pendingIds.has(item.id));
-				// The default view carries only what needs a decision. Findings that blocked nothing
-				// stay one command away instead of burying the items that matter.
+				// The default view carries only what needs a decision. Findings that did not block
+				// content remain available through the reports command.
 				const decisions: ReviewItem[] = [
 					...pending.map((review) => ({ review, withheld: true })),
 					...reports.filter(blocking).map((review) => ({ review, withheld: false })),
@@ -563,21 +732,34 @@ export function createTextGuardReviewExtension(
 				const reportsView = argument === "reports";
 				const items = reportsView ? informational : decisions;
 				const otherView = reportsView
-					? { count: decisions.length, hint: "items need a decision · /textguard" }
-					: { count: informational.length, hint: "findings blocked nothing · /textguard reports" };
+					? {
+							count: decisions.length,
+							hint: catalogText(catalog, CatalogMessageId.textguardOtherViewDecisions, {
+								command: protectedCommand("/textguard"),
+							}),
+						}
+					: {
+							count: informational.length,
+							hint: catalogText(catalog, CatalogMessageId.textguardOtherViewReports, {
+								command: protectedCommand("/textguard reports"),
+							}),
+						};
 				if (!items.length) {
 					if (reportsView) {
-						notify(ctx, "TextGuard has no findings that blocked nothing to show.", "info");
+						notify(ctx, msg(CatalogMessageId.textguardReportsEmpty), "info");
 						return;
 					}
 					const extra = informational.length
-						? ` ${informational.length} finding${informational.length === 1 ? "" : "s"} blocked nothing; see /textguard reports.`
+						? ` ${msg(CatalogMessageId.textguardReviewBlockedNothing, {
+								count: informational.length,
+								command: protectedCommand("/textguard reports"),
+							})}`
 						: "";
 					notify(
 						ctx,
 						policy.scanNotices().length
-							? `TextGuard could not identify the complete content. Retry the request; this content cannot be approved.${extra}`
-							: `TextGuard has nothing waiting for a decision.${extra}`,
+							? msg(CatalogMessageId.textguardReviewIncomplete, { extra })
+							: msg(CatalogMessageId.textguardReviewNothing, { extra }),
 						"info",
 					);
 					return;
@@ -590,24 +772,24 @@ export function createTextGuardReviewExtension(
 				if (!outcome?.approval) return;
 				const finalDimensions = terminal();
 				if (finalDimensions.dumb || finalDimensions.columns < 48 || finalDimensions.rows < 24) {
-					notify(ctx, "Terminal size changed. Content stays withheld; resize and retry /textguard.");
+					notify(ctx, msg(CatalogMessageId.textguardTerminalResized));
 					return;
 				}
 				if (!runtime.approve(policy, outcome.approval.id, outcome.approval.persist)) {
-					notify(ctx, "This TextGuard review expired. Run /textguard again.");
+					notify(ctx, msg(CatalogMessageId.textguardReviewExpired));
 					return;
 				}
 				notify(
 					ctx,
 					outcome.approval.persist
-						? "Content approved. Future sessions admit these exact bytes; any change requires a new review. Resources will reload."
-						: "Content approved for this session. Retry the request after resources reload.",
+						? msg(CatalogMessageId.textguardApprovedPersisted)
+						: msg(CatalogMessageId.textguardApprovedSession),
 					"info",
 				);
 				try {
 					await ctx.reload();
 				} catch {
-					notify(ctx, "Content approved, but resources could not reload. Run /reload before retrying.");
+					notify(ctx, msg(CatalogMessageId.textguardApprovedReloadFailed));
 				}
 			},
 		});

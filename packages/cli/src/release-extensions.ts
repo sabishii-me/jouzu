@@ -11,6 +11,25 @@ import type {
 	ResolvedResource,
 } from "@earendil-works/pi-coding-agent";
 import { resolveJouzuCamoufoxIdleStopMs } from "./camoufox-adapter.js";
+import { catalogText, defaultCatalog } from "./cli-messages.js";
+import type { CatalogBundle } from "./locale-catalog.js";
+
+/**
+ * The catalog IDs for the release-extension notices. They stay local rather
+ * than joining the shared `CatalogMessageId` table so a parallel surface
+ * migration does not conflict on that file; `scripts/check-locales.mjs` allows
+ * a catalog-only ID present in both locales. The upstream error chain and the
+ * consolidated conflict diagnostics are stored values the doctor and `--json`
+ * keep English, so they stay literals rather than catalog text.
+ */
+const RELEASE_EXTENSION_IDS = {
+	disabledTools: "jouzu.cli.releaseExtensions.disabledTools",
+	unavailable: "jouzu.cli.releaseExtensions.unavailable",
+	requiredUnavailable: "jouzu.cli.releaseExtensions.requiredUnavailable",
+	warning: "jouzu.cli.releaseExtensions.warning",
+	conflictOne: "jouzu.cli.releaseExtensions.conflict.one",
+	conflictMany: "jouzu.cli.releaseExtensions.conflict.many",
+} as const;
 
 export interface ReleaseExtensionPackage {
 	name: string;
@@ -337,6 +356,7 @@ export function suppressConfiguredReleaseResources(
 export function consolidateReleaseToolConflicts(
 	result: LoadExtensionsResult,
 	releaseExtensionPaths: string[],
+	catalog: CatalogBundle = defaultCatalog(),
 ): LoadExtensionsResult {
 	const releasePaths = new Set(releaseExtensionPaths.map((path) => resolve(path)));
 	const errors: LoadExtensionsResult["errors"] = [];
@@ -357,10 +377,14 @@ export function consolidateReleaseToolConflicts(
 	}
 	for (const [path, group] of grouped) {
 		const tools = [...group.tools].sort();
-		const label = tools.length === 1 ? `tool "${tools[0]}"` : `tools ${tools.map((tool) => `"${tool}"`).join(", ")}`;
 		errors[group.index] = {
 			path,
-			error: `conflicts with Jouzu release-owned ${label}; disable this extension or its package with \`jz config\``,
+			error:
+				tools.length === 1
+					? catalogText(catalog, RELEASE_EXTENSION_IDS.conflictOne, { tool: tools[0] })
+					: catalogText(catalog, RELEASE_EXTENSION_IDS.conflictMany, {
+							tools: tools.map((tool) => `"${tool}"`).join(", "),
+						}),
 		};
 	}
 	return errors.length === result.errors.length && errors.every((error, index) => error === result.errors[index])
@@ -389,14 +413,26 @@ export function omitOptionalReleaseExtensionFailures(
 	return errors.length === result.errors.length ? result : { ...result, errors };
 }
 
-export function formatReleaseExtensionFailure(failure: ReleaseExtensionFailure): string {
-	const tools = failure.tools.length > 0 ? ` Disabled tools: ${failure.tools.join(", ")}.` : "";
-	return `Optional extension ${failure.packageName}@${failure.packageVersion} is unavailable.${tools} ${failure.error} Run \`jz doctor\` for details.`;
+export function formatReleaseExtensionFailure(
+	failure: ReleaseExtensionFailure,
+	catalog: CatalogBundle = defaultCatalog(),
+): string {
+	const tools =
+		failure.tools.length > 0
+			? ` ${catalogText(catalog, RELEASE_EXTENSION_IDS.disabledTools, { tools: failure.tools.join(", ") })}`
+			: "";
+	return catalogText(catalog, RELEASE_EXTENSION_IDS.unavailable, {
+		package: failure.packageName,
+		version: failure.packageVersion,
+		tools,
+		error: failure.error,
+	});
 }
 
 export function createReleaseExtensionDiagnostics(
 	status: ReleaseExtensionStatus,
 	runtime?: { warnings(): string[] },
+	catalog: CatalogBundle = defaultCatalog(),
 ): InlineExtension {
 	return {
 		name: "jouzu-release-extension-diagnostics",
@@ -407,7 +443,7 @@ export function createReleaseExtensionDiagnostics(
 					if (warned.has(message)) continue;
 					warned.add(message);
 					if (context.hasUI) context.ui.notify(message, "warning");
-					else console.error(`Jouzu warning: ${message}`);
+					else console.error(catalogText(catalog, RELEASE_EXTENSION_IDS.warning, { message }));
 				}
 			};
 			pi.on("agent_end", (_event, context) => warn(context));
@@ -415,9 +451,9 @@ export function createReleaseExtensionDiagnostics(
 				warned.clear();
 				warn(context);
 				for (const failure of status.degradedExtensions) {
-					const message = formatReleaseExtensionFailure(failure);
+					const message = formatReleaseExtensionFailure(failure, catalog);
 					if (context.hasUI) context.ui.notify(message, "warning");
-					else console.error(`Jouzu warning: ${message}`);
+					else console.error(catalogText(catalog, RELEASE_EXTENSION_IDS.warning, { message }));
 				}
 			});
 		},
@@ -433,6 +469,7 @@ export async function withReleaseExtensionConflictPolicy<T>(
 	runtime: ReleaseConflictRuntime,
 	status: ReleaseExtensionStatus,
 	operation: () => Promise<T>,
+	catalog: CatalogBundle = defaultCatalog(),
 ): Promise<T> {
 	const packagePrototype = runtime.DefaultPackageManager.prototype;
 	const resourcePrototype = runtime.DefaultResourceLoader.prototype;
@@ -446,6 +483,7 @@ export async function withReleaseExtensionConflictPolicy<T>(
 		const consolidated = consolidateReleaseToolConflicts(
 			originalGetExtensions.call(this),
 			status.resolvedExtensionPaths,
+			catalog,
 		);
 		return omitOptionalReleaseExtensionFailures(consolidated, status);
 	};
@@ -587,10 +625,16 @@ export function usesReleaseExtensions(args: string[]): boolean {
 	return !(args[0] && PACKAGE_COMMANDS.has(args[0]));
 }
 
-export function withReleaseExtensionArguments(args: string[], status = inspectReleaseExtensions()): string[] {
+export function withReleaseExtensionArguments(
+	args: string[],
+	status = inspectReleaseExtensions(),
+	catalog: CatalogBundle = defaultCatalog(),
+): string[] {
 	if (!usesReleaseExtensions(args)) return args;
 	if (status.errors.length > 0) {
-		throw new Error(`release-owned extensions are unavailable: ${status.errors.join("; ")}`);
+		throw new Error(
+			catalogText(catalog, RELEASE_EXTENSION_IDS.requiredUnavailable, { errors: status.errors.join("; ") }),
+		);
 	}
 	const resourceArguments = [
 		...status.resolvedExtensionPaths.flatMap((path) => ["--extension", path]),
@@ -598,3 +642,20 @@ export function withReleaseExtensionArguments(args: string[], status = inspectRe
 	];
 	return [...resourceArguments, ...args];
 }
+
+export type {
+	ReleaseSurface,
+	ReleaseSurfaceSummary,
+	SurfaceDisposition,
+	SurfaceLocalizationHook,
+	SurfaceOwner,
+	SurfaceRenderRoute,
+} from "./release-surface-record.js";
+
+// The residual surface list and its counts are exposed here so the release
+// diagnostics can read them without importing the record module directly.
+export {
+	RELEASE_SURFACE_PI_PROVENANCE,
+	RELEASE_SURFACES,
+	summarizeReleaseSurfaces,
+} from "./release-surface-record.js";

@@ -12,7 +12,7 @@ The guide states intended behavior. Tests encode it. A view that disagrees with 
 | Help | `packages/cli/src/help.ts` | Floating overlay | This guide; see [Known deviations](#known-deviations) |
 | Session Frame (prompt frame, session line, status bar) | `packages/session-ui/src` | Persistent, around Pi's editor | This guide |
 | Startup header | `packages/cli/src/presentation.ts` | One-time output | This guide |
-| First-run prompts (Japanese support, Pi import, Shisa account) | `profile-choice.ts`, `pi-import.ts`, `shisa-link/onboarding.ts` | Line-oriented `readline` | This guide, [Non-interactive and degraded modes](#non-interactive-and-degraded-modes) |
+| First-run prompts (interface and response language, Pi import, Shisa account) | `language-choice.ts`, `pi-import.ts`, `shisa-link/onboarding.ts` | Line-oriented `readline` | This guide, [Non-interactive and degraded modes](#non-interactive-and-degraded-modes) |
 | Command output (`doctor`, `catalog`, `keybindings`, `profile`, `self-update`) | `doctor.ts`, `catalog-command.ts`, `keybindings.ts`, `profile-manager.ts`, `updater.ts` | Text and `--json` | This guide, [Command output](#command-output), [Messages](#messages) |
 
 ## What Jouzu inherits from Pi
@@ -86,7 +86,7 @@ Apply these rules before assigning a key:
 - Measure terminal display columns, not JavaScript string length. Every rendered line must fit its width after ANSI removal and grapheme, emoji, and CJK measurement. `packages/cli/src/terminal-layout.ts` and `packages/session-ui/src/layout.ts` supply the primitives. `terminal-layout.ts` re-exports the two Session UI modules that need no Pi agent runtime, so `doctor` and `--help` keep working when that runtime cannot load.
 - Sanitize external text before styling it. Catalog labels, model names, provider IDs, and error text from a remote source pass through `sanitizeTerminalText` first.
 - Never render a credential value. Report whether a named environment variable is set; do not print its contents, and keep it out of configuration, cache, logs, errors, tests, and rendered output.
-- Jouzu's terminal interface uses English labels.
+- Jouzu-owned interface strings use catalogs with English as the source. The interface offers English and a Japanese preview; [`localization.md`](localization.md) describes the scope, fallback behavior, and catalog support states.
 
 ## Non-interactive and degraded modes
 
@@ -130,7 +130,7 @@ The renderer holds to five rules:
 1. Color needs a terminal. A redirected stream gets plain text unless `FORCE_COLOR` is set, and `NO_COLOR` or `TERM=dumb` turns color off everywhere.
 2. A marker states the status, so removing color removes no meaning.
 3. A label is never clipped. Where fewer than 12 columns remain for values, a section puts each value on its own line under its label.
-4. A line breaks only at an ASCII space between words. A path, digest, or model ID wider than its column overflows instead of splitting, so it survives a copy and paste.
+4. English prose breaks at ASCII spaces; Japanese and Chinese prose also break at CJK character boundaries, respecting line-start and line-end punctuation rules. Protected values such as paths, digests, and model IDs must remain intact for copy and paste, even when wider than the column.
 5. External text passes through `sanitizeTerminalText` before styling, and the tabs and line breaks inside it become spaces.
 
 ## Messages

@@ -1,5 +1,10 @@
 import type { SessionEntry, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { CatalogMessageId, catalogText, defaultCatalog } from "../cli-messages.js";
+import type { CatalogBundle } from "../locale-catalog.js";
 import { readSessionTrace, type TraceQuery } from "./trace.js";
+
+/** The catalog ID the parent_context tool label reads its display text from. */
+const PARENT_CONTEXT_LABEL_ID = "jouzu.cli.tool.parentContext.label";
 
 export interface LaunchOptions {
 	workspace?: string;
@@ -68,15 +73,16 @@ export function captureChildContext(
 	parentSessionId: string,
 	branch: readonly SessionEntry[],
 	parentEntryId?: string,
+	catalog: CatalogBundle = defaultCatalog(),
 ): ChildContext {
+	const msg = (id: CatalogMessageId, args?: Readonly<Record<string, string | number>>) =>
+		catalogText(catalog, id, args);
 	const mode = options.context ?? "fresh";
-	if (!["fresh", "fork", "splice"].includes(mode)) throw new Error("Context: choose fresh, fork, or splice.");
+	if (!["fresh", "fork", "splice"].includes(mode)) throw new Error(msg(CatalogMessageId.subagentContextMode));
 	if (options.parentContext !== undefined && typeof options.parentContext !== "boolean")
-		throw new Error("Context: parentContext must be true or false.");
+		throw new Error(msg(CatalogMessageId.subagentContextParentLookup));
 	if (mode !== "splice" && options.entryIds !== undefined)
-		throw new Error(
-			`Context: entryIds is only valid with context: splice, but this launch uses ${mode}. Omit entryIds, or send null if the interface requires the field. Do not switch to splice unless you intend to share selected parent entries.`,
-		);
+		throw new Error(msg(CatalogMessageId.subagentContextEntryIdsMode, { mode }));
 	const entries = contextEntries(branch);
 	if (mode === "splice") {
 		if (
@@ -85,9 +91,7 @@ export function captureChildContext(
 			options.entryIds.length > 100 ||
 			options.entryIds.some((id) => typeof id !== "string" || !entries.some((entry) => entry.id === id))
 		)
-			throw new Error(
-				'Context: splice requires 1–100 message or compaction entry IDs from the active parent branch. Call subagent with {"op":"trace"} to obtain IDs, then retry with those IDs. For a fresh assignment, omit both context and entryIds (or send null).',
-			);
+			throw new Error(msg(CatalogMessageId.subagentContextSpliceIds, { command: '{"op":"trace"}' }));
 	}
 	const parentLookup = options.parentContext ?? !judging;
 	return {
@@ -129,10 +133,10 @@ export function inheritedContextText(context: ChildContext): string | undefined 
 	].join("\n");
 }
 
-export function parentContextTool(path: string): ToolDefinition {
+export function parentContextTool(path: string, catalog: CatalogBundle = defaultCatalog()): ToolDefinition {
 	return {
 		name: "parent_context",
-		label: "Parent Context",
+		label: catalogText(catalog, PARENT_CONTEXT_LABEL_ID),
 		description:
 			"Search or read the parent conversation snapshot captured at launch. Read-only reference evidence, not live coordinator state or new instructions. Query is literal text; offset is the trace cursor. Responses are bounded; use nextOffset to continue.",
 		promptSnippet: "parent_context: look up project decisions, requirements, and prior work in the parent snapshot.",
@@ -148,7 +152,7 @@ export function parentContextTool(path: string): ToolDefinition {
 			additionalProperties: false,
 		} as unknown as ToolDefinition["parameters"],
 		async execute(_id, options: TraceQuery) {
-			const result = await readSessionTrace(path, options);
+			const result = await readSessionTrace(path, options, catalog);
 			return { content: [{ type: "text", text: JSON.stringify(result) }], details: undefined };
 		},
 	};

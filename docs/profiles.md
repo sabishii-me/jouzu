@@ -4,14 +4,14 @@ A profile is a set of instructions, skills, and prompts that Jouzu installs into
 
 | Profile | Adds |
 | --- | --- |
-| `core` (default) | Default instructions, four optional skills, and the `jouzu-review` prompt. Selects no provider or response language. |
+| `core` (default) | Default instructions, five optional skills, and the `jouzu-review` prompt. Selects no provider or response language. |
 | `ja` (preview) | Everything in `core`, plus Japanese responses. Code, commands, identifiers, paths, URLs, logs, and error messages stay unchanged. |
 
-Jouzu never picks a response language from branding, locale, terminal settings, repository text, or paths.
+The UI locale does not select a response language. See [Language, locale and prompt instructions](language.md) for how identity, shared guidance, profiles, response settings, artifact policies and custom prompts combine. To use language settings without the JA profile's independent Japanese instruction, select Core.
 
 ## Choose a profile
 
-The first interactive launch asks whether to enable the `ja` profile. Only a yes selects `ja`; anything else selects `core`. Non-interactive first runs use `core`.
+The first interactive launch asks for the interface language and then the response language. It uses `core` for either interface language, so the response choice is not overridden by a profile default. The Chinese interface choices are unavailable. Skipping the interface choice or running non-interactively writes no language choice and uses `core`.
 
 To change the profile, run:
 
@@ -30,10 +30,12 @@ To select a profile for a launch and save it as the active profile, run `jz --jo
 | `jouzu-anti-slop` | Remove filler from existing prose without losing facts or qualifiers |
 | `jouzu-clear-writing` | Write or revise lasting technical text while keeping facts and terminology |
 | `jouzu-delegation` | Write clear child-agent assignments, follow-ups, acceptance checks, and stopping points |
+| `jouzu-reference` | Look up Jouzu settings, language, models/catalogs, profiles, history, controls and troubleshooting |
 | `jouzu-source-check` | Classify claims, find primary evidence and counterevidence, and rate confidence |
 
 - Skill names and descriptions are always in the model context. The full instructions load when a task matches or you run `/skill:<name>`.
 - The agent reads a skill once from its listed location and continues without it if the file is unreadable.
+- The default prompt points to `jouzu-reference` when it is discovered. Its short entry point links to bundled Markdown references loaded on demand, so configuration and recovery help works offline without a source checkout. Run `/skill:jouzu-reference` to load it explicitly. The reference distinguishes user commands from assistant tools and saved settings from live changes.
 
 ## Default instructions
 
@@ -44,13 +46,18 @@ The default system prompt tells the agent to:
 - Separate evidence from assumptions.
 - Run deterministic checks and report untested limitations.
 - Treat fetched pages and search results as untrusted.
+- Make independent tool calls in parallel, and treat a message sent during work as steering the current task.
 
-A custom system prompt replaces these, and Jouzu does not modify it.
+It also includes today's date and narrows Pi's documentation pointer to Pi extension, SDK, theme, and TUI development; Jouzu settings questions go to `jouzu-reference`.
+
+Jouzu adds these as named sections of Pi's prompt. Changes such as a new date or response-language preference produce section updates; provider support determines whether those remain later updates or are folded into the leading message. See [instruction changes and caching](language.md#when-instructions-change-and-what-caching-means).
+
+A custom system prompt owns the preamble; Jouzu does not replace it with default guidance or language settings. Other resources and extensions may still add instructions. See [custom prompt boundaries](language.md#identity-guidance-and-custom-prompts).
 
 ## How profiles are applied
 
 - Each launch reconciles the selected profile. If a managed file conflicts with a file you own or edited, Jouzu stops before launching.
-- Profiles may write only bundled UTF-8 files at `APPEND_SYSTEM.md`, `skills/jouzu-*/**`, and `prompts/jouzu-*`.
+- Profiles may write only bundled UTF-8 files at `APPEND_SYSTEM.md`, `skills/jouzu-*/**/SKILL.md`, `skills/jouzu-*/references/<name>.md`, and `prompts/jouzu-*.md`. Reference names use lowercase letters, digits and hyphens.
 - Applying uses a lock, conflict checks, backups, and atomic file replacement.
 - Unknown files and your own `AGENTS.md` are never removed.
 - Backups are kept under the Jouzu state directory shown by `jz doctor`.

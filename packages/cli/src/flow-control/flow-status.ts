@@ -1,5 +1,7 @@
+import { catalogText, defaultCatalog } from "../cli-messages.js";
+import type { CatalogBundle } from "../locale-catalog.js";
 import { isAdmissionPause } from "./flow-pause.js";
-import type { FlowStatusContext } from "./flow-status-context.js";
+import { type FlowStatusContext, FlowStatusMessageId as Id } from "./flow-status-context.js";
 import { formatFlowReport } from "./flow-status-report.js";
 import type { FlowScope } from "./receipt-ledger.js";
 import type { FlowSubmissionView } from "./submission-view.js";
@@ -183,12 +185,14 @@ export function projectFlowStatus(
 	};
 }
 
-const duration = (milliseconds: number): string => {
+const duration = (milliseconds: number, catalog: CatalogBundle): string => {
 	const minutes = Math.round(milliseconds / 60_000);
-	if (minutes < 1) return "under a minute";
-	if (minutes < 60) return `${minutes}m`;
+	if (minutes < 1) return catalogText(catalog, Id.durationUnderMinute);
+	if (minutes < 60) return catalogText(catalog, Id.durationMinutes, { minutes });
 	const hours = Math.floor(minutes / 60);
-	return minutes % 60 === 0 ? `${hours}h` : `${hours}h ${minutes % 60}m`;
+	return minutes % 60 === 0
+		? catalogText(catalog, Id.durationHours, { hours })
+		: catalogText(catalog, Id.durationHoursMinutes, { hours, minutes: minutes % 60 });
 };
 
 /** Render the status for a terminal. Identifiers stay whole so a retry can be copied from it. */
@@ -196,23 +200,23 @@ export function formatFlowStatus(
 	status: FlowStatus,
 	now: number,
 	options: { details?: boolean; columns?: number; page?: number } = {},
+	catalog: CatalogBundle = defaultCatalog(),
 ): string {
-	if (status.context) return formatFlowReport(status, now, options);
+	if (status.context) return formatFlowReport(status, now, options, catalog);
 	const lines: string[] = [];
 	if (status.paused) {
 		lines.push(`Paused: ${status.paused}`);
-		lines.push(
-			isAdmissionPause(status.paused)
-				? "Repair the cause, then run /flow clear and send a new message."
-				: "Resume now with: /flow resume",
-		);
+		lines.push(catalogText(catalog, isAdmissionPause(status.paused) ? Id.repairCauseClear : Id.resumeNow));
 		lines.push("");
 	}
 	if (status.waiting.length) {
 		lines.push("Waiting");
 		for (const wait of status.waiting) {
 			const remaining = wait.expiresAt - now;
-			const deadline = remaining > 0 ? `expires in ${duration(remaining)}` : "past its deadline";
+			const deadline =
+				remaining > 0
+					? catalogText(catalog, Id.deadlineExpiresIn, { duration: duration(remaining, catalog) })
+					: catalogText(catalog, Id.deadlinePast);
 			lines.push(`- ${wait.owner ?? "work"} ${wait.workId}: ${wait.reason}`);
 			lines.push(`  ${wait.unmet} unmet, ${deadline}, token ${wait.token}`);
 		}
@@ -235,9 +239,12 @@ export function formatFlowStatus(
 		for (const request of status.retryable) {
 			lines.push(`- ${request.requestId} (${request.reason})`);
 			lines.push(
-				request.reason === "required-input"
-					? "  Required input was removed or changed before sending."
-					: "  Required context was removed or changed before sending.",
+				`  ${catalogText(
+					catalog,
+					request.reason === "required-input"
+						? Id.requiredInputRemovedBeforeSending
+						: Id.requiredContextRemovedBeforeSending,
+				)}`,
 			);
 			lines.push(`  retry with: /flow retry ${request.requestId}`);
 		}
@@ -257,7 +264,10 @@ export function formatFlowStatus(
 		lines.push("Active work");
 		for (const item of status.active) {
 			const campaign = item.campaign?.length ? ` (${item.campaign.join(" ")})` : "";
-			const waits = item.waits === 0 ? "no live wait" : `${item.waits} live wait${item.waits === 1 ? "" : "s"}`;
+			const waits =
+				item.waits === 0
+					? catalogText(catalog, Id.noLiveWait)
+					: catalogText(catalog, item.waits === 1 ? Id.liveWaitOne : Id.liveWaitMany, { count: item.waits });
 			lines.push(`- ${item.owner} ${item.id}${campaign}: ${waits}`);
 			// One command per line: a trailing separator would be copied along with the identity.
 			lines.push(`  pause with: /flow pause ${item.id}`);

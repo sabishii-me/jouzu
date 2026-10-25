@@ -2,6 +2,8 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { existsSync, realpathSync, renameSync } from "node:fs";
 import { join } from "node:path";
+import { CatalogMessageId, catalogText, defaultCatalog } from "../cli-messages.js";
+import type { CatalogBundle } from "../locale-catalog.js";
 import { legacyPathDigest, pathDigest } from "../path-digest.js";
 import { ensurePrivateDirectory } from "../private-fs.js";
 import { acquireProcessLock, type ProcessLock, ProcessLockError } from "../process-lock.js";
@@ -68,7 +70,7 @@ export class FlowOwnership {
 	 */
 	readonly sessionDirectories: readonly string[];
 
-	static acquire(root: string, scope: FlowScope): FlowOwnership {
+	static acquire(root: string, scope: FlowScope, catalog: CatalogBundle = defaultCatalog()): FlowOwnership {
 		for (const id of [scope.sessionId, scope.branchId]) {
 			if (typeof id !== "string" || id.length === 0 || id.length > 512)
 				throw new FlowOwnershipError("identity", "Session and branch IDs must contain 1–512 characters.");
@@ -95,7 +97,9 @@ export class FlowOwnership {
 			const busy = error instanceof ProcessLockError && error.reason === "busy";
 			throw new FlowOwnershipError(
 				busy ? "busy" : "storage",
-				busy ? "This session branch is already owned by another attachment." : "Flow ownership could not be acquired.",
+				busy
+					? catalogText(catalog, CatalogMessageId.flowOwnershipBusy)
+					: catalogText(catalog, CatalogMessageId.flowOwnershipFailed),
 				{ cause: error },
 			);
 		}
