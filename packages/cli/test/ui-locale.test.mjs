@@ -597,6 +597,7 @@ test("two processes saving at once do not corrupt the file and neither update is
 	const { root, configDir, stateDir } = makeLocation();
 	const modulePath = fileURLToPath(new URL("../dist/ui-locale.js", import.meta.url));
 	const workers = [];
+	let poller;
 	try {
 		workers.push(
 			spawnSaveWorker(modulePath, configDir, stateDir, "ja"),
@@ -605,7 +606,7 @@ test("two processes saving at once do not corrupt the file and neither update is
 		// Both workers read the same (absent) revision before either may write.
 		await Promise.all(workers.map((worker) => worker.ready));
 		const observations = [];
-		const poller = setInterval(() => {
+		poller = setInterval(() => {
 			observations.push(readLocalizationConfig(configDir));
 		}, 1);
 		for (const worker of workers) worker.go();
@@ -623,6 +624,7 @@ test("two processes saving at once do not corrupt the file and neither update is
 		}
 		assert.equal(existsSync(join(stateDir, LOCALIZATION_LOCK_FILE_NAME)), false, "the lock is released");
 	} finally {
+		clearInterval(poller);
 		for (const worker of workers) worker.child.kill("SIGKILL");
 		rmSync(root, { recursive: true, force: true });
 	}

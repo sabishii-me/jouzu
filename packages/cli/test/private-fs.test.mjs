@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {
+import fs, {
 	mkdirSync,
 	mkdtempSync,
 	readdirSync,
@@ -9,9 +9,10 @@ import {
 	symlinkSync,
 	writeFileSync,
 } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test } from "node:test";
+import { mock, test } from "node:test";
 
 import {
 	copyPrivateFile,
@@ -133,6 +134,52 @@ test("writeFilePrivateAtomic creates private files and defaults its root to the 
 		rmSync(temporary, { recursive: true, force: true });
 	}
 });
+
+for (const scenario of [
+	{ platform: "win32", code: "EPERM", failures: 2, calls: 3, succeeds: true },
+	{ platform: "win32", code: "EACCES", failures: 1, calls: 2, succeeds: true },
+	{ platform: "win32", code: "EBUSY", failures: 1, calls: 2, succeeds: true },
+	{ platform: "win32", code: "EPERM", failures: Infinity, calls: 21, succeeds: false },
+	{ platform: "win32", code: "ENOENT", failures: Infinity, calls: 1, succeeds: false },
+	{ platform: "linux", code: "EPERM", failures: Infinity, calls: 1, succeeds: false },
+]) {
+	test(`atomic replacement retry: ${JSON.stringify(scenario)}`, () => {
+		const temporary = mkdtempSync(join(tmpdir(), "jouzu-atomic-retry-"));
+		const target = join(temporary, "value.json");
+		const platform = Object.getOwnPropertyDescriptor(process, "platform");
+		const rename = fs.renameSync;
+		const error = Object.assign(new Error("replacement denied"), { code: scenario.code });
+		let calls = 0;
+		writeFileSync(target, "previous");
+		try {
+			Object.defineProperty(process, "platform", { ...platform, value: scenario.platform });
+			const wait = mock.method(Atomics, "wait", () => "timed-out");
+			mock.method(fs, "renameSync", (source, destination) => {
+				calls++;
+				assert.equal(readFileSync(target, "utf8"), "previous");
+				assert.equal(readFileSync(source, "utf8"), "replacement");
+				if (calls <= scenario.failures) throw error;
+				return rename(source, destination);
+			});
+			syncBuiltinESMExports();
+			if (scenario.succeeds) writeFilePrivateAtomic(target, "replacement");
+			else
+				assert.throws(
+					() => writeFilePrivateAtomic(target, "replacement"),
+					(caught) => caught === error,
+				);
+			assert.equal(calls, scenario.calls);
+			assert.equal(wait.mock.callCount(), scenario.calls - 1);
+			assert.equal(readFileSync(target, "utf8"), scenario.succeeds ? "replacement" : "previous");
+			assert.deepEqual(readdirSync(temporary), ["value.json"]);
+		} finally {
+			mock.restoreAll();
+			syncBuiltinESMExports();
+			Object.defineProperty(process, "platform", platform);
+			rmSync(temporary, { recursive: true, force: true });
+		}
+	});
+}
 
 test("writeFilePrivateAtomic refuses a destination outside its owned root", () => {
 	const temporary = mkdtempSync(join(tmpdir(), "jouzu-atomic-escape-"));

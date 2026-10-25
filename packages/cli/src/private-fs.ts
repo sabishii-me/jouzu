@@ -129,7 +129,25 @@ export function writeFilePrivateAtomic(
 		fsyncSync(descriptor);
 		closeSync(descriptor);
 		descriptor = undefined;
-		renameSync(temporary, path);
+		// Windows readers and scanners can temporarily deny replacement even when
+		// writers hold the state lock. Retry the rename, never delete the target.
+		for (let attempt = 0; ; attempt++) {
+			try {
+				renameSync(temporary, path);
+				break;
+			} catch (error) {
+				if (
+					process.platform !== "win32" ||
+					attempt >= 20 ||
+					!(error instanceof Error) ||
+					!("code" in error) ||
+					!["EPERM", "EACCES", "EBUSY"].includes(String(error.code))
+				) {
+					throw error;
+				}
+				Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
+			}
+		}
 	} finally {
 		if (descriptor !== undefined) closeSync(descriptor);
 		rmSync(temporary, { force: true });
