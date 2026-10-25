@@ -404,9 +404,13 @@ test("pathological output retains terminal completion and publication waits for 
 		"if (existsSync(release)) { clearInterval(timer); process.exit(0); }",
 		"}, 5);",
 	].join(" ");
+	// Keep JavaScript path literals out of shell arguments: Git Bash on Windows removes
+	// a layer of backslashes from the inline script before Node evaluates it.
+	const scriptFile = join(runDirectory, "output-child.cjs");
+	await writeFile(scriptFile, script);
 	const launched = await tools.get("bg_task").execute("launch", {
 		action: "spawn",
-		command: `${api.shellQuote(process.execPath)} -e ${api.shellQuote(script)}`,
+		command: `${api.shellQuote(process.execPath)} ${api.shellQuote(scriptFile)}`,
 		notifyOnOutput: true,
 		notifyPattern: "/(a+)+$/",
 	});
