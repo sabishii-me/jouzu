@@ -1065,6 +1065,27 @@ export const CatalogMessageId = {
 	flowSubmissionQueueCancellation: "jouzu.cli.flow.submission.queueCancellation",
 	flowSubmissionDeliveryUnknown: "jouzu.cli.flow.submission.deliveryUnknown",
 	flowSubmissionUnavailable: "jouzu.cli.flow.submission.unavailable",
+	// External user-input receipts. A receipt carries a machine reason code beside one
+	// display sentence, so the code stays stable while the sentence resolves from the
+	// session bundle. `flowSubmissionUnavailable` above is the shared callback-ended reason.
+	userInputReceiptAdmissionHold: "jouzu.cli.flow.userInput.receipt.admissionHold",
+	userInputReceiptHandledWithoutInput: "jouzu.cli.flow.userInput.receipt.handledWithoutInput",
+	userInputReceiptSubmissionCancelled: "jouzu.cli.flow.userInput.receipt.submissionCancelled",
+	userInputReceiptQueueCancelled: "jouzu.cli.flow.userInput.receipt.queueCancelled",
+	userInputReceiptContextCancelled: "jouzu.cli.flow.userInput.receipt.contextCancelled",
+	userInputReceiptDispatchFailed: "jouzu.cli.flow.userInput.receipt.dispatchFailed",
+	userInputReceiptDispatchUnconfirmed: "jouzu.cli.flow.userInput.receipt.dispatchUnconfirmed",
+	userInputReceiptQueueEvidenceMissing: "jouzu.cli.flow.userInput.receipt.queueEvidenceMissing",
+	userInputReceiptCancellationUnconfirmed: "jouzu.cli.flow.userInput.receipt.cancellationUnconfirmed",
+	userInputReceiptFlowSuspended: "jouzu.cli.flow.userInput.receipt.flowSuspended",
+	userInputReceiptUnauthorized: "jouzu.cli.flow.userInput.receipt.unauthorized",
+	// The grants-file display reasons a denied external-input authorization reports.
+	userInputGrantsAgentDirectoryNotDirectory: "jouzu.cli.flow.userInput.grants.agentDirectoryNotDirectory",
+	userInputGrantsAgentDirectoryUninspectable: "jouzu.cli.flow.userInput.grants.agentDirectoryUninspectable",
+	userInputGrantsUninspectable: "jouzu.cli.flow.userInput.grants.uninspectable",
+	userInputGrantsNotRegularFile: "jouzu.cli.flow.userInput.grants.notRegularFile",
+	userInputGrantsTooLarge: "jouzu.cli.flow.userInput.grants.tooLarge",
+	userInputGrantsNotUtf8: "jouzu.cli.flow.userInput.grants.notUtf8",
 	flowTaskContinuationSkipped: "jouzu.cli.flow.task.continuationSkipped",
 	flowWaitLabel: "jouzu.cli.flow.wait.label",
 	flowWaitCancelLabel: "jouzu.cli.flow.wait.cancelLabel",

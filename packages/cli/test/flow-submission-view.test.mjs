@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { FlowModelInput } from "../dist/flow-control/model-input.js";
 import { PiFlowAttachment } from "../dist/flow-control/pi-attachment.js";
-import { projectFlowSubmissions } from "../dist/flow-control/submission-view.js";
+import { projectFlowSubmissions, UNAVAILABLE_INPUT_REASON } from "../dist/flow-control/submission-view.js";
 
 const scope = { sessionId: "parent", branchId: "main" };
 const input = {
@@ -263,6 +263,59 @@ test("explicit input-free completion survives reopening and archival without a d
 	assert.deepEqual(await f.attachment.submissions.snapshot(false), []);
 	await f.reopen();
 	assert.deepEqual(await f.view(), view);
+});
+
+test("a Japanese catalog and the live queue each decide a different hold", async (t) => {
+	// The session bundle supplies the unavailable text, and the live host queue decides whether a
+	// queue-phase hold can still clear. One call carries both, so neither may shadow the other.
+	const { resolveCatalog } = await import("../dist/locale-catalog.js");
+	const { CatalogMessageId, catalogText } = await import("../dist/cli-messages.js");
+	const ja = resolveCatalog("ja").bundle;
+	const f = await fixture(t);
+	const store = f.attachment.submissions;
+	// A callback that ended without dispatching is reported with the session's own text.
+	await store.retain({ ...input, id: "ended" });
+	await store.endCallback("ended", 1);
+	// A queue hold needs the dispatch that recorded the entry it waits on.
+	await store.dispatch("source", 1, "operation", async (observer) => {
+		await observer.observe({ kind: "followUp", args: ["queued"], queue: { id: "queue", revision: 1 } });
+	});
+	await store.recordAdmission(
+		"source",
+		1,
+		{ phase: "queue", queue: { id: "queue", revision: 1 } },
+		"Queue entry was withdrawn.",
+	);
+	const views = async (liveQueue) => {
+		const projected = await projectFlowSubmissions(
+			await store.snapshot(),
+			await f.attachment.ledger.snapshot(),
+			undefined,
+			ja,
+			liveQueue,
+		);
+		return Object.fromEntries(projected.map((view) => [view.id, view]));
+	};
+	const unavailable = catalogText(ja, CatalogMessageId.flowSubmissionUnavailable);
+	assert.notEqual(unavailable, UNAVAILABLE_INPUT_REASON, "the Japanese bundle resolves its own text");
+	const unknownDelivery = catalogText(ja, CatalogMessageId.flowSubmissionDeliveryUnknown);
+
+	const live = await views(new Map([["queue", 1]]));
+	assert.equal(live.ended.admission, "held");
+	assert.equal(live.ended.reason, unavailable);
+	assert.equal(live.source.admission, "held");
+	assert.equal(live.source.delivery, "uncertain");
+	assert.equal(live.source.reason, "Queue entry was withdrawn.");
+
+	// The host no longer holds that revision, so the hold can never clear and is not reported.
+	const discarded = await views(new Map([["queue", 2]]));
+	assert.equal(discarded.ended.reason, unavailable);
+	assert.notEqual(discarded.source.reason, "Queue entry was withdrawn.");
+	assert.equal(discarded.source.reason, unknownDelivery);
+
+	// Without a queue view there is no evidence of discard, so the conservative read keeps the hold.
+	const conservative = await views(undefined);
+	assert.equal(conservative.source.reason, "Queue entry was withdrawn.");
 });
 
 test("failed dispatch cannot retain an input-free completion", async (t) => {

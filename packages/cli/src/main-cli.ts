@@ -721,6 +721,7 @@ export async function runMainCli(args: string[]): Promise<void> {
 		process.env.JOUZU_FLOW_CONTROL !== "0"
 			? (await import("./flow-control/flow-runtime.js")).createFlowControlRuntime({
 					root: join(paths.stateDir, "flow"),
+					agentDir: paths.agentDir,
 					interactive: interactiveStartup,
 					runtimeReport: runtimeDiagnostics.report,
 					catalog: preRuntime.catalog.bundle,

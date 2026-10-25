@@ -83,11 +83,11 @@ export class PiFlowAttachment {
 	}
 
 	/** Inspection only. Read request receipts before claims, which are persisted before requests. */
-	async submissionViews(): Promise<FlowSubmissionView[]> {
+	async submissionViews(liveQueue?: ReadonlyMap<string, number>): Promise<FlowSubmissionView[]> {
 		const requests = await this.nativeRequests.snapshot();
 		const records = await this.submissions.snapshot();
 		const ledger = await this.ledger.snapshot();
-		return projectFlowSubmissions(records, ledger, requests, this.catalog);
+		return projectFlowSubmissions(records, ledger, requests, this.catalog, liveQueue);
 	}
 
 	/** Drain admitted writes, close Pi storage, then release process ownership. */
