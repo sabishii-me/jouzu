@@ -6,6 +6,8 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { validateToolArguments } from "@earendil-works/pi-ai";
 import { convertResponsesTools } from "@earendil-works/pi-ai/api/openai-responses-shared";
+import { runPromptHook } from "../../../scripts/fixtures/prompt-hook.mjs";
+import { resolveCatalog } from "../dist/locale-catalog.js";
 import { notificationHash } from "../dist/notifications/inbox.js";
 import { pathDigest } from "../dist/path-digest.js";
 import { createWorkflowIntegration } from "../dist/subagents/integration.js";
@@ -26,6 +28,22 @@ test("shared dashboard takeover suppresses child widget and routes visibility wi
 		assert.ok(widgets.every(([, content]) => content === undefined));
 	} finally {
 		await f.handlers.get("session_shutdown")({}, f.ctx);
+	}
+});
+
+test("the subagent tool label comes from the resolved catalog and the tool name is unchanged", async () => {
+	const english = fixture();
+	const ja = resolveCatalog("ja").bundle;
+	const japanese = fixture(false, { catalog: ja });
+	try {
+		assert.equal(english.tool.name, "subagent");
+		assert.equal(english.tool.label, "Subagent");
+		assert.equal(japanese.tool.name, "subagent");
+		assert.equal(japanese.tool.label, ja.format("jouzu.cli.tool.subagent.label"));
+		assert.notEqual(japanese.tool.label, english.tool.label);
+	} finally {
+		await english.handlers.get("session_shutdown")({}, english.ctx);
+		await japanese.handlers.get("session_shutdown")({}, japanese.ctx);
 	}
 });
 
@@ -598,7 +616,7 @@ test("delegation checklist reaches every parent model without requiring a skill"
 		await f.handlers.get("session_start")({}, f.ctx);
 		for (const id of ["gpt-6-astra", "glm-5.3-flash", "other-model"]) {
 			const active = { ...f.ctx, model: { provider: "fixture", id } };
-			const prompt = f.handlers.get("before_agent_start")({ systemPrompt: "Base" }, active).systemPrompt;
+			const prompt = runPromptHook(f.handlers.get("before_agent_start"), { ctx: active }).systemPrompt;
 			assert.match(prompt, /complete sentences with normal spacing/);
 			assert.match(prompt, /one objective, verified context and file paths, constraints, acceptance checks/);
 			assert.match(prompt, /explicit stopping point and report/);
@@ -607,7 +625,7 @@ test("delegation checklist reaches every parent model without requiring a skill"
 			assert.match(f.tool.parameters.properties.task.description, /stopping point\/report/);
 		}
 		await f.integration.service.setSubagentsEnabled(false);
-		const prompt = f.handlers.get("before_agent_start")({ systemPrompt: "Base" }, f.ctx).systemPrompt;
+		const prompt = runPromptHook(f.handlers.get("before_agent_start"), { ctx: f.ctx }).systemPrompt;
 		assert.doesNotMatch(prompt, /Write each assignment/);
 		assert.match(prompt, /Work directly/);
 	} finally {
@@ -639,12 +657,12 @@ test("session toggle stops children and queued work, reports live availability a
 		assert.equal((await f.invoke({ op: "list" })).runs.length, 2);
 		assert.ok((await f.invoke({ op: "read", id: a.id })).text);
 		await f.invoke({ op: "stop", id: a.id });
-		assert.match(f.handlers.get("before_agent_start")({ systemPrompt: "Base" }, f.ctx).systemPrompt, /Work directly/);
+		assert.match(runPromptHook(f.handlers.get("before_agent_start"), { ctx: f.ctx }).systemPrompt, /Work directly/);
 		await f.handlers.get("session_start")({}, f.ctx);
 		assert.equal(f.integration.service.subagentsEnabled(), false);
 		await f.commandDefinition.handler("on", f.ctx);
 		assert.equal(f.integration.service.subagentsEnabled(), true);
-		assert.match(f.handlers.get("before_agent_start")({ systemPrompt: "Base" }, f.ctx).systemPrompt, /op:roles/);
+		assert.match(runPromptHook(f.handlers.get("before_agent_start"), { ctx: f.ctx }).systemPrompt, /op:roles/);
 		const snapshot = f.integration.service.roles();
 		snapshot.config.roles = snapshot.config.roles.filter((role) => role.id !== "reviewer");
 		f.integration.service.save(snapshot);
@@ -737,7 +755,7 @@ test("agent calls cannot override configured models, including through stale too
 		const run = await f.invoke({ op: "launch", role: "coder", task: "Inspect" });
 		assert.equal(run.model.id, "glm-5.3-flash", "launch uses the configured role, not the parent model");
 		assert.equal(authentications, 1);
-		const prompt = f.handlers.get("before_agent_start")({ systemPrompt: "Base" }, f.ctx).systemPrompt;
+		const prompt = runPromptHook(f.handlers.get("before_agent_start"), { ctx: f.ctx }).systemPrompt;
 		assert.match(prompt, /Only the user can change role models/);
 	} finally {
 		await f.shutdown();
@@ -907,7 +925,7 @@ test("Workflow registers a tool and command, applies main instructions, and coal
 		await f.integration.service.activate("orchestrator");
 		assert.equal(f.selected.id, "gpt-6-astra");
 		assert.equal(f.entries.length, 1);
-		const prompt = f.handlers.get("before_agent_start")({ systemPrompt: "Base" }, f.ctx);
+		const prompt = runPromptHook(f.handlers.get("before_agent_start"), { ctx: f.ctx });
 		assert.match(prompt.systemPrompt, /orchestrator/);
 		const roles = await f.invoke({ op: "roles" });
 		assert.equal(roles.enabled, true);
@@ -986,7 +1004,7 @@ test("a real child's turn-limit failure reaches the parent after its context cha
 		f.integration.service.save(snapshot);
 		await f.handlers.get("session_start")({}, f.ctx);
 		const run = await f.invoke({ op: "launch", role: "coder", task: "Read input.txt repeatedly." });
-		f.handlers.get("before_agent_start")({ systemPrompt: "Base" }, { ...f.ctx });
+		runPromptHook(f.handlers.get("before_agent_start"), { ctx: { ...f.ctx } });
 		const result = await f.nextMessage;
 		assert.equal(result.message.details.runs[0].id, run.id);
 		assert.equal(result.message.details.runs[0].status, "failed");
@@ -1005,12 +1023,12 @@ test("terminal results survive fresh per-turn contexts and are delivered once", 
 	try {
 		await f.handlers.get("session_start")({}, f.ctx);
 		const run = await f.invoke({ op: "launch", role: "coder", task: "Implement a change" });
-		f.handlers.get("before_agent_start")({ systemPrompt: "Base" }, { ...f.ctx });
+		runPromptHook(f.handlers.get("before_agent_start"), { ctx: { ...f.ctx } });
 		f.workers[0].emit({ type: "result", status: "failed", text: "Agent limit reached. Work is incomplete." });
 		f.workers[0].exit(true);
 		f.workers[0].exit(true);
 		// The context can change again while the completion batch is waiting.
-		f.handlers.get("before_agent_start")({ systemPrompt: "Base" }, { ...f.ctx });
+		runPromptHook(f.handlers.get("before_agent_start"), { ctx: { ...f.ctx } });
 		t.mock.timers.tick(100);
 		assert.equal(f.messages.length, 1);
 		assert.match(f.messages[0].message.content, /limit reached/);
@@ -1033,7 +1051,7 @@ for (const terminal of ["completed", "crash", "timeout", "cancelled", "queued-ca
 				terminal === "queued-cancelled"
 					? await f.invoke({ op: "launch", role: "coder", task: "Queued change" })
 					: first;
-			f.handlers.get("before_agent_start")({ systemPrompt: "Base" }, { ...f.ctx });
+			runPromptHook(f.handlers.get("before_agent_start"), { ctx: { ...f.ctx } });
 			if (terminal === "completed") {
 				f.workers[0].emit({ type: "result", status: "completed", text: "Done." });
 				f.workers[0].exit(true);
@@ -1261,6 +1279,28 @@ test("default children inherit current model and effort on launch and resume", a
 		assert.equal(review.model.id, "glm-5.3-flash");
 		assert.equal(review.thinking, "xhigh");
 		assert.equal(f.workers[2].launch.role.judging, true);
+	} finally {
+		await f.shutdown();
+	}
+});
+
+test("Japanese inherited effort errors keep the configured selector and launch snapshot intact", async () => {
+	const f = fixture(false, { catalog: resolveCatalog("ja").bundle });
+	try {
+		await f.handlers.get("session_start")({}, f.ctx);
+		f.setThinking(undefined);
+		await assert.rejects(
+			f.invoke({ op: "launch", role: "coder", task: "Implement" }),
+			/メインセッションで推論の強度を選択/u,
+		);
+		assert.equal(f.workers.length, 0);
+		assert.equal(f.integration.service.roles().config.roles.find((role) => role.id === "coder").thinking, "same");
+		f.setThinking("low");
+		const run = await f.invoke({ op: "launch", role: "coder", task: "Implement" });
+		assert.equal(run.thinking, "low");
+		assert.equal(f.workers[0].launch.thinkingLevel, "low");
+		f.setThinking("high");
+		assert.equal(f.workers[0].launch.thinkingLevel, "low");
 	} finally {
 		await f.shutdown();
 	}

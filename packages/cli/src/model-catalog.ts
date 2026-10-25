@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { CatalogMessageId, catalogText, defaultCatalog } from "./cli-messages.js";
+import type { CatalogBundle } from "./locale-catalog.js";
 
 export const MODEL_CATALOG_FORMAT = "jouzu.model-catalog";
 export const MODEL_CATALOG_MEDIA_TYPE = "application/vnd.jouzu.model-catalog+json; version=1";
@@ -42,10 +44,10 @@ export function catalogThinkingLevelGaps(document: ModelCatalogDocument): Catalo
 export const CATALOG_REGISTRATION_FIELDS = ["textModality", "contextWindow", "maxOutputTokens"] as const;
 export type CatalogRegistrationField = (typeof CATALOG_REGISTRATION_FIELDS)[number];
 
-const CATALOG_REGISTRATION_FIELD_LABELS: Readonly<Record<CatalogRegistrationField, string>> = Object.freeze({
-	textModality: "text input",
-	contextWindow: "context window",
-	maxOutputTokens: "maximum output tokens",
+const CATALOG_REGISTRATION_FIELD_LABEL_IDS: Readonly<Record<CatalogRegistrationField, string>> = Object.freeze({
+	textModality: CatalogMessageId.catalogRegistrationFieldTextModality,
+	contextWindow: CatalogMessageId.catalogRegistrationFieldContextWindow,
+	maxOutputTokens: CatalogMessageId.catalogRegistrationFieldMaxOutputTokens,
 });
 
 /** One offering that cannot become a new model, and the fields it leaves out. */
@@ -81,23 +83,47 @@ export function catalogRegistrationGaps(document: ModelCatalogDocument): Catalog
 }
 
 /** What an incomplete offering costs the user, stated the same way wherever it is reported. */
-export const CATALOG_REGISTRATION_EFFECT =
-	"An offering for a model Pi does not already provide is dropped, so that model never reaches the model list.";
+export function describeCatalogRegistrationEffect(catalog: CatalogBundle = defaultCatalog()): string {
+	return catalogText(catalog, CatalogMessageId.catalogRegistrationEffect);
+}
+
+function catalogRegistrationFieldLabel(catalog: CatalogBundle, field: CatalogRegistrationField): string {
+	return catalogText(catalog, CATALOG_REGISTRATION_FIELD_LABEL_IDS[field]);
+}
 
 /** "no text input, no maximum output tokens" for one offering. */
-export function describeCatalogRegistrationGap(gap: CatalogRegistrationGap): string {
-	return gap.missing.map((field) => `no ${CATALOG_REGISTRATION_FIELD_LABELS[field]}`).join(", ");
+export function describeCatalogRegistrationGap(
+	gap: CatalogRegistrationGap,
+	catalog: CatalogBundle = defaultCatalog(),
+): string {
+	const separator = catalogText(catalog, CatalogMessageId.catalogListSeparator);
+	return gap.missing
+		.map((field) =>
+			catalogText(catalog, CatalogMessageId.catalogRegistrationGapField, {
+				field: catalogRegistrationFieldLabel(catalog, field),
+			}),
+		)
+		.join(separator);
 }
 
 /** "10 no text input, 4 no context window" across a set of offerings. */
-export function describeCatalogRegistrationGaps(gaps: readonly CatalogRegistrationGap[]): string {
+export function describeCatalogRegistrationGaps(
+	gaps: readonly CatalogRegistrationGap[],
+	catalog: CatalogBundle = defaultCatalog(),
+): string {
+	const separator = catalogText(catalog, CatalogMessageId.catalogListSeparator);
 	return CATALOG_REGISTRATION_FIELDS.map((field) => ({
 		field,
 		count: gaps.filter((gap) => gap.missing.includes(field)).length,
 	}))
 		.filter((entry) => entry.count > 0)
-		.map((entry) => `${entry.count} no ${CATALOG_REGISTRATION_FIELD_LABELS[entry.field]}`)
-		.join(", ");
+		.map((entry) =>
+			catalogText(catalog, CatalogMessageId.catalogRegistrationGapCount, {
+				count: entry.count,
+				field: catalogRegistrationFieldLabel(catalog, entry.field),
+			}),
+		)
+		.join(separator);
 }
 const UINT64_MAX = 18_446_744_073_709_551_615n;
 

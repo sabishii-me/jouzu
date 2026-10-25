@@ -167,28 +167,10 @@ export function acquireStateLock(options: AcquireStateLockOptions): () => void {
 	return () => releaseToken(options.path, token);
 }
 
-function ageText(ageMs: number): string {
+/** The age a lock description reports, as the protected value the catalog text takes. */
+export function ageText(ageMs: number): string {
 	const totalSeconds = Math.max(0, Math.floor(ageMs / 1000));
 	const minutes = Math.floor(totalSeconds / 60);
 	const seconds = totalSeconds % 60;
 	return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
-}
-
-/** Human-readable one-line description of a lock for doctor output. */
-export function describeStateLock(path: string, staleMs: number, now: Date): string {
-	const inspection = inspectStateLock(path, now);
-	switch (inspection.status) {
-		case "free":
-			return "free";
-		case "held-live":
-			return `held by a live process (${ageText(inspection.ageMs ?? 0)})`;
-		case "held-dead":
-			return `left by a dead process (${ageText(inspection.ageMs ?? 0)}; recoverable after ${ageText(staleMs)})`;
-		case "owner-unknown":
-			return `owner unknown (${ageText(inspection.ageMs ?? 0)}; recoverable after ${ageText(staleMs)})`;
-		case "unreadable":
-			return "unreadable (lock inspection failed)";
-		case "invalid":
-			return "invalid (not a regular lock file)";
-	}
 }

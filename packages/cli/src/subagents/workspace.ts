@@ -1,8 +1,10 @@
 import { accessSync, constants, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { CatalogMessageId, catalogText, defaultCatalog } from "../cli-messages.js";
+import type { CatalogBundle } from "../locale-catalog.js";
 
-export function resolveWorkspace(cwd: string, workspace?: string): string {
+export function resolveWorkspace(cwd: string, workspace?: string, catalog: CatalogBundle = defaultCatalog()): string {
 	if (workspace !== undefined && (typeof workspace !== "string" || !workspace.trim() || workspace.includes("\0")))
 		throw new Error("Workspace: provide a nonempty directory path.");
 	const requested = workspace ?? cwd;
@@ -18,12 +20,10 @@ export function resolveWorkspace(cwd: string, workspace?: string): string {
 		const code = (error as NodeJS.ErrnoException).code;
 		const reason =
 			code === "ENOENT"
-				? "does not exist"
+				? catalogText(catalog, CatalogMessageId.subagentWorkspaceMissing)
 				: code === "EACCES" || code === "EPERM"
-					? "is not accessible"
-					: "is not an accessible directory";
-		throw new Error(
-			`Workspace: ${path} ${reason}. Choose an existing directory accessible to Jouzu; a restart is not required.`,
-		);
+					? catalogText(catalog, CatalogMessageId.subagentWorkspaceInaccessible)
+					: catalogText(catalog, CatalogMessageId.subagentWorkspaceNotDirectory);
+		throw new Error(catalogText(catalog, CatalogMessageId.subagentWorkspaceError, { path, reason }));
 	}
 }

@@ -1,10 +1,23 @@
 import type { ExtensionContext, InlineExtension } from "@earendil-works/pi-coding-agent";
 import { matchesKey, Text } from "@earendil-works/pi-tui";
+import { CatalogMessageId, catalogText, defaultCatalog } from "./cli-messages.js";
+import type { ProtectedValue } from "./human-messages.js";
+import { protectedCommand } from "./human-messages.js";
 import { formatEffectiveKeybinding, formatKeyId } from "./keybinding-hints.js";
+import type { CatalogBundle } from "./locale-catalog.js";
 
 const HELP_SHORTCUTS = ["ctrl+/", "ctrl+?"] as const;
 
-export function createJouzuHelpExtension(): InlineExtension {
+/**
+ * The help overlay.
+ *
+ * Every label is a catalog message. The resolved keybindings and the slash
+ * commands are injected as protected values at render time, so the overlay
+ * always shows the effective key and the catalog never stores one. Each value
+ * keeps its own `{" "}` alignment literal, so the decoration and the width do
+ * not depend on the locale.
+ */
+export function createJouzuHelpExtension(catalog: CatalogBundle = defaultCatalog()): InlineExtension {
 	return {
 		name: "jouzu-help",
 		factory: (pi) => {
@@ -12,23 +25,42 @@ export function createJouzuHelpExtension(): InlineExtension {
 				if (ctx.mode !== "tui") return;
 				await ctx.ui.custom<void>(
 					(_tui, theme, keybindings, done) => {
-						const helpKeys = HELP_SHORTCUTS.map((shortcut) => formatKeyId(shortcut)).join(" or ");
+						const shortcutSeparator = catalogText(catalog, CatalogMessageId.helpOverlayShortcutSeparator);
+						const helpKeys = HELP_SHORTCUTS.map((shortcut) => formatKeyId(shortcut)).join(shortcutSeparator);
+						const accent = (value: string): ProtectedValue => protectedCommand(theme.fg("accent", value));
+						const key = (action: "app.model.select" | "app.model.cycleForward" | "tui.select.cancel") =>
+							accent(formatEffectiveKeybinding(keybindings, action));
 						const text = new Text(
 							[
-								theme.bold(theme.fg("accent", "Jouzu Help")),
+								theme.bold(theme.fg("accent", catalogText(catalog, CatalogMessageId.helpOverlayTitle))),
 								"",
-								`${theme.fg("accent", formatEffectiveKeybinding(keybindings, "app.model.select"))}  Models`,
-								`${theme.fg("accent", formatEffectiveKeybinding(keybindings, "app.model.cycleForward"))}  Cycle favorites`,
-								`${theme.fg("accent", helpKeys)}  Help`,
-								`${theme.fg("accent", "/hotkeys")}  All shortcuts`,
-								`${theme.fg("accent", "/session")}  Session details`,
-								`${theme.fg("accent", "/fast on|off")}  Fast model requests`,
-								`${theme.fg("accent", "/about")}  Runtime and installed builds`,
-								`${theme.fg("accent", "/workflow")}  Agents and runs`,
-								`${theme.fg("accent", "/subagents")}  Child run dashboard`,
-								`${theme.fg("accent", "/scrollback")}  Export transcript`,
+								catalogText(catalog, CatalogMessageId.helpOverlayModels, { key: key("app.model.select") }),
+								catalogText(catalog, CatalogMessageId.helpOverlayCycleFavorites, {
+									key: key("app.model.cycleForward"),
+								}),
+								catalogText(catalog, CatalogMessageId.helpOverlayHelp, { key: accent(helpKeys) }),
+								catalogText(catalog, CatalogMessageId.helpOverlayAllShortcuts, {
+									command: accent("/hotkeys"),
+								}),
+								catalogText(catalog, CatalogMessageId.helpOverlaySessionDetails, {
+									command: accent("/session"),
+								}),
+								catalogText(catalog, "jouzu.cli.helpOverlay.fastMode", { command: accent("/fast on|off") }),
+								catalogText(catalog, CatalogMessageId.helpOverlayRuntimeBuilds, {
+									command: accent("/about"),
+								}),
+								catalogText(catalog, CatalogMessageId.helpOverlayAgentsRuns, {
+									command: accent("/workflow"),
+								}),
+								catalogText(catalog, CatalogMessageId.helpOverlayChildDashboard, {
+									command: accent("/subagents"),
+								}),
+								catalogText(catalog, "jouzu.cli.helpOverlay.scrollback", { command: accent("/scrollback") }),
 								"",
-								theme.fg("dim", `${formatEffectiveKeybinding(keybindings, "tui.select.cancel")} close`),
+								theme.fg(
+									"dim",
+									catalogText(catalog, CatalogMessageId.helpOverlayClose, { key: key("tui.select.cancel") }),
+								),
 							].join("\n"),
 							1,
 							1,
@@ -54,7 +86,10 @@ export function createJouzuHelpExtension(): InlineExtension {
 			};
 
 			for (const shortcut of HELP_SHORTCUTS) {
-				pi.registerShortcut(shortcut, { description: "Open Jouzu help", handler: showHelp });
+				pi.registerShortcut(shortcut, {
+					description: catalogText(catalog, CatalogMessageId.helpOverlayShortcutDescription),
+					handler: showHelp,
+				});
 			}
 		},
 	};

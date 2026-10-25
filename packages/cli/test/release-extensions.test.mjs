@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { pathToFileURL } from "node:url";
+import { resolveCatalog } from "../dist/locale-catalog.js";
 import {
 	consolidateReleaseToolConflicts,
 	createReleaseExtensionDiagnostics,
@@ -52,7 +53,7 @@ const expectedExtensions = [
 ];
 const expectedPiTasks = {
 	version: "0.6.1",
-	commit: "3626078819db11d90e394d77752577956063b71d",
+	commit: "ec7eb8625a98b15926fba7377f22614c12b524d7",
 };
 const expectedCompatibility = ["@napi-rs/canvas", "esbuild", "typebox", "wreq-js"];
 
@@ -305,6 +306,36 @@ test("native extension diagnostics retain verbose cause details", () => {
 	assert.match(
 		formatReleaseExtensionFailure(degraded),
 		/Caused by: Cannot find module '@apify\/impit-win32-x64-msvc'/u,
+	);
+});
+
+test("formatReleaseExtensionFailure renders from the resolved bundle", () => {
+	const failure = {
+		packageName: "pi-webaio",
+		packageVersion: "1.0.0",
+		tools: ["tff-fetch_url", "tff-search_web"],
+		error: "native binding is unavailable",
+	};
+	const ja = resolveCatalog("ja").bundle;
+	const japanese = formatReleaseExtensionFailure(failure, ja);
+	const tools = ja.format("jouzu.cli.releaseExtensions.disabledTools", { tools: "tff-fetch_url, tff-search_web" });
+	assert.equal(
+		japanese,
+		ja.format("jouzu.cli.releaseExtensions.unavailable", {
+			package: "pi-webaio",
+			version: "1.0.0",
+			tools: ` ${tools}`,
+			error: "native binding is unavailable",
+		}),
+		"the sentence renders from the ja catalog",
+	);
+	assert.ok(japanese.includes(tools), "the tools fragment renders from the ja catalog");
+	assert.match(japanese, /native binding is unavailable/u, "the upstream error stays verbatim");
+	assert.doesNotMatch(japanese, /Optional extension|Run `jz doctor` for details/u, "no English sentence survives");
+	assert.equal(
+		formatReleaseExtensionFailure(failure),
+		"Optional extension pi-webaio@1.0.0 is unavailable. Disabled tools: tff-fetch_url, tff-search_web. native binding is unavailable Run `jz doctor` for details.",
+		"the default catalog stays byte-identical to the former literal",
 	);
 });
 

@@ -1,6 +1,8 @@
 import { constants, type Stats } from "node:fs";
 import { lstat, open, realpath } from "node:fs/promises";
 import { isAbsolute, join, normalize } from "node:path";
+import { CatalogMessageId, catalogText, defaultCatalog } from "../cli-messages.js";
+import type { CatalogBundle } from "../locale-catalog.js";
 import { parseStrictJson } from "../model-catalog.js";
 import { PrivatePathError, validatePrivateDirectory } from "../private-fs.js";
 
@@ -18,6 +20,10 @@ import { PrivatePathError, validatePrivateDirectory } from "../private-fs.js";
  * already run with the user's OS permissions. This module only answers whether
  * the loader-assigned extension identity and adapter ID may use the host's
  * user-input admission path.
+ *
+ * A denial reports a stable machine `code` beside a display `reason`. Catalog-backed
+ * file-inspection reasons use the caller's session bundle or the English default.
+ * Other validation reasons remain fixed English text. Neither includes submitted paths or values.
  */
 
 /** File name inside the resolved agent configuration directory. */
@@ -54,6 +60,11 @@ export interface UserInputGrantCheckOptions {
 	loaderExtensionPath: string;
 	/** Adapter ID the extension registers under. */
 	adapterId: string;
+	/**
+	 * The session bundle for catalog-backed denial reasons; defaults to English.
+	 * The decision's `code` never depends on it.
+	 */
+	catalog?: CatalogBundle;
 }
 
 class GrantConfigError extends Error {
@@ -76,6 +87,19 @@ type GrantsFileRead =
 
 export function userInputAdapterGrantsPath(agentDir: string): string {
 	return join(agentDir, USER_INPUT_ADAPTERS_FILE);
+}
+
+/**
+ * Resolve one grants display reason from the supplied session bundle, keeping the English
+ * default when the caller supplies none. A reason is a diagnostic sentence beside the
+ * decision's machine `code`, never a path or a raw error.
+ */
+function grantText(
+	catalog: CatalogBundle | undefined,
+	id: CatalogMessageId,
+	args?: Readonly<Record<string, string>>,
+): string {
+	return catalogText(catalog ?? defaultCatalog(), id, args);
 }
 
 function deny(code: "unauthorized" | "invalid-config", reason: string): UserInputGrantDecision {
@@ -182,13 +206,19 @@ async function readBoundedRegularFile(path: string, expected: { dev: number; ino
 	}
 }
 
-async function readGrantsFile(agentDir: string): Promise<GrantsFileRead> {
+async function readGrantsFile(agentDir: string, catalog: CatalogBundle | undefined): Promise<GrantsFileRead> {
 	try {
 		validatePrivateDirectory(agentDir);
 	} catch (error) {
 		if (error instanceof PrivatePathError)
-			return { kind: "invalid", reason: "the agent configuration directory must be a real directory" };
-		return { kind: "invalid", reason: "the agent configuration directory could not be inspected" };
+			return {
+				kind: "invalid",
+				reason: grantText(catalog, CatalogMessageId.userInputGrantsAgentDirectoryNotDirectory),
+			};
+		return {
+			kind: "invalid",
+			reason: grantText(catalog, CatalogMessageId.userInputGrantsAgentDirectoryUninspectable),
+		};
 	}
 	const path = userInputAdapterGrantsPath(agentDir);
 	let before: Stats;
@@ -197,21 +227,23 @@ async function readGrantsFile(agentDir: string): Promise<GrantsFileRead> {
 	} catch (error) {
 		const code = (error as NodeJS.ErrnoException).code;
 		if (code === "ENOENT" || code === "ENOTDIR") return { kind: "absent" };
-		return { kind: "invalid", reason: "user-input adapter grants could not be inspected" };
+		return { kind: "invalid", reason: grantText(catalog, CatalogMessageId.userInputGrantsUninspectable) };
 	}
 	if (before.isSymbolicLink() || !before.isFile())
-		return { kind: "invalid", reason: "user-input adapter grants must be a real regular file" };
+		return { kind: "invalid", reason: grantText(catalog, CatalogMessageId.userInputGrantsNotRegularFile) };
 	if (before.size > USER_INPUT_ADAPTERS_MAX_BYTES)
 		return {
 			kind: "invalid",
-			reason: `user-input adapter grants must be no larger than ${USER_INPUT_ADAPTERS_MAX_BYTES} bytes`,
+			reason: grantText(catalog, CatalogMessageId.userInputGrantsTooLarge, {
+				bytes: String(USER_INPUT_ADAPTERS_MAX_BYTES),
+			}),
 		};
 	let text: string;
 	try {
 		text = await readBoundedRegularFile(path, before);
 	} catch (error) {
 		if (error instanceof GrantConfigError) return { kind: "invalid", reason: error.message };
-		return { kind: "invalid", reason: "user-input adapter grants must be readable UTF-8" };
+		return { kind: "invalid", reason: grantText(catalog, CatalogMessageId.userInputGrantsNotUtf8) };
 	}
 	try {
 		return { kind: "grants", grants: await parseGrants(parseStrictJson(text)) };
@@ -240,7 +272,7 @@ export async function checkUserInputAdapterGrant(options: UserInputGrantCheckOpt
 		!isAbsolute(loaderExtensionPath)
 	)
 		return deny("unauthorized", "the extension identity is not an absolute loader path");
-	const loaded = await readGrantsFile(agentDir);
+	const loaded = await readGrantsFile(agentDir, options?.catalog);
 	if (loaded.kind === "invalid") return deny("invalid-config", loaded.reason);
 	if (loaded.kind === "absent") return deny("unauthorized", "no user-input adapter grants are configured");
 	const identity = await installedIdentity(loaderExtensionPath);

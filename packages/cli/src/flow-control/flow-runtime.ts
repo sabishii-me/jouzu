@@ -1,4 +1,6 @@
 import type { InlineExtension, SessionManager } from "@earendil-works/pi-coding-agent";
+import { CatalogMessageId, catalogText, defaultCatalog } from "../cli-messages.js";
+import type { CatalogBundle } from "../locale-catalog.js";
 import type { BackgroundJobSnapshot } from "./background-adapter.js";
 import { createBackgroundControllerExtension } from "./background-extension.js";
 import { createCompactionControllerExtension } from "./compaction-extension.js";
@@ -47,6 +49,8 @@ export interface FlowControlRuntimeOptions {
 	interactive?: boolean;
 	/** Reported to the user; flow failures never silently bypass admission. */
 	onError(error: unknown): void;
+	/** The resolved catalog every flow tool label and admission reason reads its text from. */
+	catalog?: CatalogBundle;
 	limits?: Partial<FlowControlLimits>;
 	runtimeReport?(): string;
 }
@@ -78,6 +82,7 @@ export interface FlowControlRuntime {
  */
 export function createFlowControlRuntime(options: FlowControlRuntimeOptions): FlowControlRuntime {
 	const limits = { ...defaultFlowControlLimits, ...options.limits };
+	const catalog = options.catalog ?? defaultCatalog();
 	let attached: PiSessionFlowIngress | undefined;
 	const ingress = () => {
 		if (!attached) throw new FlowLedgerError("stale", "Flow control ingress is not attached.");
@@ -86,13 +91,20 @@ export function createFlowControlRuntime(options: FlowControlRuntimeOptions): Fl
 	// While flow control is off, producers route through their own delivery paths and the flow tools
 	// refuse. The ingress object stays attached, so turning it back on needs no re-attach or handshake.
 	const enabled = () => attached?.enabled() ?? false;
-	const tasks = createTaskControllerExtension({ ingress, enabled, autonomous: () => ingress().branch().workContext.currentActor() === "multiloop", onError: options.onError });
+	const tasks = createTaskControllerExtension({
+		ingress,
+		enabled,
+		autonomous: () => ingress().branch().workContext.currentActor() === "multiloop",
+		onError: options.onError,
+		catalog,
+	});
 	const multiloop = createMultiloopControllerExtension({ ingress, enabled, onError: options.onError });
 	const background = createBackgroundControllerExtension({
 		ingress,
 		enabled,
 		currentWork: () => ingress().branch().workContext.current(),
 		onError: options.onError,
+		catalog,
 	});
 	const schedules = createScheduleWaitExtension({ ingress, enabled, onError: options.onError });
 	const subagents = createSubagentWaitExtension({ ingress, enabled, onError: options.onError });
@@ -101,13 +113,15 @@ export function createFlowControlRuntime(options: FlowControlRuntimeOptions): Fl
 		currentWork: () => ingress().branch().workContext.current(),
 		enabled,
 		maxDurationMs: limits.maxWaitDurationMs,
+		catalog,
 	});
-	const noReply = createFlowNoReplyExtension({ ingress, enabled });
+	const noReply = createFlowNoReplyExtension({ ingress, enabled, catalog });
 	const status = createFlowStatusExtension({
 		ingress,
 		enabled,
 		setEnabled,
 		runtimeReport: options.runtimeReport,
+		catalog,
 		tasks: () => tasks.inventory(),
 		unaccountable: () => [
 			...multiloop
@@ -187,6 +201,7 @@ export function createFlowControlRuntime(options: FlowControlRuntimeOptions): Fl
 				agentDir: options.agentDir,
 				// Only valid here: extensions cannot replace the stream before the SDK boundary.
 				qualifyProviderRoute: true,
+				catalog,
 				maxInputBytes: limits.maxInputBytes,
 				maxResultBytes: limits.maxResultBytes,
 				userWorkParticipants: ["bg", "multiloop", "tasks", "subagent", "schedule"],
@@ -220,9 +235,11 @@ export function createFlowControlRuntime(options: FlowControlRuntimeOptions): Fl
 					options.onError(
 						new FlowLedgerError(
 							"schema",
-							`This session's flow registry was incompatible with the current version and was dropped. Flow state was rebuilt from the transcript.${
-								path ? ` The dropped state was saved to ${path}.` : ""
-							}`,
+							catalogText(
+								catalog,
+								path ? CatalogMessageId.flowRegistryRebuiltSaved : CatalogMessageId.flowRegistryRebuilt,
+								path ? { path } : undefined,
+							),
 						),
 					),
 				attachWaitSources: async (attachment: PiFlowAttachment) => {

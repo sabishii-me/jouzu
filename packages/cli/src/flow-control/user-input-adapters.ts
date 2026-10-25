@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent";
+import type { CatalogBundle } from "../locale-catalog.js";
 import type { PiFlowBranchResources } from "./pi-session-service.js";
 import type { FlowSubmissionCursor } from "./submission-store.js";
 import { checkUserInputAdapterGrant } from "./user-input-grants.js";
@@ -30,6 +31,12 @@ export interface UserInputOwner {
 	branch(): PiFlowBranchResources;
 	enabled(): boolean;
 	liveQueue(): ReadonlyMap<string, number>;
+	/**
+	 * The session display bundle for receipt and grant-denial reasons, read lazily at each
+	 * projection so a caller never resolves a catalog during construction. A runtime that
+	 * supplies none renders the English default.
+	 */
+	catalog?(): CatalogBundle;
 	pending(id: string): boolean;
 	retain(submission: Submission, digest: string, epoch: string, dispatch: () => Promise<void>): Promise<void>;
 	onError(error: unknown): void;
@@ -160,6 +167,7 @@ export class UserInputAdapters {
 			agentDir: this.owner.agentDir,
 			loaderExtensionPath: extensionId,
 			adapterId,
+			catalog: this.owner.catalog?.(),
 		});
 		if (!decision.authorized) throw userInputError(decision.code, "External input adapter is not authorized.");
 		return decision.grant.extensionPath;
@@ -262,7 +270,10 @@ export class UserInputAdapters {
 			const journal = snapshot.journal;
 			if (active() !== branch || target !== (await bindingFor(branch)).target)
 				throw userInputError("stale-target", "Receipt target changed.");
-			return projectUserInputReceipt({ record, provenance, target, journal, liveQueue: this.owner.liveQueue() });
+			return projectUserInputReceipt(
+				{ record, provenance, target, journal, liveQueue: this.owner.liveQueue() },
+				this.owner.catalog?.(),
+			);
 		};
 		const requiredReceipt = async (target: string, messageId: string) => {
 			const receipt = await lookup(target, messageId);
@@ -393,13 +404,16 @@ export class UserInputAdapters {
 								if (stopped) return;
 								let receipt: UserInputReceipt;
 								try {
-									receipt = projectUserInputReceipt({
-										record,
-										provenance,
-										target,
-										journal: update.journal,
-										liveQueue,
-									});
+									receipt = projectUserInputReceipt(
+										{
+											record,
+											provenance,
+											target,
+											journal: update.journal,
+											liveQueue,
+										},
+										this.owner.catalog?.(),
+									);
 								} catch (error) {
 									// A record this pass could not project is asked for again next time, so the cursor must
 									// not claim it as projected.

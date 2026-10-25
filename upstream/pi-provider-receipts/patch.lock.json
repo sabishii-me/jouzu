@@ -83,6 +83,10 @@
 			"before": "df55dca273cb2a7053187b7b29d0fe5b91966a5099ab02d2efe38bb31c3f9738",
 			"after": "b5f7c048f1916c0194231ff14f7136ce660973a369a590a9e971f31ee49d972f"
 		},
+		"dist/utils/oauth-page.js": {
+			"before": "82ff736f89ccd7a5a780e97eba656aa73ee2a435eb231938b340ffd9167086c1",
+			"after": "6d758fcb9fde90c98d1adf325f6421b51341becf7880057b09374c94210b387c"
+		},
 		"dist/compat.d.ts": {
 			"before": "a019947050719ef61fdca8a8aa6791df61f9706ac16ac58cfe1a150076038aae",
 			"after": "acd6d371511698cd347531e7050259cf04180433d67bee7ffc98ba6eb54de0c0"

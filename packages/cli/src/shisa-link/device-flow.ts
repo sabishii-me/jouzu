@@ -1,5 +1,14 @@
 import { hostname } from "node:os";
 import type { OAuthCredentials, OAuthLoginCallbacks } from "@earendil-works/pi-ai";
+import {
+	CatalogMessageId,
+	type CatalogMessageRef,
+	catalogMessage,
+	catalogMessageText,
+	catalogText,
+	defaultCatalog,
+} from "../cli-messages.js";
+import type { CatalogBundle } from "../locale-catalog.js";
 import type { ShisaLinkState } from "./state.js";
 
 /**
@@ -191,7 +200,7 @@ export type ShisaTokenClassification =
 	| { kind: "slow_down"; intervalSeconds: number }
 	| { kind: "rate_limited" }
 	| { kind: "complete"; value: ShisaTokenResponse }
-	| { kind: "failed"; message: string };
+	| { kind: "failed"; message: CatalogMessageRef };
 
 /**
  * Map one /device/token response onto the device-flow poll outcome. Terminal
@@ -207,7 +216,7 @@ export function classifyShisaTokenResponse(
 		const value = parseShisaTokenResponse(body);
 		return value
 			? { kind: "complete", value }
-			: { kind: "failed", message: "Shisa sign-in returned an unexpected response. Start the sign-in again." };
+			: { kind: "failed", message: catalogMessage(CatalogMessageId.shisaSignInUnexpectedResponse) };
 	}
 	const errorName = wireErrorName(body);
 	// The edge rate limiter is distinct from the per-session slow_down signal.
@@ -220,26 +229,29 @@ export function classifyShisaTokenResponse(
 		return { kind: "slow_down", intervalSeconds: wireInterval + SLOW_DOWN_INCREMENT_SECONDS };
 	}
 	if (errorName === "expired_token") {
-		return { kind: "failed", message: "The sign-in request expired. Start the sign-in again." };
+		return { kind: "failed", message: catalogMessage(CatalogMessageId.shisaSignInExpired) };
 	}
 	if (errorName === "access_denied") {
 		return {
 			kind: "failed",
-			message: "The sign-in request was declined in the browser. Start the sign-in again to retry.",
+			message: catalogMessage(CatalogMessageId.shisaSignInDeclined),
 		};
 	}
 	if (errorName === "invalid_grant") {
-		return { kind: "failed", message: "The sign-in request was not recognized. Start the sign-in again." };
+		return { kind: "failed", message: catalogMessage(CatalogMessageId.shisaSignInNotRecognized) };
 	}
 	if (errorName === "already_delivered") {
 		return {
 			kind: "failed",
-			message: "This sign-in already delivered its API key. Start a new sign-in to link this device.",
+			message: catalogMessage(CatalogMessageId.shisaSignInAlreadyDelivered),
 		};
 	}
 	// Remaining transient statuses keep polling; anything else terminates.
 	if (status === 429 || status === 408) return { kind: "pending" };
-	return { kind: "failed", message: `Shisa sign-in failed (HTTP ${status}). Start the sign-in again.` };
+	return {
+		kind: "failed",
+		message: catalogMessage(CatalogMessageId.shisaSignInHttpFailed, { status }),
+	};
 }
 
 /** Outcome of one device-flow poll, mirroring Pi's device-code poll contract. */
@@ -263,7 +275,10 @@ export async function pollShisaDeviceFlow<T>(options: {
 	poll: () => Promise<ShisaDevicePollResult<T>>;
 	sleep?: (ms: number) => Promise<void>;
 	signal?: AbortSignal;
+	/** The resolved locale catalog for the loop's own error text. Defaults to English. */
+	catalog?: CatalogBundle;
 }): Promise<T> {
+	const catalog = options.catalog ?? defaultCatalog();
 	const sleep = options.sleep ?? defaultSleep;
 	const deadline =
 		typeof options.expiresInSeconds === "number"
@@ -274,7 +289,7 @@ export async function pollShisaDeviceFlow<T>(options: {
 		Math.floor((options.intervalSeconds ?? DEFAULT_POLL_INTERVAL_SECONDS) * 1000),
 	);
 	while (Date.now() < deadline) {
-		if (options.signal?.aborted) throw new Error("Login cancelled");
+		if (options.signal?.aborted) throw new Error(catalogText(catalog, CatalogMessageId.shisaSignInCancelled));
 		const result = await options.poll();
 		if (result.status === "complete") return result.value;
 		if (result.status === "failed") throw new Error(result.message);
@@ -290,7 +305,7 @@ export async function pollShisaDeviceFlow<T>(options: {
 		if (remainingMs <= 0) break;
 		await sleep(Math.min(intervalMs, remainingMs));
 	}
-	throw new Error("Sign-in timed out before the request was approved. Start the sign-in again.");
+	throw new Error(catalogText(catalog, CatalogMessageId.shisaSignInTimedOut));
 }
 
 function defaultSleep(ms: number): Promise<void> {
@@ -341,8 +356,11 @@ export function createShisaDeviceTokenPoller(deps: {
 	fetchImpl?: typeof fetch;
 	sleep?: (ms: number) => Promise<void>;
 	signal?: AbortSignal;
+	/** The resolved locale catalog for the classification text. Defaults to English. */
+	catalog?: CatalogBundle;
 }): ShisaDeviceTokenPoller {
 	const fetchImpl = deps.fetchImpl ?? fetch;
+	const catalog = deps.catalog ?? defaultCatalog();
 	const sleep = deps.sleep ?? defaultSleep;
 	const baseBackoffMs = Math.max(MINIMUM_POLL_INTERVAL_MS, Math.floor(deps.baseIntervalSeconds * 1000));
 	let backoffMs = baseBackoffMs;
@@ -373,7 +391,7 @@ export function createShisaDeviceTokenPoller(deps: {
 				case "complete":
 					return { status: "complete" as const, value: classification.value };
 				case "failed":
-					return { status: "failed" as const, message: classification.message };
+					return { status: "failed" as const, message: catalogMessageText(catalog, classification.message) };
 				case "slow_down":
 					return { status: "slow_down" as const, intervalSeconds: classification.intervalSeconds };
 				default:
@@ -425,6 +443,8 @@ export interface ShisaLoginDeps extends ShisaLoginIo {
 	sleep?: (ms: number) => Promise<void>;
 	openBrowser?: (url: string) => void;
 	ackAttempts?: number;
+	/** The resolved locale catalog for the login flow's own text. Defaults to English. */
+	catalog?: CatalogBundle;
 	/** Reports whether acknowledgement confirmed after the credential was saved. */
 	onCompletion?: (completion: ShisaLoginCompletion) => void;
 }
@@ -439,6 +459,7 @@ export async function loginShisaDeviceFlow(
 	deps: ShisaLoginDeps,
 ): Promise<OAuthCredentials> {
 	const fetchImpl = deps.fetchImpl ?? fetch;
+	const catalog = deps.catalog ?? defaultCatalog();
 	const sleep = deps.sleep ?? defaultSleep;
 	const deviceName = deps.deviceName ?? hostname();
 	const platformLabel = deps.platformLabel ?? `${process.platform}-${process.arch}`;
@@ -457,14 +478,16 @@ export async function loginShisaDeviceFlow(
 		fetchImpl,
 		callbacks.signal,
 	).catch((error) => {
-		throw new Error(`Could not reach the Shisa platform: ${describeError(error, [])}`);
+		throw new Error(
+			catalogText(catalog, CatalogMessageId.shisaSignInPlatformUnreachable, { message: describeError(error, []) }),
+		);
 	});
 	const codeBody = await readJsonBody(codeResponse);
 	if (codeResponse.status !== 201) {
-		throw new Error(`The Shisa platform could not start the sign-in request (HTTP ${codeResponse.status}).`);
+		throw new Error(catalogText(catalog, CatalogMessageId.shisaSignInStartFailed, { status: codeResponse.status }));
 	}
 	const deviceCode = parseShisaDeviceCodeResponse(codeBody);
-	if (!deviceCode) throw new Error("The Shisa platform returned an unexpected sign-in response. Try again.");
+	if (!deviceCode) throw new Error(catalogText(catalog, CatalogMessageId.shisaSignInUnexpectedStart));
 
 	// 2. Surface the verification URL and code through the login UI and open
 	// the complete URL in the browser when a helper is available.
@@ -492,6 +515,7 @@ export async function loginShisaDeviceFlow(
 		fetchImpl,
 		sleep,
 		signal: callbacks.signal,
+		catalog,
 	});
 	const token = await pollShisaDeviceFlow({
 		intervalSeconds: deviceCode.intervalSeconds,
@@ -499,6 +523,7 @@ export async function loginShisaDeviceFlow(
 		poll: poller.poll,
 		sleep,
 		signal: callbacks.signal,
+		catalog,
 	});
 
 	// 4. Persist both files before acknowledgement closes server-side re-delivery.
@@ -525,7 +550,7 @@ export async function loginShisaDeviceFlow(
 		await deps.writeLinkState(state);
 		await deps.writeCredential(credential);
 	} catch {
-		throw new Error("Could not save Shisa sign-in. Check Jouzu's storage permissions and sign in again.");
+		throw new Error(catalogText(catalog, CatalogMessageId.shisaSignInStorageFailed));
 	}
 
 	// 5. Acknowledge the link. Retries are bounded; a later successful
@@ -564,8 +589,8 @@ export async function loginShisaDeviceFlow(
 		deps.onCompletion?.({ acknowledged: false, reason: cancelled ? "cancelled" : "failed" });
 		callbacks.onProgress?.(
 			cancelled
-				? "Shisa sign-in was saved, but confirmation was interrupted. Sign in again to avoid losing access when the confirmation window expires."
-				: "Shisa sign-in was saved, but confirmation failed. Sign in again to avoid losing access when the confirmation window expires.",
+				? catalogText(catalog, CatalogMessageId.shisaSignInConfirmInterrupted)
+				: catalogText(catalog, CatalogMessageId.shisaSignInConfirmFailed),
 		);
 	}
 	return credential;

@@ -26,7 +26,7 @@ async function replacementFixture(t, { hold = () => false, cancel = () => false 
 	);
 	const ingresses = [],
 		outcomes = [];
-	let runtime, destination;
+	let runtime, destination, ended, latest;
 	const ingress = () => {
 		const value = new PiSessionFlowIngress({
 			root,
@@ -36,7 +36,6 @@ async function replacementFixture(t, { hold = () => false, cancel = () => false 
 			host: { maxPayloadBytes: 100000, containsUserInput: () => true },
 			policy: () => ({ userPending: hold(), recoveryBlocked: false, waitingWorkIds: [] }),
 			admit: async () => !hold(),
-			autoRelease: false,
 		});
 		ingresses.push(value);
 		return value;
@@ -48,12 +47,34 @@ async function replacementFixture(t, { hold = () => false, cancel = () => false 
 		extensions: [
 			(pi) => {
 				pi.on("session_before_switch", () => ({ cancel: cancel() }));
+				// A reload replaces this runtime. Record what the prepared callback can still do while Pi
+				// emits the old runtime's shutdown, which is the boundary the ingress must precede.
+				pi.on("session_shutdown", async (event) => {
+					if (event.reason !== "reload" || !latest) return;
+					ended = await latest.adapter.bind().then(
+						() => "live",
+						(error) => error.code,
+					);
+				});
 				pi.registerCommand("replace", {
 					handler: async (kind, ctx) => {
 						try {
 							if (kind === "new") outcomes.push(await ctx.newSession());
 							if (kind === "switch") outcomes.push(await ctx.switchSession(destination));
 							if (kind === "fork") outcomes.push(await ctx.fork(destination));
+							if (kind === "reload") {
+								// The reservation is taken synchronously, so a replacement started while reload
+								// runs is refused instead of tearing the session down twice.
+								const reloading = ctx.reload();
+								outcomes.push(
+									await ctx.newSession().then(
+										() => "allowed",
+										(error) => error.code,
+									),
+								);
+								await reloading;
+								outcomes.push("reloaded");
+							}
 						} catch (error) {
 							outcomes.push(error);
 						}
@@ -88,12 +109,16 @@ async function replacementFixture(t, { hold = () => false, cancel = () => false 
 				newSession: (options) => runtime.newSession(options),
 				switchSession: (path, options) => runtime.switchSession(path, options),
 				fork: (id, options) => runtime.fork(id, options),
+				reload: (options) => runtime.session.reload(options),
 			},
 		});
 	await bindCommands();
 	return {
 		outcomes,
 		requests: first.bodies,
+		get ended() {
+			return ended;
+		},
 		get session() {
 			return runtime.session;
 		},
@@ -110,7 +135,8 @@ async function replacementFixture(t, { hold = () => false, cancel = () => false 
 				id: "fixture",
 				label: "Fixture",
 			});
-			return { adapter, binding: await adapter.bind() };
+			latest = { adapter, binding: await adapter.bind() };
+			return latest;
 		},
 	};
 }
@@ -197,4 +223,36 @@ test("command session replacement preserves held external input for explicit ret
 	assert.equal(f.requests.length, 0);
 	holding = false;
 	await deliverOnce(f, fresh, "held");
+});
+
+test("extension reload reserves replacement and ends prepared callbacks for one authorized retry", async (t) => {
+	let holding = true;
+	const f = await replacementFixture(t, { hold: () => holding });
+	const old = await f.register();
+	const submitted = message(old.binding, "held-reload");
+	assert.equal((await old.adapter.submit(submitted)).state, "held");
+	// submit starts a release attempt without joining it. Keep admission held until that
+	// attempt finishes, so opening admission for the command cannot release the old input.
+	await f.ingress.joinPendingOperations();
+	assert.equal((await old.adapter.lookup({ target: old.binding.target, messageId: "held-reload" })).state, "held");
+	assert.equal(f.requests.length, 0);
+	holding = false;
+	await f.change("reload");
+	// The replacement reservation refused the competing caller, and reload itself finished.
+	assert.deepEqual(f.outcomes, ["busy", "reloaded"]);
+	// The prepared callback was ended before Pi invalidated the runtime that created it.
+	assert.equal(f.ended, "stale-target");
+	const [record] = (await f.ingress.branch().attachment.submissions.snapshot()).filter(
+		(item) => item.submission.externalUser,
+	);
+	assert.equal(record.dispatch, undefined);
+	assert.equal(record.unavailable, "callback-ended");
+	assert.equal(f.requests.length, 0);
+	await assert.rejects(old.adapter.submit(submitted), { code: "stale-target" });
+	const fresh = await f.register();
+	const receipt = await fresh.adapter.lookup({ target: fresh.binding.target, messageId: "held-reload" });
+	assert.equal(receipt.state, "unknown");
+	assert.equal(receipt.reason.code, "callback-ended");
+	// Authority is rechecked, so the retry dispatches once and a repeat submit stays consumed.
+	await deliverOnce(f, fresh, "held-reload");
 });

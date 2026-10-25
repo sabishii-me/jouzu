@@ -7,6 +7,10 @@
 			"before": "f3eeaadbc97b8c36acf98b1dd5894265f7f719bab95218e66dbc8c25658d5b12",
 			"after": "6e60af97dd4f67b4bcc820b6c271a26df0bbcb7b7a4258f8cc771c1570b7c546"
 		},
+		"dist/core/system-prompt.js": {
+			"before": "ab02924fa078eef81addcf39bc0e43d3663f06d627cb42ead403662a004a9e5c",
+			"after": "2741e200ab40f1940cda12c5911ab8e804a0a94005512bd62a907ab4d31ea42a"
+		},
 		"dist/core/cache-warmer.js": {
 			"before": "9c4b000930d6d3c567073102f6b6a52660110bb0f79cf78dd72c4dd1ebc87fc0",
 			"after": "0f89726acfaa9a843696c175f96af7f1cc41bb53af420c88f6f03ef010a624b2"

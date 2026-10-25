@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
+import { resolveCatalog } from "../dist/locale-catalog.js";
 import { parseSubagentResult, runPresentation, subagentComponent } from "../dist/subagents/render.js";
 
 const plain = { fg: (_role, value) => value };
@@ -125,4 +126,40 @@ test("presentation is a bounded snapshot and never mutates the run", () => {
 	assert.equal(snapshot.task.length, 2000);
 	assert.equal(snapshot.outcome.length, 4000);
 	assert.equal(source.task.length, 3000);
+});
+
+test("status labels move onto the catalog while the state value stays the contract", () => {
+	const ja = resolveCatalog("ja").bundle;
+	const words = {
+		queued: "待機中",
+		starting: "開始中",
+		running: "実行中",
+		completed: "完了",
+		failed: "失敗",
+		cancelled: "キャンセル",
+		interrupted: "中断",
+	};
+	for (const [state, word] of Object.entries(words)) {
+		const output = subagentComponent({ ...run, status: state }, plain, false, "", ja)
+			.render(80)
+			.join("\n");
+		assert.match(output, new RegExp(word, "u"), `the ${state} label renders in Japanese`);
+		// The machine-readable snapshot keeps the internal state value; only the
+		// display word moved onto the catalog.
+		assert.equal(runPresentation({ ...run, status: state, role: { id: "coder" } }).status, state);
+	}
+	// A state the table does not know is shown as-is, never silently relabeled.
+	assert.match(
+		subagentComponent({ ...run, status: "waiting" }, plain, false, "", ja)
+			.render(80)
+			.join("\n"),
+		/waiting/u,
+	);
+	// The English default is unchanged for a resolved catalog of `en`.
+	assert.match(
+		subagentComponent({ ...run, status: "completed" }, plain, false, "", resolveCatalog("en").bundle)
+			.render(80)
+			.join("\n"),
+		/Completed/u,
+	);
 });

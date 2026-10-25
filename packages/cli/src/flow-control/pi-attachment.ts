@@ -1,3 +1,5 @@
+import { defaultCatalog } from "../cli-messages.js";
+import type { CatalogBundle } from "../locale-catalog.js";
 import { openLocalFlowSession, reconcileFlowStateVersion } from "./local-storage.js";
 import { FlowNativeRequestStore } from "./native-request-store.js";
 import { FlowOwnership } from "./ownership.js";
@@ -21,6 +23,7 @@ export class PiFlowAttachment {
 		readonly nativeRequests: FlowNativeRequestStore,
 		readonly waits: FlowWaitStore,
 		readonly waitProducers: FlowWaitProducerRegistry,
+		private readonly catalog: CatalogBundle,
 	) {}
 
 	/** The opener must use the owned directory and return an exclusively owned session. */
@@ -32,8 +35,9 @@ export class PiFlowAttachment {
 			acceptedDirectories?: readonly string[],
 		) => Promise<Session> = openLocalFlowSession,
 		onIsolatedState?: (path: string) => void,
+		catalog: CatalogBundle = defaultCatalog(),
 	): Promise<PiFlowAttachment> {
-		const ownership = FlowOwnership.acquire(root, scope);
+		const ownership = FlowOwnership.acquire(root, scope, catalog);
 		let session: Session | undefined;
 		try {
 			// State from an earlier record shape is moved aside before any store reads it.
@@ -50,6 +54,8 @@ export class PiFlowAttachment {
 					transact: (update) => ownership.run(() => store.transact(update)),
 				},
 				ownership.scope,
+				undefined,
+				catalog,
 			);
 			const submissions = await FlowSubmissionStore.attach(session, ownership);
 			const results = await FlowResultManifestStore.attach(session, ownership);
@@ -64,6 +70,7 @@ export class PiFlowAttachment {
 				nativeRequests,
 				waits,
 				new FlowWaitProducerRegistry(waits, ownership.scope),
+				catalog,
 			);
 		} catch (error) {
 			try {
@@ -80,7 +87,7 @@ export class PiFlowAttachment {
 		const requests = await this.nativeRequests.snapshot();
 		const records = await this.submissions.snapshot();
 		const ledger = await this.ledger.snapshot();
-		return projectFlowSubmissions(records, ledger, requests, liveQueue);
+		return projectFlowSubmissions(records, ledger, requests, this.catalog, liveQueue);
 	}
 
 	/** Drain admitted writes, close Pi storage, then release process ownership. */

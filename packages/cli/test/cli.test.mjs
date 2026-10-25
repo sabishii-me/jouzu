@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import {
 	chmodSync,
+	cpSync,
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
@@ -17,6 +18,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { CATALOG_VERSION } from "../dist/locale-catalog.js";
 import { formatDisplayVersion, parseBuildInfo } from "../dist/metadata.js";
 
 const packageRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -97,14 +99,14 @@ test("a non-interactive first run uses Core without recording Japanese consent",
 		assert.equal(result.stdout.trim(), piVersion);
 		const state = JSON.parse(readFileSync(join(jouzuHome, "state", "profile-state.json"), "utf8"));
 		assert.equal(state.activeProfile, "core");
-		assert.equal(state.profileVersion, 14);
+		assert.equal(state.profileVersion, 17);
 		assert.equal(existsSync(join(jouzuHome, "state", "profile-choice.json")), false);
 	} finally {
 		rmSync(temp, { recursive: true, force: true });
 	}
 });
 
-test("Core registers its four optional skills and review prompt", () => {
+test("Core registers its five optional skills and review prompt", () => {
 	const temp = mkdtempSync(join(tmpdir(), "jouzu-core-skills-"));
 	try {
 		const result = run(
@@ -121,6 +123,7 @@ test("Core registers its four optional skills and review prompt", () => {
 				"skill:jouzu-anti-slop",
 				"skill:jouzu-clear-writing",
 				"skill:jouzu-delegation",
+				"skill:jouzu-reference",
 				"skill:jouzu-source-check",
 			],
 		);
@@ -548,11 +551,304 @@ test("shows Jouzu help and leaves Pi help behind the explicit escape", () => {
 	assert.match(jouzuHelp.stdout, /Jouzu agentic AI environment/);
 	assert.match(jouzuHelp.stdout, /Open the Jouzu Palette/);
 	assert.match(jouzuHelp.stdout, /Ctrl\+L/);
-	assert.match(jouzuHelp.stdout, /Tab\nor Shift\+Tab switches Palette sections/u);
+	assert.match(jouzuHelp.stdout, /Tab or Shift\+Tab switches Palette sections in browse mode\./u);
+	assert.match(jouzuHelp.stdout, /--jouzu-ui-locale/);
 
 	const piHelp = run(["pi", "--help"]);
 	assert.equal(piHelp.status, 0, piHelp.stderr);
 	assert.match(piHelp.stdout, /--mode <mode>/);
+});
+
+test("renders the pre-launch help and argument errors in the selected locale", () => {
+	const help = run(["--help"], { env: { JOUZU_UI_LOCALE: "ja" } });
+	assert.equal(help.status, 0, help.stderr);
+	assert.match(help.stdout, /Jouzu エージェント型 AI 環境/u);
+	// Protected values do not move into the catalog.
+	assert.match(help.stdout, /jouzu catalog accept <revision> --digest <sha256> \[--source <source-id>\]/u);
+	assert.match(help.stdout, /--jouzu-ui-locale <auto\|en\|ja\|zh-Hans\|zh-Hant>/u);
+
+	const error = run(["doctor", "--bogus"], { env: { JOUZU_UI_LOCALE: "ja" } });
+	assert.equal(error.status, 2);
+	assert.match(error.stderr, /エラー: doctor は --bogus を受け付けません/u);
+	assert.match(error.stderr, /`jouzu --help`/u);
+});
+
+/**
+ * A damaged `ja` catalog must not stop the pre-launch display: the CLI renders
+ * the English fallback for `--help`, an argument error, and `doctor`.
+ *
+ * The built tree is copied into a temporary directory inside the package so the
+ * CLI's `import.meta.url`-relative `./locales` resolves to the damaged copy
+ * while bare imports still find the package `node_modules`. The copy keeps the
+ * shared `dist/locales` untouched, so this test stays safe while other test
+ * files run in parallel.
+ */
+for (const [label, mutate] of [
+	["truncated", (source) => source.slice(0, 120)],
+	["digest-mismatched", (source) => `${source}\n# damaged catalog probe\n`],
+]) {
+	test(`a ${label} ja catalog keeps the pre-launch display and doctor in English`, () => {
+		const temp = mkdtempSync(join(packageRoot, ".damaged-catalog-"));
+		try {
+			const damagedCli = join(temp, "cli.js");
+			const damagedRun = (args) => {
+				const home = mkdtempSync(join(tmpdir(), "jouzu-damaged-home-"));
+				try {
+					return spawnSync(process.execPath, [damagedCli, "--jouzu-home", home, ...args], {
+						encoding: "utf8",
+						timeout: 30_000,
+						env: { ...scrubbedEnv(), JOUZU_HOME: home, PI_OFFLINE: "1", JOUZU_UI_LOCALE: "ja" },
+						input: "",
+					});
+				} finally {
+					rmSync(home, { recursive: true, force: true });
+				}
+			};
+			const englishHelp = run(["--help"], { env: { JOUZU_UI_LOCALE: "en" } });
+			const englishDoctorStatus = piLock.compatibilityStatus === "qualified" ? 0 : 1;
+			const cjk = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]/u;
+			const jaSource = readFileSync(join(packageRoot, "dist", "locales", "ja", "cli.ftl"), "utf8");
+			cpSync(join(packageRoot, "dist"), temp, { recursive: true });
+			writeFileSync(join(temp, "locales", "ja", "cli.ftl"), mutate(jaSource));
+
+			const help = damagedRun(["--help"]);
+			assert.equal(help.status, 0, `${label}: ${help.stderr}`);
+			assert.equal(help.stdout, englishHelp.stdout, `${label}: help must render the English bytes`);
+			assert.equal(help.stderr, "", `${label}: ${help.stderr}`);
+
+			const error = damagedRun(["--bogus"]);
+			assert.equal(error.status, 1, `${label}: ${error.stderr}`);
+			assert.match(error.stderr, /Unknown option: --bogus/u, label);
+
+			const doctor = damagedRun(["doctor"]);
+			assert.equal(doctor.status, englishDoctorStatus, `${label}: ${doctor.stderr}`);
+			assert.match(doctor.stdout, /Jouzu doctor/u, label);
+			assert.doesNotMatch(doctor.stdout, cjk, `${label}: doctor must render English`);
+			assert.match(doctor.stdout, /Jouzu could not read its interface catalog/u, label);
+		} finally {
+			rmSync(temp, { recursive: true, force: true });
+		}
+	});
+}
+
+test("startup reads the UI locale option, environment, and saved setting without writing", () => {
+	const temp = mkdtempSync(join(tmpdir(), "jouzu-ui-locale-cli-"));
+	try {
+		const jouzuHome = join(temp, "home");
+		mkdirSync(jouzuHome, { recursive: true });
+		const settingsPath = join(jouzuHome, "localization.json");
+
+		const invalid = run(["--jouzu-ui-locale", "fr", "doctor"]);
+		assert.equal(invalid.status, 2, invalid.stderr);
+		assert.match(invalid.stderr, /--jouzu-ui-locale must be one of/);
+
+		const explicit = run(["--jouzu-home", jouzuHome, "--jouzu-ui-locale", "ja", "doctor"]);
+		assert.equal(explicit.status, 0, explicit.stderr);
+		assert.equal(existsSync(settingsPath), false, "reading must not create localization.json");
+
+		const fromEnv = run(["--jouzu-home", jouzuHome, "doctor"], { env: { JOUZU_UI_LOCALE: "ja_JP.UTF-8" } });
+		assert.equal(fromEnv.status, 0, fromEnv.stderr);
+		assert.equal(existsSync(settingsPath), false, "reading the environment must not create localization.json");
+
+		const saved = `${JSON.stringify({ schemaVersion: 1, localization: { uiLocale: "zh-Hant" } })}\n`;
+		writeFileSync(settingsPath, saved);
+		const fromSaved = run(["--jouzu-home", jouzuHome, "doctor"]);
+		assert.equal(fromSaved.status, 0, fromSaved.stderr);
+		assert.equal(readFileSync(settingsPath, "utf8"), saved, "reading must not rewrite localization.json");
+	} finally {
+		rmSync(temp, { recursive: true, force: true });
+	}
+});
+
+test("a future-version saved localization warns, falls back, and is left intact", () => {
+	const temp = mkdtempSync(join(tmpdir(), "jouzu-ui-locale-future-"));
+	try {
+		const jouzuHome = join(temp, "home");
+		mkdirSync(jouzuHome, { recursive: true });
+		const settingsPath = join(jouzuHome, "localization.json");
+		const contents = `${JSON.stringify({ schemaVersion: 99, localization: { uiLocale: "ja" } })}\n`;
+		writeFileSync(settingsPath, contents);
+		const result = run(["--jouzu-home", jouzuHome, "doctor"]);
+		assert.equal(result.status, 0, result.stderr);
+		assert.match(result.stderr, /schemaVersion 99/);
+		assert.match(result.stderr, /leaving the file unchanged/);
+		assert.equal(readFileSync(settingsPath, "utf8"), contents);
+	} finally {
+		rmSync(temp, { recursive: true, force: true });
+	}
+});
+
+test("an invalid saved localization warns and is left intact", () => {
+	const temp = mkdtempSync(join(tmpdir(), "jouzu-ui-locale-invalid-"));
+	try {
+		const jouzuHome = join(temp, "home");
+		mkdirSync(jouzuHome, { recursive: true });
+		const settingsPath = join(jouzuHome, "localization.json");
+		const contents = `${JSON.stringify({ schemaVersion: 1, localization: { uiLocale: "fr" } })}\n`;
+		writeFileSync(settingsPath, contents);
+		const result = run(["--jouzu-home", jouzuHome, "doctor"]);
+		assert.equal(result.status, 0, result.stderr);
+		assert.match(result.stderr, /localization settings could not be used/);
+		assert.equal(readFileSync(settingsPath, "utf8"), contents);
+	} finally {
+		rmSync(temp, { recursive: true, force: true });
+	}
+});
+
+test("a non-interactive start with a UI locale prints no question and writes no setting", () => {
+	const temp = mkdtempSync(join(tmpdir(), "jouzu-ui-locale-quiet-"));
+	try {
+		const jouzuHome = join(temp, "home");
+		const result = run(["--jouzu-home", jouzuHome, "pi", "--version"], { env: { JOUZU_UI_LOCALE: "ja" } });
+		assert.equal(result.status, 0, result.stderr);
+		assert.doesNotMatch(result.stdout, /\?/u);
+		assert.doesNotMatch(result.stderr, /\?/u);
+		assert.equal(existsSync(join(jouzuHome, "localization.json")), false, "the UI locale was written");
+		assert.equal(
+			existsSync(join(jouzuHome, "state", "profile-choice.json")),
+			false,
+			"a non-interactive start recorded a first-run answer",
+		);
+	} finally {
+		rmSync(temp, { recursive: true, force: true });
+	}
+});
+
+test("machine-readable startup stays protocol-only and asks no question", () => {
+	const temp = mkdtempSync(join(tmpdir(), "jouzu-machine-readable-"));
+	try {
+		const jsonHome = join(temp, "json-home");
+		const json = run(["--jouzu-home", jsonHome, "pi", "--mode", "json", "--no-session", "--no-context-files"], {
+			env: { JOUZU_UI_LOCALE: "ja" },
+		});
+		assert.equal(json.status, 0, json.stderr);
+		const events = json.stdout
+			.split("\n")
+			.filter(Boolean)
+			.map((line) => JSON.parse(line));
+		assert.deepEqual(
+			events.map((event) => event.type),
+			["session"],
+		);
+		assert.doesNotMatch(json.stdout, /\?/u);
+		assert.doesNotMatch(json.stderr, /\?/u);
+
+		const rpcHome = join(temp, "rpc-home");
+		const rpc = run(["--jouzu-home", rpcHome, "pi", "--mode", "rpc", "--no-session", "--no-context-files"], {
+			input: `${JSON.stringify({ id: "commands", type: "get_commands" })}\n`,
+			env: { JOUZU_UI_LOCALE: "ja" },
+		});
+		assert.equal(rpc.status, 0, rpc.stderr);
+		assert.equal(rpcResponse(rpc.stdout, "commands").success, true);
+		assert.doesNotMatch(rpc.stdout, /\?/u);
+		assert.doesNotMatch(rpc.stderr, /\?/u);
+
+		for (const home of [jsonHome, rpcHome]) {
+			assert.equal(existsSync(join(home, "localization.json")), false, "a machine-readable start wrote the UI locale");
+			assert.equal(
+				existsSync(join(home, "state", "profile-choice.json")),
+				false,
+				"a machine-readable start recorded a first-run answer",
+			);
+		}
+	} finally {
+		rmSync(temp, { recursive: true, force: true });
+	}
+});
+
+test("changing the UI locale leaves the response language, profile, model, provider, and region unchanged", () => {
+	const temp = mkdtempSync(join(tmpdir(), "jouzu-ui-locale-independent-"));
+	try {
+		const jouzuHome = join(temp, "home");
+		// Apply the Japanese-support profile first: its response-language intent must
+		// survive any UI locale choice.
+		const applied = run(["--jouzu-home", jouzuHome, "profile", "apply", "--profile", "ja"]);
+		assert.equal(applied.status, 0, applied.stderr);
+
+		const qualified = piLock.compatibilityStatus === "qualified";
+		const reportFor = (locale) => {
+			const result = run(["--jouzu-home", jouzuHome, "--jouzu-ui-locale", locale, "doctor", "--json"]);
+			assert.equal(result.status, qualified ? 0 : 1, result.stderr || result.stdout);
+			assert.equal(result.stderr, "");
+			return JSON.parse(result.stdout);
+		};
+		const japanese = reportFor("ja");
+		const english = reportFor("en");
+		const field = (report, id) => report.fields.find((entry) => entry.id === id)?.value;
+		const localized = (report) =>
+			Object.fromEntries(
+				report.fields.filter((entry) => entry.section === "localization").map((entry) => [entry.id, entry.value]),
+			);
+		// The catalog digest is per-locale by design, so compare the locale decision
+		// and the catalog metadata separately from the digest itself.
+		const localizedWithoutDigest = (report) =>
+			Object.fromEntries(
+				Object.entries(localized(report)).filter(
+					([id]) => id !== "localization.catalogDigest" && !id.startsWith("language."),
+				),
+			);
+
+		assert.deepEqual(localizedWithoutDigest(japanese), {
+			"localization.requested": "ja",
+			"localization.effective": "ja",
+			"localization.source": "cli",
+			"localization.fallback": "none",
+			"localization.catalogVersion": CATALOG_VERSION,
+			"localization.catalogFallback": "none",
+			"localization.catalogState": "stale",
+			"localization.supportStates": "en=complete; ja=stale; zh-Hans=unsupported; zh-Hant=unsupported",
+		});
+		assert.deepEqual(localizedWithoutDigest(english), {
+			"localization.requested": "en",
+			"localization.effective": "en",
+			"localization.source": "cli",
+			"localization.fallback": "none",
+			"localization.catalogVersion": CATALOG_VERSION,
+			"localization.catalogFallback": "none",
+			"localization.catalogState": "complete",
+			"localization.supportStates": "en=complete; ja=stale; zh-Hans=unsupported; zh-Hant=unsupported",
+		});
+		assert.match(localized(japanese)["localization.catalogDigest"], /^[0-9a-f]{64}$/u);
+		assert.match(localized(english)["localization.catalogDigest"], /^[0-9a-f]{64}$/u);
+
+		// The response language and artifact policy stay on their own sources, so a
+		// UI-locale choice cannot supply them.
+		for (const id of [
+			"language.responseLanguage.requested",
+			"language.responseLanguage.effective",
+			"language.responseLanguage.source",
+			"language.artifactPolicy.requested",
+			"language.artifactPolicy.effective",
+			"language.artifactPolicy.source",
+			"language.projectPolicy",
+		]) {
+			assert.equal(field(japanese, id), field(english, id), `${id} is independent of the UI locale`);
+		}
+		assert.equal(field(japanese, "language.responseLanguage.source"), "builtin");
+		assert.equal(field(english, "language.responseLanguage.source"), "builtin");
+		assert.notEqual(
+			localized(japanese)["localization.catalogDigest"],
+			localized(english)["localization.catalogDigest"],
+		);
+
+		// Every field outside the UI locale decision is byte-identical, so the UI
+		// locale cannot move the response language, profile, model, provider, or the
+		// OS region.
+		const withoutLocalization = (report) => report.fields.filter((entry) => entry.section !== "localization");
+		assert.deepEqual(withoutLocalization(japanese), withoutLocalization(english));
+
+		// Name the independence dimensions explicitly, so a future coupling fails here.
+		assert.match(field(japanese, "profile.selected") ?? "", /^ja \(/u);
+		assert.equal(field(english, "profile.selected"), field(japanese, "profile.selected"));
+		assert.equal(field(english, "profile.appliedManifest"), field(japanese, "profile.appliedManifest"));
+		assert.equal(field(english, "platform.locale"), field(japanese, "platform.locale"));
+		assert.equal(field(english, "packages.count"), field(japanese, "packages.count"));
+		assert.equal(field(english, "provider.authFile"), field(japanese, "provider.authFile"));
+		assert.equal(field(english, "provider.modelsFile"), field(japanese, "provider.modelsFile"));
+		assert.equal(field(english, "provider.environment"), field(japanese, "provider.environment"));
+	} finally {
+		rmSync(temp, { recursive: true, force: true });
+	}
 });
 
 test("profile plan is non-mutating and profile apply converges", () => {
@@ -825,6 +1121,28 @@ test("doctor text and experimental JSON preserve diagnostics, exit status, and r
 		assert.equal(report.healthy, qualified);
 		assert.equal(report.fields.find((field) => field.id === "paths.agentDir")?.value, join(jouzuHome, "agent"));
 		assert.equal(report.fields.find((field) => field.id === "isolation.piAgentDir")?.value, "yes");
+		assert.deepEqual(
+			report.fields.filter((field) => field.section === "localization").map((field) => field.id),
+			[
+				"localization.requested",
+				"localization.effective",
+				"localization.source",
+				"localization.fallback",
+				"localization.catalogVersion",
+				"localization.catalogDigest",
+				"localization.catalogFallback",
+				"localization.catalogState",
+				"localization.supportStates",
+				"language.responseLanguage.requested",
+				"language.responseLanguage.effective",
+				"language.responseLanguage.source",
+				"language.artifactPolicy.requested",
+				"language.artifactPolicy.effective",
+				"language.artifactPolicy.source",
+				"language.projectPolicy",
+			],
+		);
+		assert.equal(report.fields.find((field) => field.id === "locale")?.section, "platform");
 
 		const unhealthyResult = run(["--jouzu-home", jouzuHome, "doctor", "--json"], {
 			env: { ...inheritedRoots, PATH: "" },
@@ -860,9 +1178,10 @@ test("Jouzu-owned directories get deterministic private modes regardless of umas
 			]) {
 				const jouzuHome = join(temp, `home-${umask}-${label}`);
 				mkdirSync(jouzuHome, { recursive: true });
-				// mkdir masks its mode with the inherited umask, so prepare the
-				// caller-owned root explicitly to test that Jouzu leaves it alone.
-				chmodSync(jouzuHome, 0o755);
+				// Simulate a caller-owned home root that Jouzu must not chmod. The mode is
+				// set explicitly: mkdirSync would apply the test process's umask, and the
+				// assertion below would then test that umask instead of the code.
+				chmodSync(jouzuHome, 0o750);
 				const wrapped = spawnSync(
 					"sh",
 					["-c", `umask ${umask}; exec "$@"`, "sh", process.execPath, cli, "--jouzu-home", jouzuHome, ...args],
@@ -873,7 +1192,7 @@ test("Jouzu-owned directories get deterministic private modes regardless of umas
 					},
 				);
 				assert.equal(wrapped.status, 0, `${label} apply failed: ${wrapped.stderr}`);
-				assert.equal(modeOf(jouzuHome), 0o755, `${label} must not chmod the caller-owned home root`);
+				assert.equal(modeOf(jouzuHome), 0o750, `${label} must not chmod the caller-owned home root`);
 				assert.equal(modeOf(join(jouzuHome, "state")), 0o700, `${label} state dir mode`);
 				if (label !== "updater") {
 					assert.equal(modeOf(join(jouzuHome, "agent")), 0o700, `${label} agent dir mode`);
@@ -887,6 +1206,66 @@ test("Jouzu-owned directories get deterministic private modes regardless of umas
 							: "profile-state.json";
 				assert.equal(modeOf(join(jouzuHome, "state", stateFile)), 0o600, `${label} state file mode`);
 			}
+		}
+	} finally {
+		rmSync(temp, { recursive: true, force: true });
+	}
+});
+
+test("JSON command output does not depend on the human rendering path", () => {
+	const temp = mkdtempSync(join(tmpdir(), "jouzu-json-render-"));
+	try {
+		const jouzuHome = join(temp, "home");
+		const dist = join(packageRoot, "dist");
+		// Poison only the standalone human formatters. The JSON branch must not call
+		// them, so a poisoned formatter must leave every machine result unchanged.
+		const poisoned = {
+			"catalog-command.js": ["formatCatalogStatus"],
+			"keybindings.js": ["formatKeybindingPlan"],
+			"profile-manager.js": ["formatProfilePlan"],
+			"updater.js": ["formatUpdateStatus"],
+		};
+		const redirects = [];
+		for (const [file, names] of Object.entries(poisoned)) {
+			const wrapper = join(temp, `poison-${file}`);
+			const stubs = names
+				.map((name) => `export function ${name}() { throw new Error("human renderer called: ${name}"); }`)
+				.join("\n");
+			writeFileSync(wrapper, `export * from ${JSON.stringify(pathToFileURL(join(dist, file)).href)};\n${stubs}\n`);
+			redirects.push([join(dist, file), pathToFileURL(wrapper).href]);
+		}
+		const loader = join(temp, "poison-loader.mjs");
+		writeFileSync(
+			loader,
+			`import { registerHooks } from "node:module";\n` +
+				`const redirects = new Map(${JSON.stringify(redirects)});\n` +
+				`registerHooks({ resolve(specifier, context, nextResolve) {\n` +
+				`  const resolved = nextResolve(specifier, context);\n` +
+				`  const wrapper = redirects.get(resolved.url);\n` +
+				`  if (wrapper && specifier !== resolved.url) return { url: wrapper, shortCircuit: true };\n` +
+				`  return resolved;\n` +
+				`} });\n`,
+		);
+		const env = { NODE_OPTIONS: `--import=${pathToFileURL(loader).href}` };
+		const cases = [
+			["doctor", ["doctor", "--json"]],
+			["catalog status", ["catalog", "status", "--json"]],
+			["catalog validate", ["catalog", "validate", join(temp, "missing-catalog.json"), "--json"]],
+			["keybindings plan", ["keybindings", "plan", "--json"]],
+			["profile plan", ["profile", "plan", "--profile", "core", "--json"]],
+			["self-update status", ["self-update", "status", "--json"]],
+		];
+		for (const [label, args] of cases) {
+			const plain = run(["--jouzu-home", jouzuHome, ...args]);
+			assert.equal(plain.stderr, "", `${label}: the machine path wrote to stderr`);
+			assert.ok(!plain.stdout.includes("\u001b["), `${label}: the machine path emitted an ANSI escape`);
+			assert.equal(
+				plain.stdout,
+				`${JSON.stringify(JSON.parse(plain.stdout), null, 2)}\n`,
+				`${label}: stdout is not the serialized value`,
+			);
+			const hostile = run(["--jouzu-home", jouzuHome, ...args], { env });
+			assert.equal(hostile.stdout, plain.stdout, `${label}: JSON output changed when the human renderer was poisoned`);
 		}
 	} finally {
 		rmSync(temp, { recursive: true, force: true });

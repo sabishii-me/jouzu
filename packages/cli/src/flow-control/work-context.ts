@@ -153,5 +153,4 @@ export class FlowWorkContext {
 	currentActor(): string | undefined {
 		return this.attribution?.actor;
 	}
-
 }

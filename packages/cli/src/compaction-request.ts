@@ -1,4 +1,6 @@
 import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { CatalogMessageId, catalogText, defaultCatalog } from "./cli-messages.js";
+import type { CatalogBundle } from "./locale-catalog.js";
 
 /**
  * Marker that `@sting8k/pi-vcc` looks for in `customInstructions`. Its
@@ -115,10 +117,19 @@ function isPiVccCompaction(details: unknown): boolean {
 	return typeof details === "object" && details !== null && (details as { compactor?: unknown }).compactor === "pi-vcc";
 }
 
+/**
+ * The catalog IDs for the compaction outcome line. They stay local rather than
+ * joining the shared `CatalogMessageId` table so a parallel surface migration
+ * does not conflict on that file; `scripts/check-locales.mjs` allows a
+ * catalog-only ID present in both locales.
+ */
+const COMPACTION_OUTCOME_ID = "jouzu.cli.compaction.outcome";
+const COMPACTION_OUTCOME_PI_VCC_ID = "jouzu.cli.compaction.outcome.piVcc";
+const COMPACTION_CONTINUE_FAILED_ID = "jouzu.cli.compaction.continueFailed";
+
 /** User-facing outcome line for a completed compaction. */
-export function describeCompactionOutcome(details: unknown): string {
-	const compactor = isPiVccCompaction(details) ? " (pi-vcc summary)" : "";
-	return `Context compacted at the agent's request${compactor}. Earlier messages remain searchable.`;
+export function describeCompactionOutcome(details: unknown, catalog: CatalogBundle = defaultCatalog()): string {
+	return catalogText(catalog, isPiVccCompaction(details) ? COMPACTION_OUTCOME_PI_VCC_ID : COMPACTION_OUTCOME_ID);
 }
 
 /**
@@ -149,11 +160,12 @@ const NO_PARAMETERS = { type: "object", properties: {} } as unknown as ToolDefin
 export function registerCompactionRequest(
 	pi: ExtensionAPI,
 	controller: CompactionRequestController = new CompactionRequestController(),
+	catalog: CatalogBundle = defaultCatalog(),
 ): CompactionRequestController {
 	pi.registerTool({
 		name: COMPACTION_TOOL_NAME,
 		exposure: "model-only",
-		label: "Compact Context",
+		label: catalogText(catalog, CatalogMessageId.flowCompactionLabel),
 		description: COMPACTION_TOOL_DESCRIPTION,
 		promptSnippet: COMPACTION_TOOL_PROMPT_SNIPPET,
 		parameters: NO_PARAMETERS,
@@ -167,13 +179,18 @@ export function registerCompactionRequest(
 	pi.on("agent_settled", async (_event, ctx) => {
 		if (!controller.shouldDispatch(ctx.hasPendingMessages())) return;
 		controller.beginDispatch();
-		dispatchCompaction(pi, ctx, controller);
+		dispatchCompaction(pi, ctx, controller, catalog);
 	});
 
 	return controller;
 }
 
-function dispatchCompaction(pi: ExtensionAPI, ctx: ExtensionContext, controller: CompactionRequestController): void {
+function dispatchCompaction(
+	pi: ExtensionAPI,
+	ctx: ExtensionContext,
+	controller: CompactionRequestController,
+	catalog: CatalogBundle,
+): void {
 	// `ctx.compact` asserts the extension context is still active before it
 	// dispatches, so it throws synchronously on a context left stale by a
 	// session replacement or reload. That throw runs neither callback below, so
@@ -185,9 +202,13 @@ function dispatchCompaction(pi: ExtensionAPI, ctx: ExtensionContext, controller:
 			customInstructions: PI_VCC_COMPACT_MARKER,
 			onComplete: (result) => {
 				const continuation = controller.takeContinuation();
-				notify(ctx, describeCompactionOutcome(result?.details), "info");
+				notify(ctx, describeCompactionOutcome(result?.details, catalog), "info");
 				const resumed = resumeAfterCompaction(pi, continuation).catch((error) => {
-					notify(ctx, `Could not continue after compaction: ${asError(error).message}`, "warning");
+					notify(
+						ctx,
+						catalogText(catalog, COMPACTION_CONTINUE_FAILED_ID, { message: asError(error).message }),
+						"warning",
+					);
 				});
 				controller.settle(resumed);
 			},

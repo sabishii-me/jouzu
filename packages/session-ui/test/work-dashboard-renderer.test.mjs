@@ -5,10 +5,40 @@ import { renderSessionLine } from "../dist/session-line.js";
 import { dashboardLineBudget, renderWorkDashboard } from "../dist/work-dashboard-renderer.js";
 
 const styles = { apply: (_role, text) => text };
+const text = {
+	noModel: "no model",
+	attention: "attention",
+	statusHealth: "! status",
+	statusContextUnknown: "ctx ?",
+	statusDetached: "detached",
+};
+// The dashboard text the caller resolves once from the catalog. The internal
+// section and attention keys stay the fixture's identities.
+const dashboardText = {
+	sections: {
+		agent: "Agents",
+		job: "Jobs",
+		task: "Tasks",
+		loop: "Loops",
+		goal: "Goals",
+		prompt: "Scheduled",
+		flow: "Flow",
+	},
+	attention: { result: "unread result", input: "needs input", recovery: "needs recovery", authority: "needs decision" },
+	markStale: (status) => `${status} [stale]`,
+	formatElapsed: (ms) => {
+		const seconds = Math.max(0, Math.floor(ms / 1000));
+		if (seconds < 60) return `${seconds}s`;
+		const minutes = Math.floor(seconds / 60);
+		if (minutes < 60) return `${minutes}m`;
+		const hours = Math.floor(minutes / 60);
+		return minutes % 60 ? `${hours}h ${minutes % 60}m` : `${hours}h`;
+	},
+};
 test("attention survives long identities at every width that fits its badge", () => {
 	const snapshot = { model: { providerId: "very-long-provider".repeat(5), modelId: "long-model".repeat(10) } };
 	for (let width = 3; width <= 200; width++) {
-		const row = renderSessionLine(snapshot, [], width, styles, {
+		const row = renderSessionLine(snapshot, [], width, styles, text, {
 			text: "activity".repeat(10),
 			active: true,
 			attentionCount: 12,
@@ -40,7 +70,7 @@ test("dashboard obeys aggregate mode, terminal, and remaining-space budgets with
 	for (const width of [24, 48, 80, 120, 200]) {
 		for (const mode of ["compact", "expanded", "hidden"]) {
 			const layout = { width, mode, terminalRows: 18, availableRows: 4, now: 0 };
-			const rows = renderWorkDashboard(snapshot, layout, styles);
+			const rows = renderWorkDashboard(snapshot, layout, styles, dashboardText);
 			assert.equal(rows.length, mode === "hidden" ? 0 : 4);
 			if (rows.length) assert.equal(rows.at(-1), "", "a blank line separates the panel from the Session Line");
 			assert.ok(rows.every((row) => terminalTextWidth(row) <= width && !row.includes("\x1b") && !row.includes("\n")));
@@ -57,6 +87,7 @@ test("dashboard obeys aggregate mode, terminal, and remaining-space budgets with
 			{ ...snapshot, sources: {} },
 			{ width: 80, mode: "compact", terminalRows: 24, availableRows: 8, now: 0 },
 			styles,
+			dashboardText,
 		),
 		[],
 	);
@@ -83,6 +114,7 @@ test("a tall terminal shows a full fan-out of running agents up to the mode limi
 		snapshot,
 		{ width: 80, mode: "compact", terminalRows: 60, availableRows: 40, now: 0 },
 		styles,
+		dashboardText,
 	);
 	// One divider, one row per agent, and the separating blank line.
 	assert.equal(rows.length, 10);
@@ -123,6 +155,7 @@ test("sections title their counts and rows follow marker, identity, status, elap
 		snapshot,
 		{ mode: "expanded", terminalRows: 60, availableRows: 20, width: 80, now: 3_910_000 },
 		styles,
+		dashboardText,
 	);
 	const title = "── Agents · 1 running · 1 open · 1 done · 1 failed · !1 ";
 	assert.deepEqual(rows, [
@@ -139,16 +172,17 @@ test("sections title their counts and rows follow marker, identity, status, elap
 			snapshot,
 			{ mode: "compact", terminalRows: 60, availableRows: 20, width, now: 3_910_000 },
 			styles,
+			dashboardText,
 		))
 			assert.ok(terminalTextWidth(row) <= width, `width ${width}`);
 });
 test("attention with no other activity reads as a phrase and the label gives way first", () => {
 	const snapshot = { model: { providerId: "local", modelId: "model" } };
-	const line = renderSessionLine(snapshot, [], 60, styles, { text: "", active: false, attentionCount: 2 });
+	const line = renderSessionLine(snapshot, [], 60, styles, text, { text: "", active: false, attentionCount: 2 });
 	assert.match(line, /^!2 attention +Local model$/);
 	assert.equal(terminalTextWidth(line), 60);
 	assert.doesNotMatch(
-		renderSessionLine(snapshot, [], 18, styles, { text: "", active: false, attentionCount: 2 }),
+		renderSessionLine(snapshot, [], 18, styles, text, { text: "", active: false, attentionCount: 2 }),
 		/attention/,
 	);
 });
@@ -191,6 +225,7 @@ test("markers and section counts carry state color; row metadata stays muted", (
 		snapshot,
 		{ mode: "compact", terminalRows: 60, availableRows: 20, width: 80, now: 0 },
 		tagged,
+		dashboardText,
 	);
 	assert.match(
 		divider,

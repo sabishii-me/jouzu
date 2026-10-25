@@ -191,7 +191,11 @@ test("alerts name what happened once per content and reach a listener immediatel
 	assert.equal(alerts.length, 1);
 	assert.equal(alerts[0].kind, "withheld");
 	assert.equal(alerts[0].approvable, true);
-	assert.match(alerts[0].detail, /1 error-level finding \(bidi_control\)/);
+	// The alert carries the evidence; the review extension renders the user text from the catalog.
+	assert.deepEqual(
+		alerts[0].evidence.findings.map((finding) => finding.kind),
+		["bidi_control"],
+	);
 	assert.equal(gate.drainAlerts().length, 0);
 
 	// With no listener the alert waits for the next /textguard instead of being lost.

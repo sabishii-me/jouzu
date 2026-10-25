@@ -16,6 +16,8 @@ import {
 	resolveCatalogBearer,
 	resolveCatalogSources,
 } from "./catalog-sources.js";
+import { CatalogMessageId, catalogText, defaultCatalog } from "./cli-messages.js";
+import type { CatalogBundle } from "./locale-catalog.js";
 import {
 	type CatalogRegistrationGap,
 	type CatalogThinkingLevelGap,
@@ -35,6 +37,30 @@ import { acquireStateLock, type StateLockInspection } from "./state-lock.js";
 const CATALOG_TOTAL_TIMEOUT_MS = 30_000;
 const QUARANTINE_LIMIT = 3;
 const QUARANTINE_BYTE_LIMIT = 48 * 1024 * 1024;
+
+/**
+ * The catalog ID for the "source not found or disabled" refresh error. It is
+ * local to this module, like the catalog-failure IDs, so a parallel migration
+ * of another surface does not conflict on the shared `CatalogMessageId` table.
+ */
+const CATALOG_SOURCE_NOT_FOUND_ID = "jouzu.cli.catalog.sourceNotFoundOrDisabled";
+
+/**
+ * The catalog IDs for the catalog-sync failure text a user reads. A lock
+ * status word, an HTTP status, and a source id are protected values passed as
+ * arguments; the sentence resolves from the session bundle. The IDs stay local
+ * to this module, like the catalog-failure IDs, so a parallel migration does
+ * not conflict on the shared table.
+ */
+const SYNC_MESSAGE_ID = {
+	refreshBusy: "jouzu.cli.catalog.sync.refreshBusy",
+	operationBusy: "jouzu.cli.catalog.sync.operationBusy",
+	authFailed: "jouzu.cli.catalog.sync.authFailed",
+	accessDenied: "jouzu.cli.catalog.sync.accessDenied",
+	proxyAuth: "jouzu.cli.catalog.sync.proxyAuth",
+	httpError: "jouzu.cli.catalog.sync.httpError",
+	noActiveAccount: "jouzu.cli.catalog.sync.noActiveAccount",
+} as const;
 
 export interface CatalogEndpointConfig {
 	url: string;
@@ -340,7 +366,7 @@ function unconfiguredStatus(): CatalogSyncStatus {
 		schemaVersion: 1,
 		status: "unconfigured",
 		configured: false,
-		message: "No model catalog endpoint is configured. Jouzu continues using Pi and local model configuration.",
+		message: catalogText(defaultCatalog(), CatalogMessageId.catalogUnconfigured),
 	};
 }
 
@@ -349,13 +375,14 @@ export function getCatalogSourceStatus(
 	source: CatalogSource,
 	now = new Date(),
 	env: NodeJS.ProcessEnv = process.env,
+	catalog: CatalogBundle = defaultCatalog(),
 ): CatalogSyncStatus {
 	const credentialName = catalogSourceCredentialName(source);
 	const credential = credentialName ? catalogSourceCredentialState(source, env, paths) : undefined;
 	const credentialAvailable = credential
 		? credential.envSet || credential.stored || credential.login === true
 		: undefined;
-	const conflict = catalogSourceConflict(source);
+	const conflict = catalogSourceConflict(source, catalog);
 	try {
 		const origin = readOriginState(paths, source.url);
 		const account = origin?.activeAccountRefHash
@@ -419,10 +446,11 @@ export function getCatalogStatuses(
 	paths: JouzuPaths,
 	env: NodeJS.ProcessEnv = process.env,
 	now = new Date(),
+	catalog: CatalogBundle = defaultCatalog(),
 ): CatalogStatuses {
-	const sources = resolveCatalogSources(paths, env, { includeDisabled: true });
+	const sources = resolveCatalogSources(paths, env, { includeDisabled: true }, catalog);
 	if (sources.length === 0) return { schemaVersion: 1, status: "unconfigured", configured: 0, active: 0, sources: [] };
-	const statuses = sources.map((source) => getCatalogSourceStatus(paths, source, now, env));
+	const statuses = sources.map((source) => getCatalogSourceStatus(paths, source, now, env, catalog));
 	const enabled = statuses.filter((status) => status.configured && status.enabled);
 	const active = enabled.filter((status) => status.status === "active").length;
 	const degraded = enabled.some((status) => status.status === "stale" || (status.configured && status.lastError));
@@ -519,6 +547,8 @@ export interface RefreshCatalogOptions {
 	now?: Date;
 	sourceId?: string;
 	timeoutMs?: number;
+	/** The resolved catalog the sync failure text renders from; English when omitted. */
+	catalog?: CatalogBundle;
 }
 
 export async function refreshCatalogSource(
@@ -528,7 +558,8 @@ export async function refreshCatalogSource(
 ): Promise<CatalogRefreshResult> {
 	const env = options.env ?? process.env;
 	const now = options.now ?? new Date();
-	const catalogStatus = () => getCatalogSourceStatus(paths, source, now, env);
+	const catalog = options.catalog ?? defaultCatalog();
+	const catalogStatus = () => getCatalogSourceStatus(paths, source, now, env, catalog);
 	let token: string | undefined;
 	const config: CatalogEndpointConfig = { url: source.url };
 	let release: (() => void) | undefined;
@@ -541,11 +572,11 @@ export async function refreshCatalogSource(
 			describe: "model catalog refresh",
 			now,
 			onBusy: (inspection: StateLockInspection) =>
-				new CatalogSyncError(`model catalog refresh is busy (${inspection.status})`),
+				new CatalogSyncError(catalogText(catalog, SYNC_MESSAGE_ID.refreshBusy, { status: inspection.status })),
 		});
 		origin = readOriginState(paths, config.url);
 		originLoaded = true;
-		token = resolveCatalogBearer(source, env, paths);
+		token = resolveCatalogBearer(source, env, paths, catalog);
 		const activeState = origin?.activeAccountRefHash
 			? readAccountState(paths, config.url, origin.activeAccountRefHash)
 			: undefined;
@@ -578,21 +609,15 @@ export async function refreshCatalogSource(
 			}
 			if (!response.ok) {
 				if (response.status === 401)
-					throw new CatalogSyncError(
-						"Catalog authentication failed (HTTP 401). Sign in again or update this source's saved token or environment credential.",
-						"auth_rejected",
-					);
+					throw new CatalogSyncError(catalogText(catalog, SYNC_MESSAGE_ID.authFailed), "auth_rejected");
 				if (response.status === 403)
-					throw new CatalogSyncError(
-						"Catalog access was denied (HTTP 403). Check this account's catalog access with the service operator.",
-						"access_denied",
-					);
+					throw new CatalogSyncError(catalogText(catalog, SYNC_MESSAGE_ID.accessDenied), "access_denied");
 				if (response.status === 407)
-					throw new CatalogSyncError(
-						"The proxy requires authentication (HTTP 407). Check your proxy credentials and configuration.",
-						"proxy_auth_required",
-					);
-				throw new CatalogSyncError(`catalog endpoint returned HTTP ${response.status}`, "http_error");
+					throw new CatalogSyncError(catalogText(catalog, SYNC_MESSAGE_ID.proxyAuth), "proxy_auth_required");
+				throw new CatalogSyncError(
+					catalogText(catalog, SYNC_MESSAGE_ID.httpError, { status: response.status }),
+					"http_error",
+				);
 			}
 			const mediaType = response.headers.get("content-type") ?? "";
 			if (!mediaType.toLowerCase().startsWith(MODEL_CATALOG_MEDIA_TYPE)) {
@@ -606,7 +631,7 @@ export async function refreshCatalogSource(
 			clearTimeout(timeout);
 		}
 		phase = "filesystem";
-		return activateCatalogDocument(paths, source, text, response.headers.get("etag") ?? undefined, now, env);
+		return activateCatalogDocument(paths, source, text, response.headers.get("etag") ?? undefined, now, env, catalog);
 	} catch (error) {
 		const { code, message } =
 			error instanceof ModelCatalogError || error instanceof CatalogSyncError || error instanceof CatalogSourceError
@@ -634,15 +659,17 @@ export function activateDiscoveredCatalog(
 	source: CatalogSource,
 	discovered: CatalogEndpointDiscoveryResult,
 	env: NodeJS.ProcessEnv = process.env,
+	catalog: CatalogBundle = defaultCatalog(),
 ): CatalogRefreshResult {
 	if (source.url !== discovered.url) throw new CatalogSyncError("discovered catalog endpoint does not match source");
 	const release = acquireStateLock({
 		path: lockPath(paths, source.url),
 		describe: "model catalog activation",
-		onBusy: (inspection) => new CatalogSyncError(`model catalog refresh is busy (${inspection.status})`),
+		onBusy: (inspection) =>
+			new CatalogSyncError(catalogText(catalog, SYNC_MESSAGE_ID.refreshBusy, { status: inspection.status })),
 	});
 	try {
-		return activateCatalogDocument(paths, source, discovered.text, discovered.etag, new Date(), env);
+		return activateCatalogDocument(paths, source, discovered.text, discovered.etag, new Date(), env, catalog);
 	} finally {
 		release();
 	}
@@ -655,9 +682,10 @@ function activateCatalogDocument(
 	etag: string | undefined,
 	now: Date,
 	env: NodeJS.ProcessEnv,
+	catalog: CatalogBundle = defaultCatalog(),
 ): CatalogRefreshResult {
 	const config = { url: source.url };
-	const catalogStatus = () => getCatalogSourceStatus(paths, source, now, env);
+	const catalogStatus = () => getCatalogSourceStatus(paths, source, now, env, catalog);
 	const document = parseAndValidateModelCatalog(text, { remote: true });
 	if (!document.sequence) throw new CatalogSyncError("remote catalog sequence is missing");
 	if (document.scope.accountScoped && !document.scope.accountRef)
@@ -754,7 +782,8 @@ export async function refreshModelCatalog(
 	options: RefreshCatalogOptions = {},
 ): Promise<CatalogRefreshResult> {
 	const env = options.env ?? process.env;
-	const sources = resolveCatalogSources(paths, env);
+	const catalog = options.catalog ?? defaultCatalog();
+	const sources = resolveCatalogSources(paths, env, {}, catalog);
 	if (sources.length === 0) return { status: "unconfigured", catalogStatus: unconfiguredStatus() };
 	const source = options.sourceId
 		? sources.find((candidate) => candidate.id === options.sourceId)
@@ -765,7 +794,7 @@ export async function refreshModelCatalog(
 			status: "error",
 			catalogStatus: unconfiguredStatus(),
 			code: "source_not_found",
-			message: `catalog source not found or disabled: ${options.sourceId}`,
+			message: catalogText(catalog, CATALOG_SOURCE_NOT_FOUND_ID, { id: options.sourceId }),
 		};
 	}
 	return refreshCatalogSource(paths, source, options);
@@ -789,7 +818,9 @@ export async function refreshAllModelCatalogs(
 	options: Omit<RefreshCatalogOptions, "sourceId"> = {},
 ): Promise<CatalogRefreshAllResult> {
 	const env = options.env ?? process.env;
-	const sources = resolveCatalogSources(paths, env).filter((source) => !automaticallySkipped(paths, source, env));
+	const sources = resolveCatalogSources(paths, env, {}, options.catalog ?? defaultCatalog()).filter(
+		(source) => !automaticallySkipped(paths, source, env),
+	);
 	if (sources.length === 0) return { status: "unconfigured", results: [] };
 	return refreshSources(paths, sources, options);
 }
@@ -801,8 +832,12 @@ export async function refreshAllModelCatalogs(
  * snapshots catalogs. A source with an activated revision, stale included, keeps
  * serving and refreshes in the background instead.
  */
-export function pendingStartupCatalogSources(paths: JouzuPaths, env: NodeJS.ProcessEnv = process.env): CatalogSource[] {
-	return resolveCatalogSources(paths, env).filter(
+export function pendingStartupCatalogSources(
+	paths: JouzuPaths,
+	env: NodeJS.ProcessEnv = process.env,
+	catalog: CatalogBundle = defaultCatalog(),
+): CatalogSource[] {
+	return resolveCatalogSources(paths, env, {}, catalog).filter(
 		(source) => catalogSourceCredentialAvailable(source, env, paths) && !hasActiveRevision(paths, source),
 	);
 }
@@ -833,7 +868,9 @@ export async function refreshAvailableModelCatalogs(
 	const env = options.env ?? process.env;
 	return refreshModelCatalogSources(
 		paths,
-		resolveCatalogSources(paths, env).filter((source) => catalogSourceCredentialAvailable(source, env, paths)),
+		resolveCatalogSources(paths, env, {}, options.catalog ?? defaultCatalog()).filter((source) =>
+			catalogSourceCredentialAvailable(source, env, paths),
+		),
 		options,
 	);
 }
@@ -863,10 +900,14 @@ export function loadActiveCatalogForSource(paths: JouzuPaths, source: CatalogSou
 	return loadDocument(accountRoot(paths, source.url, origin.activeAccountRefHash), state.active);
 }
 
-export function loadActiveModelCatalogs(paths: JouzuPaths, env: NodeJS.ProcessEnv = process.env): ActiveModelCatalog[] {
+export function loadActiveModelCatalogs(
+	paths: JouzuPaths,
+	env: NodeJS.ProcessEnv = process.env,
+	catalog: CatalogBundle = defaultCatalog(),
+): ActiveModelCatalog[] {
 	const active: ActiveModelCatalog[] = [];
 	const streams = new Map<string, { revision: string; sourceId: string }>();
-	for (const source of resolveCatalogSources(paths, env)) {
+	for (const source of resolveCatalogSources(paths, env, {}, catalog)) {
 		const document = loadActiveCatalogForSource(paths, source);
 		if (!document) continue;
 		const scope = document.scope.accountScoped ? document.scope.accountRef : "public";
@@ -893,8 +934,9 @@ export function acceptQuarantinedCatalog(
 	env: NodeJS.ProcessEnv = process.env,
 	now = new Date(),
 	sourceId?: string,
+	catalog: CatalogBundle = defaultCatalog(),
 ): CatalogSyncStatus {
-	const sources = resolveCatalogSources(paths, env);
+	const sources = resolveCatalogSources(paths, env, {}, catalog);
 	const source = sourceId
 		? sources.find((candidate) => candidate.id === sourceId)
 		: sources.find((candidate) => !automaticallySkipped(paths, candidate, env));
@@ -904,11 +946,13 @@ export function acceptQuarantinedCatalog(
 		path: lockPath(paths, config.url),
 		describe: "model catalog acceptance",
 		now,
-		onBusy: (inspection) => new CatalogSyncError(`model catalog operation is busy (${inspection.status})`),
+		onBusy: (inspection) =>
+			new CatalogSyncError(catalogText(catalog, SYNC_MESSAGE_ID.operationBusy, { status: inspection.status })),
 	});
 	try {
 		const origin = readOriginState(paths, config.url);
-		if (!origin?.activeAccountRefHash) throw new CatalogSyncError("no catalog account is active");
+		if (!origin?.activeAccountRefHash)
+			throw new CatalogSyncError(catalogText(catalog, SYNC_MESSAGE_ID.noActiveAccount));
 		const directory = accountRoot(paths, config.url, origin.activeAccountRefHash);
 		const state = readAccountState(paths, config.url, origin.activeAccountRefHash);
 		if (!state) throw new CatalogSyncError("catalog account state is missing");
@@ -949,7 +993,7 @@ export function acceptQuarantinedCatalog(
 		state.validatedAt = now.toISOString();
 		writeJson(accountStatePath(paths, config.url, origin.activeAccountRefHash), state, catalogRoot(paths));
 		pruneDocuments(directory, state);
-		return getCatalogSourceStatus(paths, source, now);
+		return getCatalogSourceStatus(paths, source, now, env, catalog);
 	} finally {
 		release();
 	}

@@ -1,4 +1,5 @@
 import type { Component } from "@earendil-works/pi-tui";
+import type { SessionUiWorkDashboardText } from "./contracts.js";
 import { SESSION_ACTIVITY_TICK_MS } from "./session-line.js";
 import type { SessionUiStyles } from "./styles.js";
 import { WORK_DISPLAY_DEFAULTS } from "./work-dashboard.js";
@@ -15,6 +16,7 @@ export class WorkDashboardComponent implements Component {
 	constructor(
 		private readonly controller: WorkDashboardController,
 		private readonly styles: SessionUiStyles,
+		private readonly text: SessionUiWorkDashboardText,
 		private readonly layout: (width: number) => Omit<WorkDashboardLayout, "width" | "now" | "frame">,
 		private readonly requestRender: () => void,
 		private readonly now: () => number = Date.now,
@@ -31,7 +33,7 @@ export class WorkDashboardComponent implements Component {
 		if (!snapshot) return [];
 		const now = this.now();
 		const layout = { ...this.layout(width), width, now, frame: this.frame };
-		const rows = renderWorkDashboard(snapshot, layout, this.styles);
+		const rows = renderWorkDashboard(snapshot, layout, this.styles, this.text);
 		const units = Object.values(snapshot.sources).flatMap((source) => source.units);
 		const attentionDeadlines = units
 			.flatMap((unit) => unit.attention.map((reason) => reason.since))

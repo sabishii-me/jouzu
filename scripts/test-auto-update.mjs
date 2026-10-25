@@ -3,13 +3,28 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+	appendFileSync,
+	cpSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-
-import { downloadPublished, upgradeVersions } from "./published-upgrade.mjs";
+import {
+	assertInstalledCatalogLock,
+	catalogLockFileName,
+	computeCatalogDigests,
+	readRuntimeCatalogVersion,
+} from "./catalog-lock.mjs";
+import { packedTarballEntry } from "./pack-output.mjs";
+import { downloadPublished, installedCatalogSnapshot, upgradeVersions } from "./published-upgrade.mjs";
 import { smokePhase } from "./smoke-phase.mjs";
 
 const root = resolve(import.meta.dirname, "..");
@@ -92,6 +107,21 @@ function sri(bytes) {
 	return `sha512-${createHash("sha512").update(bytes).digest("base64")}`;
 }
 
+function fileDigest(path) {
+	return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
+function installedPackageRoot(prefix) {
+	return process.platform === "win32"
+		? join(prefix, "node_modules", "jouzu")
+		: join(prefix, "lib", "node_modules", "jouzu");
+}
+
+/** Assert that an installed package's lock matches its catalogs and loader. */
+function assertInstalledCatalogs(prefix, label) {
+	assertInstalledCatalogLock(installedPackageRoot(prefix), label);
+}
+
 function preparedArtifact(path, version) {
 	const resolved = resolve(path);
 	const bytes = readFileSync(resolved);
@@ -120,17 +150,35 @@ async function createPackage(rootDirectory, directory, version, broken = false) 
 			join(directory, "dist", "cli.js"),
 			'#!/usr/bin/env node\nthrow new Error("intentional updater smoke failure");\n',
 		);
+		// Give the broken candidate its own catalog and regenerate its lock, so the
+		// rollback has to restore the previous catalog and the candidate is still
+		// rejected for the intended reason.
+		const locales = join(directory, "dist", "locales");
+		appendFileSync(join(locales, "ja", "cli.ftl"), "\nbroken-candidate-marker = 更新候補\n");
+		const { locales: digests, extra } = computeCatalogDigests(locales);
+		const catalogVersion = readRuntimeCatalogVersion(join(directory, "dist", "locale-catalog.js"));
+		writeFileSync(
+			join(locales, catalogLockFileName),
+			`${JSON.stringify({ version: catalogVersion, locales: digests, extra }, null, 2)}\n`,
+		);
 	}
 	const artifacts = join(rootDirectory, "artifacts");
 	mkdirSync(artifacts, { recursive: true });
 	const packed = await runNpm(["pack", "--ignore-scripts", "--json", "--pack-destination", artifacts], {
 		cwd: directory,
 	});
-	const [metadata] = JSON.parse(packed.stdout);
+	const metadata = packedTarballEntry(packed.stdout);
 	const path = join(artifacts, metadata.filename);
 	const bytes = readFileSync(path);
 	assert.equal(metadata.integrity, sri(bytes));
-	return { version, path, bytes, integrity: metadata.integrity, shasum: metadata.shasum };
+	return {
+		version,
+		path,
+		bytes,
+		integrity: metadata.integrity,
+		shasum: metadata.shasum,
+		catalog: fileDigest(join(directory, "dist", "locales", "ja", "cli.ftl")),
+	};
 }
 
 // Tarballs the fixture registry served during this run. Phases share one npm cache, and npm 10
@@ -262,8 +310,7 @@ function projectSnapshot(directory) {
 // Exercise production startup policy and restart against the installed package,
 // then use --version as a bounded child command.
 function startupDriver(temp, prefix) {
-	const packageRoot =
-		process.platform === "win32" ? join(prefix, "node_modules", "jouzu") : join(prefix, "lib", "node_modules", "jouzu");
+	const packageRoot = installedPackageRoot(prefix);
 	const moduleUrl = (name) => JSON.stringify(pathToFileURL(join(packageRoot, "dist", name)).href);
 	const driver = join(temp, "startup-update.mjs");
 	writeFileSync(
@@ -376,6 +423,7 @@ try {
 					env: { ...env, JOUZU_NO_UPDATE: "1" },
 				});
 				assert.match(version.stdout, new RegExp(`^jouzu ${escapeRegex(nextVersion)}$`, "m"));
+				assertInstalledCatalogs(successPrefix, `${mode} updated install`);
 				const state = JSON.parse(readFileSync(join(successHome, "state", "self-update.json"), "utf8"));
 				assert.equal(state.lastResult, "updated");
 				assert.equal(state.installedVersion, nextVersion);
@@ -389,6 +437,18 @@ try {
 		const rollbackHome = join(temp, "rollback-home");
 		const userConfig = configurationFixture(rollbackHome);
 		await installCurrent(current, rollbackPrefix);
+		const catalogBefore = installedCatalogSnapshot(installedPackageRoot(rollbackPrefix), currentVersion);
+		if (current.catalog && broken.catalog) {
+			// Built artifacts carry their own catalog digest. When the artifacts come
+			// from JOUZU_UPDATE_* variables the digest is unknown, so the rollback check
+			// below then proves only that the restored catalog matches the bytes
+			// installed before the update, not that the candidate differed.
+			assert.notEqual(
+				broken.catalog,
+				current.catalog,
+				"the broken candidate must carry a different catalog for the rollback check to mean something",
+			);
+		}
 		const project = projectFixture(temp, "rollback-project 日本語", true);
 		const before = projectSnapshot(project);
 		await withRegistry(broken, async (registry) => {
@@ -417,6 +477,11 @@ try {
 				env: { ...env, JOUZU_NO_UPDATE: "1" },
 			});
 			assert.match(version.stdout, new RegExp(`^jouzu ${escapeRegex(currentVersion)}$`, "m"));
+			assert.deepEqual(
+				installedCatalogSnapshot(installedPackageRoot(rollbackPrefix), currentVersion),
+				catalogBefore,
+				"rollback must restore the previous catalogs, including their absence in releases through 0.2.1",
+			);
 			const state = JSON.parse(readFileSync(join(rollbackHome, "state", "self-update.json"), "utf8"));
 			assert.equal(state.lastResult, "failed");
 			assert.equal(state.lastErrorCode, "update-rolled-back");

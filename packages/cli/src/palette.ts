@@ -8,8 +8,11 @@ import {
 	type TUI,
 	TuiAltScreen,
 	TuiMainScreen,
+	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
+import { CatalogMessageId, catalogText, defaultCatalog } from "./cli-messages.js";
 import { createJouzuKeybindingsManagerFromConfig, type JouzuKeybindingsManager } from "./jouzu-keybindings.js";
+import type { CatalogBundle } from "./locale-catalog.js";
 import {
 	createSessionUiStyles,
 	fillTerminalColumns,
@@ -46,15 +49,21 @@ export interface PaletteComponentContext {
 	jouzuKeybindings: JouzuKeybindingsManager;
 	/** Jouzu-owned semantic colors. Views style through these roles rather than emitting escapes. */
 	styles: SessionUiStyles;
+	/**
+	 * The resolved catalog a view renders its human text from. It is resolved once
+	 * when the Palette opens, so a view formats an ID and never re-resolves the
+	 * locale while the user is inside the Palette.
+	 */
+	catalog: CatalogBundle;
 	close(): void;
 }
 
 export type PaletteComponentFactory = (context: PaletteComponentContext, route: PaletteRoute) => PaletteComponent;
 
 export const PALETTE_TABS = [
-	{ view: "models", label: "Models" },
-	{ view: "workflow", label: "Workflow" },
-	{ view: "settings", label: "Settings" },
+	{ view: "models", label: CatalogMessageId.paletteTabModels },
+	{ view: "workflow", label: CatalogMessageId.paletteTabWorkflow },
+	{ view: "settings", label: CatalogMessageId.paletteTabSettings },
 ] as const satisfies ReadonlyArray<{ view: PaletteViewId; label: string }>;
 
 /**
@@ -62,20 +71,96 @@ export const PALETTE_TABS = [
  * sections never shifts the labels beside the active one. The brackets carry
  * the active state without color, for terminals that render none.
  */
-export function renderPaletteTabs(activeView: PaletteViewId, theme: Theme, styles: SessionUiStyles): string {
-	return PALETTE_TABS.map(({ view, label }) =>
-		view === activeView
+export function renderPaletteTabs(
+	activeView: PaletteViewId,
+	theme: Theme,
+	styles: SessionUiStyles,
+	catalog: CatalogBundle = defaultCatalog(),
+): string {
+	return PALETTE_TABS.map(({ view, label: id }) => {
+		const label = catalogText(catalog, id);
+		return view === activeView
 			? theme.bg("selectedBg", theme.bold(styles.apply("palette.tab.active", `[${label}]`)))
-			: styles.apply("palette.tab.inactive", ` ${label} `),
-	).join("  ");
+			: styles.apply("palette.tab.inactive", ` ${label} `);
+	}).join("  ");
 }
 
 /** Abbreviate a count for a column that has no room for every digit. */
-export function compactNumber(value: number | undefined): string {
-	if (value === undefined) return "unknown";
+export function compactNumber(value: number | undefined, catalog: CatalogBundle = defaultCatalog()): string {
+	if (value === undefined) return catalogText(catalog, CatalogMessageId.paletteValueUnknown);
 	if (value >= 1_000_000) return `${Math.round(value / 100_000) / 10}M`;
 	if (value >= 1_000) return `${Math.round(value / 100) / 10}K`;
 	return String(value);
+}
+
+/** Total frame rows, matching the overlay's 90% cap and one-row outer margins. */
+export function paletteHeightBudget(rows: number): number {
+	const height = Number.isFinite(rows) && rows > 0 ? Math.floor(rows) : 24;
+	return Math.max(1, Math.min(height - 2, Math.floor(height * 0.9)));
+}
+
+export interface PaletteViewport {
+	/** Zero-based index of the first visible row. */
+	start: number;
+	/** Zero-based exclusive end of the visible rows. */
+	end: number;
+	/** Rows the viewport can show. */
+	capacity: number;
+	/** Rows actually available, at most {@link capacity}. */
+	visible: number;
+	hasAbove: boolean;
+	hasBelow: boolean;
+}
+
+/**
+ * Center the selected row in a bounded viewport while keeping the window inside
+ * the collection. A long pane scrolls instead of hiding its tail behind a fixed
+ * row cap, and a short terminal still keeps the selection visible.
+ */
+export function paletteViewport(total: number, selectedIndex: number, capacity: number): PaletteViewport {
+	const count = Math.max(0, Number.isFinite(total) ? Math.floor(total) : 0);
+	const rows = Math.max(1, Number.isFinite(capacity) ? Math.floor(capacity) : 1);
+	const selected = Math.max(
+		0,
+		Math.min(Number.isFinite(selectedIndex) ? Math.floor(selectedIndex) : 0, Math.max(0, count - 1)),
+	);
+	const visible = Math.min(rows, count);
+	const start = count === 0 ? 0 : Math.max(0, Math.min(selected - Math.floor(rows / 2), count - rows));
+	const end = Math.min(count, start + rows);
+	return { start, end, capacity: rows, visible, hasAbove: start > 0, hasBelow: end < count };
+}
+
+/**
+ * One right-edge scrollbar cell. Arrows name content hidden above or below; the
+ * filled thumb shows the position inside the collection.
+ */
+export function paletteScrollbarMarker(index: number, viewport: PaletteViewport, total: number): string {
+	const count = Math.max(0, Number.isFinite(total) ? Math.floor(total) : 0);
+	if (count <= viewport.visible) return "│";
+	if (viewport.visible === 1 && viewport.hasAbove && viewport.hasBelow) return "↕";
+	if (viewport.hasAbove && index === 0) return "▲";
+	if (viewport.hasBelow && index === viewport.visible - 1) return "▼";
+	if (viewport.visible <= 2) return "│";
+	const thumbSize = Math.max(1, Math.round((viewport.visible * viewport.visible) / count));
+	const travel = Math.max(0, viewport.visible - thumbSize);
+	const maxStart = Math.max(1, count - viewport.visible);
+	const thumbStart = Math.round((viewport.start / maxStart) * travel);
+	return index >= thumbStart && index < thumbStart + thumbSize ? "█" : "│";
+}
+
+/** A framed list row whose right edge carries a scrollbar cell. */
+export function renderPaletteScrollbarRow(
+	value: string,
+	width: number,
+	styles: SessionUiStyles,
+	marker: string,
+): string {
+	const target = Math.max(1, Math.floor(width));
+	if (target < 5) return fitTerminalText(`${value} ${marker}`, target);
+	const innerWidth = paletteInnerWidth(target);
+	const body = padTerminalText(fitTerminalText(value, innerWidth), innerWidth);
+	const scrollbar = styles.apply(marker === "│" ? "palette.border" : "palette.marker", marker);
+	return `${styles.apply("palette.border", "│")} ${body} ${scrollbar}`;
 }
 
 /** Inner columns a framed row offers: one border and one pad column per side. */
@@ -190,16 +275,18 @@ export function renderPaletteKeyBar(
 	innerWidth: number,
 	theme: Theme,
 	styles: SessionUiStyles,
+	maxRows = Number.POSITIVE_INFINITY,
 ): string[] {
 	const usable = hints.filter((hint) => hint.key !== "Unbound" && hint.key.length > 0);
-	if (usable.length === 0) return [];
+	if (usable.length === 0 || maxRows < 1) return [];
 	const lines: string[] = [];
 	let plain = "";
 	let styled = "";
 	const flush = (): void => {
 		if (!plain) return;
-		const padding = " ".repeat(Math.max(0, innerWidth - terminalTextWidth(plain)));
-		lines.push(theme.bg("selectedBg", `${styled}${padding}`));
+		for (const part of wrapTextWithAnsi(styled, Math.max(1, innerWidth))) {
+			lines.push(theme.bg("selectedBg", padTerminalText(part, innerWidth)));
+		}
 		plain = "";
 		styled = "";
 	};
@@ -212,6 +299,25 @@ export function renderPaletteKeyBar(
 		styled += `${lead}${theme.bold(styles.apply("palette.key", hint.key))} ${styles.apply("palette.value", hint.label)}`;
 	}
 	flush();
+	if (lines.length > maxRows && usable.length > 2) {
+		// Keep the primary action and cancellation; remove secondary hints first.
+		usable.splice(usable.length - 2, 1);
+		return renderPaletteKeyBar(usable, innerWidth, theme, styles, maxRows);
+	}
+	if (lines.length > maxRows) {
+		// Wrapped labels may not fit. Keep the primary action and cancellation as
+		// one fitted row each, rather than returning an arbitrary wrapped tail.
+		const essential = usable.length > 1 ? [usable[0], usable[usable.length - 1]] : usable;
+		const compact = essential.map((hint) =>
+			theme.bg(
+				"selectedBg",
+				padTerminalText(fitTerminalText(`${hint.key} ${hint.label}`, innerWidth, "…"), innerWidth),
+			),
+		);
+		if (compact.length <= maxRows) return compact;
+		if (maxRows === 1) return [compact[compact.length - 1]];
+		return [...compact.slice(0, maxRows - 1), compact[compact.length - 1]];
+	}
 	return lines;
 }
 
@@ -332,7 +438,7 @@ export const DEFAULT_PALETTE_OVERLAY_OPTIONS: OverlayOptions = {
 	anchor: "center",
 	width: "82%",
 	minWidth: 48,
-	maxHeight: "82%",
+	maxHeight: "90%",
 	margin: 1,
 };
 
@@ -414,11 +520,15 @@ export function selectPalettePresentation(options: PaletteSurfaceOptions = {}): 
 export class JouzuPaletteSurfaceHost {
 	private active?: ActivePalette;
 	private readonly jouzuKeybindings: JouzuKeybindingsManager;
+	private readonly catalog: CatalogBundle;
 
-	constructor(options?: { jouzuKeybindings?: JouzuKeybindingsManager }) {
+	constructor(options?: { jouzuKeybindings?: JouzuKeybindingsManager; catalog?: CatalogBundle }) {
 		// The default carries code defaults without user overrides; the product
 		// wiring passes a manager loaded from the active keybindings.json.
 		this.jouzuKeybindings = options?.jouzuKeybindings ?? createJouzuKeybindingsManagerFromConfig();
+		// A caller without a resolved catalog (a unit test, for example) renders
+		// English rather than a second copy of the text.
+		this.catalog = options?.catalog ?? defaultCatalog();
 	}
 
 	isOpen(): boolean {
@@ -468,6 +578,7 @@ export class JouzuPaletteSurfaceHost {
 					keybindings,
 					jouzuKeybindings: this.jouzuKeybindings,
 					styles: createSessionUiStyles(theme),
+					catalog: this.catalog,
 					close: () => done(undefined),
 				},
 				route,

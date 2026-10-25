@@ -193,7 +193,7 @@ The files under `packages/cli/test/flow-*.test.mjs` substitute the provider, dri
 
 ### Workflow instructions
 
-`flow-wait-tools.test.mjs` checks wait guidance in the assembled system prompt, deduplication, and removal when wait tools are disabled. Extension-specific guidance follows the active background, task, and scheduling tools. `capability-routing.test.mjs` checks routing availability; `evals/core-capability-routing.json` includes long-running dependencies, replacement-job notifications, tasks awaiting a person, and status questions during a wait. The corpus records expected behavior; schema and routing tests do not measure model compliance.
+`flow-wait-tools.test.mjs` checks wait guidance in the assembled system prompt, deduplication, and removal when wait tools are disabled. Extension-specific guidance follows the active background and task tools. `capability-routing.test.mjs` checks routing availability and that asynchronous-work and untrusted-content guidance each appear once; `evals/core-capability-routing.json` includes long-running dependencies, replacement-job notifications, tasks awaiting a person, and status questions during a wait. The corpus records expected behavior; schema and routing tests do not measure model compliance.
 
 ### Flow journal checkpoints
 
@@ -362,6 +362,37 @@ npm run test:live:ja
 ```
 
 The maximum declared budget is $0.25. The cost check runs after the request; it is not a provider-side spending cap.
+
+## Live per-language evaluation
+
+`scripts/live-locale-smoke.mjs` measures one language for the six dimensions in
+[per-language evaluation criteria](evaluation/per-language-eval-criteria.md):
+comprehension, fluency, coding, tool use, mixed-language retention, and
+artifact-policy compliance. It is opt-in, spends provider credit, and is not part
+of the deterministic gate. `JOUZU_LIVE_LOCALE` selects the language and defaults
+to `ja`; the accepted evaluation values are `en`, `ja`, `zh-Hans`, and `zh-Hant`.
+The Chinese checks exercise model output, not an offered Chinese interface.
+
+```bash
+JOUZU_LIVE_SMOKE=1 \
+JOUZU_LIVE_PROVIDER="$PROVIDER" \
+JOUZU_LIVE_MODEL="$MODEL" \
+JOUZU_LIVE_MAX_USD=0.25 \
+JOUZU_LIVE_LOCALE=zh-Hans \
+npm run test:live:locale
+```
+
+It shares the opt-in and budget contract of the Japanese smoke: `JOUZU_LIVE_SMOKE`
+must be `1`, `JOUZU_LIVE_PROVIDER` and `JOUZU_LIVE_MODEL` are required, and
+`JOUZU_LIVE_MAX_USD` must be positive and no greater than 0.25. It prints the
+run conditions (model, route, versions, prompt digest, and date) and one result
+per dimension, or the reason a dimension was not reached. A passing run is a
+bounded model-output check, not native terminal qualification or a human
+judgment of translation quality. Remove private provider routes and identifying
+data before sharing its report.
+
+`scripts/live-locale-smoke.test.mjs` checks the opt-in contract, the refusal
+path, and the graders without a provider; it runs in `npm run test:release-metadata`.
 
 ## Related documents
 

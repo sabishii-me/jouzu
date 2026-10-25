@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { captureChildContext } from "../dist/subagents/context.js";
 import { SubagentManager, workerEnvironment } from "../dist/subagents/manager.js";
 import {
 	AgentRoleStore,
@@ -12,6 +13,7 @@ import {
 	resolveAgentModel,
 	SAME_MODEL,
 } from "../dist/subagents/roles.js";
+import { readSessionTrace } from "../dist/subagents/trace.js";
 import { childResourceLoader } from "../dist/subagents/worker.js";
 import { resolveWorkspace } from "../dist/subagents/workspace.js";
 
@@ -663,6 +665,102 @@ test("the same-model selector follows the session model and stays reachable by p
 	assert.equal(isSameModelSelector("provider/same"), false);
 	assert.equal(isSameModelSelector("samex"), false);
 	assert.equal(resolveAgentModel("test/same", [{ ...model, id: "same" }]).id, "same");
+});
+
+test("the migrated subagent errors render from the resolved catalog and keep English unchanged", async () => {
+	const { resolveCatalog } = await import("../dist/locale-catalog.js");
+	const en = resolveCatalog("en").bundle;
+	const ja = resolveCatalog("ja").bundle;
+	const message = (run) => {
+		try {
+			run();
+			return undefined;
+		} catch (error) {
+			return error.message;
+		}
+	};
+	const missing = join(process.cwd(), "jouzu-missing-workspace-fixture");
+	assert.equal(
+		message(() => resolveWorkspace(process.cwd(), "jouzu-missing-workspace-fixture", en)),
+		`Workspace: ${missing} does not exist. Choose an existing directory accessible to Jouzu; a restart is not required.`,
+	);
+	assert.match(
+		message(() => resolveWorkspace(process.cwd(), "jouzu-missing-workspace-fixture", ja)),
+		/^ワークスペース: .* は存在しません。Jouzu からアクセスできる既存のディレクトリを選んでください。/u,
+	);
+	assert.equal(
+		message(() => resolveAgentModel("test", [], en)),
+		"Model: test is unavailable. Choose an available model in Workflow.",
+	);
+	assert.match(
+		message(() => resolveAgentModel("test", [], ja)),
+		/^モデル: test は利用できません。/u,
+	);
+	const overlength = {
+		schemaVersion: 1,
+		maxConcurrent: 1,
+		roles: [{ ...defaultAgentConfig().roles[0], description: "x".repeat(400) }],
+	};
+	assert.equal(
+		message(() => parseAgentConfig(overlength, en)),
+		"Validation: Description must be at most 300 characters.",
+	);
+	assert.match(
+		message(() => parseAgentConfig(overlength, ja)),
+		/^検証: Description は最大 300 文字/u,
+	);
+});
+
+test("the detector-unreachable subagent failures resolve from the session bundle and keep English unchanged", async () => {
+	const { resolveCatalog } = await import("../dist/locale-catalog.js");
+	const en = resolveCatalog("en").bundle;
+	const ja = resolveCatalog("ja").bundle;
+	const message = (run) => {
+		try {
+			run();
+			return undefined;
+		} catch (error) {
+			return error.message;
+		}
+	};
+	// The launch-context argument errors are thrown before any file is opened.
+	assert.equal(
+		message(() => captureChildContext({ context: "bogus" }, false, "parent", [], undefined, en)),
+		"Context: choose fresh, fork, or splice.",
+	);
+	assert.equal(
+		message(() => captureChildContext({ context: "bogus" }, false, "parent", [], undefined, ja)),
+		"コンテキスト: fresh、fork、splice のいずれかを選んでください。",
+	);
+	assert.equal(
+		message(() => captureChildContext({ context: "fresh", entryIds: ["a"] }, false, "parent", [], undefined, ja)),
+		"コンテキスト: entryIds は context: splice の場合にのみ有効ですが、この起動では fresh を使用しています。entryIds を省略するか、インターフェースが要求する場合は null を送ってください。選択した親エントリを共有する意図がない限り splice に切り替えないでください。",
+	);
+	// The trace argument error is thrown before the session path is opened.
+	await assert.rejects(
+		readSessionTrace("no-such-file", { offset: -1 }, en),
+		(error) => error.message === "Trace: offset must be a nonnegative byte cursor and limit must be 1–100.",
+	);
+	const jaTrace = await readSessionTrace("no-such-file", { offset: -1 }, ja).then(
+		() => undefined,
+		(error) => error.message,
+	);
+	assert.equal(jaTrace, "トレース: offset は 0 以上のバイトカーソル、limit は 1–100 でなければなりません。");
+	// The manager resolves its thrown sentences from the bundle it was constructed with.
+	const p = paths();
+	const enManager = new SubagentManager(p, "parent", 1, undefined, undefined, en);
+	const jaManager = new SubagentManager(p, "parent", 1, undefined, undefined, ja);
+	assert.equal(
+		message(() => enManager.read("missing", 0)),
+		"Agent run was not found in this parent session.",
+	);
+	const jaMessage = message(() => jaManager.read("missing", 0));
+	assert.equal(jaMessage, "エージェントの実行がこの親セッションに見つかりませんでした。");
+	assert.doesNotMatch(
+		`${message(() => captureChildContext({ context: "bogus" }, false, "parent", [], undefined, ja))}\n${jaTrace}\n${jaMessage}`,
+		/Context:|Trace:|Agent run was not found/u,
+		"no English failure sentence survives the Japanese bundle",
+	);
 });
 
 test("fresh child presets inherit model and effort while saved roles retain their choices", () => {

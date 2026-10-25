@@ -79,3 +79,15 @@ test("batch bounds the whole envelope, counts omitted failures and keeps review 
 		assert.match(lines.join("\n"), /Review candidate/);
 	}
 });
+
+test("the completion batch text resolves from the catalog and keeps the English default", async () => {
+	const { resolveCatalog } = await import("../dist/locale-catalog.js");
+	const runs = [{ ...run("run-1"), status: "failed", review: { status: "changed" } }];
+	const records = runs.map((item) => ({ id: item.id, ...item.completion }));
+	const en = subagentCompletionBatch("parent", "batch", records, runs, resolveCatalog("en").bundle);
+	assert.match(en.content, /Agents: 1 finished/);
+	assert.match(en.content, /Review candidate changed/);
+	const ja = subagentCompletionBatch("parent", "batch", records, runs, resolveCatalog("ja").bundle);
+	assert.match(ja.content, /エージェント: 1 件が終了/u);
+	assert.match(ja.content, /レビュー候補 changed/u);
+});

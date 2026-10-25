@@ -70,3 +70,24 @@ test("fixture cleanup shuts down extensions and aborts an in-flight turn before 
 		if (!closing) await cleanup();
 	}
 });
+
+test("disposal restores both host hooks the ingress replaced", async (t) => {
+	let original;
+	const f = await fixture(t, {
+		// Capture the hooks Pi installed before the ingress takes ownership of them.
+		wrapIngress: (handler) => ({
+			...handler,
+			async attach(session) {
+				original = { reload: session.reload, bindExtensions: session.bindExtensions };
+				return handler.attach(session);
+			},
+		}),
+	});
+	assert.equal(typeof original.reload, "function");
+	assert.equal(typeof original.bindExtensions, "function");
+	assert.notEqual(f.session.reload, original.reload, "reload was not wrapped");
+	assert.notEqual(f.session.bindExtensions, original.bindExtensions, "bindExtensions was not wrapped");
+	await f.ingress.dispose();
+	assert.equal(f.session.reload, original.reload);
+	assert.equal(f.session.bindExtensions, original.bindExtensions);
+});

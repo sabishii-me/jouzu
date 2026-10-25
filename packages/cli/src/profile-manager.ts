@@ -1,7 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, unlinkSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
-import { CommandReport, type CommandReportEntry, type CommandReportOptions } from "./command-report.js";
+import { CatalogMessageId, type CatalogRenderOptions, catalogText, defaultCatalog } from "./cli-messages.js";
+import { CommandReport, type CommandReportEntry } from "./command-report.js";
+import type { CatalogBundle } from "./locale-catalog.js";
 import type { JouzuPaths } from "./paths.js";
 import {
 	copyPrivateFile,
@@ -11,6 +13,31 @@ import {
 } from "./private-fs.js";
 import type { ResolvedProfile } from "./profiles.js";
 import { acquireStateLock, STATE_LOCK_STALE_MS } from "./state-lock.js";
+
+/**
+ * The catalog ID for the profile lock message. It stays local rather than
+ * joining the shared `CatalogMessageId` table so a parallel surface migration
+ * does not conflict on that file; `scripts/check-locales.mjs` allows a
+ * catalog-only ID present in both locales.
+ */
+const PROFILE_LOCK_BUSY_ID = "jouzu.cli.profile.lockBusy";
+
+/**
+ * The catalog IDs for the profile-state validation messages a `jz profile` run
+ * reports. A path and a JSON error detail are protected values passed as
+ * arguments. The internal invariants that follow (`profile target escaped agent
+ * root`, `unsafe profile parent`, `missing desired profile asset`) stay English:
+ * they name a code bug, not a file the user can repair.
+ */
+const PROFILE_STATE_MESSAGE_ID = {
+	notRegularFile: "jouzu.cli.profile.state.notRegularFile",
+	invalidJson: "jouzu.cli.profile.state.invalidJson",
+	notObject: "jouzu.cli.profile.state.notObject",
+	unknownFields: "jouzu.cli.profile.state.unknownFields",
+	fieldsInvalid: "jouzu.cli.profile.state.fieldsInvalid",
+	targetNotObject: "jouzu.cli.profile.state.targetNotObject",
+	targetInvalid: "jouzu.cli.profile.state.targetInvalid",
+} as const;
 
 const STATE_FIELDS = new Set([
 	"schemaVersion",
@@ -69,8 +96,9 @@ export class ProfileStateError extends Error {
 	}
 }
 
-function profileActionEntries(plan: ProfilePlan): CommandReportEntry[] {
-	if (plan.actions.length === 0) return [{ status: "ok", key: "none", message: "No profile changes are needed." }];
+function profileActionEntries(plan: ProfilePlan, catalog: CatalogBundle): CommandReportEntry[] {
+	if (plan.actions.length === 0)
+		return [{ status: "ok", key: "none", message: catalogText(catalog, CatalogMessageId.profileNoChanges) }];
 	return plan.actions.map((action) => ({
 		status: action.type === "conflict" ? ("problem" as const) : ("update" as const),
 		key: action.type,
@@ -78,14 +106,16 @@ function profileActionEntries(plan: ProfilePlan): CommandReportEntry[] {
 	}));
 }
 
-export function formatProfilePlan(plan: ProfilePlan, options: CommandReportOptions = {}): string {
+export function formatProfilePlan(plan: ProfilePlan, options: CatalogRenderOptions = {}): string {
+	const catalog = options.catalog ?? defaultCatalog();
+	const text = (id: CatalogMessageId): string => catalogText(catalog, id);
 	const out = new CommandReport(options);
-	out.title("Jouzu profile plan", `${plan.profile} v${plan.profileVersion}`);
-	out.section("Profile", [
-		{ label: "Manifest", value: plan.manifestSha256 },
-		{ label: "Agent root", value: plan.agentDir },
+	out.title(text(CatalogMessageId.profileTitle), `${plan.profile} v${plan.profileVersion}`);
+	out.section(text(CatalogMessageId.profileSection), [
+		{ label: text(CatalogMessageId.profileFieldManifest), value: plan.manifestSha256 },
+		{ label: text(CatalogMessageId.profileFieldAgentRoot), value: plan.agentDir },
 	]);
-	out.entries("Actions", profileActionEntries(plan));
+	out.entries(text(CatalogMessageId.profileActions), profileActionEntries(plan, catalog));
 	return out.toString();
 }
 
@@ -108,7 +138,7 @@ function exactFields(value: Record<string, unknown>, fields: Set<string>): boole
 	return Object.keys(value).every((key) => fields.has(key));
 }
 
-export function readProfileState(path: string): ProfileState | undefined {
+export function readProfileState(path: string, catalog: CatalogBundle = defaultCatalog()): ProfileState | undefined {
 	try {
 		validatePrivateDirectory(dirname(path));
 	} catch (error) {
@@ -117,19 +147,23 @@ export function readProfileState(path: string): ProfileState | undefined {
 	if (!existsSync(path)) return undefined;
 	const metadata = lstatSync(path);
 	if (!metadata.isFile() || metadata.isSymbolicLink())
-		throw new ProfileStateError(`profile state must be a regular file: ${path}`);
+		throw new ProfileStateError(catalogText(catalog, PROFILE_STATE_MESSAGE_ID.notRegularFile, { path }));
 	let parsed: unknown;
 	try {
 		parsed = JSON.parse(readFileSync(path, "utf8"));
 	} catch (error) {
 		throw new ProfileStateError(
-			`profile state is invalid JSON at ${path}: ${error instanceof Error ? error.message : error}`,
+			catalogText(catalog, PROFILE_STATE_MESSAGE_ID.invalidJson, {
+				path,
+				detail: error instanceof Error ? error.message : String(error),
+			}),
 		);
 	}
 	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
-		throw new ProfileStateError("profile state must be an object");
+		throw new ProfileStateError(catalogText(catalog, PROFILE_STATE_MESSAGE_ID.notObject));
 	const state = parsed as Record<string, unknown>;
-	if (!exactFields(state, STATE_FIELDS)) throw new ProfileStateError("profile state has unknown fields");
+	if (!exactFields(state, STATE_FIELDS))
+		throw new ProfileStateError(catalogText(catalog, PROFILE_STATE_MESSAGE_ID.unknownFields));
 	if (
 		state.schemaVersion !== 1 ||
 		(state.activeProfile !== "core" && state.activeProfile !== "ja") ||
@@ -142,12 +176,12 @@ export function readProfileState(path: string): ProfileState | undefined {
 		typeof state.appliedAt !== "string" ||
 		!Array.isArray(state.managedTargets)
 	) {
-		throw new ProfileStateError(`profile state fields are invalid at ${path}`);
+		throw new ProfileStateError(catalogText(catalog, PROFILE_STATE_MESSAGE_ID.fieldsInvalid, { path }));
 	}
 	const targets = new Set<string>();
 	const managedTargets = state.managedTargets.map((entry) => {
 		if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
-			throw new ProfileStateError("profile state managed target must be an object");
+			throw new ProfileStateError(catalogText(catalog, PROFILE_STATE_MESSAGE_ID.targetNotObject));
 		}
 		const target = entry as Record<string, unknown>;
 		if (
@@ -157,7 +191,7 @@ export function readProfileState(path: string): ProfileState | undefined {
 			!SHA256_RE.test(target.sha256) ||
 			targets.has(target.target)
 		) {
-			throw new ProfileStateError("profile state managed target is invalid or duplicated");
+			throw new ProfileStateError(catalogText(catalog, PROFILE_STATE_MESSAGE_ID.targetInvalid));
 		}
 		targets.add(target.target);
 		return { target: target.target, sha256: target.sha256 };
@@ -232,13 +266,18 @@ function sortedActions(actions: ProfileAction[]): ProfileAction[] {
 	return actions.sort((left, right) => left.target.localeCompare(right.target) || left.type.localeCompare(right.type));
 }
 
-export function planProfile(profile: ResolvedProfile, paths: JouzuPaths, jouzuVersion: string): ProfilePlan {
+export function planProfile(
+	profile: ResolvedProfile,
+	paths: JouzuPaths,
+	jouzuVersion: string,
+	catalog: CatalogBundle = defaultCatalog(),
+): ProfilePlan {
 	try {
 		validatePrivateDirectory(paths.agentDir);
 	} catch (error) {
 		throw new ProfileStateError(error instanceof Error ? error.message : String(error));
 	}
-	const state = readProfileState(paths.profileStatePath);
+	const state = readProfileState(paths.profileStatePath, catalog);
 	const previous = new Map(state?.managedTargets.map((item) => [item.target, item.sha256]) ?? []);
 	const desired = new Map(profile.assets.map((asset) => [asset.target, asset]));
 	const actions: ProfileAction[] = [];
@@ -356,8 +395,13 @@ function stateBytes(profile: ResolvedProfile, jouzuVersion: string, transactionI
 	return Buffer.from(`${JSON.stringify(state, null, 2)}\n`);
 }
 
-export function applyProfile(profile: ResolvedProfile, paths: JouzuPaths, jouzuVersion: string): ApplyProfileResult {
-	const initialPlan = planProfile(profile, paths, jouzuVersion);
+export function applyProfile(
+	profile: ResolvedProfile,
+	paths: JouzuPaths,
+	jouzuVersion: string,
+	catalog: CatalogBundle = defaultCatalog(),
+): ApplyProfileResult {
+	const initialPlan = planProfile(profile, paths, jouzuVersion, catalog);
 	if (initialPlan.actions.some((action) => action.type === "conflict")) throw new ProfileConflictError(initialPlan);
 	if (initialPlan.actions.length === 0) return { changed: false, plan: initialPlan };
 
@@ -370,11 +414,11 @@ export function applyProfile(profile: ResolvedProfile, paths: JouzuPaths, jouzuV
 			new ProfileStateError(
 				inspection.status === "invalid"
 					? "profile.lock is not a regular lock file"
-					: "another profile operation is in progress",
+					: catalogText(catalog, PROFILE_LOCK_BUSY_ID),
 			),
 	});
 	try {
-		const plan = planProfile(profile, paths, jouzuVersion);
+		const plan = planProfile(profile, paths, jouzuVersion, catalog);
 		if (plan.actions.some((action) => action.type === "conflict")) throw new ProfileConflictError(plan);
 		if (plan.actions.length === 0) return { changed: false, plan };
 

@@ -81,24 +81,80 @@ for (const mode of [undefined, "off", "streaming", "idle"])
 			});
 			const result = await done;
 			assert.equal(result.status, "completed", result.result);
-			const entries = readFileSync(result.sessionFile, "utf8").trim().split("\n").map(JSON.parse);
+			const readEntries = (file) => readFileSync(file, "utf8").trim().split("\n").map(JSON.parse);
+			// Parent totals are fixed when the child reports its result, so read the usage the
+			// parent could have received before stopping the child.
+			const reported = readEntries(result.sessionFile);
+			// The refresh ledger is final only after the child stops: a refresh still in flight
+			// when the child finishes is aborted during shutdown and settles then.
+			await manager.dispose();
+			const entries = readEntries(result.sessionFile);
 			const warms = entries.filter((entry) => entry.type === "usage" && entry.kind === "cache_warm");
-			if (mode === undefined || mode === "off")
+			const reportedWarms = reported.filter((entry) => entry.type === "usage" && entry.kind === "cache_warm");
+			// A refresh still in flight when the warming run is replaced is aborted, so the provider
+			// can serve a refresh whose usage is never recorded. Correlate served traffic with the
+			// child's own admission ledger instead of assuming every served refresh completes.
+			const warmRequests = requests.filter((body) => body.max_tokens === 1 || body.max_completion_tokens === 1);
+			const admissions = entries.filter(
+				(entry) => entry.type === "custom" && entry.customType === "jouzu-cache-warm-request",
+			);
+			const handoffs = admissions.filter((entry) => entry.data?.phase === "handoff");
+			const settled = admissions.filter((entry) => entry.data?.phase === "settled");
+			const completed = settled.filter((entry) => entry.data?.outcome === "stop");
+			const aborted = settled.filter((entry) => entry.data?.outcome === "aborted");
+			const handoffIds = handoffs.map((entry) => entry.data.id);
+			const settledIds = settled.map((entry) => entry.data.id);
+			const handoffIdSet = new Set(handoffIds);
+			assert.equal(new Set(handoffIds).size, handoffIds.length, "each refresh is admitted once");
+			assert.equal(new Set(settledIds).size, settledIds.length, "each refresh settles once");
+			assert.ok(
+				settledIds.every((id) => handoffIdSet.has(id)),
+				"every refresh outcome must belong to an admitted refresh",
+			);
+			assert.equal(completed.length + aborted.length, settled.length, "refresh outcomes must be stop or aborted");
+			assert.equal(settled.length, handoffs.length, "every admitted refresh must settle before the child stops");
+			if (mode === undefined || mode === "off") {
 				assert.equal(warms.length, 0, "default and disabled children must not refresh");
-			else assert.ok(warms.length > 0, "worker should perform at least one automatic refresh during the tool");
-			assert.equal(requests.length, 2 + warms.length);
+				assert.equal(handoffs.length, 0, "default and disabled children must not admit a refresh");
+			} else assert.ok(warms.length > 0, "worker should perform at least one automatic refresh during the tool");
+			assert.equal(
+				requests.length - warmRequests.length,
+				2,
+				"the child makes only its first and final conversational requests",
+			);
+			assert.ok(
+				handoffs.length >= warmRequests.length,
+				"every refresh the provider served must be admitted by the child",
+			);
+			assert.ok(
+				warmRequests.length >= completed.length && warmRequests.length <= completed.length + aborted.length,
+				`served refreshes must be completed or aborted: ${warmRequests.length} served, ${completed.length} completed, ${aborted.length} aborted`,
+			);
+			assert.equal(
+				completed.length,
+				warms.length,
+				"each completed refresh must persist exactly one cache-warm usage entry",
+			);
+			for (const warm of warms) {
+				assert.equal(warm.usage.input, 10);
+				assert.equal(warm.usage.output, 1);
+			}
 			for (const warm of requests.slice(1, -1)) {
 				assert.deepEqual(warm.messages, requests[0].messages);
 				assert.deepEqual(warm.tools, requests[0].tools);
 				assert.equal(warm.model, requests[0].model);
 				assert.ok(warm.max_tokens === 1 || warm.max_completion_tokens === 1);
 			}
-			assert.equal(result.usage.input, requests.length * 10, "parent totals must include cache-warming input");
-			assert.equal(result.usage.output, 10 + warms.length);
+			assert.equal(
+				result.usage.input,
+				(2 + reportedWarms.length) * 10,
+				"parent totals must include cache-warming input",
+			);
+			assert.equal(result.usage.output, 10 + reportedWarms.length);
 			assert.equal(result.result, "Completed.");
 			assert.ok(!JSON.stringify(requests.at(-1).messages).includes("WARM_ONLY"));
 			assert.equal(entries.filter((entry) => entry.type === "message" && entry.message.role === "assistant").length, 2);
-			const usage = entries.flatMap((entry) =>
+			const usage = reported.flatMap((entry) =>
 				entry.type === "usage"
 					? [entry.usage]
 					: entry.type === "message" && entry.message.role === "assistant"

@@ -3,6 +3,8 @@ import { isDeepStrictEqual } from "node:util";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
+import { CatalogMessageId, catalogText, defaultCatalog } from "../cli-messages.js";
+import type { CatalogBundle } from "../locale-catalog.js";
 import type { NativeRequestSource } from "./native-request-store.js";
 import { PiHostHooks } from "./pi-host-hooks.js";
 import { PiNativeHistory } from "./pi-native-history.js";
@@ -64,6 +66,7 @@ export class PiNativeDispatch {
 		private readonly admitQueued?: (record: RetainedSubmission, input: FlowNativeInput) => Promise<boolean>,
 		/** Flow control is on. While it is off, permits from finished dispatches are ignored. */
 		flowEnabled?: () => boolean,
+		private readonly catalog: CatalogBundle = defaultCatalog(),
 	) {
 		if (session.sessionId !== store.scope.sessionId)
 			throw new FlowLedgerError("scope", "Native observation requires matching session storage.");
@@ -213,7 +216,7 @@ export class PiNativeDispatch {
 							this.held.set(item.id, {
 								id: item.id,
 								revision: item.revision,
-								reason: "Edited native input requires a new observation.",
+								reason: catalogText(this.catalog, CatalogMessageId.flowNativeEditedInput),
 							});
 						}
 						return observation?.write.catch(() => {
@@ -221,7 +224,7 @@ export class PiNativeDispatch {
 							this.held.set(item.id, {
 								id: item.id,
 								revision: item.revision,
-								reason: "Native input observation could not be retained.",
+								reason: catalogText(this.catalog, CatalogMessageId.flowNativeObservationRetained),
 							});
 						});
 					}),
@@ -259,7 +262,7 @@ export class PiNativeDispatch {
 							this.held.set(item.id, {
 								id: item.id,
 								revision: item.revision,
-								reason: "Queue admission could not complete.",
+								reason: catalogText(this.catalog, CatalogMessageId.flowNativeQueueAdmission),
 							});
 							return false;
 						}
@@ -267,7 +270,7 @@ export class PiNativeDispatch {
 							this.held.set(item.id, {
 								id: item.id,
 								revision: item.revision,
-								reason: "Queued input is held by session policy.",
+								reason: catalogText(this.catalog, CatalogMessageId.flowNativeQueueHeld),
 							});
 							return false;
 						}

@@ -1,12 +1,69 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, rmSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
-import { CommandReport, type CommandReportEntry, type CommandReportOptions } from "./command-report.js";
+import {
+	CatalogMessageId,
+	type CatalogMessageRef,
+	type CatalogRenderOptions,
+	catalogMessage,
+	catalogMessageText,
+	catalogText,
+	defaultCatalog,
+} from "./cli-messages.js";
+import { CommandReport, type CommandReportEntry } from "./command-report.js";
+import { protectedSourceError } from "./human-messages.js";
+import type { CatalogBundle } from "./locale-catalog.js";
 import type { JouzuPaths } from "./paths.js";
 import { copyPrivateFile, validatePrivateDirectory, writeFilePrivateAtomic } from "./private-fs.js";
 import { acquireStateLock, STATE_LOCK_STALE_MS } from "./state-lock.js";
 
 export type KeyBindingValue = string | string[];
+
+/**
+ * The catalog IDs this module renders. They stay local rather than joining the
+ * shared `CatalogMessageId` table so a parallel surface migration does not
+ * conflict on that file; `scripts/check-locales.mjs` allows a catalog-only ID
+ * present in both locales.
+ */
+const KEYBINDING_TEXT_IDS = {
+	actionConflictDetail: "jouzu.cli.keybindings.action.conflictDetail",
+	actionCurrentDetail: "jouzu.cli.keybindings.action.currentDetail",
+	lockBusy: "jouzu.cli.keybindings.lockBusy",
+} as const;
+
+/**
+ * The catalog IDs for the keybindings.json and keybindings-state.json validation
+ * messages a `jz keybindings` run reports. An action id and a JSON error detail
+ * are protected values passed as arguments.
+ */
+const KEYBINDING_VALIDATION_IDS = {
+	configNotRegularFile: "jouzu.cli.keybindings.config.notRegularFile",
+	configInvalidJson: "jouzu.cli.keybindings.config.invalidJson",
+	configNotObject: "jouzu.cli.keybindings.config.notObject",
+	configBindingInvalid: "jouzu.cli.keybindings.config.bindingInvalid",
+	stateNotRegularFile: "jouzu.cli.keybindings.state.notRegularFile",
+	stateInvalidJson: "jouzu.cli.keybindings.state.invalidJson",
+	stateNotObject: "jouzu.cli.keybindings.state.notObject",
+	stateFieldsInvalid: "jouzu.cli.keybindings.state.fieldsInvalid",
+	stateInsertedNotObject: "jouzu.cli.keybindings.state.insertedNotObject",
+	stateInsertedInvalid: "jouzu.cli.keybindings.state.insertedInvalid",
+} as const;
+
+/** The pair of message IDs a `readRegularJson` call reports its two file failures with. */
+interface RegularJsonIds {
+	notRegularFile: string;
+	invalidJson: string;
+}
+
+const CONFIG_JSON_IDS: RegularJsonIds = {
+	notRegularFile: KEYBINDING_VALIDATION_IDS.configNotRegularFile,
+	invalidJson: KEYBINDING_VALIDATION_IDS.configInvalidJson,
+};
+
+const STATE_JSON_IDS: RegularJsonIds = {
+	notRegularFile: KEYBINDING_VALIDATION_IDS.stateNotRegularFile,
+	invalidJson: KEYBINDING_VALIDATION_IDS.stateInvalidJson,
+};
 export type KeybindingPolicy = "applied" | "disabled";
 export type KeybindingStatusKind = "uninitialized" | "converged" | "customized";
 
@@ -77,7 +134,7 @@ export interface ApplyKeybindingsResult {
 
 export interface BootstrapKeybindingsResult {
 	changed: boolean;
-	message?: string;
+	message?: CatalogMessageRef;
 }
 
 export class KeybindingConfigError extends Error {
@@ -132,39 +189,49 @@ function lockPath(paths: JouzuPaths): string {
 	return join(paths.stateDir, "keybindings.lock");
 }
 
-function readRegularJson(path: string, label: string): unknown {
+function readRegularJson(path: string, ids: RegularJsonIds, catalog: CatalogBundle): unknown {
 	const metadata = lstatSync(path);
 	if (!metadata.isFile() || metadata.isSymbolicLink()) {
-		throw new KeybindingConfigError(`${label} must be a regular file`);
+		throw new KeybindingConfigError(catalogText(catalog, ids.notRegularFile));
 	}
 	try {
 		return JSON.parse(readFileSync(path, "utf8"));
 	} catch (error) {
-		throw new KeybindingConfigError(`${label} is invalid JSON: ${error instanceof Error ? error.message : error}`);
+		throw new KeybindingConfigError(
+			catalogText(catalog, ids.invalidJson, {
+				detail: error instanceof Error ? error.message : String(error),
+			}),
+		);
 	}
 }
 
-export function readKeybindingConfig(path: string): Record<string, KeyBindingValue> | undefined {
+export function readKeybindingConfig(
+	path: string,
+	catalog: CatalogBundle = defaultCatalog(),
+): Record<string, KeyBindingValue> | undefined {
 	if (!existsSync(path)) return undefined;
-	const parsed = readRegularJson(path, "keybindings.json");
+	const parsed = readRegularJson(path, CONFIG_JSON_IDS, catalog);
 	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-		throw new KeybindingConfigError("keybindings.json must be an object");
+		throw new KeybindingConfigError(catalogText(catalog, KEYBINDING_VALIDATION_IDS.configNotObject));
 	}
 	const config: Record<string, KeyBindingValue> = {};
 	for (const [action, binding] of Object.entries(parsed)) {
 		if (!bindingIsValid(binding)) {
-			throw new KeybindingConfigError(`keybindings.json binding for ${action} must be a key or array of keys`);
+			throw new KeybindingConfigError(catalogText(catalog, KEYBINDING_VALIDATION_IDS.configBindingInvalid, { action }));
 		}
 		config[action] = binding;
 	}
 	return config;
 }
 
-export function readKeybindingState(path: string): KeybindingState | undefined {
+export function readKeybindingState(
+	path: string,
+	catalog: CatalogBundle = defaultCatalog(),
+): KeybindingState | undefined {
 	if (!existsSync(path)) return undefined;
-	const parsed = readRegularJson(path, "keybinding state");
+	const parsed = readRegularJson(path, STATE_JSON_IDS, catalog);
 	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-		throw new KeybindingConfigError("keybinding state must be an object");
+		throw new KeybindingConfigError(catalogText(catalog, KEYBINDING_VALIDATION_IDS.stateNotObject));
 	}
 	const value = parsed as Record<string, unknown>;
 	if (
@@ -179,12 +246,12 @@ export function readKeybindingState(path: string): KeybindingState | undefined {
 		typeof value.createdConfig !== "boolean" ||
 		!Array.isArray(value.insertedBindings)
 	) {
-		throw new KeybindingConfigError("keybinding state fields are invalid");
+		throw new KeybindingConfigError(catalogText(catalog, KEYBINDING_VALIDATION_IDS.stateFieldsInvalid));
 	}
 	const actions = new Set<string>();
 	const insertedBindings = value.insertedBindings.map((entry) => {
 		if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
-			throw new KeybindingConfigError("keybinding state inserted binding must be an object");
+			throw new KeybindingConfigError(catalogText(catalog, KEYBINDING_VALIDATION_IDS.stateInsertedNotObject));
 		}
 		const binding = entry as Record<string, unknown>;
 		if (
@@ -193,7 +260,7 @@ export function readKeybindingState(path: string): KeybindingState | undefined {
 			!bindingIsValid(binding.binding) ||
 			actions.has(binding.action)
 		) {
-			throw new KeybindingConfigError("keybinding state inserted binding is invalid or duplicated");
+			throw new KeybindingConfigError(catalogText(catalog, KEYBINDING_VALIDATION_IDS.stateInsertedInvalid));
 		}
 		actions.add(binding.action);
 		return { action: binding.action, binding: binding.binding };
@@ -257,24 +324,59 @@ function statusFor(config: Record<string, KeyBindingValue> | undefined): Keybind
 		: "customized";
 }
 
-function getPortabilityWarnings(options: { platform?: NodeJS.Platform; env?: NodeJS.ProcessEnv } = {}): string[] {
+const KEYBINDING_STATUS_IDS: Readonly<Record<KeybindingStatusKind, CatalogMessageId>> = Object.freeze({
+	uninitialized: CatalogMessageId.keybindingsStatusUninitialized,
+	converged: CatalogMessageId.keybindingsStatusConverged,
+	customized: CatalogMessageId.keybindingsStatusCustomized,
+});
+
+const KEYBINDING_POLICY_IDS: Readonly<Record<KeybindingPolicy | "unset", CatalogMessageId>> = Object.freeze({
+	applied: CatalogMessageId.keybindingsPolicyApplied,
+	disabled: CatalogMessageId.keybindingsPolicyDisabled,
+	unset: CatalogMessageId.keybindingsPolicyUnset,
+});
+
+/** The catalog identity of a keybinding status word, for the doctor field value. */
+export function keybindingStatusMessage(status: KeybindingStatusKind): CatalogMessageRef {
+	return catalogMessage(KEYBINDING_STATUS_IDS[status]);
+}
+
+/** The catalog identity of a keybinding policy word, for the doctor field value. */
+export function keybindingPolicyMessage(policy: KeybindingPolicy | "unset"): CatalogMessageRef {
+	return catalogMessage(KEYBINDING_POLICY_IDS[policy]);
+}
+
+/** The portability warning refs behind one plan's English `portabilityWarnings`. */
+const PORTABILITY_WARNING_REFS = new WeakMap<readonly string[], readonly CatalogMessageRef[]>();
+
+/** Resolve the warning refs to the English plan values and keep the refs for the renderer. */
+function portabilityWarnings(refs: readonly CatalogMessageRef[]): string[] {
+	const text = refs.map((ref) => catalogMessageText(defaultCatalog(), ref));
+	PORTABILITY_WARNING_REFS.set(text, refs);
+	return text;
+}
+
+function getPortabilityWarnings(
+	options: { platform?: NodeJS.Platform; env?: NodeJS.ProcessEnv } = {},
+): CatalogMessageRef[] {
 	const platform = options.platform ?? process.platform;
 	const env = options.env ?? process.env;
-	const warnings = [
-		"ctrl+enter requires the terminal to report modified Enter keys through the Kitty keyboard protocol or modifyOtherKeys",
-		"ctrl+up requires the terminal to report modified arrow keys; tmux users should enable extended-keys with extended-keys-format csi-u",
+	const warnings: CatalogMessageRef[] = [
+		catalogMessage(CatalogMessageId.keybindingsPortabilityCtrlEnter),
+		catalogMessage(CatalogMessageId.keybindingsPortabilityCtrlUp),
 	];
 	if (platform === "darwin") {
-		warnings.push("macOS may reserve Control+Up for Mission Control until the system shortcut is changed");
+		warnings.push(catalogMessage(CatalogMessageId.keybindingsPortabilityMacMissionControl));
 	}
-	if (env.TERM === "dumb") warnings.push("TERM=dumb cannot provide reliable interactive key events");
+	if (env.TERM === "dumb") warnings.push(catalogMessage(CatalogMessageId.keybindingsPortabilityTermDumb));
 	return warnings;
 }
 
 export function planKeybindings(
 	paths: JouzuPaths,
-	options: { platform?: NodeJS.Platform; env?: NodeJS.ProcessEnv } = {},
+	options: { platform?: NodeJS.Platform; env?: NodeJS.ProcessEnv; catalog?: CatalogBundle } = {},
 ): KeybindingPlan {
+	const catalog = options.catalog ?? defaultCatalog();
 	try {
 		validatePrivateDirectory(paths.agentDir);
 		validatePrivateDirectory(paths.stateDir);
@@ -283,8 +385,8 @@ export function planKeybindings(
 	}
 	const path = configPath(paths);
 	const statePath = keybindingStatePath(paths);
-	const config = readKeybindingConfig(path);
-	const state = readKeybindingState(statePath);
+	const config = readKeybindingConfig(path, catalog);
+	const state = readKeybindingState(statePath, catalog);
 	const actions: KeybindingPlanAction[] = [];
 	for (const [action, binding] of Object.entries(JOUZU_KEYBINDING_DEFAULTS)) {
 		const observed = config ? observedBinding(config, action) : undefined;
@@ -321,7 +423,7 @@ export function planKeybindings(
 		configExists: config !== undefined,
 		policy: state?.policy ?? "unset",
 		status: statusFor(config),
-		portabilityWarnings: getPortabilityWarnings(options),
+		portabilityWarnings: portabilityWarnings(getPortabilityWarnings(options)),
 		actions,
 	};
 }
@@ -330,7 +432,8 @@ function writeJson(path: string, value: unknown, privateRoot: string): void {
 	writeFilePrivateAtomic(path, `${JSON.stringify(value, null, 2)}\n`, privateRoot);
 }
 
-function withLock<T>(paths: JouzuPaths, operation: () => T): T {
+function withLock<T>(options: { paths: JouzuPaths; catalog: CatalogBundle }, operation: () => T): T {
+	const { paths, catalog } = options;
 	const releaseLock = acquireStateLock({
 		path: lockPath(paths),
 		staleMs: STATE_LOCK_STALE_MS,
@@ -339,7 +442,7 @@ function withLock<T>(paths: JouzuPaths, operation: () => T): T {
 			new KeybindingConfigError(
 				inspection.status === "invalid"
 					? "keybindings.lock is not a regular lock file"
-					: "another keybinding operation is in progress",
+					: catalogText(catalog, KEYBINDING_TEXT_IDS.lockBusy),
 			),
 	});
 	try {
@@ -373,14 +476,18 @@ function makeState(options: {
 	};
 }
 
-export function applyKeybindings(paths: JouzuPaths, now = new Date()): ApplyKeybindingsResult {
-	const initial = planKeybindings(paths);
+export function applyKeybindings(
+	paths: JouzuPaths,
+	now = new Date(),
+	catalog: CatalogBundle = defaultCatalog(),
+): ApplyKeybindingsResult {
+	const initial = planKeybindings(paths, { catalog });
 	if (initial.actions.some((action) => action.type === "conflict")) throw new KeybindingConflictError(initial);
-	return withLock(paths, () => {
-		const plan = planKeybindings(paths);
+	return withLock({ paths, catalog }, () => {
+		const plan = planKeybindings(paths, { catalog });
 		if (plan.actions.some((action) => action.type === "conflict")) throw new KeybindingConflictError(plan);
-		const config = readKeybindingConfig(plan.configPath) ?? {};
-		const previousState = readKeybindingState(plan.statePath);
+		const config = readKeybindingConfig(plan.configPath, catalog) ?? {};
+		const previousState = readKeybindingState(plan.statePath, catalog);
 		const setActions = plan.actions.filter((action) => action.type === "set");
 		if (setActions.length === 0 && previousState?.policy === "applied") return { changed: false, plan };
 
@@ -421,12 +528,16 @@ export function applyKeybindings(paths: JouzuPaths, now = new Date()): ApplyKeyb
 	});
 }
 
-export function resetKeybindings(paths: JouzuPaths, now = new Date()): ApplyKeybindingsResult {
-	return withLock(paths, () => {
+export function resetKeybindings(
+	paths: JouzuPaths,
+	now = new Date(),
+	catalog: CatalogBundle = defaultCatalog(),
+): ApplyKeybindingsResult {
+	return withLock({ paths, catalog }, () => {
 		const path = configPath(paths);
 		const statePath = keybindingStatePath(paths);
-		const config = readKeybindingConfig(path);
-		const state = readKeybindingState(statePath);
+		const config = readKeybindingConfig(path, catalog);
+		const state = readKeybindingState(statePath, catalog);
 		const actions: KeybindingPlanAction[] = [];
 		for (const inserted of state?.insertedBindings ?? []) {
 			const observed = config?.[inserted.action];
@@ -451,7 +562,7 @@ export function resetKeybindings(paths: JouzuPaths, now = new Date()): ApplyKeyb
 			configExists: config !== undefined,
 			policy: state?.policy ?? "unset",
 			status: statusFor(config),
-			portabilityWarnings: getPortabilityWarnings(),
+			portabilityWarnings: portabilityWarnings(getPortabilityWarnings()),
 			actions,
 		};
 		if (actions.some((action) => action.type === "conflict")) throw new KeybindingConflictError(plan);
@@ -488,21 +599,30 @@ export function resetKeybindings(paths: JouzuPaths, now = new Date()): ApplyKeyb
 	});
 }
 
-function upgradeOwnedKeybindings(paths: JouzuPaths, now = new Date()): BootstrapKeybindingsResult {
+function upgradeOwnedKeybindings(
+	paths: JouzuPaths,
+	now = new Date(),
+	catalog: CatalogBundle = defaultCatalog(),
+): BootstrapKeybindingsResult {
 	validatePrivateDirectory(paths.agentDir);
 	validatePrivateDirectory(paths.stateDir);
-	return withLock(paths, () => {
+	return withLock({ paths, catalog }, () => {
 		const path = configPath(paths);
 		const statePath = keybindingStatePath(paths);
-		const state = readKeybindingState(statePath);
+		const state = readKeybindingState(statePath, catalog);
 		if (state?.policy !== "applied" || state.defaultsVersion >= JOUZU_KEYBINDING_DEFAULTS_VERSION) {
 			return { changed: false };
 		}
 
-		const config = readKeybindingConfig(path);
+		const config = readKeybindingConfig(path, catalog);
 		const nextConfig = { ...(config ?? {}) };
 		const nextInserted: InsertedBinding[] = [];
-		const blockedUpgrades: Array<{ action: string; conflictingAction: string }> = [];
+		const blockedUpgrades: Array<{
+			action: string;
+			conflictingAction: string;
+			previous: KeyBindingValue;
+			desired: KeyBindingValue;
+		}> = [];
 		let configChanged = false;
 		for (const inserted of state.insertedBindings) {
 			const observed = config?.[inserted.action];
@@ -521,7 +641,7 @@ function upgradeOwnedKeybindings(paths: JouzuPaths, now = new Date()): Bootstrap
 			if (conflictingAction) {
 				delete nextConfig[inserted.action];
 				configChanged = true;
-				blockedUpgrades.push({ action: inserted.action, conflictingAction });
+				blockedUpgrades.push({ action: inserted.action, conflictingAction, previous: inserted.binding, desired });
 				continue;
 			}
 			nextConfig[inserted.action] = desired;
@@ -558,11 +678,12 @@ function upgradeOwnedKeybindings(paths: JouzuPaths, now = new Date()): Bootstrap
 			changed: true,
 			...(blocked
 				? {
-						message: `Jouzu removed its previous ${formatBinding(
-							state.insertedBindings.find((inserted) => inserted.action === blocked.action)?.binding,
-						)} binding for ${blocked.action} because ${formatBinding(
-							JOUZU_KEYBINDING_DEFAULTS[blocked.action],
-						)} is assigned to ${blocked.conflictingAction}; run \`jz keybindings plan\`.`,
+						message: catalogMessage(CatalogMessageId.keybindingsUpgradeRemoved, {
+							previous: bindingValueText(blocked.previous),
+							action: blocked.action,
+							desired: bindingValueText(blocked.desired),
+							conflictingAction: blocked.conflictingAction,
+						}),
 					}
 				: {}),
 		};
@@ -572,40 +693,57 @@ function upgradeOwnedKeybindings(paths: JouzuPaths, now = new Date()): Bootstrap
 export function ensureDefaultKeybindings(
 	paths: JouzuPaths,
 	env: NodeJS.ProcessEnv = process.env,
+	catalog: CatalogBundle = defaultCatalog(),
 ): BootstrapKeybindingsResult {
 	if (["1", "true", "yes", "on"].includes((env.JOUZU_NO_KEYBINDING_DEFAULTS ?? "").toLowerCase())) {
 		return { changed: false };
 	}
 	try {
-		const state = readKeybindingState(keybindingStatePath(paths));
+		const state = readKeybindingState(keybindingStatePath(paths), catalog);
 		const configExists = existsSync(configPath(paths));
-		if (configExists) readKeybindingConfig(configPath(paths));
+		if (configExists) readKeybindingConfig(configPath(paths), catalog);
 		if (state?.policy === "applied" && state.defaultsVersion < JOUZU_KEYBINDING_DEFAULTS_VERSION) {
-			return upgradeOwnedKeybindings(paths);
+			return upgradeOwnedKeybindings(paths, undefined, catalog);
 		}
 		if (state || configExists) return { changed: false };
-		const result = applyKeybindings(paths);
+		const result = applyKeybindings(paths, undefined, catalog);
 		return { changed: result.changed };
 	} catch (error) {
 		return {
 			changed: false,
-			message: `Jouzu keybinding defaults were not applied: ${error instanceof Error ? error.message : error}`,
+			message: catalogMessage(CatalogMessageId.keybindingsBootstrapFailed, {
+				message: protectedSourceError(error instanceof Error ? error.message : String(error)),
+			}),
 		};
 	}
 }
 
-function formatBinding(binding: KeyBindingValue | undefined): string {
-	if (binding === undefined) return "Pi default or unbound";
-	return typeof binding === "string" ? binding : binding.length > 0 ? binding.join(", ") : "unbound";
+/** A defined binding as one string; an array is joined the way the renderer joins it. */
+function bindingValueText(binding: KeyBindingValue): string {
+	return typeof binding === "string" ? binding : binding.join(", ");
 }
 
-function planActionEntries(plan: KeybindingPlan): CommandReportEntry[] {
-	if (plan.actions.length === 0) return [{ status: "ok", key: "none", message: "No keybinding changes are needed." }];
+function formatBinding(binding: KeyBindingValue | undefined, catalog: CatalogBundle): string {
+	if (binding === undefined) return catalogText(catalog, CatalogMessageId.keybindingsBindingPiDefault);
+	return typeof binding === "string"
+		? binding
+		: binding.length > 0
+			? binding.join(", ")
+			: catalogText(catalog, CatalogMessageId.keybindingsBindingUnbound);
+}
+
+function planActionEntries(plan: KeybindingPlan, catalog: CatalogBundle): CommandReportEntry[] {
+	if (plan.actions.length === 0)
+		return [{ status: "ok", key: "none", message: catalogText(catalog, CatalogMessageId.keybindingsNoChanges) }];
 	return plan.actions.map((action) => {
 		const detail = action.conflictingAction
-			? `; conflicts with ${action.conflictingAction}`
+			? catalogText(catalog, KEYBINDING_TEXT_IDS.actionConflictDetail, {
+					action: action.conflictingAction,
+				})
 			: action.observed !== undefined
-				? `; current ${formatBinding(action.observed)}`
+				? catalogText(catalog, KEYBINDING_TEXT_IDS.actionCurrentDetail, {
+						binding: formatBinding(action.observed, catalog),
+					})
 				: "";
 		return {
 			status: action.type === "conflict" ? ("problem" as const) : ("update" as const),
@@ -615,25 +753,39 @@ function planActionEntries(plan: KeybindingPlan): CommandReportEntry[] {
 	});
 }
 
-export function formatKeybindingPlan(plan: KeybindingPlan, options: CommandReportOptions = {}): string {
+export function formatKeybindingPlan(plan: KeybindingPlan, options: CatalogRenderOptions = {}): string {
+	const catalog = options.catalog ?? defaultCatalog();
+	const text = (id: CatalogMessageId): string => catalogText(catalog, id);
+	const warningRefs = PORTABILITY_WARNING_REFS.get(plan.portabilityWarnings);
 	const out = new CommandReport(options);
-	out.title("Jouzu keybinding plan", `defaults v${plan.defaultsVersion}`, plan.status);
-	out.entries(
-		"Notes",
-		plan.portabilityWarnings.map((warning) => ({ status: "warning" as const, key: "portability", message: warning })),
+	out.title(
+		text(CatalogMessageId.keybindingsTitle),
+		`defaults v${plan.defaultsVersion}`,
+		catalogText(catalog, KEYBINDING_STATUS_IDS[plan.status]),
 	);
-	if (plan.portabilityWarnings.length > 0) out.rule();
-	out.section("Plan", [
-		{ label: "Policy", value: plan.policy },
-		{ label: "Config", value: plan.configPath },
-	]);
-	out.section(
-		"Desired bindings",
-		Object.entries(JOUZU_KEYBINDING_DEFAULTS).map(([action, binding]) => ({
-			label: action,
-			value: formatBinding(binding),
+	out.entries(
+		text(CatalogMessageId.keybindingsNotes),
+		plan.portabilityWarnings.map((warning, index) => ({
+			status: "warning" as const,
+			key: "portability",
+			message: warningRefs?.[index] === undefined ? warning : catalogMessageText(catalog, warningRefs[index]),
 		})),
 	);
-	out.entries("Actions", planActionEntries(plan));
+	if (plan.portabilityWarnings.length > 0) out.rule();
+	out.section(text(CatalogMessageId.keybindingsPlan), [
+		{
+			label: text(CatalogMessageId.keybindingsFieldPolicy),
+			value: catalogText(catalog, KEYBINDING_POLICY_IDS[plan.policy]),
+		},
+		{ label: text(CatalogMessageId.keybindingsFieldConfig), value: plan.configPath },
+	]);
+	out.section(
+		text(CatalogMessageId.keybindingsDesired),
+		Object.entries(JOUZU_KEYBINDING_DEFAULTS).map(([action, binding]) => ({
+			label: action,
+			value: formatBinding(binding, catalog),
+		})),
+	);
+	out.entries(text(CatalogMessageId.keybindingsActions), planActionEntries(plan, catalog));
 	return out.toString();
 }

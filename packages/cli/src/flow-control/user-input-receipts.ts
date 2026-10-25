@@ -1,22 +1,12 @@
+import { CatalogMessageId, catalogText, defaultCatalog } from "../cli-messages.js";
+import type { CatalogBundle } from "../locale-catalog.js";
 import type { FlowNativeInput, FlowSubmissionDispatch, RetainedSubmission } from "./submission-store.js";
-import { activeAdmissionHolds, UNAVAILABLE_INPUT_REASON } from "./submission-view.js";
+import { activeAdmissionHolds } from "./submission-view.js";
 
 /** Bounded identity length, matching retained submission identity. */
 const MAX_IDENTITY = 512;
 /** Opaque target tokens are host-issued; this only bounds what a caller may hand back. */
 const MAX_TARGET = 1024;
-
-const ADMISSION_HOLD = "Input is waiting for admission.";
-const HANDLED_WITHOUT_INPUT = "The input handler completed without passing this input to the model.";
-const SUBMISSION_CANCELLED = "The retained input was cancelled before delivery.";
-const QUEUE_CANCELLED = "The queued input was removed before it ran.";
-const CONTEXT_CANCELLED = "The deferred context was removed before it ran.";
-const DISPATCH_FAILED = "Native dispatch failed before it produced input, so delivery is unconfirmed.";
-const DISPATCH_UNCONFIRMED = "Input was dispatched without a receipt that confirms or rules out delivery.";
-const QUEUE_EVIDENCE_MISSING = "The queued input is not in the live host queue, so delivery is unconfirmed.";
-const CANCELLATION_UNCONFIRMED = "A cancellation was requested but the native removal is not confirmed.";
-const FLOW_SUSPENDED = "Flow control was suspended before this input was delivered.";
-const UNAUTHORIZED = "The adapter's authorization was revoked before this input was delivered.";
 
 /** Host-issued provenance for one authorized external-user submission. */
 export interface UserInputProvenance {
@@ -49,7 +39,10 @@ export type UserInputReceiptReasonCode =
 
 export interface UserInputReceiptReason {
 	code: UserInputReceiptReasonCode;
-	/** Fixed display text: never message text, a filesystem path, or a raw error. */
+	/**
+	 * Fixed display text resolved from the session catalog bundle: never message text, a
+	 * filesystem path, or a raw error. The machine `code` is what a caller branches on.
+	 */
 	text: string;
 }
 
@@ -84,20 +77,31 @@ export interface UserInputReceiptSource {
 type CancelledCode = "queue-cancelled" | "context-cancelled";
 type UnconfirmedCode = "dispatch-unconfirmed" | "queue-evidence-missing" | "cancellation-unconfirmed";
 
+/** The display sentence for each cancellation reason, keyed by its machine code. */
+const CANCELLED_REASON_IDS = {
+	"queue-cancelled": CatalogMessageId.userInputReceiptQueueCancelled,
+	"context-cancelled": CatalogMessageId.userInputReceiptContextCancelled,
+} as const satisfies Record<CancelledCode, CatalogMessageId>;
+
+/** The display sentence for each unconfirmed reason, keyed by its machine code. */
+const UNCONFIRMED_REASON_IDS = {
+	"dispatch-unconfirmed": CatalogMessageId.userInputReceiptDispatchUnconfirmed,
+	"queue-evidence-missing": CatalogMessageId.userInputReceiptQueueEvidenceMissing,
+	"cancellation-unconfirmed": CatalogMessageId.userInputReceiptCancellationUnconfirmed,
+} as const satisfies Record<UnconfirmedCode, CatalogMessageId>;
+
 type InputDisposition =
 	| { kind: "consumed" }
 	| { kind: "queued" }
 	| { kind: "cancelled"; code: CancelledCode }
 	| { kind: "unconfirmed"; code: UnconfirmedCode };
 
-function cancelledText(code: CancelledCode): string {
-	return code === "queue-cancelled" ? QUEUE_CANCELLED : CONTEXT_CANCELLED;
+function cancelledText(catalog: CatalogBundle, code: CancelledCode): string {
+	return catalogText(catalog, CANCELLED_REASON_IDS[code]);
 }
 
-function unconfirmedReason(code: UnconfirmedCode): UserInputReceiptReason {
-	if (code === "queue-evidence-missing") return { code, text: QUEUE_EVIDENCE_MISSING };
-	if (code === "cancellation-unconfirmed") return { code, text: CANCELLATION_UNCONFIRMED };
-	return { code, text: DISPATCH_UNCONFIRMED };
+function unconfirmedReason(catalog: CatalogBundle, code: UnconfirmedCode): UserInputReceiptReason {
+	return { code, text: catalogText(catalog, UNCONFIRMED_REASON_IDS[code]) };
 }
 
 /** Receipt fields stay printable, so a serialized receipt cannot carry control sequences. */
@@ -213,20 +217,31 @@ function cancellationConfirmed(record: RetainedSubmission, dispositions: InputDi
 
 /** A durable cancellation cause is the actionable reason; the record's own status is the fallback. */
 function durableCancellationReason(
+	catalog: CatalogBundle,
 	reason: RetainedSubmission["cancellationReason"],
 ): UserInputReceiptReason | undefined {
-	if (reason === "flow-suspended") return { code: "flow-suspended", text: FLOW_SUSPENDED };
-	if (reason === "unauthorized") return { code: "unauthorized", text: UNAUTHORIZED };
+	if (reason === "flow-suspended")
+		return { code: "flow-suspended", text: catalogText(catalog, CatalogMessageId.userInputReceiptFlowSuspended) };
+	if (reason === "unauthorized")
+		return { code: "unauthorized", text: catalogText(catalog, CatalogMessageId.userInputReceiptUnauthorized) };
 	return undefined;
 }
 
-function cancellationReason(record: RetainedSubmission, dispositions: InputDisposition[]): UserInputReceiptReason {
-	const durable = durableCancellationReason(record.cancellationReason);
+function cancellationReason(
+	catalog: CatalogBundle,
+	record: RetainedSubmission,
+	dispositions: InputDisposition[],
+): UserInputReceiptReason {
+	const durable = durableCancellationReason(catalog, record.cancellationReason);
 	if (durable) return durable;
-	if (record.status === "cancelled") return { code: "submission-cancelled", text: SUBMISSION_CANCELLED };
+	const cancelled: UserInputReceiptReason = {
+		code: "submission-cancelled",
+		text: catalogText(catalog, CatalogMessageId.userInputReceiptSubmissionCancelled),
+	};
+	if (record.status === "cancelled") return cancelled;
 	for (const item of dispositions)
-		if (item.kind === "cancelled") return { code: item.code, text: cancelledText(item.code) };
-	return { code: "submission-cancelled", text: SUBMISSION_CANCELLED };
+		if (item.kind === "cancelled") return { code: item.code, text: cancelledText(catalog, item.code) };
+	return cancelled;
 }
 
 /**
@@ -258,8 +273,16 @@ function cancellationReason(record: RetainedSubmission, dispositions: InputDispo
  *
  * A receipt reports a disposition. It is not a dispatch permit, and no state it returns authorizes
  * issuing the same message again.
+ *
+ * The display sentence of a reason resolves from `catalog`, which the caller passes from the live
+ * session bundle. A projection that supplies no bundle renders the English default, so a unit test
+ * or a non-localized caller keeps the same bytes while a localized session reads its own sentence.
+ * The machine `code` never changes with the bundle.
  */
-export function projectUserInputReceipt(source: UserInputReceiptSource): UserInputReceipt {
+export function projectUserInputReceipt(
+	source: UserInputReceiptSource,
+	catalog: CatalogBundle = defaultCatalog(),
+): UserInputReceipt {
 	validateSource(source);
 	const { record, provenance, target, journal, liveQueue } = source;
 	const receipt = (state: UserInputReceiptState, reason?: UserInputReceiptReason): UserInputReceipt => ({
@@ -283,20 +306,37 @@ export function projectUserInputReceipt(source: UserInputReceiptSource): UserInp
 	if (dispositions.some((item) => item.kind === "consumed")) return receipt("consumed");
 	// A handled prompt that inserted nothing is a definitive refusal, not an unknown delivery.
 	if (dispatch?.phase === "returned" && dispatch.noInput === true && !inputs.length)
-		return receipt("rejected", { code: "handled-without-input", text: HANDLED_WITHOUT_INPUT });
+		return receipt("rejected", {
+			code: "handled-without-input",
+			text: catalogText(catalog, CatalogMessageId.userInputReceiptHandledWithoutInput),
+		});
 	if (cancellationConfirmed(record, dispositions))
-		return receipt("cancelled", cancellationReason(record, dispositions));
+		return receipt("cancelled", cancellationReason(catalog, record, dispositions));
 	const holds = activeAdmissionHolds(record, liveQueue);
-	if (holds.length) return receipt("held", { code: "admission-hold", text: ADMISSION_HOLD });
+	if (holds.length)
+		return receipt("held", {
+			code: "admission-hold",
+			text: catalogText(catalog, CatalogMessageId.userInputReceiptAdmissionHold),
+		});
 	// The callback that owned this record ended before any dispatch, so nothing will deliver it and no
-	// delivery can have happened. It stays inspectable without being replayed on its own.
+	// delivery can have happened. It stays inspectable without being replayed on its own. It reports the
+	// shared unavailable-input sentence, resolved from this same bundle rather than a separate copy.
 	if (record.unavailable === "callback-ended")
-		return receipt("unknown", { code: "callback-ended", text: UNAVAILABLE_INPUT_REASON });
+		return receipt("unknown", {
+			code: "callback-ended",
+			text: catalogText(catalog, CatalogMessageId.flowSubmissionUnavailable),
+		});
 	if (dispositions.length && dispositions.every((item) => item.kind === "queued")) return receipt("queued");
 	if (!dispatch && record.status === "retained") return receipt("retained");
 	if (dispatch?.phase === "failed" && !inputs.length)
-		return receipt("unknown", { code: "dispatch-failed", text: DISPATCH_FAILED });
+		return receipt("unknown", {
+			code: "dispatch-failed",
+			text: catalogText(catalog, CatalogMessageId.userInputReceiptDispatchFailed),
+		});
 	for (const item of dispositions)
-		if (item.kind === "unconfirmed") return receipt("unknown", unconfirmedReason(item.code));
-	return receipt("unknown", { code: "dispatch-unconfirmed", text: DISPATCH_UNCONFIRMED });
+		if (item.kind === "unconfirmed") return receipt("unknown", unconfirmedReason(catalog, item.code));
+	return receipt("unknown", {
+		code: "dispatch-unconfirmed",
+		text: catalogText(catalog, CatalogMessageId.userInputReceiptDispatchUnconfirmed),
+	});
 }

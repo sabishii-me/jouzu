@@ -1,4 +1,5 @@
 import type { CacheWarmingMode } from "@earendil-works/pi-coding-agent";
+import type { LanguageContract } from "../language-contract.js";
 import type { TextGuardMode } from "../textguard-policy.js";
 import type { ChildContext } from "./context.js";
 import type { AgentModel, AgentRole, AgentThinkingLevel } from "./roles.js";
@@ -21,6 +22,13 @@ export interface WorkerLaunch {
 	textguardFiles?: boolean;
 	/** Snapshot of the global warming setting when this run was launched. */
 	cacheWarming?: CacheWarmingMode;
+	/**
+	 * The role's language contract, snapshotted when this run was launched. The
+	 * parent resolves it from the role defaults or the session's language; a
+	 * running child keeps the copy it started with, so a later parent change does
+	 * not reach it.
+	 */
+	languageContract?: LanguageContract;
 	/** The parent's scanning mode, so a child never re-blocks what the user unblocked. */
 	textguardMode?: TextGuardMode;
 	task: string;

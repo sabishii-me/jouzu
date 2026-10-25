@@ -1,6 +1,6 @@
 # Jouzu
 
-Jouzu is Shisa AI's terminal coding harness, built on [Pi coding agent](https://pi.dev/) 1.3.0.
+Jouzu is Shisa AI's terminal coding harness, built on [Pi coding agent](https://pi.dev/) 1.4.0.
 
 - **Goals, loops, and scheduled work.** Track tasks, work toward a goal, run measured improvement loops, and schedule prompts.
 - **Background jobs.** Run shell jobs while you keep working; completions arrive as batched summaries.
@@ -8,7 +8,7 @@ Jouzu is Shisa AI's terminal coding harness, built on [Pi coding agent](https://
 - **Web search and fetch.** Fetch pages directly or through a browser that installs on first use.
 - **Local content scanning.** TextGuard checks skills and web results before they reach the model.
 - **Compaction with searchable history.** Defaults to [VCC](https://github.com/lllyasviel/VCC) for instant, deterministic compaction with agent-searchable history.
-- **Japanese text support.** Correct layout for Japanese, Chinese, Korean, and emoji widths, plus an optional Japanese profile.
+- **Language choices.** English or Japanese (preview) interface, independent reply and artifact languages, and layout support for Japanese, Chinese, Korean, and emoji widths.
 - **Voice dictation.** Speak into the prompt with Shisa realtime transcription.
 - **Model picker.** Search providers and models, keep favorites, and save per-project defaults. Sign into [Shisa AI's API service](https://platform.shisa.ai/) for the latest open coding models.
 
@@ -39,13 +39,15 @@ A signed Windows x64 launcher that bundles its requirements is available from [G
 jz
 ```
 
-The first launch asks whether to enable the Japanese profile and offers to connect a Shisa AI account. New Shisa accounts receive USD 10 in credits.
+The first launch asks for interface and response languages separately and offers to connect a Shisa AI account. New Shisa accounts receive USD 10 in credits.
 
 | Command or key | Action |
 | --- | --- |
 | `/login shisa` | Connect a Shisa account (`/login` for other providers) |
 | `/model` or `Ctrl+L` | Choose a model |
 | `Ctrl+P` | Cycle favorite models |
+| `/language` | Preview and save interface, response and artifact languages |
+| `/fast on`, `/fast off` | Request priority or standard processing on supported models |
 | `/workflow` | Configure agents and inspect child runs |
 | `/goal`, `/multiloop` | Manage goals and loops |
 | `/bg` | Manage background jobs |
@@ -132,6 +134,7 @@ Building also requires Go (for [textguard-go](https://github.com/shisa-ai/textgu
 | [Voice input](https://github.com/shisa-ai/jouzu/blob/main/docs/voice.md) | Dictation setup and commands |
 | [Session interface](https://github.com/shisa-ai/jouzu/blob/main/docs/interface.md) | Dashboard, Session Line, Status Bar |
 | [Session labels](https://github.com/shisa-ai/jouzu/blob/main/docs/session-labels.md) | Automatic session naming |
+| [Language and locale](https://github.com/shisa-ai/jouzu/blob/main/docs/language.md) | UI, responses, artifacts, profiles and child inheritance |
 | [Profiles](https://github.com/shisa-ai/jouzu/blob/main/docs/profiles.md) | `core` and `ja`, bundled skills, conflicts |
 | [Keybindings](https://github.com/shisa-ai/jouzu/blob/main/docs/keybindings.md) | Default keys and terminal support |
 | [Configuration](https://github.com/shisa-ai/jouzu/blob/main/docs/configuration.md) | Locations, Pi import, environment variables |

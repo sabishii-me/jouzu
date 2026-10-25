@@ -1,17 +1,27 @@
 import assert from "node:assert/strict";
+import { join } from "node:path";
 import { test } from "node:test";
+import { pathToFileURL } from "node:url";
+import { getPackageDir } from "@earendil-works/pi-coding-agent";
+import { assistant, createFlowSession } from "../../../scripts/fixtures/pi-flow-session.mjs";
+import { runPromptHook } from "../../../scripts/fixtures/prompt-hook.mjs";
+import { resolveCatalog } from "../dist/locale-catalog.js";
 import {
-	brandDefaultSystemPrompt,
+	applyJouzuPromptSections,
 	buildCapabilityRoutingGuidance,
-	CATALOG_STARTUP_NOTICE,
+	catalogStartupNotice,
 	clearStartupNotice,
 	createJouzuPresentationExtension,
 	detectBannerColorMode,
 	isInteractivePiStartup,
 	JOUZU_ASYNC_WAIT_GUIDANCE,
 	JOUZU_DEFAULT_GUIDANCE,
+	JOUZU_HARNESS_GUIDANCE,
 	JOUZU_REPOSITORY_WORK_GUIDANCE,
+	JOUZU_TOOL_GUIDELINES,
 	JOUZU_USER_COMMUNICATION_GUIDANCE,
+	jouzuDateSection,
+	jouzuPreamble,
 	renderBannerLines,
 	renderBrandGradient,
 	shouldClearInteractiveStartup,
@@ -53,7 +63,7 @@ function interactiveContext() {
 	return { calls, ctx };
 }
 
-function installExtension() {
+function installExtension(catalog) {
 	const handlers = new Map();
 	const commands = new Map();
 	const tools = new Map();
@@ -66,70 +76,131 @@ function installExtension() {
 			sent.push({ message, options });
 		},
 	};
-	createJouzuPresentationExtension(metadata, profile, { colorMode: "none" }).factory(pi);
+	createJouzuPresentationExtension(metadata, profile, {
+		colorMode: "none",
+		...(catalog ? { catalog } : {}),
+	}).factory(pi);
 	return { handlers, commands, tools, sent };
 }
 
-test("brands only Pi's default prompt, adds bounded guidance, and preserves dynamic tool bullets", async () => {
-	const upstream = `You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.
-
-Available tools:
-- read: Read file contents
-- bg_task: Spawn, inspect, and stop non-blocking shell tasks
-
-Guidelines:
-- Be concise in your responses`;
-	const expected = upstream
-		.replace(
-			"operating inside pi, a coding agent harness",
-			"operating inside Jouzu, a coding-agent environment built on the Pi harness",
-		)
-		.replace("\n\nAvailable tools:", `\n\n${JOUZU_DEFAULT_GUIDANCE}\n\nAvailable tools:`);
-	assert.equal(brandDefaultSystemPrompt(upstream), expected);
-	assert.equal(brandDefaultSystemPrompt(upstream, "user-owned prompt"), upstream);
-	assert.equal(brandDefaultSystemPrompt("You are a reviewer."), "You are a reviewer.");
-	assert.match(expected, /Available tools:\n- read: Read file contents\n- bg_task:/);
-	assert.match(expected, /Do not invent acronyms or use unexplained jargon/);
-	assert.match(expected, /Use `jouzu-clear-writing` for documentation/);
-	assert.match(expected, /Work directly by default/);
+test("applies Jouzu guidance as Pi prompt sections and leaves other prompts alone", () => {
+	const routing = buildCapabilityRoutingGuidance({ selectedTools: ["read", "bg_task", "web_fetch"], skills: [] });
+	const options = { cwd: "/workspace", selectedTools: ["read", "bash", "edit"], sections: {}, toolGuidelines: {} };
+	assert.equal(applyJouzuPromptSections(options, { capabilityRouting: routing, now: new Date(2026, 9, 24) }), true);
+	assert.equal(options.sections.preamble, jouzuPreamble(routing));
+	assert.match(options.sections.preamble, /^You are an expert coding assistant operating inside Jouzu/);
+	assert.ok(options.sections.preamble.indexOf(JOUZU_DEFAULT_GUIDANCE) < options.sections.preamble.indexOf(routing));
 	assert.match(
-		expected,
-		/Inspect relevant files before editing\. Scope file searches to relevant project paths and widen only when needed; do not run filesystem-wide scans such as `find \/` unless the user explicitly requests them\./,
+		options.sections.docs,
+		/^Pi documentation \(read only for Pi extension, SDK, theme, or TUI development\)/,
 	);
-	assert.match(expected, /Distinguish evidence from assumptions/);
-	assert.match(expected, /make the smallest coherent change/);
-	assert.match(expected, /run the narrowest deterministic check/);
-	assert.match(expected, /Report untested limitations honestly/);
-	assert.match(expected, /Use task tracking only for work with three or more distinct steps/);
-	assert.match(expected, /do not combine workflow systems/);
-	assert.match(expected, /exact listed `<location>` once/);
-	assert.match(expected, /never search guessed package paths/);
-	assert.doesNotMatch(JOUZU_DEFAULT_GUIDANCE, /be concise/i);
-	assert.doesNotMatch(JOUZU_DEFAULT_GUIDANCE, /jouzu-core/);
+	assert.equal(options.sections.date, "Today's date: Saturday, 2026-10-24");
+	assert.deepEqual(options.toolGuidelines.edit, JOUZU_TOOL_GUIDELINES.edit);
+	assert.deepEqual(options.toolGuidelines.bash, JOUZU_TOOL_GUIDELINES.bash);
+	assert.equal(options.toolGuidelines.write, undefined);
+
+	for (const owned of [{ customPrompt: "user-owned prompt" }, { forceSystemPrompt: "forced by another extension" }]) {
+		const untouched = { cwd: "/workspace", selectedTools: ["edit"], sections: {}, toolGuidelines: {}, ...owned };
+		assert.equal(applyJouzuPromptSections(untouched, { capabilityRouting: routing }), false);
+		assert.deepEqual(untouched.sections, {});
+		assert.deepEqual(untouched.toolGuidelines, {});
+	}
+});
+
+test("default guidance states harness facts once and stays bounded", () => {
 	assert.equal(
 		JOUZU_DEFAULT_GUIDANCE,
-		`${JOUZU_USER_COMMUNICATION_GUIDANCE}\n${JOUZU_REPOSITORY_WORK_GUIDANCE}\n${JOUZU_ASYNC_WAIT_GUIDANCE}`,
+		`${JOUZU_USER_COMMUNICATION_GUIDANCE}\n${JOUZU_HARNESS_GUIDANCE}\n${JOUZU_REPOSITORY_WORK_GUIDANCE}`,
 	);
 	assert.ok(JOUZU_DEFAULT_GUIDANCE.length <= 2000);
-	assert.match(expected, /Prefer completion notifications and flow-control waits over sleeping or polling/);
-	assert.match(expected, /When agent_wait is available and the producer returns a wait dependency/);
-	assert.match(expected, /omit work to use the current invocation/);
-	assert.match(expected, /After a waiting response.*end the turn/);
-	assert.match(expected, /A refused wait does not suspend work/);
-	assert.match(expected, /no completion notification or wait support.*bounded polling/);
+	for (const phrase of [
+		"Do not invent acronyms or use unexplained jargon",
+		"Responses render as Markdown",
+		"Make independent tool calls in parallel",
+		"steering the current task unless it cancels or replaces it",
+		"Work directly by default",
+		"Inspect relevant files before editing. Scope file searches to relevant project paths and widen only when needed; do not run filesystem-wide scans such as `find /` unless the user explicitly requests them.",
+		"Distinguish evidence from assumptions",
+		"make the smallest coherent change",
+		"run the narrowest deterministic check",
+		"Report untested limitations honestly",
+		"Use task tracking only for work with three or more distinct steps",
+		"do not combine workflow systems",
+		"Compute reported numbers with executed code",
+		"not because a keyword matches",
+		"exact listed `<location>` once",
+		"never search guessed package paths",
+	])
+		assert.ok(JOUZU_DEFAULT_GUIDANCE.includes(phrase), phrase);
+	assert.doesNotMatch(JOUZU_DEFAULT_GUIDANCE, /be concise|jouzu-core|jouzu-clear-writing|completion notifications/i);
+	assert.match(JOUZU_ASYNC_WAIT_GUIDANCE, /Prefer completion notifications over sleeping or polling/);
+	assert.match(JOUZU_ASYNC_WAIT_GUIDANCE, /Without completion notifications, poll on a bounded schedule/);
+});
 
-	const routingOptions = {
-		customPrompt: undefined,
-		selectedTools: ["read", "bg_task", "web_fetch"],
-		skills: [{ name: "jouzu-clear-writing" }],
-	};
-	const routing = buildCapabilityRoutingGuidance(routingOptions);
+test("the extension sets sections on every run instead of forcing the prompt", () => {
+	const options = { selectedTools: ["read", "bg_task", "web_fetch"], skills: [{ name: "jouzu-clear-writing" }] };
 	const { handlers } = installExtension();
-	const result = await handlers.get("before_agent_start")({
-		systemPrompt: upstream,
-		systemPromptOptions: routingOptions,
+	const run = runPromptHook(handlers.get("before_agent_start"), { options });
+	assert.equal(run.result, undefined);
+	assert.equal(run.sections.preamble, jouzuPreamble(buildCapabilityRoutingGuidance(options)));
+	assert.equal(run.sections.date, jouzuDateSection());
+});
+
+test("the installed Pi renders the Jouzu sections and sends a date change as a section update", async () => {
+	const { buildSystemPrompt, buildSystemPromptSections, diffSystemPromptSections } = await import(
+		pathToFileURL(join(getPackageDir(), "dist/core/system-prompt.js")).href
+	);
+	const sectionsFor = (now) => {
+		const options = { selectedTools: ["read", "bash"], cwd: "/workspace", sections: {}, toolGuidelines: {} };
+		applyJouzuPromptSections(options, { now });
+		return options;
+	};
+	const first = sectionsFor(new Date(2026, 9, 24));
+	const rendered = buildSystemPrompt(first);
+	assert.match(rendered, /^You are an expert coding assistant operating inside Jouzu/);
+	assert.doesNotMatch(rendered, /operating inside pi, a coding agent harness/);
+	assert.equal(rendered.match(/<docs>/g)?.length, 1);
+	assert.doesNotMatch(rendered, /docs\/keybindings\.md|docs\/models\.md|environment-variables/);
+	assert.match(rendered, /<date>\nToday's date: Saturday, 2026-10-24\n<\/date>/);
+	assert.match(rendered, /<cwd>\n\/workspace\n<\/cwd>/);
+	const patch = diffSystemPromptSections(
+		buildSystemPromptSections(first),
+		buildSystemPromptSections(sectionsFor(new Date(2026, 9, 25))),
+	);
+	assert.deepEqual(Object.keys(patch), ["date"]);
+});
+
+test("a Pi session keeps its leading prompt and receives a changed section as an update", async (t) => {
+	let now = new Date(2026, 9, 24);
+	const { session } = await createFlowSession(t, {
+		tools: ["read"],
+		extensions: [
+			(pi) => pi.on("before_agent_start", (event) => void applyJouzuPromptSections(event.systemPromptOptions, { now })),
+		],
 	});
-	assert.deepEqual(result, { systemPrompt: brandDefaultSystemPrompt(upstream, undefined, routing) });
+	const requests = [];
+	session.agent.streamFunction = async (_model, context) => {
+		requests.push(context.messages.filter((message) => message.role === "system"));
+		const reply = assistant();
+		return {
+			async *[Symbol.asyncIterator]() {
+				yield { type: "done", partial: reply };
+			},
+			result: async () => reply,
+		};
+	};
+	await session.prompt("first");
+	now = new Date(2026, 9, 25);
+	await session.prompt("second");
+	const [first, second] = requests;
+	assert.equal(first.length, 1);
+	assert.match(first[0].sections.preamble, /^You are an expert coding assistant operating inside Jouzu/);
+	assert.match(first[0].sections.date, /2026-10-24/);
+	// The leading system message is unchanged; the new date arrives as a later section update.
+	assert.deepEqual(second[0], first[0]);
+	assert.equal(second.length, 2);
+	assert.deepEqual(Object.keys(second[1].sections), ["date"]);
+	assert.match(second[1].sections.date, /2026-10-25/);
 });
 
 test("generates stable capability routing from only active tools and skills", () => {
@@ -157,6 +228,32 @@ test("generates stable capability routing from only active tools and skills", ()
 	});
 	assert.match(changed, /`schedule_prompt`/);
 	assert.notEqual(changed, guidance);
+});
+
+test("the Jouzu reference route appears only for its skill and never reaches a custom prompt", async () => {
+	const upstream = `You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.
+
+Available tools:
+- read: Read file contents`;
+	const options = { customPrompt: undefined, selectedTools: ["read"], skills: [{ name: "jouzu-reference" }] };
+	const routing = buildCapabilityRoutingGuidance(options);
+	assert.match(routing, /read `jouzu-reference` at its listed `<location>`/);
+	assert.doesNotMatch(
+		buildCapabilityRoutingGuidance({ ...options, skills: [{ name: "jouzu-clear-writing" }] }),
+		/jouzu-reference/,
+	);
+	const { handlers } = installExtension();
+	const branded = runPromptHook(handlers.get("before_agent_start"), { systemPrompt: upstream, options });
+	assert.equal(branded.sections.preamble, jouzuPreamble(routing));
+	assert.match(branded.systemPrompt, /Jouzu configuration, language, model catalogs/);
+
+	// A user-owned prompt gets no Jouzu sections, so the route never reaches it.
+	const custom = runPromptHook(handlers.get("before_agent_start"), {
+		systemPrompt: upstream,
+		options: { ...options, customPrompt: "user-owned prompt" },
+	});
+	assert.equal(custom.result, undefined);
+	assert.deepEqual(custom.sections, {});
 });
 
 test("describes VCC session continuity without claiming infinite context", () => {
@@ -218,12 +315,44 @@ test("startup notices are written, then erased in place", () => {
 		return true;
 	};
 	try {
-		writeStartupNotice(CATALOG_STARTUP_NOTICE);
+		writeStartupNotice(catalogStartupNotice());
 		clearStartupNotice();
 	} finally {
 		process.stdout.write = original;
 	}
 	assert.deepEqual(written, ["Fetching model catalog…", "\r\u001b[2K"]);
+});
+
+test("the startup notice and the erase do not change width", () => {
+	// The write carries only the notice text and the erase only the clear
+	// sequence, so the displayed width and the erase sequence are the same as
+	// the pre-catalog build regardless of the catalog that renders the text.
+	const en = catalogStartupNotice(resolveCatalog("en").bundle);
+	const ja = catalogStartupNotice(resolveCatalog("ja").bundle);
+	assert.equal(en, "Fetching model catalog…");
+	assert.equal(ja, "モデルカタログを取得しています…");
+	for (const notice of [en, ja]) assert.ok(!notice.includes("\u001b"));
+	const written = [];
+	const original = process.stdout.write;
+	process.stdout.write = (chunk) => {
+		written.push(typeof chunk === "string" ? chunk : "");
+		return true;
+	};
+	try {
+		writeStartupNotice(ja);
+		clearStartupNotice();
+	} finally {
+		process.stdout.write = original;
+	}
+	assert.deepEqual(written, [ja, "\r\u001b[2K"]);
+});
+
+test("a damaged locale catalog falls back to the English startup notice", () => {
+	// `resolveCatalog` never throws for a damaged catalog; it returns the English
+	// bundle, so the model-catalog fetch failure path still shows the notice.
+	const resolution = resolveCatalog("not a locale");
+	assert.equal(resolution.bundle.locale, "en");
+	assert.equal(catalogStartupNotice(resolution.bundle), "Fetching model catalog…");
 });
 
 test("installs a compact width-safe Jouzu header and working indicator", async () => {
@@ -245,6 +374,19 @@ test("installs a compact width-safe Jouzu header and working indicator", async (
 	]);
 	assert.equal(component.render(12)[0], "J O U Z U");
 	for (const line of component.render(12)) assert.ok(line.length <= 12, line);
+});
+
+test("renders the banner labels from the catalog without changing the decoration", () => {
+	// The braille mark and the version line are decoration and protected values;
+	// only the hint labels are catalog text, and the separator stays in code.
+	const ja = resolveCatalog("ja").bundle;
+	const lines = renderBannerLines(identityTheme, metadata, 80, "none", undefined, ja);
+	assert.deepEqual(lines, [
+		"⠈⢹ ⡎⢱ ⡇⢸ ⢉⠝ ⡇⢸",
+		"⠣⠜ ⠣⠜ ⠣⠜ ⠮⠤ ⠣⠜",
+		"jouzu 0.1.0  ·  pi 0.84.2",
+		"/model 選択  ·  /hotkeys キーバインド  ·  /status セッション",
+	]);
 });
 
 test("shares the teal-purple-pink banner gradient with compact wordmarks", () => {
@@ -341,4 +483,48 @@ test("session status labels unavailable model and context facts honestly", async
 	assert.match(message, /thinking: off/);
 	assert.match(message, /context: unknown\/128000 tokens \(unknown%\)/);
 	assert.match(message, /scoped models: all available/);
+});
+
+test("the session status block and its command description render from the ja catalog", async () => {
+	const ja = resolveCatalog("ja").bundle;
+	const { commands } = installExtension(ja);
+	const { calls, ctx } = interactiveContext();
+	await commands.get("status").handler("", ctx);
+	const message = calls.notifications[0][0];
+	const status = (key, args) => ja.format(`jouzu.cli.presentation.status.${key}`, args);
+	assert.equal(
+		message,
+		[
+			status("heading"),
+			status("session", { id: "session-test-123" }),
+			status("workspace", { name: "日本語 project" }),
+			status("model", { model: "anthropic/claude-test" }),
+			status("thinking", { level: "high" }),
+			status("context", { context: status("contextUsage", { tokens: "12345", window: "200000", percent: "6.2" }) }),
+			status("scopedModels", { models: "2" }),
+			status("profile", { id: "core", state: status("profileNotApplied") }),
+			status("runtime", { jouzu: "0.1.0", pi: "0.84.2" }),
+		].join("\n"),
+	);
+	for (const label of [
+		"Jouzu session status",
+		"session:",
+		"workspace:",
+		"model:",
+		"thinking:",
+		"context:",
+		"scoped models:",
+		"profile:",
+		"runtime:",
+	])
+		assert.equal(message.includes(label), false, `English label survives: ${label}`);
+	assert.equal(commands.get("status").description, ja.format("jouzu.cli.presentation.command.statusDescription"));
+});
+
+test("the status command description keeps its English default", () => {
+	const { commands } = installExtension();
+	assert.equal(
+		commands.get("status").description,
+		"Show the current Jouzu session, model, context, and profile status",
+	);
 });

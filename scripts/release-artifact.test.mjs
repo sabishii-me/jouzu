@@ -4,7 +4,8 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { upgradeVersions } from "./published-upgrade.mjs";
+import { computeCatalogDigests } from "./catalog-lock.mjs";
+import { installedCatalogSnapshot, upgradeVersions } from "./published-upgrade.mjs";
 import {
 	createManifest,
 	requiredJobs,
@@ -46,6 +47,35 @@ test("published upgrade starts from the released updater and targets the candida
 	});
 	assert.deepEqual(upgradeVersions("0.1.7"), { currentVersion: "0.1.7", nextVersion: "0.1.8", brokenVersion: "0.1.9" });
 	for (const from of ["0.1.7", "0.1.8", "1.0.0", "invalid"]) assert.throws(() => upgradeVersions("0.1.7", from));
+});
+
+test("rollback snapshots enforce the catalog boundary and detect changed or leftover catalogs", () => {
+	const root = mkdtempSync(join(tmpdir(), "jouzu-rollback-catalog-"));
+	try {
+		for (const version of ["0.1.19", "0.2.0", "0.2.1"]) assert.equal(installedCatalogSnapshot(root, version), null);
+		for (const version of ["0.2.2", "0.3.0", "1.0.0", "invalid"]) {
+			assert.throws(() => installedCatalogSnapshot(root, version));
+		}
+		const locales = join(root, "dist", "locales");
+		mkdirSync(join(locales, "ja"), { recursive: true });
+		writeFileSync(join(root, "dist", "locale-catalog.js"), 'const CATALOG_VERSION = "1";');
+		const catalog = join(locales, "ja", "cli.ftl");
+		writeFileSync(catalog, "message = 日本語\n");
+		const lock = () =>
+			writeFileSync(
+				join(locales, "catalog.lock.json"),
+				JSON.stringify({ version: "1", ...computeCatalogDigests(locales) }),
+			);
+		lock();
+		const before = installedCatalogSnapshot(root, "0.2.2");
+		assert.throws(() => installedCatalogSnapshot(root, "0.2.1"), /must not retain/);
+		writeFileSync(catalog, "message = 変更\n");
+		assert.throws(() => installedCatalogSnapshot(root, "0.2.2"), /digest/);
+		lock();
+		assert.notDeepEqual(installedCatalogSnapshot(root, "0.2.2"), before);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
 });
 
 test("full hosted qualification succeeds without Windows", () => verifyQualification(run, jobs, manifest));

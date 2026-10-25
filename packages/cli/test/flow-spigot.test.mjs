@@ -12,6 +12,7 @@ import {
 	installedTaskExtension,
 	syntheticProducer,
 } from "./fixtures/flow-assembly.mjs";
+import { controlledBackground } from "./fixtures/flow-background-gate.mjs";
 import { campaignScript, liveWait } from "./fixtures/flow-campaign.mjs";
 import { waitDependencyFrom } from "./fixtures/flow-wait-dependency.mjs";
 
@@ -103,7 +104,8 @@ test("flow control off flushes a retained producer delivery back to Pi", async (
 });
 
 test("flow control off ends live waits, and the completion arrives natively", async (t) => {
-	const campaign = campaignScript({ command: "sleep 2", goal: "Sweep while flow control stops" });
+	const background = await controlledBackground(t);
+	const campaign = campaignScript({ command: background.command, goal: "Sweep while flow control stops" });
 	let asked = false;
 	const f = await assembledSession(t, {
 		producerExtensions: await installedProducerExtensions(),
@@ -170,6 +172,7 @@ test("flow control off ends live waits, and the completion arrives natively", as
 	// Pi instead of flow composing a turn for it. That delivery is the case a finished dispatch's
 	// leftover permit used to block, so this waits for the turn it starts, not for a later prompt.
 	const turns = f.bodies.length;
+	await background.release();
 	const entries = () => f.sessionManager.getEntries();
 	const delivered = () => entries().some((entry) => entry.customType === "kendex-background-tasks:event");
 	const deadline = Date.now() + 30000;

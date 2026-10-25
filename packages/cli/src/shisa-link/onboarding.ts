@@ -3,6 +3,8 @@ import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { catalogSourceCredentialAvailable, SHISA_API_CATALOG_SOURCE } from "../catalog-sources.js";
+import { CatalogMessageId, catalogText, defaultCatalog } from "../cli-messages.js";
+import type { CatalogBundle } from "../locale-catalog.js";
 import type { JouzuPaths } from "../paths.js";
 import { writeFilePrivateExclusive } from "../private-fs.js";
 import { detectTerminalColorMode, sanitizeTerminalText } from "../terminal-layout.js";
@@ -10,16 +12,17 @@ import { setShisaSignedOut } from "./credentials.js";
 import { resolveShisaGatewayUrl } from "./device-flow.js";
 import { loginShisa, type ShisaLoginOptions } from "./login.js";
 
-/** Keep account messaging separate from the first-launch decision and login protocol. */
+/**
+ * Keep account messaging separate from the first-launch decision and login
+ * protocol. Each entry is a catalog message ID; the renderer resolves it with
+ * the active bundle, so the same code renders English or Japanese.
+ */
 export const SHISA_ONBOARDING_COPY = {
-	points: [
-		"Connect to Shisa AI for the latest open coding models (Qwen, GLM, etc).",
-		"New signups get $10 instant credits. Add a credit card for $25 more.",
-	],
-	question: "Connect now? [y/N] ",
-	hint: "(or later with /login shisa)",
-	later: "You can connect later with /login shisa.",
-};
+	points: [CatalogMessageId.shisaOnboardingPointConnect, CatalogMessageId.shisaOnboardingPointCredits],
+	question: CatalogMessageId.shisaOnboardingQuestion,
+	hint: CatalogMessageId.shisaOnboardingHint,
+	later: CatalogMessageId.shisaOnboardingLater,
+} as const;
 
 /** Marks each offer line without relying on color, so a pipe or NO_COLOR keeps the shape. */
 const POINT_MARKER = "\u25c6";
@@ -30,6 +33,8 @@ export function shisaOnboardingPath(paths: JouzuPaths): string {
 }
 
 export interface ShisaOnboardingOptions extends Omit<ShisaLoginOptions, "gatewayUrl"> {
+	/** The resolved locale catalog for the offer text. Defaults to English. */
+	catalog?: CatalogBundle;
 	interactive: boolean;
 	env?: NodeJS.ProcessEnv;
 	input?: NodeJS.ReadableStream;
@@ -49,6 +54,7 @@ export async function offerShisaOnboarding(options: ShisaOnboardingOptions): Pro
 	)
 		return;
 
+	const catalog = options.catalog ?? defaultCatalog();
 	const output = options.output ?? process.stdout;
 	const columns = () => Math.max(12, output.columns || 80);
 	const write = (message: string) => {
@@ -74,9 +80,9 @@ export async function offerShisaOnboarding(options: ShisaOnboardingOptions): Pro
 	process.on("SIGINT", cancel);
 	try {
 		output.write("\n");
-		for (const point of SHISA_ONBOARDING_COPY.points) writePoint(point);
+		for (const point of SHISA_ONBOARDING_COPY.points) writePoint(catalogText(catalog, point));
 		output.write("\n");
-		const question = `  ${SHISA_ONBOARDING_COPY.question}${style(SHISA_ONBOARDING_COPY.hint, "2")} `;
+		const question = `  ${catalogText(catalog, SHISA_ONBOARDING_COPY.question)} ${style(catalogText(catalog, SHISA_ONBOARDING_COPY.hint), "2")} `;
 		const answer = options.ask ? await options.ask(question, signal) : await readline?.question(question, { signal });
 		signal.throwIfAborted();
 		const connect = /^(?:y|yes)$/iu.test((answer ?? "").trim());
@@ -88,22 +94,22 @@ export async function offerShisaOnboarding(options: ShisaOnboardingOptions): Pro
 			);
 		} catch (error) {
 			if (error instanceof Error && "code" in error && error.code === "EEXIST") return;
-			write("Could not save the Shisa setup choice. Check Jouzu's storage permissions.");
-			write(SHISA_ONBOARDING_COPY.later);
+			write(catalogText(catalog, CatalogMessageId.shisaOnboardingSetupChoiceFailed));
+			write(catalogText(catalog, SHISA_ONBOARDING_COPY.later));
 			return;
 		}
 		if (!connect) {
-			write(SHISA_ONBOARDING_COPY.later);
+			write(catalogText(catalog, SHISA_ONBOARDING_COPY.later));
 			return;
 		}
-		write("Open the link below and approve this device in your browser. Press Ctrl+C to cancel sign-in.");
+		write(catalogText(catalog, CatalogMessageId.shisaOnboardingOpenLink));
 		await loginShisa(
 			{
 				signal,
 				onDeviceCode: ({ verificationUri, userCode }) => {
 					// Keep the link intact for copying; the terminal handles its visual wrapping.
 					output.write(`${sanitizeTerminalText(verificationUri)}\n`);
-					write(`Device code: ${userCode}`);
+					write(catalogText(catalog, CatalogMessageId.shisaOnboardingDeviceCode, { code: userCode }));
 				},
 				onAuth: ({ url }) => output.write(`${sanitizeTerminalText(url)}\n`),
 				onPrompt: async () => {
@@ -115,18 +121,20 @@ export async function offerShisaOnboarding(options: ShisaOnboardingOptions): Pro
 			{ ...options, gatewayUrl: resolveShisaGatewayUrl(env) },
 		);
 		setShisaSignedOut(options.paths, false);
-		write("Signed in to Shisa AI.");
+		write(catalogText(catalog, CatalogMessageId.shisaOnboardingSignedIn));
 	} catch (error) {
 		// Remote errors can contain credentials; keep startup recovery messages local.
-		const storageError = "Could not save Shisa sign-in. Check Jouzu's storage permissions and sign in again.";
+		// The device flow renders the storage failure with this same bundle, so the
+		// identity comparison below still matches in every locale.
+		const storageError = catalogText(catalog, CatalogMessageId.shisaSignInStorageFailed);
 		write(
 			signal.aborted
-				? "Shisa sign-in cancelled."
+				? catalogText(catalog, CatalogMessageId.shisaOnboardingCancelled)
 				: error instanceof Error && error.message === storageError
 					? storageError
-					: "Shisa sign-in could not complete.",
+					: catalogText(catalog, CatalogMessageId.shisaOnboardingCouldNotComplete),
 		);
-		write(SHISA_ONBOARDING_COPY.later);
+		write(catalogText(catalog, SHISA_ONBOARDING_COPY.later));
 	} finally {
 		process.off("SIGINT", cancel);
 		readline?.close();

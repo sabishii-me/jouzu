@@ -10,6 +10,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { packedTarballEntry } from "./pack-output.mjs";
+
 const root = resolve(import.meta.dirname, "..");
 const packageDirectory = resolve(root, "packages", "cli");
 const packageJson = JSON.parse(readFileSync(resolve(packageDirectory, "package.json"), "utf8"));
@@ -41,7 +43,10 @@ function run(command, args, options = {}) {
 }
 
 function runNpm(args, options = {}) {
-	const timeout = process.platform === "win32" ? 1_800_000 : 300_000;
+	// The pack step needs about 6 minutes here for a 75 MB tarball (measured at
+	// 5m56s to 6m26s), so the budget covers the slowest supported environment
+	// rather than the fastest. A timeout is treated as a failure, not a retry.
+	const timeout = 1_800_000;
 	return run(npmCommand, [...npmPrefix, ...args], { timeout, ...options });
 }
 
@@ -217,6 +222,7 @@ function assertPackedSurfaces(installedCli, probe, cwd, env, profile) {
 		"skill:jouzu-anti-slop",
 		"skill:jouzu-clear-writing",
 		"skill:jouzu-delegation",
+		"skill:jouzu-reference",
 		"skill:jouzu-source-check",
 		"skill:multiloop",
 		"status",
@@ -226,6 +232,13 @@ function assertPackedSurfaces(installedCli, probe, cwd, env, profile) {
 		assert.ok(surfaces.commands.includes(command), `${profile}: missing command ${command}`);
 	}
 	assert.equal(surfaces.commands.includes("skill:jouzu-core"), false);
+	const referenceDir = resolve(env.JOUZU_HOME, "agent", "skills", "jouzu-reference");
+	const entry = readFileSync(resolve(referenceDir, "SKILL.md"), "utf8");
+	const links = [...entry.matchAll(/\]\((references\/[a-z-]+\.md)\)/g)].map((match) => match[1]);
+	assert.equal(links.length, 4, `${profile}: expected four offline references`);
+	for (const link of links) {
+		assert.match(readFileSync(resolve(referenceDir, link), "utf8"), /^# /);
+	}
 	assert.equal(rpcResponse(result.stdout, "probe").success, true);
 	assert.equal(rpcResponse(result.stdout, "commands").success, true);
 }
@@ -399,7 +412,7 @@ try {
 		const packResult = runNpm(["pack", "--ignore-scripts", "--json", "--pack-destination", temp], {
 			cwd: packageDirectory,
 		});
-		const [packed] = JSON.parse(packResult.stdout);
+		const packed = packedTarballEntry(packResult.stdout);
 		tarball = resolve(temp, packed.filename);
 	}
 	const scope = process.env.JOUZU_PACKED_SCOPE ?? "all";
@@ -474,6 +487,9 @@ try {
 		const env = { ...baseEnv, JOUZU_HOME: consumer };
 		const version = run(process.execPath, [installedCli, "--version"], { cwd: temp, env }).stdout.trim();
 		assert.equal(version, `jouzu ${packageJson.version}\npi ${piVersion}\nprofile schema 1`);
+		const packedHelp = run(process.execPath, [installedCli, "--help"], { cwd: temp, env }).stdout;
+		assert.match(packedHelp, /Jouzu agentic AI environment/u);
+		assert.match(packedHelp, /--jouzu-ui-locale/u);
 		const firstPlan = JSON.parse(
 			run(process.execPath, [installedCli, "profile", "plan", "--json"], { cwd: temp, env }).stdout,
 		);
