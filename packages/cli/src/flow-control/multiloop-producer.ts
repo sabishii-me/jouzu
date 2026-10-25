@@ -162,10 +162,24 @@ export class MultiloopFlowProducer implements FlowProducer {
 				(attempt) =>
 					attempt.admission?.choice.intent.id === id && !(attempt.phase === "cancelled" && attempt.consumed === false),
 			);
-			const settled = attempts.filter((attempt) => attempt.phase === "settled" && attempt.outcome === "success");
+			// A retention read can inspect the next continuation while its predecessor is still
+			// running. Native consumption already reserves that predecessor's revision; waiting
+			// for settlement here would cache its identity again and trip the replay fence.
+			const reserved = attempts.filter(
+				(attempt) =>
+					(attempt.phase === "settled" && attempt.outcome === "success") ||
+					(attempt.id === ledger.activeAttemptId && attempt.consumed === true),
+			);
 			const retired = await this.attachment.ledger.retired({ settled: [id] });
-			entry.revision ??= String(settled.length + retiredSettledCount(retired, id) + 1);
+			const nextRevision = reserved.length + retiredSettledCount(retired, id) + 1;
+			entry.revision ??= String(nextRevision);
 			const revision = entry.revision;
+			const activeReserved = reserved.some((attempt) => attempt.id === ledger.activeAttemptId);
+			if (entry.retained && Number(revision) < nextRevision - Number(activeReserved))
+				throw new FlowLedgerError(
+					"stale",
+					"Multiloop continuation reuses consumed input. Resume the loop to submit a fresh continuation.",
+				);
 			intents.push({
 				id,
 				revision,
@@ -177,6 +191,9 @@ export class MultiloopFlowProducer implements FlowProducer {
 				independent: false,
 				runnable:
 					!!entry.continuation &&
+					// A reserved predecessor that failed must not authorize its successor, even
+					// after retirement removes the failed attempt from the live ledger.
+					Number(revision) <= nextRevision &&
 					!attempts.some(
 						(attempt) =>
 							attempt.id !== ledger.activeAttemptId && !(attempt.phase === "settled" && attempt.outcome === "success"),
