@@ -1539,7 +1539,8 @@ test("the account row leads Settings with a neutral offer link when signed out",
 	const catalogIndex = rendered.findIndex((row) => row.includes("Model Catalogs"));
 	assert.ok(accountIndex >= 0 && accountIndex < catalogIndex, "the account row renders above the catalog list");
 	assert.match(rendered.join("\n"), /Not connected/u);
-	assert.match(rendered.join("\n"), /Offers and eligibility: https:\/\/platform.shisa.ai\/jouzu/u);
+	assert.match(rendered.join("\n"), /Explore bonus credits and other offers, including eligibility:/u);
+	assert.ok(rendered.some((line) => line.includes("https://platform.shisa.ai/jouzu")));
 	assert.doesNotMatch(rendered.join("\n"), /\$\d|USD \d/u);
 	assert.ok(rendered.every((line) => terminalTextWidth(line) <= 84));
 	const narrow = component.render(48);

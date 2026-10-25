@@ -1,10 +1,10 @@
 {
   "version": "2",
   "locales": {
-    "en": "ad560a1675f3b81bc8fae3970f5283f208d2430a586f0471595455d68b98373d",
-    "ja": "5b4d509fcd99f169235439a635133665d054c888879db30e92d0aa61cca272b3",
-    "zh-Hans": "6afdf43b750e6d544a16a9fd8f6b208906609b22189291bc666412b33ad75713",
-    "zh-Hant": "58e2d3ee0f387a2719ad016cbe3f746df81810b6016add7ea5bbe5417eba23cc"
+    "en": "4e86bc0d254dcbf0bb06a198ad8096d8e1e312edc2bbbf92affc1c2958f292b9",
+    "ja": "d19b732d510c2ba6059a13190951569172a9aebba9d57e482faea4eee98ce1d4",
+    "zh-Hans": "78f0ece11dc2718da5b1890894bdb8d2c6ae876bf6d0bfa9a7e2bd2f0a3e3db8",
+    "zh-Hant": "bc20d3f690fbd71955c2b90946b025b88f94a8460719a98567f1ff60accfcf8e"
   },
   "extra": {
     "en/localization-deferral.ftl": "8a609fcd4f5bfe420f0f399cbe5cca1dab3d1617c46c26a8ba29308508febece",

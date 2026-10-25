@@ -39,7 +39,7 @@ A signed Windows x64 launcher that bundles its requirements is available from [G
 jz
 ```
 
-The first launch asks for interface and response languages separately and offers to connect a Shisa AI account. New Shisa accounts receive USD 10 in credits.
+The first launch asks for interface and response languages separately and offers to connect a Shisa AI account. See [offers and eligibility](https://platform.shisa.ai/jouzu).
 
 | Command or key | Action |
 | --- | --- |

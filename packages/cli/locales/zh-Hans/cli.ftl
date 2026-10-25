@@ -1310,11 +1310,8 @@ jouzu-cli-voice-shortcutDescription = 启动或停止语音口述
 # identifiers, the verification URL, and the device code are protected values
 # passed as arguments; the English values below are the default output.
 
-jouzu-cli-shisa-onboarding-pointConnect = 连接到 Shisa AI 以获取最新的开放编码模型（Qwen、GLM 等）。
-jouzu-cli-shisa-onboarding-pointCredits = 优惠及适用条件：https://platform.shisa.ai/jouzu
-jouzu-cli-shisa-onboarding-signup = 注册优惠：符合条件的新账户可获 USD { $amount } 额度。
-jouzu-cli-shisa-onboarding-signupBilling = 注册优惠：符合条件的新账户可获 USD { $amount } 额度。需要验证付款方式。
-jouzu-cli-shisa-onboarding-connectBonus = Jouzu 连接优惠：符合条件的账户可获 USD { $amount } 额度。需要验证付款方式。
+jouzu-cli-shisa-onboarding-pointConnect = 连接到 Shisa AI 以使用托管模型和语音输入。
+jouzu-cli-shisa-onboarding-pointCredits = 查看可用优惠及适用条件：https://platform.shisa.ai/jouzu
 jouzu-cli-shisa-onboarding-question = 现在连接？[y/N]
 jouzu-cli-shisa-onboarding-hint = （或稍后用 /login shisa）
 jouzu-cli-shisa-onboarding-later = 你可以稍后用 /login shisa 连接。

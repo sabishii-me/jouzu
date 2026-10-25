@@ -1165,11 +1165,8 @@ jouzu-cli-voice-transcriptTooLarge = 語音轉錄已達文字或區段上限。�
 jouzu-cli-voice-commandDescription = 在提示中聽寫；開始、停止、取消或設定語音
 jouzu-cli-voice-shortcutDescription = 開始或停止語音聽寫
 
-jouzu-cli-shisa-onboarding-pointConnect = 連線至 Shisa AI 以取得最新的開放式程式設計模型（Qwen、GLM 等）。
-jouzu-cli-shisa-onboarding-pointCredits = 優惠與適用條件: https://platform.shisa.ai/jouzu
-jouzu-cli-shisa-onboarding-signup = 註冊優惠：符合條件的新帳戶可獲得 USD { $amount } 額度。
-jouzu-cli-shisa-onboarding-signupBilling = 註冊優惠：符合條件的新帳戶可獲得 USD { $amount } 額度。需要驗證付款方式。
-jouzu-cli-shisa-onboarding-connectBonus = Jouzu 連線優惠：符合條件的帳戶可獲得 USD { $amount } 額度。需要驗證付款方式。
+jouzu-cli-shisa-onboarding-pointConnect = 連線至 Shisa AI 以使用託管模型與語音輸入。
+jouzu-cli-shisa-onboarding-pointCredits = 查看可用優惠與適用條件: https://platform.shisa.ai/jouzu
 jouzu-cli-shisa-onboarding-question = 要立即連線嗎？[y/N]
 jouzu-cli-shisa-onboarding-hint = （或稍後使用 /login shisa）
 jouzu-cli-shisa-onboarding-later = 你可以稍後使用 /login shisa 連線。

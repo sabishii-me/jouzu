@@ -11,7 +11,6 @@ import { detectTerminalColorMode, sanitizeTerminalText } from "../terminal-layou
 import { setShisaSignedOut } from "./credentials.js";
 import { resolveShisaGatewayUrl } from "./device-flow.js";
 import { loginShisa, type ShisaLoginOptions } from "./login.js";
-import { fetchShisaPromotions, type ShisaPromotions } from "./promotions.js";
 
 /**
  * Keep account messaging separate from the first-launch decision and login
@@ -25,7 +24,7 @@ export const SHISA_ONBOARDING_COPY = {
 	later: CatalogMessageId.shisaOnboardingLater,
 } as const;
 
-/** Marks each offer line without relying on color, so a pipe or NO_COLOR keeps the shape. */
+/** Marks each prompt line without relying on color, so a pipe or NO_COLOR keeps the shape. */
 const POINT_MARKER = "\u25c6";
 const POINT_PREFIX_WIDTH = 4;
 
@@ -34,7 +33,7 @@ export function shisaOnboardingPath(paths: JouzuPaths): string {
 }
 
 export interface ShisaOnboardingOptions extends Omit<ShisaLoginOptions, "gatewayUrl"> {
-	/** The resolved locale catalog for the offer text. Defaults to English. */
+	/** The resolved locale catalog for the prompt text. Defaults to English. */
 	catalog?: CatalogBundle;
 	interactive: boolean;
 	env?: NodeJS.ProcessEnv;
@@ -42,33 +41,7 @@ export interface ShisaOnboardingOptions extends Omit<ShisaLoginOptions, "gateway
 	output?: NodeJS.WritableStream & { columns?: number; isTTY?: boolean };
 	signal?: AbortSignal;
 	colorEnabled?: boolean;
-	/** May shorten the offer lookup budget for tests; login keeps its own deadline. */
-	promotionsTimeoutMs?: number;
 	ask?: (question: string, signal: AbortSignal) => Promise<string>;
-}
-
-/** All prose is bundled; only validated numeric amounts choose and fill offer templates. */
-export function shisaOnboardingPoints(catalog: CatalogBundle, promotions?: ShisaPromotions): string[] {
-	const points = [catalogText(catalog, SHISA_ONBOARDING_COPY.points[0])];
-	const amount = (usd: number) => usd.toFixed(Number.isInteger(usd) ? 0 : 2);
-	if (promotions && promotions.signupCreditsUsd > 0)
-		points.push(
-			catalogText(
-				catalog,
-				promotions.signupRequiresBilling
-					? CatalogMessageId.shisaOnboardingSignupBilling
-					: CatalogMessageId.shisaOnboardingSignup,
-				{ amount: amount(promotions.signupCreditsUsd) },
-			),
-		);
-	if (promotions && promotions.connectBonusUsd > 0)
-		points.push(
-			catalogText(catalog, CatalogMessageId.shisaOnboardingConnectBonus, {
-				amount: amount(promotions.connectBonusUsd),
-			}),
-		);
-	points.push(catalogText(catalog, SHISA_ONBOARDING_COPY.points[1]));
-	return points;
 }
 
 /** Offer only in an interactive launcher, before Pi builds its credential/model snapshot. */
@@ -106,15 +79,9 @@ export async function offerShisaOnboarding(options: ShisaOnboardingOptions): Pro
 	readline?.on("close", cancel);
 	process.on("SIGINT", cancel);
 	try {
-		const promotions = await fetchShisaPromotions({
-			gatewayUrl: resolveShisaGatewayUrl(env),
-			fetchImpl: options.fetchImpl,
-			signal,
-			timeoutMs: options.promotionsTimeoutMs,
-		});
 		signal.throwIfAborted();
 		output.write("\n");
-		for (const point of shisaOnboardingPoints(catalog, promotions)) writePoint(point);
+		for (const point of SHISA_ONBOARDING_COPY.points) writePoint(catalogText(catalog, point));
 		output.write("\n");
 		const question = `  ${catalogText(catalog, SHISA_ONBOARDING_COPY.question)} ${style(catalogText(catalog, SHISA_ONBOARDING_COPY.hint), "2")} `;
 		const answer = options.ask ? await options.ask(question, signal) : await readline?.question(question, { signal });

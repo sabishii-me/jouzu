@@ -1279,11 +1279,8 @@ jouzu-cli-voice-shortcutDescription = 音声入力を開始または停止しま
 # デバイスコードは保護値であり、引数として渡す。
 #
 
-jouzu-cli-shisa-onboarding-pointConnect = 最新のオープンコーディングモデル（Qwen、GLM など）を使うには Shisa AI に接続します。
-jouzu-cli-shisa-onboarding-pointCredits = 特典と適用条件: https://platform.shisa.ai/jouzu
-jouzu-cli-shisa-onboarding-signup = 新規登録特典: 条件を満たす新規アカウントに USD { $amount } のクレジット。
-jouzu-cli-shisa-onboarding-signupBilling = 新規登録特典: 条件を満たす新規アカウントに USD { $amount } のクレジット。支払い方法の確認が必要です。
-jouzu-cli-shisa-onboarding-connectBonus = Jouzu 接続特典: 条件を満たすアカウントに USD { $amount } のクレジット。支払い方法の確認が必要です。
+jouzu-cli-shisa-onboarding-pointConnect = Shisa AI に接続すると、クラウドモデルや音声入力を利用できます。
+jouzu-cli-shisa-onboarding-pointCredits = ボーナスクレジットなどの特典や適用条件はこちら: https://platform.shisa.ai/jouzu
 jouzu-cli-shisa-onboarding-question = 今すぐ接続しますか？ [y/N]
 jouzu-cli-shisa-onboarding-hint = （後で `/login shisa` でも接続できます）
 jouzu-cli-shisa-onboarding-later = 後で `/login shisa` からでも接続できます。

@@ -1300,11 +1300,8 @@ jouzu-cli-voice-shortcutDescription = Start or stop voice dictation
 # identifiers, the verification URL, and the device code are protected values
 # passed as arguments; the English values below are the default output.
 
-jouzu-cli-shisa-onboarding-pointConnect = Connect to Shisa AI for the latest open coding models (Qwen, GLM, etc).
-jouzu-cli-shisa-onboarding-pointCredits = Offers and eligibility: https://platform.shisa.ai/jouzu
-jouzu-cli-shisa-onboarding-signup = Signup offer: USD { $amount } in credits for eligible new accounts.
-jouzu-cli-shisa-onboarding-signupBilling = Signup offer: USD { $amount } in credits for eligible new accounts. Billing verification required.
-jouzu-cli-shisa-onboarding-connectBonus = Jouzu connection offer: USD { $amount } in credits for eligible accounts. Billing verification required.
+jouzu-cli-shisa-onboarding-pointConnect = Connect to Shisa AI to access hosted models and voice input.
+jouzu-cli-shisa-onboarding-pointCredits = Explore bonus credits and other offers, including eligibility: https://platform.shisa.ai/jouzu
 jouzu-cli-shisa-onboarding-question = Connect now? [y/N]
 jouzu-cli-shisa-onboarding-hint = (or later with /login shisa)
 jouzu-cli-shisa-onboarding-later = You can connect later with /login shisa.

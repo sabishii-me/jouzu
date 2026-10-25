@@ -2,11 +2,10 @@
 
 A [Shisa AI](https://platform.shisa.ai/) account provides open coding models, the Shisa model catalog, and [voice input](voice.md). Each service needs access on your account.
 
-- On first interactive launch without a Shisa credential, Jouzu offers to connect once. Answer `y` to sign in; press `Enter` or `n` to skip.
-- The prompt checks the platform's public `GET /promotions` endpoint for signup and Jouzu connection offers. Amounts come from the platform, so campaign changes do not require a Jouzu update. Zero amounts are hidden. If the check fails or returns stale or invalid data, the prompt shows only an [offers and eligibility link](https://platform.shisa.ai/jouzu).
-- Offers depend on account eligibility and are not an account balance. Jouzu connection credits require billing verification; signup credits follow the platform's billing requirement. Check the service for terms and any expiry.
+- On first interactive launch without a Shisa credential, Jouzu offers to connect once. The prompt says `Connect to Shisa AI to access hosted models and voice input.` and links to [offers and eligibility](https://platform.shisa.ai/jouzu). Answer `y` to sign in; press `Enter` or `n` to skip.
+- Offers depend on account eligibility and are not an account balance. Check the linked page for current terms, eligibility, and any expiry.
 
-The offer lookup sends no credentials, does not follow redirects, and keeps no local offer cache. It has a 1.5-second deadline and a 16 KiB response limit. It uses `JOUZU_SHISA_PLATFORM_URL` when set, with HTTPS required except for loopback development servers. Noninteractive commands, offline diagnostics, child agents, and Settings do not request promotions.
+The prompt makes no network request before you choose to connect. Noninteractive commands, offline diagnostics, child agents, and Settings do not show the prompt.
 
 ## Sign in
 

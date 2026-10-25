@@ -7,11 +7,10 @@ import test from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { setCatalogSourceToken } from "../dist/catalog-sources.js";
 import { isInteractivePiStartup } from "../dist/interactive-startup.js";
-import { loadCatalog, resolveCatalog } from "../dist/locale-catalog.js";
+import { resolveCatalog } from "../dist/locale-catalog.js";
 import { resolveJouzuPaths } from "../dist/paths.js";
 import { readShisaLoginToken, writeShisaLoginCredential } from "../dist/shisa-link/credentials.js";
-import { offerShisaOnboarding, shisaOnboardingPath, shisaOnboardingPoints } from "../dist/shisa-link/onboarding.js";
-import { parseShisaPromotions } from "../dist/shisa-link/promotions.js";
+import { offerShisaOnboarding, shisaOnboardingPath } from "../dist/shisa-link/onboarding.js";
 import { readShisaLinkState, shisaLinkStatePath } from "../dist/shisa-link/state.js";
 
 const code = {
@@ -33,17 +32,6 @@ const token = {
 	},
 	link_token: "link-secret",
 	authorization_id: "authorization",
-};
-const promotions = {
-	success: true,
-	data: {
-		signup_starter_credits_micro_cents: 0,
-		signup_starter_credits_cents: 0,
-		signup_starter_credits_dollars: "0.00",
-		signup_requires_billing: true,
-		connect_bonus_jouzu_usd: 10,
-		coupons_require_billing: true,
-	},
 };
 function response(status, body) {
 	return new Response(body ? JSON.stringify(body) : null, { status, headers: { "content-type": "application/json" } });
@@ -70,8 +58,7 @@ function harness(t, extra = {}) {
 			jouzuVersion: "0.1.9",
 			ask: async () => "n",
 			fetchImpl: async (url) => {
-				assert.ok(url.endsWith("/promotions"), url);
-				return response(200, promotions);
+				assert.fail(`unexpected request before login: ${url}`);
 			},
 			sleep: async () => {},
 			...extra,
@@ -79,13 +66,36 @@ function harness(t, extra = {}) {
 	};
 }
 
-test("skip is private, persists across launches, and wraps the offer at 48 columns", async (t) => {
+test("the default English prompt shows the approved generic copy", async (t) => {
+	let asked = "";
+	const h = harness(t, {
+		ask: async (question) => {
+			asked = question;
+			return "n";
+		},
+	});
+	h.output.columns = 120;
+	await offerShisaOnboarding(h.options);
+	assert.equal(
+		h.text(),
+		"\n  \u25c6 Connect to Shisa AI to access hosted models and voice input.\n  \u25c6 Explore bonus credits and other offers, including eligibility: https://platform.shisa.ai/jouzu\n\nYou can connect later with /login shisa.\n",
+	);
+	assert.equal(asked, "  Connect now? [y/N] (or later with /login shisa) ");
+});
+
+test("skip is private, persists across launches, and wraps the generic prompt at 48 columns", async (t) => {
 	const h = harness(t);
 	await offerShisaOnboarding(h.options);
-	assert.match(h.text(), /Jouzu connection offer: USD 10/);
-	assert.match(h.text().replace(/\s+/gu, " "), /Billing verification required/);
-	assert.doesNotMatch(h.text(), /Signup offer|instant|\$25|USD 0|\$10/);
-	assert.match(h.text(), /\/login shisa/);
+	const prose = h.text().replace(/\s+/gu, " ");
+	assert.match(prose, /Connect to Shisa AI to access hosted models and voice input\./u);
+	assert.match(
+		prose,
+		/Explore bonus credits and other offers, including eligibility: https:\/\/platform\.shisa\.ai\/jouzu/u,
+	);
+	assert.ok(h.text().includes("https://platform.shisa.ai/jouzu"), h.text());
+	assert.doesNotMatch(h.text(), /USD|\$\d|Signup offer|connection offer|Billing verification/u);
+	assert.match(h.text(), /\/login shisa/u);
+	assert.equal((h.text().match(/\u25c6/gu) ?? []).length, 2);
 	for (const line of h.text().split("\n")) assert.ok(visibleWidth(line) <= 48, line);
 	const path = shisaOnboardingPath(h.paths);
 	assert.equal(JSON.parse(readFileSync(path, "utf8")).choice, "skip");
@@ -130,6 +140,19 @@ for (const source of ["environment", "login", "catalog token"]) {
 	});
 }
 
+test("the prompt makes no network request before login", async (t) => {
+	let calls = 0;
+	const h = harness(t, {
+		fetchImpl: async (url) => {
+			calls += 1;
+			assert.fail(`unexpected request before login: ${url}`);
+		},
+	});
+	await offerShisaOnboarding(h.options);
+	assert.equal(calls, 0);
+	assert.equal(JSON.parse(readFileSync(shisaOnboardingPath(h.paths), "utf8")).choice, "skip");
+});
+
 test("acceptance runs device login, saves before acknowledgement, and preserves other providers", async (t) => {
 	const h = harness(t, { ask: async () => "YES" });
 	mkdirSync(h.paths.agentDir, { recursive: true });
@@ -142,7 +165,6 @@ test("acceptance runs device login, saves before acknowledgement, and preserves 
 		...h.options,
 		fetchImpl: async (url) => {
 			calls.push(url);
-			if (url.endsWith("/promotions")) return response(200, promotions);
 			if (url.endsWith("/code")) return response(201, code);
 			if (url.endsWith("/token")) return response(200, token);
 			assert.equal(readShisaLoginToken(h.paths), token.api_key.secret);
@@ -150,12 +172,17 @@ test("acceptance runs device login, saves before acknowledgement, and preserves 
 			return response(204);
 		},
 	});
-	assert.equal(calls.length, 4);
+	assert.equal(calls.length, 3);
+	assert.ok(calls[0].endsWith("/code"), calls.join(", "));
+	assert.ok(
+		calls.every((url) => !url.includes("promotions")),
+		calls.join(", "),
+	);
 	assert.equal(readShisaLinkState(shisaLinkStatePath(h.paths)).acked, true);
-	assert.match(h.text(), /https:\/\/example.test\/connect/);
-	assert.match(h.text(), /JOUZU-TEST-1234/);
-	assert.match(h.text(), /Signed in to Shisa AI/);
-	assert.doesNotMatch(h.text(), /device-secret|link-secret|shsk:test-secret|other-secret/);
+	assert.match(h.text(), /https:\/\/example\.test\/connect/u);
+	assert.match(h.text(), /JOUZU-TEST-1234/u);
+	assert.match(h.text(), /Signed in to Shisa AI/u);
+	assert.doesNotMatch(h.text(), /device-secret|link-secret|shsk:test-secret|other-secret/u);
 	assert.equal(JSON.parse(readFileSync(join(h.paths.agentDir, "auth.json"))).other.key, "other-secret");
 });
 
@@ -167,9 +194,10 @@ test("network failure allows startup to continue with manual recovery and no rep
 		},
 	});
 	await offerShisaOnboarding(h.options);
-	assert.match(h.text(), /could not complete/);
-	assert.match(h.text(), /\/login shisa/);
-	assert.doesNotMatch(h.text(), /secret-in-error/);
+	assert.match(h.text(), /could not complete/u);
+	assert.match(h.text(), /\/login shisa/u);
+	assert.match(h.text(), /Explore bonus credits and other offers/u);
+	assert.doesNotMatch(h.text(), /secret-in-error/u);
 	await offerShisaOnboarding({ ...h.options, ask: () => assert.fail("prompted twice") });
 });
 
@@ -180,12 +208,12 @@ test("cancellation during login aborts the network and removes the process liste
 	await offerShisaOnboarding({
 		...h.options,
 		fetchImpl: async (url, { signal }) => {
-			if (url.endsWith("/promotions")) return response(200, promotions);
+			if (!url.endsWith("/code")) assert.fail(`unexpected request: ${url}`);
 			controller.abort();
 			signal.throwIfAborted();
 		},
 	});
-	assert.match(h.text(), /cancelled/);
+	assert.match(h.text(), /cancelled/u);
 	assert.equal(process.listenerCount("SIGINT"), listeners);
 	assert.equal(readShisaLoginToken(h.paths), undefined);
 });
@@ -208,7 +236,7 @@ test("storage failure does not start login", async (t) => {
 	mkdirSync(join(h.paths.stateDir, ".."), { recursive: true });
 	writeFileSync(h.paths.stateDir, "not a directory");
 	await offerShisaOnboarding(h.options);
-	assert.match(h.text(), /storage permissions/);
+	assert.match(h.text(), /storage permissions/u);
 	assert.equal(readShisaLoginToken(h.paths), undefined);
 });
 
@@ -231,7 +259,7 @@ test("EOF cancels an unanswered readline prompt without recording a decision", {
 	});
 	await offerShisaOnboarding({ ...h.options, ask: undefined, input });
 	assert.equal(existsSync(shisaOnboardingPath(h.paths)), false);
-	assert.match(h.text(), /cancelled/);
+	assert.match(h.text(), /cancelled/u);
 });
 
 test("credential storage failure is reported without acknowledgement", async (t) => {
@@ -240,17 +268,16 @@ test("credential storage failure is reported without acknowledgement", async (t)
 	await offerShisaOnboarding({
 		...h.options,
 		fetchImpl: async (url) => {
-			if (url.endsWith("/promotions")) return response(200, promotions);
 			if (url.endsWith("/code")) return response(201, code);
 			if (url.endsWith("/token")) return response(200, token);
 			assert.fail("must not acknowledge failed storage");
 		},
 	});
-	assert.match(h.text(), /storage permissions/);
-	assert.doesNotMatch(h.text(), /Signed in to Shisa AI/);
+	assert.match(h.text(), /storage permissions/u);
+	assert.doesNotMatch(h.text(), /Signed in to Shisa AI/u);
 });
 
-test("a Japanese catalog renders the offer and hint in Japanese and keeps protected values", async (t) => {
+test("a Japanese catalog renders the approved generic prompt and hint in Japanese", async (t) => {
 	let asked = "";
 	const h = harness(t, {
 		ask: async (question) => {
@@ -258,30 +285,31 @@ test("a Japanese catalog renders the offer and hint in Japanese and keeps protec
 			return "n";
 		},
 	});
+	h.output.columns = 120;
 	await offerShisaOnboarding({ ...h.options, catalog: resolveCatalog("ja").bundle });
-	assert.match(h.text(), /最新のオープンコーディングモデル/);
-	assert.match(h.text(), /後で `\/login shisa` からでも接続できます。/);
-	assert.match(asked, /今すぐ接続しますか？/);
-	assert.match(asked, /後で `\/login shisa` でも接続できます/);
-	assert.doesNotMatch(h.text(), /Connect to Shisa AI|connect later/);
+	assert.equal(
+		h.text(),
+		"\n  \u25c6 Shisa AI に接続すると、クラウドモデルや音声入力を利用できます。\n  \u25c6 ボーナスクレジットなどの特典や適用条件はこちら: https://platform.shisa.ai/jouzu\n\n後で `/login shisa` からでも接続できます。\n",
+	);
+	assert.equal(asked, "  今すぐ接続しますか？ [y/N] （後で `/login shisa` でも接続できます） ");
+	assert.doesNotMatch(h.text(), /Connect to Shisa AI|connect later/u);
 });
 
 test("unknown terminal width uses readable prose wrapping", async (t) => {
 	const h = harness(t);
 	h.output.columns = 0;
 	await offerShisaOnboarding(h.options);
-	assert.match(h.text(), /Connect to Shisa AI for the latest/);
+	assert.match(h.text().replace(/\s+/gu, " "), /Connect to Shisa AI to access hosted models and voice input\./u);
 });
 
 const ESCAPE = "\u001b";
 const MARKER_LINE = "  \u25c6 Connect to Shisa AI";
 
-test("offer lines carry a marker and stay plain without color", async (t) => {
+test("prompt lines carry a marker and stay plain without color", async (t) => {
 	const h = harness(t);
 	await offerShisaOnboarding(h.options);
 	assert.ok(h.text().includes(MARKER_LINE), h.text());
-	assert.ok(h.text().includes("  \u25c6 Jouzu connection offer"), h.text());
-	assert.ok(h.text().includes("  \u25c6 Offers and eligibility"), h.text());
+	assert.ok(h.text().includes("  \u25c6 Explore bonus credits and other offers"), h.text());
 	assert.ok(!h.text().includes(ESCAPE), h.text());
 });
 
@@ -301,79 +329,13 @@ test("color styles the marker and the prompt hint without touching the copy", as
 	for (const line of h.text().split("\n")) assert.ok(visibleWidth(line) <= 48, line);
 });
 
-for (const locale of ["en", "ja", "zh-Hans", "zh-Hant"]) {
-	test(`structured offer templates keep amounts and conditions in ${locale}`, async (t) => {
-		const catalog = loadCatalog(locale);
-		const known = {
-			...promotions,
-			data: {
-				...promotions.data,
-				signup_starter_credits_micro_cents: 1_250_000_000,
-				signup_starter_credits_cents: 1250,
-				signup_starter_credits_dollars: "12.50",
-				connect_bonus_jouzu_usd: 7.25,
-				message: "untrusted remote instruction",
-			},
-		};
-		const h = harness(t, { catalog, fetchImpl: async () => response(200, known) });
-		await offerShisaOnboarding(h.options);
-		assert.match(h.text(), /USD\s+12\.50/);
-		assert.match(h.text(), /USD\s+7\.25/);
-		assert.match(h.text(), /https:\/\/platform.shisa.ai\/jouzu/);
-		assert.doesNotMatch(h.text(), /untrusted|14 days|\$25/);
-		for (const line of h.text().split("\n")) assert.ok(visibleWidth(line) <= 48, line);
-		const billing = {
-			en: "Billing verification required",
-			ja: "支払い方法の確認が必要です",
-			"zh-Hans": "需要验证付款方式",
-			"zh-Hant": "需要驗證付款方式",
-		}[locale];
-		const eligible = { en: "eligible", ja: "条件を満たす", "zh-Hans": "符合条件", "zh-Hant": "符合條件" }[locale];
-		const parsed = parseShisaPromotions(known);
-		const points = shisaOnboardingPoints(catalog, parsed);
-		assert.ok(points[1].includes(billing), points[1]);
-		assert.ok(points[2].includes(billing), points[2]);
-		assert.ok(points[1].includes(eligible), points[1]);
-		assert.ok(points[2].includes(eligible), points[2]);
-		const ungated = shisaOnboardingPoints(catalog, { ...parsed, signupRequiresBilling: false });
-		assert.ok(!ungated[1].includes(billing), ungated[1]);
-		assert.ok(ungated[2].includes(billing), "Jouzu always needs billing verification");
-		const disabled = shisaOnboardingPoints(catalog, { ...parsed, signupCreditsUsd: 0, connectBonusUsd: 0 });
-		assert.deepEqual(disabled, shisaOnboardingPoints(catalog));
-		assert.doesNotMatch(disabled.join("\n"), /USD|\$\d/);
-	});
-}
-
-for (const kind of ["zero", "failure", "malformed", "expired", "timeout"]) {
-	test(`${kind} promotions keep first launch neutral and allow skipping`, async (t) => {
-		let calls = 0;
-		const h = harness(t, {
-			promotionsTimeoutMs: 5,
-			fetchImpl: async () => {
-				calls += 1;
-				if (kind === "failure") throw new Error("private remote detail");
-				if (kind === "malformed") return response(200, { success: true, data: {} });
-				if (kind === "expired") return Response.json(promotions, { headers: { age: "60" } });
-				if (kind === "timeout") return new Promise(() => {});
-				return response(200, { ...promotions, data: { ...promotions.data, connect_bonus_jouzu_usd: 0 } });
-			},
-		});
-		await offerShisaOnboarding(h.options);
-		assert.equal(calls, 1);
-		assert.doesNotMatch(h.text(), /USD|\$\d|private remote detail|could not complete/);
-		assert.match(h.text(), /Offers and eligibility/);
-		assert.match(h.text(), /https:\/\/platform.shisa.ai\/jouzu/);
-		assert.equal(JSON.parse(readFileSync(shisaOnboardingPath(h.paths))).choice, "skip");
-	});
-}
-
-test("onboarding only fetches before an interactive, undecided, uncredentialed offer", async (t) => {
+test("onboarding skips without a request for noninteractive, credentialed, or decided launches", async (t) => {
 	for (const skip of ["noninteractive", "credential", "decided"]) {
 		let calls = 0;
 		const h = harness(t, {
-			fetchImpl: async () => {
+			fetchImpl: async (url) => {
 				calls += 1;
-				return response(200, promotions);
+				assert.fail(`unexpected request: ${url}`);
 			},
 		});
 		if (skip === "noninteractive") h.options.interactive = false;
@@ -385,23 +347,6 @@ test("onboarding only fetches before an interactive, undecided, uncredentialed o
 		await offerShisaOnboarding({ ...h.options, ask: () => assert.fail("unexpected prompt") });
 		assert.equal(calls, 0, skip);
 	}
-});
-
-test("cancelling a pending promotions lookup records no decision and never prompts", async (t) => {
-	const controller = new AbortController();
-	const listeners = process.listenerCount("SIGINT");
-	const h = harness(t, {
-		signal: controller.signal,
-		ask: () => assert.fail("prompted after cancellation"),
-		fetchImpl: async () => {
-			controller.abort();
-			return new Promise(() => {});
-		},
-	});
-	await offerShisaOnboarding(h.options);
-	assert.equal(existsSync(shisaOnboardingPath(h.paths)), false);
-	assert.equal(process.listenerCount("SIGINT"), listeners);
-	assert.match(h.text(), /cancelled/);
 });
 
 test("NO_COLOR and dumb terminals keep the marker and drop the escapes", async (t) => {
