@@ -2,17 +2,29 @@
 
 ## Unreleased
 
+## 0.2.3 - 2026-10-25
+
 ### Added
 
 - Add `pi.registerUserInputAdapter`, which lets an authorized extension deliver authenticated human input with user-input ordering, durable receipts, and a target-scoped binding. See [External user-input adapters](docs/user-input-adapters.md).
 
 ### Fixed
 
+- Accept a leading full-width slash (`／`) for interactive commands and completion, including queued follow-ups. RPC and external adapter input remain literal. See [Japanese command entry](docs/language.md#japanese-command-entry).
+- Wrap Japanese Markdown prose at punctuation-aware boundaries while preserving explicit line breaks, styling, links and inline literals. Code blocks and tables keep their own wrapping behavior. See [Japanese text wrapping](docs/language.md#japanese-text-wrapping).
+- Translate missing Japanese shortcut hints, model labels, Catalogs labels and active counts.
+- Keep the selected Settings row in place when moving focus expands or collapses catalog details.
+- Retry transient Windows file-replacement failures when saving private state, including language preferences, without deleting the existing file.
+- Link Shisa signup offers and eligibility instead of displaying fixed credit amounts, and keep Settings' connection status separate from offers.
 - Close an RPC session whose input ends: unanswered dialogs resolve their defaults, each accepted command receives one response, a command still unfinished after five seconds reports one failure, and cleanup gets a further five seconds before one shutdown failure and status 1. A final command without a trailing newline still runs, a shutdown requested after input ends waits for that drain, a JSON line that is not a command object reports one parse failure, and shutdown failures from extension requests or signals report once instead of exiting early or leaving output unflushed. See [RPC mode](docs/diagnostics.md#rpc-mode).
 - Let extension commands await tree navigation and continue on the selected branch, with flow control on or off. Refuse busy navigation before callbacks or branch changes, refuse host operations during navigation preparation (including in `session_before_tree` callbacks), and keep previously captured input bound to its original branch. See [Branches and resuming](docs/flow-control.md#branches-and-resuming).
 - Keep automatic replies paused when a local command such as `/flow` or `/about` runs while flow control is holding model input for recovery or waiting on a request. See [Flow control](docs/flow-control.md).
 - Do not start a local command that is still waiting on recovery state when the session was replaced or its branch changed meanwhile. See [Flow control](docs/flow-control.md).
-- Treat text that only resembles a command, such as a leading space, an unknown name, or a prompt sent with template expansion off, as an ordinary message and apply the same recovery hold to it. See [Flow control](docs/flow-control.md).
+- Apply ordinary recovery holds to input that is not a recognized command, including unknown names and prompts sent with template expansion off. Interactive submission trims surrounding whitespace before command dispatch, so leading spaces do not quote a command. See [Flow control](docs/flow-control.md).
+
+### Development
+
+- Require passing native Windows qualification of the accepted candidate package before npm publication.
 
 ## 0.2.2 - 2026-10-24
 
