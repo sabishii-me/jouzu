@@ -10,6 +10,30 @@ const theme = {
 	fg: (_role, value) => value,
 };
 
+// The resolved catalog the extension reads its own text from.
+const catalog = {
+	format: (id) =>
+		({
+			"jouzu.cli.session.line.fast": "fast",
+			"jouzu.cli.session.line.noModel": "no model",
+			"jouzu.cli.session.line.attention": "attention",
+			"jouzu.cli.session.status.health": "! status",
+			"jouzu.cli.session.status.contextUnknown": "ctx ?",
+			"jouzu.cli.session.status.detached": "detached",
+			"jouzu.cli.session.dashboard.section.agent": "Agents",
+			"jouzu.cli.session.dashboard.section.job": "Jobs",
+			"jouzu.cli.session.dashboard.section.task": "Tasks",
+			"jouzu.cli.session.dashboard.section.loop": "Loops",
+			"jouzu.cli.session.dashboard.section.goal": "Goals",
+			"jouzu.cli.session.dashboard.section.prompt": "Scheduled",
+			"jouzu.cli.session.dashboard.section.flow": "Flow",
+			"jouzu.cli.session.dashboard.attention.result": "unread result",
+			"jouzu.cli.session.dashboard.attention.input": "needs input",
+			"jouzu.cli.session.dashboard.attention.recovery": "needs recovery",
+			"jouzu.cli.session.dashboard.attention.authority": "needs decision",
+		})[id],
+};
+
 function context(cwd, calls) {
 	return {
 		mode: "tui",
@@ -39,6 +63,7 @@ test("installs one editor, Session Line, and Status Bar owner and cleans up", as
 		const modelCycles = [];
 		let scopedCommandCalls = 0;
 		const extension = createSessionUiExtension({
+			catalog,
 			colorEnabled: false,
 			getFastMode: ({ extensionStatuses }) => extensionStatuses.get("jouzu-fast-mode") === "on",
 			getHints: () => [{ id: "palette", text: "/model choose", priority: 10, role: "muted" }],
@@ -170,7 +195,7 @@ test("installs one editor, Session Line, and Status Bar owner and cleans up", as
 
 test("does not install terminal surfaces outside TUI mode", async () => {
 	const handlers = new Map();
-	createSessionUiExtension({ colorEnabled: false }).factory({
+	createSessionUiExtension({ catalog, colorEnabled: false }).factory({
 		on(name, handler) {
 			handlers.set(name, handler);
 		},

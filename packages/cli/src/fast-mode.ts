@@ -1,4 +1,6 @@
 import type { ExtensionContext, InlineExtension } from "@earendil-works/pi-coding-agent";
+import { catalogText, defaultCatalog } from "./cli-messages.js";
+import type { CatalogBundle } from "./locale-catalog.js";
 
 export const FAST_MODE_STATUS = "jouzu-fast-mode";
 const FAST_MODE_ENTRY = "jouzu-fast-mode";
@@ -23,7 +25,7 @@ function savedFastMode(ctx: ExtensionContext): boolean | undefined {
 	return undefined;
 }
 
-export function createFastModeExtension(): InlineExtension {
+export function createFastModeExtension(catalog: CatalogBundle = defaultCatalog()): InlineExtension {
 	return {
 		name: "jouzu-fast-mode",
 		factory: (pi) => {
@@ -35,26 +37,22 @@ export function createFastModeExtension(): InlineExtension {
 				else ctx.ui.notify(message, type);
 			};
 			pi.registerCommand("fast", {
-				description: "Show Fast mode; on/off changes it for this session",
+				description: catalogText(catalog, "jouzu.cli.session.slash.fast"),
 				getArgumentCompletions: (prefix) =>
 					["on", "off"].filter((value) => value.startsWith(prefix)).map((value) => ({ value, label: value })),
 				handler: async (args, ctx) => {
 					const action = args.trim();
 					if (action && action !== "on" && action !== "off") {
-						report(ctx, "Use /fast, /fast on, or /fast off.", "warning");
+						report(ctx, catalogText(catalog, "jouzu.cli.fast.usage"), "warning");
 						return;
 					}
 					if (action) {
 						if (!ctx.isIdle()) {
-							report(ctx, "Wait for the current response before changing Fast mode.", "warning");
+							report(ctx, catalogText(catalog, "jouzu.cli.fast.busy"), "warning");
 							return;
 						}
 						if (action === "on" && !canRequestFastMode(ctx.model)) {
-							report(
-								ctx,
-								"Select a GPT model using an OpenAI Responses or Codex connection before turning Fast mode on.",
-								"warning",
-							);
+							report(ctx, catalogText(catalog, "jouzu.cli.fast.ineligible"), "warning");
 							return;
 						}
 						const enabled = action === "on";
@@ -65,9 +63,9 @@ export function createFastModeExtension(): InlineExtension {
 						ctx,
 						savedFastMode(ctx)
 							? canRequestFastMode(ctx.model)
-								? "Fast mode on for this session. Requests use priority processing and higher usage rates."
-								: "Fast mode on for this session; inactive for the selected model."
-							: "Fast mode off for this session.",
+								? catalogText(catalog, "jouzu.cli.fast.on")
+								: catalogText(catalog, "jouzu.cli.fast.inactive")
+							: catalogText(catalog, "jouzu.cli.fast.off"),
 					);
 				},
 			});

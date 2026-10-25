@@ -1,3 +1,5 @@
+import { transformOAuthBranding } from "./pi-oauth-branding-transform.mjs";
+
 function replace(source, before, after) {
 	const parts = source.split(before);
 	if (parts.length !== 2) throw new Error(`Pi provider receipt contract mismatch: ${before.slice(0, 100)}`);
@@ -245,6 +247,8 @@ export function isBuiltinApiProvider(api) {
 			"export interface ProviderRequestOptions<TModel = Model<Api>> {",
 			"export interface ProviderRequestOptions<TModel = Model<Api>> {\n    /** Synchronous source mapping from a qualified provider converter, before payload transforms. */\n    onMessageConverted?: (source: Message, output: unknown) => void;",
 		);
+	} else if (path === "dist/utils/oauth-page.js") {
+		text = transformOAuthBranding(text);
 	} else throw new Error(`Unknown provider receipt path: ${path}`);
 	return text.replace(/^\/\/# sourceMappingURL=.*\n?/m, "");
 }
@@ -270,4 +274,5 @@ export const paths = [
 	"dist/api/simple-options.js",
 	"dist/compat.js",
 	"dist/compat.d.ts",
+	"dist/utils/oauth-page.js",
 ];

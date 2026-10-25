@@ -7,6 +7,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { packedTarballEntry } from "./pack-output.mjs";
+
 const root = resolve(import.meta.dirname, "..");
 const packageDirectory = join(root, "packages", "cli");
 const npmExecPath = process.env.npm_execpath;
@@ -144,7 +146,7 @@ if (process.argv[2] === "--probe") {
 	try {
 		let tarball = process.env.JOUZU_PACKED_TARBALL ? resolve(process.env.JOUZU_PACKED_TARBALL) : undefined;
 		if (!tarball) {
-			const [packed] = JSON.parse(
+			const packed = packedTarballEntry(
 				runNpm(["pack", "--ignore-scripts", "--json", "--pack-destination", temp], packageDirectory),
 			);
 			tarball = join(temp, packed.filename);

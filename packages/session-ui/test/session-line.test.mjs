@@ -13,6 +13,16 @@ import {
 
 const styles = createSessionUiStyles({ fg: (_role, value) => value }, { colorEnabled: false });
 
+// The Session UI's own text, resolved once for the active catalog.
+const text = {
+	fast: "fast",
+	noModel: "no model",
+	attention: "attention",
+	statusHealth: "! status",
+	statusContextUnknown: "ctx ?",
+	statusDetached: "detached",
+};
+
 function snapshot(overrides = {}) {
 	return {
 		schemaVersion: 1,
@@ -63,7 +73,7 @@ test("applies separate semantic styles to the hint, provider, and model identity
 			return value;
 		},
 	};
-	renderSessionLine(snapshot(), hints, 64, tracingStyles);
+	renderSessionLine(snapshot(), hints, 64, tracingStyles, text);
 	assert.deepEqual(
 		applied.map(({ role }) => role),
 		["session.provider", "session.model", "session.hint.warning"],
@@ -71,11 +81,11 @@ test("applies separate semantic styles to the hint, provider, and model identity
 });
 
 test("protects model identity and drops the left hint before overlap", () => {
-	const wide = renderSessionLine(snapshot(), hints, 64, styles);
+	const wide = renderSessionLine(snapshot(), hints, 64, styles, text);
 	assert.equal(terminalTextWidth(wide), 64);
 	assert.match(wide, /^! recovery needed/);
 	assert.match(wide, /Codex gpt-5\.6-sol \(xhigh\)$/);
-	const narrow = renderSessionLine(snapshot(), hints, 27, styles);
+	const narrow = renderSessionLine(snapshot(), hints, 27, styles, text);
 	assert.equal(terminalTextWidth(narrow), 27);
 	assert.doesNotMatch(narrow, /recovery/);
 	assert.match(narrow, /Codex gpt-5\.6-sol/);
@@ -94,6 +104,7 @@ test("keeps CJK labels width-safe and strips terminal controls", () => {
 		[{ id: "hint", text: "モデルを選択", priority: 1, role: "accent" }],
 		48,
 		styles,
+		text,
 	);
 	assert.equal(terminalTextWidth(rendered), 48);
 	assert.match(rendered, /モデルを選択/);
@@ -108,7 +119,7 @@ test("catalog provider connections retain the readable provider and model in the
 		model: { providerId: "catalog:ai.example.pool:lunaroute:0123456789abcdef", modelId: "glm-5.3" },
 	});
 	for (const width of [48, 80, 120]) {
-		const line = renderSessionLine(value, [], width, styles);
+		const line = renderSessionLine(value, [], width, styles, text);
 		assert.match(line, /Lunaroute glm-5\.3/);
 		assert.doesNotMatch(line, /catalog:|0123456789abcdef/);
 		assert.equal(terminalTextWidth(line), width);
@@ -126,7 +137,7 @@ test("activity replaces the hint and styles work by whether it is moving", () =>
 			return value;
 		},
 	};
-	const rendered = renderSessionLine(snapshot(), hints, 64, tracingStyles, runningActivity);
+	const rendered = renderSessionLine(snapshot(), hints, 64, tracingStyles, text, runningActivity);
 	assert.equal(terminalTextWidth(rendered), 64);
 	assert.match(rendered, /^⠋ multiloop: 1 running/);
 	assert.doesNotMatch(rendered, /recovery/);
@@ -135,7 +146,7 @@ test("activity replaces the hint and styles work by whether it is moving", () =>
 		applied.map(({ role }) => role),
 		["session.provider", "session.model", "session.activity"],
 	);
-	const paused = renderSessionLine(snapshot(), hints, 64, tracingStyles, {
+	const paused = renderSessionLine(snapshot(), hints, 64, tracingStyles, text, {
 		text: "multiloop: 1 paused",
 		active: false,
 	});
@@ -147,18 +158,18 @@ test("uses the supplied animation frame and wraps frames deterministically", () 
 	assert.equal(sessionActivityGlyph(runningActivity, 2), "⠹");
 	assert.equal(sessionActivityGlyph(runningActivity, 12), "⠹");
 	assert.equal(sessionActivityGlyph({ text: "multiloop: 1 paused", active: false }, 7), "○");
-	assert.match(renderSessionLine(snapshot(), [], 60, styles, runningActivity, "⠹"), /^⠹ multiloop: 1 running/);
+	assert.match(renderSessionLine(snapshot(), [], 60, styles, text, runningActivity, "⠹"), /^⠹ multiloop: 1 running/);
 });
 
 test("keeps activity readable at narrow widths and sanitizes extension status text", () => {
-	const truncated = renderSessionLine(snapshot(), hints, 48, styles, runningActivity);
+	const truncated = renderSessionLine(snapshot(), hints, 48, styles, text, runningActivity);
 	assert.equal(terminalTextWidth(truncated), 48);
 	assert.match(truncated, /^⠋ multiloop: 1 runni…/);
-	const dropped = renderSessionLine(snapshot(), hints, 40, styles, runningActivity);
+	const dropped = renderSessionLine(snapshot(), hints, 40, styles, text, runningActivity);
 	assert.doesNotMatch(dropped, /multiloop/);
 	assert.match(dropped, /Codex gpt-5\.6-sol \(xhigh\)$/);
 	for (const width of [24, 48, 80, 120]) {
-		const line = renderSessionLine(snapshot(), [], width, styles, {
+		const line = renderSessionLine(snapshot(), [], width, styles, text, {
 			text: "multiloop: 1 running 日本語\n\u001b[31m",
 			active: true,
 		});
@@ -190,6 +201,7 @@ test("animates only while work moves and the session is idle", async () => {
 	const component = new SessionLineComponent(
 		controller,
 		styles,
+		text,
 		() => hints,
 		() => {
 			renders += 1;
@@ -229,7 +241,7 @@ test("animates only while work moves and the session is idle", async () => {
 test("Fast processing appears beside thinking and survives narrow model labels", () => {
 	const value = snapshot();
 	const render = (width, activity, selected = value) =>
-		renderSessionLine(selected, [], width, styles, activity, undefined, true);
+		renderSessionLine(selected, [], width, styles, text, activity, undefined, true);
 	assert.match(render(80), /Codex gpt-5\.6-sol \(xhigh · fast\)$/);
 	const noThinking = snapshot({ model: { ...value.model, thinkingLevel: "off" } });
 	assert.match(render(80, undefined, noThinking), /gpt-5\.6-sol \(fast\)$/);
@@ -244,5 +256,5 @@ test("Fast processing appears beside thinking and survives narrow model labels",
 			if (activity && width >= 2) assert.match(line, /^!2/);
 		}
 	}
-	assert.doesNotMatch(renderSessionLine(value, [], 80, styles), /fast/);
+	assert.doesNotMatch(renderSessionLine(value, [], 80, styles, text), /fast/);
 });

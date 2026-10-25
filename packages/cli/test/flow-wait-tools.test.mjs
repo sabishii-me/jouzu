@@ -14,6 +14,7 @@ import {
 	transformMultiloopArchive,
 } from "../../../scripts/apply-multiloop-wait-skill.mjs";
 import { assistant, createFlowSession, deferred } from "../../../scripts/fixtures/pi-flow-session.mjs";
+import { runPromptHook } from "../../../scripts/fixtures/prompt-hook.mjs";
 import { PiFlowAttachment } from "../dist/flow-control/pi-attachment.js";
 import { observedWaitToolReceipt } from "../dist/flow-control/wait-tool-response.js";
 import { createFlowWaitExtension, FLOW_WAIT_GUIDANCE } from "../dist/flow-control/wait-tools.js";
@@ -741,17 +742,27 @@ test("workflow guidance follows active extensions and does not duplicate itself"
 		getActiveTools: () => active,
 		registerTool() {},
 	});
-	const first = before({ systemPrompt: "Custom system prompt" }).systemPrompt;
+	const run = (systemPrompt) => runPromptHook(before, { systemPrompt }).sections.flow_control;
+	const first = run("Custom system prompt");
 	assert.match(first, /notifyOnExit: false/);
 	assert.match(first, /TaskUpdate waitForUser: true/);
-	assert.match(first, /schedule_prompt for an action due/);
+	// The capability-routing row owns schedule_prompt usage; the wait rules forbid timer polling.
+	assert.doesNotMatch(first, /schedule_prompt/);
+	assert.match(first, /add timer-based checks/);
 	assert.match(first, /older job does not describe its replacement/);
-	assert.equal(before({ systemPrompt: first }), undefined);
+	assert.match(first, /flowInput is a flow delivery/);
+	// Lines the prompt already carries, such as agent_wait's own guidelines, are not repeated.
+	assert.equal(run(`Custom system prompt\n${first}`), undefined);
 	active = ["agent_wait"];
-	const reduced = before({ systemPrompt: "Custom system prompt" }).systemPrompt;
-	assert.doesNotMatch(reduced, /bg_task|TaskUpdate|schedule_prompt/);
+	assert.doesNotMatch(run("Custom system prompt"), /bg_task|TaskUpdate|schedule_prompt/);
 	active = ["bg_task", "TaskUpdate", "schedule_prompt"];
-	assert.equal(before({ systemPrompt: "Custom system prompt" }), undefined);
+	assert.equal(run("Custom system prompt"), undefined);
+
+	// A prompt another extension forced takes the guidance as appended text.
+	active = ["agent_wait"];
+	const forced = runPromptHook(before, { options: { forceSystemPrompt: "Forced" }, systemPrompt: "Forced" });
+	assert.match(forced.systemPrompt, /^Forced\n\nFlow control coordinates/);
+	assert.deepEqual(forced.sections, {});
 });
 
 test("preparation accepts empty optional fields without changing original arguments", async (t) => {

@@ -1,5 +1,6 @@
 import { fork } from "node:child_process";
-import { VoiceError } from "./errors.js";
+import { CatalogMessageId, catalogMessage } from "../cli-messages.js";
+import { type VoiceError, voiceError } from "./errors.js";
 
 export interface VoiceCapture {
 	stop(): Promise<void>;
@@ -13,8 +14,7 @@ export interface CaptureOptions {
 	onError(error: Error): void;
 }
 
-const CAPTURE_ERROR =
-	"Microphone capture failed. Check your input device, microphone permission, and platform support.";
+const CAPTURE_FAILED = catalogMessage(CatalogMessageId.voiceCaptureFailed);
 
 export function captureEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 	const allowed = new Set([
@@ -75,7 +75,7 @@ function runCaptureHelper(
 		let stopReject: ((error: Error) => void) | undefined;
 		let stopTimer: ReturnType<typeof setTimeout> | undefined;
 		const startupTimer = setTimeout(
-			() => fail(new Error("Microphone startup timed out. Check your audio device.")),
+			() => fail(voiceError(catalogMessage(CatalogMessageId.voiceCaptureStartTimeout))),
 			helper.startupTimeoutMs ?? 10_000,
 		);
 		const cleanup = () => {
@@ -83,9 +83,8 @@ function runCaptureHelper(
 			clearTimeout(stopTimer);
 			options.signal.removeEventListener("abort", cancel);
 		};
-		const fail = (failure: Error) => {
+		const fail = (error: VoiceError) => {
 			if (terminal) return;
-			const error = new VoiceError(failure.message);
 			terminal = true;
 			cleanup();
 			child.kill("SIGKILL");
@@ -104,18 +103,18 @@ function runCaptureHelper(
 		const send = (message: object) => {
 			if (terminal) return;
 			child.send(message, (error) => {
-				if (error) fail(new Error(CAPTURE_ERROR));
+				if (error) fail(voiceError(CAPTURE_FAILED));
 			});
 		};
 		options.signal.addEventListener("abort", cancel, { once: true });
-		child.on("error", () => fail(new Error(CAPTURE_ERROR)));
+		child.on("error", () => fail(voiceError(CAPTURE_FAILED)));
 		child.on("exit", () => {
-			if (!terminal) fail(new Error(CAPTURE_ERROR));
+			if (!terminal) fail(voiceError(CAPTURE_FAILED));
 		});
 		child.on("message", (message: { type?: string; audio?: string; devices?: string[] }) => {
 			if (terminal) return;
 			if (message.type === "error") {
-				fail(new Error(CAPTURE_ERROR));
+				fail(voiceError(CAPTURE_FAILED));
 				return;
 			}
 			if (message.type === "devices" && mode === "devices" && Array.isArray(message.devices)) {
@@ -132,13 +131,13 @@ function runCaptureHelper(
 			}
 			if (message.type === "audio" && typeof message.audio === "string") {
 				try {
-					if (message.audio.length > 4_300) throw new Error(CAPTURE_ERROR);
+					if (message.audio.length > 4_300) throw voiceError(CAPTURE_FAILED);
 					const pcm = Buffer.from(message.audio, "base64");
-					if (pcm.length !== 3200) throw new Error(CAPTURE_ERROR);
+					if (pcm.length !== 3200) throw voiceError(CAPTURE_FAILED);
 					options.onAudio(pcm);
 					if (!stopping) send({ type: "ack" });
 				} catch {
-					fail(new Error(CAPTURE_ERROR));
+					fail(voiceError(CAPTURE_FAILED));
 				}
 			}
 			if (message.type === "ready" && !ready) {
@@ -147,12 +146,12 @@ function runCaptureHelper(
 				resolve({
 					stop() {
 						if (stopping) return stopping;
-						if (terminal) return Promise.reject(new Error(CAPTURE_ERROR));
+						if (terminal) return Promise.reject(voiceError(CAPTURE_FAILED));
 						stopping = new Promise<void>((done, failed) => {
 							stopResolve = done;
 							stopReject = failed;
 							stopTimer = setTimeout(
-								() => fail(new Error("Microphone did not respond to stop. Recording was cancelled.")),
+								() => fail(voiceError(catalogMessage(CatalogMessageId.voiceCaptureStopTimeout))),
 								helper.stopTimeoutMs ?? 2_000,
 							);
 							send({ type: "stop" });

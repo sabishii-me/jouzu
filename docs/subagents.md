@@ -1,12 +1,16 @@
 # Agents and runs
 
-Open `/workflow`, or choose **Workflow** in the Palette. The **Agents** view lists definitions. Select one with `↑`/`↓` and press `Enter` to edit its model, instructions, and execution settings. Use the **View** row's `←`/`→` choice to switch to **Runs**.
+Open `/workflow`, or choose **Workflow** in the Palette. Agent definitions appear above **Runs** in the same scrollable pane, including while children are active. Select a definition with `↑`/`↓` and press `Enter` to edit its model, instructions, and execution settings. Page Up/Page Down scrolls longer panes; a position indicator shows content above and below.
 
 Fresh installations provide `coder` and `reviewer` child presets with `model: "same"` and `thinking: "same"`. Each launch or resume uses the main session’s selected model and reasoning effort. A running or queued child keeps the settings captured when it was requested. Saved definitions keep your choices.
 
 The editable `orchestrator` preset applies to the main conversation. In Workflow, choose **Same as this session** for a model and **Same as main** for thinking to inherit those settings. An explicit model or effort stays fixed on resume. A bare model ID must match exactly one provider; the model picker also offers exact `provider/model` selections. Jouzu reports missing or ambiguous models without substituting another model.
 
 Workflow and subagent summaries show the provider or catalog's friendly model name. The picker also shows the provider and catalog source; saved selections retain exact identifiers. Expand role or run output to inspect those identifiers.
+
+## Language inheritance
+
+Each launch or explicit resume inherits the calling agent's active response-language preference. Artifact-producing children also inherit its per-field artifact policy. Running and queued children retain their launch snapshot; staged Settings changes apply only after the next-turn boundary. UI locale does not select child language, and preservation-only or structured roles keep their output restrictions. See [Language, locale and prompt instructions](language.md#child-agents) for profile fallback, precedence and exact-text boundaries.
 
 ## Enable or disable subagents
 

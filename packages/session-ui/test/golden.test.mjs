@@ -49,36 +49,46 @@ const snapshot = {
 	runtime: { status: "known", observedAt: 1, value: { id: "node", version: "v24.16.0" } },
 };
 const hints = [{ id: "palette", text: "/model choose", priority: 10, role: "muted" }];
+const text = {
+	noModel: "no model",
+	attention: "attention",
+	statusHealth: "! status",
+	statusContextUnknown: "ctx ?",
+	statusDetached: "detached",
+};
 
 test("keeps wide and compact Session UI lines stable", () => {
-	assert.equal(renderSessionLine(snapshot, hints, 48, plainStyles), "/model choose          Codex gpt-5.6-sol (xhigh)");
-	assert.equal(renderStatusBar(snapshot, 48, plainStyles), "日本語 project · [!?↑] · node   19%/200k | ↑124k");
 	assert.equal(
-		renderStatusBar(snapshot, 80, plainStyles),
+		renderSessionLine(snapshot, hints, 48, plainStyles, text),
+		"/model choose          Codex gpt-5.6-sol (xhigh)",
+	);
+	assert.equal(renderStatusBar(snapshot, 48, plainStyles, text), "日本語 project · [!?↑] · node   19%/200k | ↑124k");
+	assert.equal(
+		renderStatusBar(snapshot, 80, plainStyles, text),
 		"日本語 project · feat/v0.1.2 [!?↑] · node v24.16.0          19%/200k | ↑124k ↓9k",
 	);
 });
 
 test("reports autonomous work on the Session Line", () => {
 	assert.equal(
-		renderSessionLine(snapshot, hints, 80, plainStyles, {
+		renderSessionLine(snapshot, hints, 80, plainStyles, text, {
 			text: "multiloop: 1 running · 2 subagents",
 			active: true,
 		}),
 		"⠋ multiloop: 1 running · 2 subagents                   Codex gpt-5.6-sol (xhigh)",
 	);
 	assert.equal(
-		renderSessionLine(snapshot, hints, 80, plainStyles, { text: "multiloop: 1 paused", active: false }),
+		renderSessionLine(snapshot, hints, 80, plainStyles, text, { text: "multiloop: 1 paused", active: false }),
 		"○ multiloop: 1 paused                                  Codex gpt-5.6-sol (xhigh)",
 	);
 });
 
 test("color and no-color lanes carry identical text and display width", () => {
 	for (const width of [24, 48, 80, 120]) {
-		const plainLine = renderSessionLine(snapshot, hints, width, plainStyles);
-		const colorLine = renderSessionLine(snapshot, hints, width, ansiStyles);
-		const plainBar = renderStatusBar(snapshot, width, plainStyles);
-		const colorBar = renderStatusBar(snapshot, width, ansiStyles);
+		const plainLine = renderSessionLine(snapshot, hints, width, plainStyles, text);
+		const colorLine = renderSessionLine(snapshot, hints, width, ansiStyles, text);
+		const plainBar = renderStatusBar(snapshot, width, plainStyles, text);
+		const colorBar = renderStatusBar(snapshot, width, ansiStyles, text);
 		assert.equal(stripSgr(colorLine), plainLine);
 		assert.equal(stripSgr(colorBar), plainBar);
 		assert.equal(terminalTextWidth(colorLine), width);

@@ -31,6 +31,8 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { seedModelCatalog } from "./live-model-catalog.mjs";
+import { packedTarballEntry } from "./pack-output.mjs";
 
 const FLOW_MARKER = "jouzu-flow";
 const COMPACT_EVENT_TYPES = new Set(["session_before_compact", "session_compact", "session_compact_failed"]);
@@ -368,9 +370,9 @@ async function runLiveFlowSmoke({ provider, model, budget, maxRequests, maxToken
 		let tarball = process.env.JOUZU_PACKED_TARBALL;
 		if (!tarball) {
 			run("npm", ["run", "build"]);
-			const packed = JSON.parse(
+			const packed = packedTarballEntry(
 				run("npm", ["pack", "--workspace", "jouzu", "--ignore-scripts", "--json", "--pack-destination", temp]).stdout,
-			)[0];
+			);
 			tarball = resolve(temp, packed.filename);
 		}
 		tarball = resolve(tarball);
@@ -385,6 +387,14 @@ async function runLiveFlowSmoke({ provider, model, budget, maxRequests, maxToken
 			tarball,
 		]);
 		const cli = resolve(temp, "consumer", "node_modules", "jouzu", "dist", "cli.js");
+		// The provider id names a catalog-backed provider, and a fresh home has no
+		// catalog. Refresh it into the run's home before the run.
+		seedModelCatalog({
+			cli,
+			home: resolve(temp, "jouzu-home"),
+			env: { ...scrubbedHarnessEnv(), JOUZU_NO_UPDATE: "1" },
+			run,
+		});
 		session = new LiveSession({
 			cli,
 			jouzuHome: resolve(temp, "jouzu-home"),

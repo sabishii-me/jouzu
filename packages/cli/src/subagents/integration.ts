@@ -4,6 +4,7 @@ import {
 	SettingsManager,
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
+import { CatalogMessageId, catalogText, defaultCatalog } from "../cli-messages.js";
 import { FlowLedgerError } from "../flow-control/receipt-ledger.js";
 import {
 	SUBAGENT_READ_RECEIPT,
@@ -12,9 +13,12 @@ import {
 	subagentReadReceiptKey,
 } from "../flow-control/subagent-observation-extension.js";
 import { SUBAGENT_WAIT_SOURCE, type SubagentWaitSourceRequest } from "../flow-control/subagent-waits.js";
+import { readStoredLanguageContractState } from "../language-contract.js";
+import type { CatalogBundle } from "../locale-catalog.js";
 import { preferCatalogModels } from "../model-catalog-projection.js";
 import { createNotificationInbox } from "../notifications/inbox.js";
 import type { JouzuPaths } from "../paths.js";
+import { setPromptSections } from "../prompt-sections.js";
 import type { TextGuardMode } from "../textguard-policy.js";
 import {
 	observedSubagentResults,
@@ -24,6 +28,7 @@ import {
 } from "./completion.js";
 import { captureChildContext, type LaunchOptions } from "./context.js";
 import { SubagentDashboard } from "./dashboard.js";
+import { roleLanguageContract } from "./language.js";
 import { type AgentRun, isActiveRun, SubagentManager, type WorkerFactory } from "./manager.js";
 import { agentModelSelectorLabel } from "./model-display.js";
 import { parseSubagentResult, runPresentation, subagentComponent } from "./render.js";
@@ -65,6 +70,9 @@ export interface WorkflowService {
 	activeRole(): string | undefined;
 	subscribe(callback: () => void): () => void;
 }
+/** The catalog ID the subagent tool label reads its display text from. */
+const SUBAGENT_LABEL_ID = "jouzu.cli.tool.subagent.label";
+
 export function createWorkflowIntegration(
 	paths: JouzuPaths,
 	workerFactory?: WorkerFactory,
@@ -73,13 +81,16 @@ export function createWorkflowIntegration(
 		textguardMode?: () => TextGuardMode;
 		profile?: () => "core" | "ja";
 		dashboardVisibility?: (visible: boolean) => void;
+		/** The resolved catalog the subagent result renderer reads its display text from. */
+		catalog?: CatalogBundle;
 	} = {},
 ): {
 	service: WorkflowService;
 	register(pi: ExtensionAPI, open: (section?: "agents" | "runs") => Promise<boolean>): void;
 } {
-	const dashboard = new SubagentDashboard();
-	const store = new AgentRoleStore(paths);
+	const catalog = options.catalog ?? defaultCatalog();
+	const dashboard = new SubagentDashboard(catalog);
+	const store = new AgentRoleStore(paths, catalog);
 	let ctx: ExtensionContext | undefined;
 	let sessionGeneration = 0;
 	let api: ExtensionAPI | undefined;
@@ -110,11 +121,11 @@ export function createWorkflowIntegration(
 		for (const listener of listeners) listener();
 	};
 	const context = () => {
-		if (!ctx) throw new Error("Workflow requires an active session.");
+		if (!ctx) throw new Error(catalogText(catalog, CatalogMessageId.subagentWorkflowRequiresSession));
 		return ctx;
 	};
 	const controller = () => {
-		if (!manager) throw new Error("Workflow requires an active session.");
+		if (!manager) throw new Error(catalogText(catalog, CatalogMessageId.subagentWorkflowRequiresSession));
 		return manager;
 	};
 	const availableModels = () => {
@@ -129,22 +140,19 @@ export function createWorkflowIntegration(
 	 * so catalog preference and the unavailable-model error still apply.
 	 */
 	const resolveModel = (selector: string) => {
-		if (!isSameModelSelector(selector)) return resolveAgentModel(selector, availableModels());
+		if (!isSameModelSelector(selector)) return resolveAgentModel(selector, availableModels(), catalog);
 		const current = context().model;
 		if (!current)
-			throw new Error(
-				`Model: the role model is "${SAME_MODEL}", but this session has no model selected. Select a model, or give the role an explicit provider/model.`,
-			);
-		return resolveAgentModel(`${current.provider}/${current.id}`, availableModels());
+			throw new Error(catalogText(catalog, CatalogMessageId.subagentSameModelNoSession, { model: SAME_MODEL }));
+		return resolveAgentModel(`${current.provider}/${current.id}`, availableModels(), catalog);
 	};
 	const roleById = (id: string) => {
 		const role = roles().config.roles.find((item) => item.id === id);
-		if (!role) throw new Error("Agent definition was not found.");
+		if (!role) throw new Error(catalogText(catalog, CatalogMessageId.subagentAgentDefinitionNotFound));
 		return role;
 	};
 	const requireSubagents = () => {
-		if (!subagentsEnabled)
-			throw new Error("Subagents are off for this session. The user can enable them in Workflow or with /workflow on.");
+		if (!subagentsEnabled) throw new Error(catalogText(catalog, CatalogMessageId.subagentDisabledForSession));
 	};
 	const dispatch = async (
 		role: AgentRole,
@@ -161,6 +169,7 @@ export function createWorkflowIntegration(
 		const cwd = resolveWorkspace(
 			active.cwd,
 			previousRunId ? targetManager.get(previousRunId).cwd : launchOptions.workspace,
+			catalog,
 		);
 		const parentEntryId = active.sessionManager.getLeafId() ?? undefined;
 		const childContext = previousRunId
@@ -171,25 +180,25 @@ export function createWorkflowIntegration(
 					active.sessionManager.getSessionId(),
 					active.sessionManager.getBranch(),
 					parentEntryId,
+					catalog,
 				);
 		const model = resolveModel(modelSelector ?? role.model);
-		const thinkingLevel = resolveAgentThinking(role.thinking, api?.getThinkingLevel?.());
+		const thinkingLevel = resolveAgentThinking(role.thinking, api?.getThinkingLevel?.(), catalog);
 		const registered = active.modelRegistry.getRegisteredProviderConfig(model.provider);
-		if (registered?.streamSimple)
-			throw new Error(
-				"Model: this provider uses an in-process extension. Choose a provider with a built-in API for child agents.",
-			);
+		if (registered?.streamSimple) throw new Error(catalogText(catalog, CatalogMessageId.subagentProviderInProcess));
 		const auth = await active.modelRegistry.getApiKeyAndHeaders(model);
 		if (sessionGeneration !== generation || manager !== targetManager)
-			throw new Error("Session changed before the agent could start. Retry in this session.");
+			throw new Error(catalogText(catalog, CatalogMessageId.subagentSessionChangedBeforeStart));
 		requireSubagents();
-		if (revision !== enableRevision) throw new Error("Subagent setting changed before launch. Retry the assignment.");
-		if (!auth.ok) throw new Error("Authentication: sign in to the selected agent provider and retry.");
+		if (revision !== enableRevision)
+			throw new Error(catalogText(catalog, CatalogMessageId.subagentSettingChangedBeforeLaunch));
+		if (!auth.ok) throw new Error(catalogText(catalog, CatalogMessageId.subagentAuthenticationSignIn));
 		if (auth.env && Object.keys(auth.env).length)
-			throw new Error("Authentication: choose an API-key or token provider for child agents.");
+			throw new Error(catalogText(catalog, CatalogMessageId.subagentAuthenticationApiKeyProvider));
 		const settings = SettingsManager.create(active.cwd, paths.agentDir);
 		if (settings.drainErrors().length)
-			throw new Error("Could not read cache-warming settings for the child. Check settings.json before retrying.");
+			throw new Error(catalogText(catalog, CatalogMessageId.subagentCacheWarmingSettingsUnreadable));
+		const profile = options.profile?.() ?? "core";
 		return targetManager.launch(
 			{
 				cacheWarming: settings.getCacheWarmingMode(),
@@ -204,7 +213,10 @@ export function createWorkflowIntegration(
 				cwd,
 				userAgentDir: paths.agentDir,
 				runtimeStateDir: paths.stateDir,
-				profile: options.profile?.() ?? "core",
+				profile,
+				// Resolve active caller preferences, not a staged Settings change, on launch and resume.
+				// The manager freezes this launch contract; later parent changes cannot reach it.
+				languageContract: roleLanguageContract(role, readStoredLanguageContractState(active)?.contract, profile),
 				context: childContext,
 				task,
 				textguardFiles: options.textguardFiles === true,
@@ -220,7 +232,7 @@ export function createWorkflowIntegration(
 		subagentsEnabled: () => subagentsEnabled,
 		async setSubagentsEnabled(enabled) {
 			context();
-			if (settingChange) throw new Error("Wait for the subagent setting change to finish.");
+			if (settingChange) throw new Error(catalogText(catalog, CatalogMessageId.subagentSettingChangeInProgress));
 			if (enabled === subagentsEnabled && (enabled || !service.runs().some(isActiveRun))) return;
 			api?.appendEntry("jouzu-subagents-enabled", { enabled });
 			subagentsEnabled = enabled;
@@ -249,8 +261,8 @@ export function createWorkflowIntegration(
 		trace: (id, options) => {
 			if (id) return controller().trace(id, options);
 			const file = context().sessionManager.getSessionFile();
-			if (!file) throw new Error("Trace: the parent session has no saved transcript yet.");
-			return readSessionTrace(file, options);
+			if (!file) throw new Error(catalogText(catalog, CatalogMessageId.subagentParentTranscriptUnavailable));
+			return readSessionTrace(file, options, catalog);
 		},
 		async launch(id, task, options) {
 			requireSubagents();
@@ -275,13 +287,15 @@ export function createWorkflowIntegration(
 		async activate(id) {
 			const active = context();
 			const role = roleById(id);
-			if (role.placement === "child") throw new Error("Choose a definition that allows use in the main session.");
-			if (!active.isIdle()) throw new Error("Wait for the main agent to finish before changing its role.");
-			if (!api) throw new Error("Model: authentication is unavailable for this role.");
+			if (role.placement === "child")
+				throw new Error(catalogText(catalog, CatalogMessageId.subagentMainPlacementRequired));
+			if (!active.isIdle()) throw new Error(catalogText(catalog, CatalogMessageId.subagentMainRoleIdleRequired));
+			if (!api) throw new Error(catalogText(catalog, CatalogMessageId.subagentRoleAuthenticationUnavailable));
 			// A "same" main role keeps the session's current model, so there is nothing to switch to.
 			if (!isSameModelSelector(role.model)) {
-				const model = resolveAgentModel(role.model, availableModels());
-				if (!(await api.setModel(model))) throw new Error("Model: authentication is unavailable for this role.");
+				const model = resolveAgentModel(role.model, availableModels(), catalog);
+				if (!(await api.setModel(model)))
+					throw new Error(catalogText(catalog, CatalogMessageId.subagentRoleAuthenticationUnavailable));
 			}
 			if (role.thinking !== "same") api.setThinkingLevel(role.thinking);
 			mainRole = structuredClone(role);
@@ -308,7 +322,7 @@ export function createWorkflowIntegration(
 						const owner =
 							manager?.parentSessionId === request.sessionId
 								? manager
-								: new SubagentManager(paths, request.sessionId, 1, workerFactory);
+								: new SubagentManager(paths, request.sessionId, 1, workerFactory, undefined, catalog);
 						return owner.get(id);
 					},
 					subscribe: service.subscribe,
@@ -360,25 +374,28 @@ export function createWorkflowIntegration(
 				},
 				observed: (entries) => observedSubagentResults(service.runs(), entries, true),
 				build: (batchId, records) =>
-					subagentCompletionBatch(context().sessionManager.getSessionId(), batchId, records, service.runs()),
+					subagentCompletionBatch(context().sessionManager.getSessionId(), batchId, records, service.runs(), catalog),
 				reportError: () =>
-					ctx?.ui.notify(
-						"Agent notification delivery failed. Read the retained results with subagent list/read; reload when idle to retry.",
-						"warning",
-					),
+					ctx?.ui.notify(catalogText(catalog, CatalogMessageId.subagentNotificationDeliveryFailed), "warning"),
 			});
 			pi.registerMessageRenderer("jouzu-subagent-result", (message, { expanded }, theme) => {
 				const details = message.details as { presentation?: unknown; runs?: unknown } | undefined;
-				return subagentComponent(details?.presentation ?? (details?.runs ? details : message.content), theme, expanded);
+				return subagentComponent(
+					details?.presentation ?? (details?.runs ? details : message.content),
+					theme,
+					expanded,
+					"",
+					catalog,
+				);
 			});
 			pi.registerCommand("subagents", {
-				description: "Open child runs; use show or hide for the dashboard",
+				description: catalogText(catalog, CatalogMessageId.subagentCommandDescription),
 				getArgumentCompletions: (prefix) =>
 					["show", "hide"].filter((value) => value.startsWith(prefix)).map((value) => ({ value, label: value })),
 				handler: async (args, active) => {
 					const action = args.trim();
 					if (action && action !== "show" && action !== "hide") {
-						active.ui.notify("Use /subagents, /subagents show, or /subagents hide.", "warning");
+						active.ui.notify(catalogText(catalog, CatalogMessageId.subagentCommandHint), "warning");
 						return;
 					}
 					if (active.mode !== "tui") {
@@ -392,8 +409,8 @@ export function createWorkflowIntegration(
 							options.dashboardVisibility(action === "show");
 							active.ui.notify(
 								action === "show"
-									? "Dashboard restored to its saved display mode."
-									: "Dashboard hidden for this session. Use /subagents show to restore it.",
+									? catalogText(catalog, CatalogMessageId.subagentDashboardRestored)
+									: catalogText(catalog, CatalogMessageId.subagentDashboardHidden),
 								"info",
 							);
 							return;
@@ -401,34 +418,39 @@ export function createWorkflowIntegration(
 						dashboard.setVisible(action === "show");
 						active.ui.notify(
 							action === "show"
-								? "Subagent pane enabled; it appears when this session has child runs."
-								: "Subagent pane hidden. Use /subagents show to display it.",
+								? catalogText(catalog, CatalogMessageId.subagentPaneEnabled)
+								: catalogText(catalog, CatalogMessageId.subagentPaneHidden),
 							"info",
 						);
 					} else await open("runs");
 				},
 			});
 			pi.registerCommand("workflow", {
-				description: "Open agents and runs; on/off/toggle controls subagents for this session",
+				description: catalogText(catalog, CatalogMessageId.subagentWorkflowCommandDescription),
 				getArgumentCompletions: (prefix) =>
 					["on", "off", "toggle"].filter((value) => value.startsWith(prefix)).map((value) => ({ value, label: value })),
 				handler: async (args, active) => {
 					const action = args.trim();
 					if (action) {
 						if (!["on", "off", "toggle"].includes(action)) {
-							active.ui.notify("Use /workflow, /workflow on, /workflow off, or /workflow toggle.", "error");
+							active.ui.notify(catalogText(catalog, CatalogMessageId.subagentWorkflowCommandHint), "error");
 							return;
 						}
 						try {
 							await service.setSubagentsEnabled(action === "toggle" ? !subagentsEnabled : action === "on");
 							active.ui.notify(
 								subagentsEnabled
-									? "Subagents on for this session."
-									: "Subagents off for this session. Queued and running children stopped; existing changes remain.",
+									? catalogText(catalog, CatalogMessageId.subagentEnabledNotice)
+									: catalogText(catalog, CatalogMessageId.subagentDisabledNotice),
 								"info",
 							);
 						} catch (error) {
-							active.ui.notify(error instanceof Error ? error.message : "Could not change subagent setting.", "error");
+							active.ui.notify(
+								error instanceof Error
+									? error.message
+									: catalogText(catalog, CatalogMessageId.subagentSettingChangeFailed),
+								"error",
+							);
 						}
 						return;
 					}
@@ -469,7 +491,8 @@ export function createWorkflowIntegration(
 						const saved = entry.data as { role?: AgentRole; revision?: string };
 						try {
 							if (saved?.role && saved.revision === digest(saved.role))
-								mainRole = parseAgentConfig({ schemaVersion: 1, maxConcurrent: 1, roles: [saved.role] }).roles[0];
+								mainRole = parseAgentConfig({ schemaVersion: 1, maxConcurrent: 1, roles: [saved.role] }, catalog)
+									.roles[0];
 						} catch {}
 					}
 				let concurrency = defaultAgentConfig().maxConcurrent;
@@ -479,37 +502,42 @@ export function createWorkflowIntegration(
 					concurrency = config.maxConcurrent;
 					workspaceWriters = config.workspaceWriters;
 				} catch {
-					active.ui.notify(
-						"Workflow: agents.json could not be loaded. Correct the configuration before launching agents.",
-						"warning",
-					);
+					active.ui.notify(catalogText(catalog, CatalogMessageId.subagentWorkflowAgentsUnreadable), "warning");
 				}
-				manager = new SubagentManager(paths, active.sessionManager.getSessionId(), concurrency, workerFactory, () => {
-					if (generation !== sessionGeneration || !ctx) return;
-					inbox.request();
-				});
+				manager = new SubagentManager(
+					paths,
+					active.sessionManager.getSessionId(),
+					concurrency,
+					workerFactory,
+					() => {
+						if (generation !== sessionGeneration || !ctx) return;
+						inbox.request();
+					},
+					catalog,
+				);
 				try {
 					manager.attach();
 					// Apply the saved writer policy only once this process owns the session.
 					manager.setWorkspaceWriters(workspaceWriters);
 					inbox.start(active);
 				} catch (error) {
-					active.ui.notify(error instanceof Error ? error.message : "Workflow storage is unavailable.", "warning");
+					active.ui.notify(
+						error instanceof Error
+							? error.message
+							: catalogText(catalog, CatalogMessageId.subagentWorkflowStorageUnavailable),
+						"warning",
+					);
 				}
 				unsubscribe = manager.subscribe(notify);
 				notify();
 			});
 			pi.on("before_agent_start", (event, active) => {
 				ctx = active;
-				let systemPrompt = event.systemPrompt;
-				if (mainRole) systemPrompt += `\n\nAgent role: ${mainRole.id}\n${mainRole.instructions}`;
-				if (subagentsEnabled)
-					systemPrompt +=
-						"\n\nSubagents are enabled. Before delegating, call subagent with op:roles to check live availability and current role definitions; the user can edit roles or disable subagents during the session. Use a role that allows child placement. Only the user can change role models in Workflow; do not override them or edit agent configuration to select another model. Write each assignment in complete sentences with normal spacing. Give one objective, verified context and file paths, constraints, acceptance checks, and an explicit stopping point and report. Separate dependent stages. For follow-ups, state what changed and what remains authorized. Diagnose provider, tool, and instruction failures before judging implementation quality; do not substitute another model.";
-				if (!subagentsEnabled)
-					systemPrompt +=
-						"\n\nSubagents are disabled by the user for this session. Work directly; do not delegate or re-enable subagents. Existing results may be inspected and acknowledged.";
-				return { systemPrompt };
+				const role = mainRole ? `Agent role: ${mainRole.id}\n${mainRole.instructions}` : undefined;
+				const subagents = subagentsEnabled
+					? "Subagents are enabled. Roles can change during the session; choose a role from op:roles that allows child placement. Only the user can change role models; do not edit agent configuration to select another model. Write each assignment in complete sentences with normal spacing. Give one objective, verified context and file paths, constraints, acceptance checks, and an explicit stopping point and report. Separate dependent stages. For follow-ups, state what changed and what remains authorized. Diagnose provider, tool, and instruction failures before judging implementation quality; do not substitute another model."
+					: "Subagents are disabled by the user for this session. Work directly; do not delegate or re-enable subagents. Existing results may be inspected and acknowledged.";
+				return setPromptSections(event, { agent_role: role, subagents });
 			});
 			pi.on("session_shutdown", async () => {
 				dashboard.dispose();
@@ -530,7 +558,11 @@ export function createWorkflowIntegration(
 						description:
 							"Fields by operation: roles: none; list: offset?; launch: role, task; read/stop: id; resume/steer: id, task; acknowledge: batchId. Trace: id? (omit for parent), query?, kind?, entryId?, offset?, limit?. Read also accepts offset.",
 					},
-					role: { type: "string", description: "Role ID from op:roles." },
+					role: {
+						type: "string",
+						description:
+							"Role ID from op:roles. A name the user gives that op:roles does not list may be a model; choose a listed role and tell the user that role models are set in Workflow.",
+					},
 					batchId: {
 						type: "string",
 						description: "Current-run completion batch ID for op:acknowledge. Call alone when no reply is needed.",
@@ -592,7 +624,7 @@ export function createWorkflowIntegration(
 			pi.registerTool({
 				name: "subagent",
 				exposure: "model-only",
-				label: "Subagent",
+				label: catalogText(catalog, SUBAGENT_LABEL_ID),
 				description:
 					'Launch and control child agents. Start with {"op":"roles"} for live availability and role definitions. Omit unused fields; use null only if required by the interface. A launch needs only op, role, and task; context defaults to fresh. Never invent IDs or placeholder values. Only the user changes role models or enables subagents. Launch uses the configured model; resume keeps its saved role, workspace, and context. A same model or thinking setting follows the current main session on launch and resume. Steer queues a message; resume starts a follow-up. File access follows enabled tools and OS permissions, not a workspace fence. Launch returns immediately; unread terminal results arrive in a batch after active work and queued messages finish. Read pages use byte offsets; reading all terminal output prevents redundant completion turns. Trace searches saved messages, tool calls/results, errors, and compactions without acknowledging completion. Acknowledge only the delivered batchId, alone, when no reply is needed. You retain main-session ownership; verify child output before accepting it.',
 				promptSnippet:
@@ -602,22 +634,25 @@ export function createWorkflowIntegration(
 				constrainedSampling: { type: "json_schema", strict: "prefer" },
 				renderCall(raw, theme) {
 					const args = raw as { op?: string; role?: string };
+					const operation = args?.op ?? catalogText(catalog, CatalogMessageId.subagentCallPreparing);
 					return subagentComponent(
-						`Subagent · ${args?.op ?? "preparing"}${args?.role ? ` · ${args.role}` : ""}`,
+						`${catalogText(catalog, CatalogMessageId.subagentCallLabel, { operation })}${args?.role ? ` · ${args.role}` : ""}`,
 						theme,
 						false,
 						"call",
+						catalog,
 					);
 				},
 				renderResult(result, { expanded }, theme, renderContext) {
 					if (renderContext.isError)
-						return subagentComponent(parseSubagentResult(result.content), theme, expanded, "error");
+						return subagentComponent(parseSubagentResult(result.content), theme, expanded, "error", catalog);
 					const details = result.details as { presentation?: unknown } | undefined;
 					return subagentComponent(
 						details?.presentation ?? parseSubagentResult(result.content),
 						theme,
 						expanded,
 						String((renderContext.args as { op?: string } | undefined)?.op ?? ""),
+						catalog,
 					);
 				},
 				async execute(
@@ -633,8 +668,7 @@ export function createWorkflowIntegration(
 							batchId?: string;
 						},
 				) {
-					if ("model" in params)
-						throw new Error("Only the user can change subagent models in Workflow. Omit the model argument.");
+					if ("model" in params) throw new Error(catalogText(catalog, CatalogMessageId.subagentModelArgumentUserOnly));
 					// Strict providers use null for omitted optional fields. Normalize a copy so
 					// validation and downstream services see the same omission semantics.
 					params = Object.fromEntries(
@@ -653,14 +687,18 @@ export function createWorkflowIntegration(
 						if (typeof value === "string" && value.trim()) continue;
 						const hint =
 							field === "role"
-								? 'Call {"op":"roles"} and use a returned child-capable role.'
+								? catalogText(catalog, CatalogMessageId.subagentFieldHintRole, { command: '{"op":"roles"}' })
 								: field === "id"
-									? 'Call {"op":"list"} and use a returned run ID.'
+									? catalogText(catalog, CatalogMessageId.subagentFieldHintRunId, { command: '{"op":"list"}' })
 									: field === "batchId"
-										? "Use the batchId from a completion delivered in this run."
-										: "Supply the assignment or follow-up in task.";
+										? catalogText(catalog, CatalogMessageId.subagentFieldHintBatchId)
+										: catalogText(catalog, CatalogMessageId.subagentFieldHintTask);
 						throw new Error(
-							`subagent ${params.op} requires a non-empty ${field}. ${hint} Omit unrelated fields; use null only if the interface requires them.`,
+							catalogText(catalog, CatalogMessageId.subagentFieldRequired, {
+								op: params.op,
+								field,
+								hint,
+							}),
 						);
 					}
 					if (["launch", "resume", "steer"].includes(params.op)) requireSubagents();
@@ -668,19 +706,17 @@ export function createWorkflowIntegration(
 						params.op === "resume" &&
 						[params.context, params.entryIds, params.parentContext].some((value) => value !== undefined)
 					)
-						throw new Error(
-							"Resume keeps its original context. Omit launch-only fields context, entryIds, and parentContext (or use null).",
-						);
+						throw new Error(catalogText(catalog, CatalogMessageId.subagentResumeContextOmit));
 					// Other operations do not consume launch context. Providers may still fill
 					// those fields when sampling this shared schema; do not block discovery.
 					const workspace = params.workspace?.trim() ? params.workspace : undefined;
 					if (params.op === "resume" && workspace) {
 						const previous = controller().get(params.id ?? "");
-						if (resolveWorkspace(context().cwd, workspace) !== previous.cwd)
-							throw new Error("Resume keeps the original workspace. Launch a new agent to use another directory.");
+						if (resolveWorkspace(context().cwd, workspace, catalog) !== previous.cwd)
+							throw new Error(catalogText(catalog, CatalogMessageId.subagentResumeWorkspaceKeep));
 					}
 					if (params.offset !== undefined && (!Number.isInteger(params.offset) || params.offset < 0))
-						throw new Error("Offset must be a nonnegative integer.");
+						throw new Error(catalogText(catalog, CatalogMessageId.subagentOffsetNonnegative));
 					if (params.op === "acknowledge") return inbox.acknowledge(params.batchId);
 					let result: unknown;
 					let presentation: unknown;
@@ -691,8 +727,7 @@ export function createWorkflowIntegration(
 								enabled: subagentsEnabled,
 								...(!subagentsEnabled
 									? {
-											reason:
-												"Subagents are disabled by the user for this session. Work directly; only the user should re-enable them.",
+											reason: catalogText(catalog, CatalogMessageId.subagentRolesDisabledReason),
 										}
 									: {}),
 								maxConcurrent: config.maxConcurrent,
@@ -772,7 +807,7 @@ export function createWorkflowIntegration(
 							break;
 						}
 						default:
-							throw new Error("Choose a supported subagent operation.");
+							throw new Error(catalogText(catalog, CatalogMessageId.subagentOperationUnsupported));
 					}
 					if (params.op === "list")
 						presentation = {

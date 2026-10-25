@@ -82,6 +82,18 @@ test("profile planning is non-mutating and apply converges", () => {
 					reason: "missing",
 					desiredSha256: profile.assets.find((asset) => asset.target === "skills/jouzu-delegation/SKILL.md").sha256,
 				},
+				...[
+					"references/configuration.md",
+					"references/controls.md",
+					"references/history.md",
+					"references/models.md",
+					"SKILL.md",
+				].map((name) => ({
+					type: "create",
+					target: `skills/jouzu-reference/${name}`,
+					reason: "missing",
+					desiredSha256: profile.assets.find((asset) => asset.target === `skills/jouzu-reference/${name}`).sha256,
+				})),
 				{
 					type: "create",
 					target: "skills/jouzu-source-check/SKILL.md",
@@ -100,6 +112,30 @@ test("profile planning is non-mutating and apply converges", () => {
 		);
 		assert.deepEqual(planProfile(profile, fixture.paths, "0.1.0").actions, []);
 		assert.equal(applyProfile(profile, fixture.paths, "0.1.0").changed, false);
+	} finally {
+		cleanup(fixture.root);
+	}
+});
+
+test("reference files are installed exactly and preserve user edits on reapply", () => {
+	const fixture = temporary();
+	try {
+		const profile = loadBundledProfile("core");
+		applyProfile(profile, fixture.paths, "0.1.0");
+		const references = profile.assets.filter((asset) => asset.target.startsWith("skills/jouzu-reference/"));
+		assert.equal(references.length, 5);
+		for (const asset of references) {
+			assert.deepEqual(readFileSync(join(fixture.paths.agentDir, asset.target)), asset.bytes);
+		}
+		const target = "skills/jouzu-reference/references/configuration.md";
+		const file = join(fixture.paths.agentDir, target);
+		writeFileSync(file, "user customization\n");
+		assert.equal(
+			planProfile(profile, fixture.paths, "0.1.0").actions.find((a) => a.target === target)?.reason,
+			"managed-modified",
+		);
+		assert.throws(() => applyProfile(profile, fixture.paths, "0.1.0"), ProfileConflictError);
+		assert.equal(readFileSync(file, "utf8"), "user customization\n");
 	} finally {
 		cleanup(fixture.root);
 	}

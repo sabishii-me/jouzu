@@ -4,6 +4,29 @@ import { createSessionUiExtension, WorkDashboardController } from "../dist/index
 import { dashboardAvailableRows } from "../dist/work-dashboard-height.js";
 
 const block = (rows) => ({ render: () => Array(rows).fill(""), invalidate() {} });
+
+// The resolved catalog the extension reads its own text from.
+const catalog = {
+	format: (id) =>
+		({
+			"jouzu.cli.session.line.noModel": "no model",
+			"jouzu.cli.session.line.attention": "attention",
+			"jouzu.cli.session.status.health": "! status",
+			"jouzu.cli.session.status.contextUnknown": "ctx ?",
+			"jouzu.cli.session.status.detached": "detached",
+			"jouzu.cli.session.dashboard.section.agent": "Agents",
+			"jouzu.cli.session.dashboard.section.job": "Jobs",
+			"jouzu.cli.session.dashboard.section.task": "Tasks",
+			"jouzu.cli.session.dashboard.section.loop": "Loops",
+			"jouzu.cli.session.dashboard.section.goal": "Goals",
+			"jouzu.cli.session.dashboard.section.prompt": "Scheduled",
+			"jouzu.cli.session.dashboard.section.flow": "Flow",
+			"jouzu.cli.session.dashboard.attention.result": "unread result",
+			"jouzu.cli.session.dashboard.attention.input": "needs input",
+			"jouzu.cli.session.dashboard.attention.recovery": "needs recovery",
+			"jouzu.cli.session.dashboard.attention.authority": "needs decision",
+		})[id],
+};
 test("dock measurement reserves native widgets, multiline editor, status and footer without rendering transcript", () => {
 	const dashboard = {
 		render() {
@@ -39,6 +62,7 @@ test("dashboard registers once per attachment above the editor-hosted Session Li
 	const attachments = [];
 	const controller = new WorkDashboardController();
 	const extension = createSessionUiExtension({
+		catalog,
 		dashboard: {
 			controller,
 			mode: () => "hidden",

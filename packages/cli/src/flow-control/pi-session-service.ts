@@ -1,4 +1,6 @@
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
+import { CatalogMessageId, catalogText, defaultCatalog } from "../cli-messages.js";
+import type { CatalogBundle } from "../locale-catalog.js";
 import type { FlowAdmissionGates } from "./admission.js";
 import { retainAutomaticWork } from "./automatic-work.js";
 import { SessionFlowController } from "./controller.js";
@@ -47,6 +49,8 @@ export interface PiFlowSessionOptions {
 	policy(): Omit<FlowAdmissionGates, "hostReady">;
 	/** Register branch-owned sources before retained executions are reconciled. */
 	attachWaitSources?(attachment: PiFlowAttachment): Promise<void>;
+	/** The resolved catalog every flow reason and tool label reads its text from. */
+	catalog?: CatalogBundle;
 	/** Release producer delivery leases while flow control is off; the producers then deliver natively. */
 	detachProducers?(): Promise<void>;
 	/** Re-acquire those leases when flow control comes back on. */
@@ -141,8 +145,12 @@ export class PiFlowSessionService {
 	}
 
 	private async openBranch(scope: FlowScope): Promise<void> {
-		const attachment = await PiFlowAttachment.open(this.options.root, scope, undefined, (path) =>
-			this.options.onIsolatedState?.(path),
+		const attachment = await PiFlowAttachment.open(
+			this.options.root,
+			scope,
+			undefined,
+			(path) => this.options.onIsolatedState?.(path),
+			this.options.catalog,
 		);
 		this.opening = { attachment };
 		try {
@@ -159,6 +167,7 @@ export class PiFlowSessionService {
 				attachment.submissions,
 				this.options.admitNativeQueue,
 				() => this.options.flowEnabled?.() !== false,
+				this.options.catalog,
 			);
 			this.opening.native = native;
 			const sourceRecovery = await native.recoverSources();
@@ -186,6 +195,7 @@ export class PiFlowSessionService {
 				// Turning flow control off releases a recovery hold's grip on the session's own sends.
 				() => this.options.flowEnabled?.() !== false,
 				() => this.retireUnreferencedRequests(this.branch()),
+				this.options.catalog,
 			);
 			this.opening.requests = requests;
 			const workContext = new FlowWorkContext(
@@ -234,7 +244,12 @@ export class PiFlowSessionService {
 			// wrapper to order against and the guarded transport is stable as soon as it is installed.
 			requests.attachComposition(host.requests);
 			requests.sealTransport();
-			const controller = new SessionFlowController(host, this.options.maxInputBytes, this.options.maxResultBytes);
+			const controller = new SessionFlowController(
+				host,
+				this.options.maxInputBytes,
+				this.options.maxResultBytes,
+				this.options.catalog,
+			);
 			controller.register(
 				createFlowWaitDecisionProducer(attachment.waits, {
 					ledger: attachment.ledger,
@@ -502,7 +517,9 @@ export class PiFlowSessionService {
 			await branch.attachment.ledger.resolveUncertain(
 				id,
 				resolution,
-				resolution === "retry" ? "Resolved from /flow as undelivered." : "Resolved from /flow as spent.",
+				resolution === "retry"
+					? catalogText(this.options.catalog ?? defaultCatalog(), CatalogMessageId.flowServiceResolvedUndelivered)
+					: catalogText(this.options.catalog ?? defaultCatalog(), CatalogMessageId.flowServiceResolvedSpent),
 			);
 			await this.refreshOutcomeUnresolved(branch);
 		});

@@ -38,6 +38,48 @@ A successful tmux buffer write or terminal request cannot confirm that the deskt
 
 When multiple clients are attached to the pane's session, Jouzu selects the most recently active client. Client selection and forwarding are separate tmux commands: moving a pane or switching a client to another session during a copy can change where the request arrives.
 
+## Language
+
+[Language, locale and prompt instructions](language.md) is the complete guide to independent UI/response/artifact settings, Core/JA profiles, custom prompts, child inheritance, precedence and apply timing.
+
+The UI locale, the response language, and the artifact policy are stored in `localization.json` in the Jouzu configuration directory, the parent of the `agent` directory listed in the README's [State and isolation](../README.md#state-and-isolation) table:
+
+| Platform | `localization.json` |
+| --- | --- |
+| Linux | `${XDG_CONFIG_HOME:-~/.config}/jouzu/localization.json` |
+| macOS | `~/Library/Application Support/Jouzu/localization.json` |
+| Windows | `%APPDATA%\Jouzu\localization.json` |
+
+```json
+{
+  "schemaVersion": 2,
+  "localization": {
+    "uiLocale": "ja",
+    "responseLanguage": "auto",
+    "artifactPolicy": {
+      "comments": "preserve",
+      "documentation": "project",
+      "commits": "project",
+      "reviews": "project"
+    }
+  }
+}
+```
+
+- `uiLocale` accepts `auto`, `en`, `ja`, `zh-Hans`, or `zh-Hant`. The interface offers only English and Japanese; a Chinese locale request falls back to English. `auto` resolves from the locale environment variables and falls back to English when no offered catalog matches.
+- `responseLanguage` sets the language of the agent's user-facing explanations: `auto`, `en`, `ja`, `zh-Hans`, or `zh-Hant`. `auto` adds no fixed conversational-language instruction; the separate artifact policy still applies.
+- `artifactPolicy` sets the language for each artifact kind. Each field takes `preserve`, `project`, `en`, `ja`, `zh-Hans`, or `zh-Hant`. `preserve` keeps existing text; `project` follows the project's existing language.
+
+The UI locale, response language, and artifact policy are separate settings. Changing `uiLocale` does not change `responseLanguage` or `artifactPolicy`, and no language setting selects a model, provider, or region.
+
+Use `/language` or Settings **Language** to preview changes, then press Enter to review and Enter again to save the requested UI, response and artifact preferences. Confirmed display choices override CLI/environment inputs and refresh supported screens; reopen or restart screens that retain their opening language. Response and artifact changes apply to the current agent on its next turn. Direct file edits apply to a new session. See the [save and timing rules](language.md#save-language-preferences).
+
+### Startup resolution
+
+See [UI precedence](language.md#ui-locale) and [response/artifact resolution](language.md#response-language-and-artifacts). `jz doctor` reports resolved startup values and their sources; it does not inspect another running session's live overrides.
+
+Version 1 settings remain readable. The CLI does not trust repository `.jouzu/localization.json` files as automatic artifact-policy sources; use the user configuration above.
+
 ## Importing from Pi
 
 On the first interactive setup, Jouzu looks for Pi files in `PI_CODING_AGENT_DIR`, then `~/.pi/agent`.
@@ -65,6 +107,7 @@ Jouzu still uses these Pi resources:
 | --- | --- |
 | `JOUZU_HOME` | Root for all Jouzu configuration, state, and cache |
 | `JOUZU_PROFILE` | Profile for this launch: `core` or `ja`. The selection is saved. See [Profiles](profiles.md). |
+| `JOUZU_UI_LOCALE` | Startup UI locale when no preference is saved; a CLI option takes precedence in that case. See [Language](#language). |
 | `SHISA_API_KEY` | Shisa API key; overrides the saved login. See [Shisa AI account](shisa.md). |
 | `JOUZU_MODEL_CATALOG_URL`, `JOUZU_MODEL_CATALOG_TOKEN` | Single catalog source when `catalogs.json` does not exist. See [Model catalogs](catalogs.md). |
 | `JOUZU_FLOW_CONTROL=0` | Disable flow control. See [Flow control](flow-control.md). |

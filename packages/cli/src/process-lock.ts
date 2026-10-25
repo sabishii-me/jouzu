@@ -1,7 +1,21 @@
 import { closeSync, lstatSync, openSync } from "node:fs";
 import { dirname, toNamespacedPath } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { catalogText, defaultCatalog } from "./cli-messages.js";
+import { protectedPath } from "./human-messages.js";
+import type { CatalogBundle } from "./locale-catalog.js";
 import { ensurePrivateDirectory } from "./private-fs.js";
+
+/**
+ * The catalog IDs for the process lock acquisition errors. They stay local
+ * rather than joining the shared `CatalogMessageId` table so a parallel surface
+ * migration does not conflict on that file; `scripts/check-locales.mjs` allows
+ * a catalog-only ID present in both locales.
+ */
+const PROCESS_LOCK_IDS = {
+	busy: "jouzu.cli.processLock.busy",
+	unavailable: "jouzu.cli.processLock.unavailable",
+} as const;
 
 /**
  * Retain every reservation held by a live connection, so garbage collection
@@ -40,7 +54,7 @@ export interface ProcessLock {
  * This is mutual exclusion on a local filesystem. It makes no claim across
  * machines or network shares.
  */
-export function acquireProcessLock(path: string): ProcessLock {
+export function acquireProcessLock(path: string, catalog: CatalogBundle = defaultCatalog()): ProcessLock {
 	let database: DatabaseSync | undefined;
 	try {
 		ensurePrivateDirectory(dirname(path));
@@ -76,7 +90,9 @@ export function acquireProcessLock(path: string): ProcessLock {
 		const busy = error instanceof Error && "errcode" in error && [5, 6].includes(Number(error.errcode));
 		throw new ProcessLockError(
 			busy ? "busy" : "storage",
-			busy ? `The process lock is held by another process: ${path}` : `The process lock could not be acquired: ${path}`,
+			busy
+				? catalogText(catalog, PROCESS_LOCK_IDS.busy, { path: protectedPath(path) })
+				: catalogText(catalog, PROCESS_LOCK_IDS.unavailable, { path: protectedPath(path) }),
 			{ cause: error },
 		);
 	}

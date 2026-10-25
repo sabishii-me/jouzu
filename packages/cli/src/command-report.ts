@@ -1,3 +1,4 @@
+import type { HumanLocale, ProtectedValue } from "./human-messages.js";
 import {
 	detectTerminalColorMode,
 	sanitizeTerminalText,
@@ -46,13 +47,47 @@ const MINIMUM_COLUMNS = 40;
 const MAXIMUM_COLUMNS = 100;
 const SEPARATOR = "·";
 
-export interface CommandReportOptions {
+/**
+ * The display state one renderer reads: the width, the color decision, and the
+ * locale. A caller resolves it once, then passes the same fields to every
+ * human-facing renderer instead of reaching into `process` in each one.
+ */
+export interface DisplayContext {
+	columns: number;
+	colorMode: TerminalColorMode;
+	colorEnabled: boolean;
+	locale: HumanLocale;
+}
+
+/**
+ * Renderer inputs, derivable from `DisplayContext`: every display field is an
+ * optional override, and `env`, `colorDepth`, and `stdoutIsTTY` only resolve the
+ * defaults when the caller does not supply a display value. `locale` defaults
+ * to `en`.
+ */
+export interface CommandReportOptions extends Partial<DisplayContext> {
 	env?: NodeJS.ProcessEnv;
-	colorMode?: TerminalColorMode;
 	colorDepth?: number;
 	stdoutIsTTY?: boolean;
-	colorEnabled?: boolean;
-	columns?: number;
+}
+
+/**
+ * The line-breaking rules a locale uses. English breaks only at ASCII spaces;
+ * every CJK locale (`ja`, `zh-Hans`, `zh-Hant`) also breaks between CJK
+ * characters and applies the CJK line-start and line-end prohibitions (currently
+ * the Japanese sets, which cover the shared CJK punctuation).
+ */
+export type WrapLocale = HumanLocale;
+
+/** One piece of human text: natural language, or a value that must not be split. */
+export type HumanTextSegment = string | ProtectedValue;
+
+export interface WrapOptions {
+	columns: number;
+	/** Selects the line-breaking rules. Defaults to `en`. */
+	locale?: WrapLocale;
+	/** Pre-tokenized content. When present it replaces the `value` argument. */
+	segments?: readonly HumanTextSegment[];
 }
 
 /** A marker line: a status, a short key, and one message. */
@@ -98,6 +133,27 @@ function envFlagIsTrue(value: string | undefined): boolean {
 	return value !== undefined && value !== "" && value !== "0" && value.toLowerCase() !== "false";
 }
 
+/** Resolve the injectable options into the one display state the renderer uses. */
+export function resolveDisplayContext(options: CommandReportOptions = {}): DisplayContext {
+	const env = options.env ?? process.env;
+	const stdoutIsTTY = options.stdoutIsTTY ?? process.stdout.isTTY === true;
+	const colorMode =
+		options.colorMode ??
+		detectTerminalColorMode({
+			env,
+			stdoutIsTTY,
+			...(options.colorDepth !== undefined ? { colorDepth: options.colorDepth } : {}),
+		});
+	return {
+		columns: clampColumns(options.columns ?? process.stdout.columns),
+		colorMode,
+		// Styling a redirected stream would put escape sequences into the file a user pastes,
+		// so color needs a terminal unless FORCE_COLOR asks for it.
+		colorEnabled: options.colorEnabled ?? (colorMode !== "none" && (stdoutIsTTY || envFlagIsTrue(env.FORCE_COLOR))),
+		locale: options.locale ?? "en",
+	};
+}
+
 /**
  * Break lines only at runs of ASCII spaces, and only between words. Other whitespace is part
  * of the text and is preserved exactly, because an ideographic space can appear inside a
@@ -130,6 +186,217 @@ export function wrapTerminalWords(value: string, columns: number): string[] {
 }
 
 /**
+ * Japanese line-start prohibitions (行頭禁則): a line must not begin with closing
+ * punctuation, a small kana, an iteration mark, or a prolonged sound mark.
+ */
+const LINE_START_PROHIBITED = new Set(
+	[
+		"、。，．：；？！）］｝〕〉》」』】〙〗〟｠»",
+		"ぁぃぅぇぉっゃゅょゎゕゖァィゥェォッャュョヮヵヶ",
+		"ゝゞヽヾ々ー",
+	].join(""),
+);
+
+/** Japanese line-end prohibitions (行末禁則): a line must not end with an opening mark. */
+const LINE_END_PROHIBITED = new Set([..."（［｛〔〈《「『【〘〖〝｟«"]);
+
+type WrapAtom =
+	| { readonly kind: "text"; readonly text: string }
+	| { readonly kind: "space"; readonly text: string }
+	| { readonly kind: "protected"; readonly text: string }
+	| { readonly kind: "break" };
+
+type TextAtom = Extract<WrapAtom, { kind: "text" }>;
+
+/** Ranges whose characters may break next to one another without a space. */
+function isCjkCharacter(character: string): boolean {
+	const code = character.codePointAt(0) ?? 0;
+	return (
+		(code >= 0x2e80 && code <= 0x2eff) ||
+		(code >= 0x3000 && code <= 0x303f) ||
+		(code >= 0x3040 && code <= 0x309f) ||
+		(code >= 0x30a0 && code <= 0x30ff) ||
+		(code >= 0x31f0 && code <= 0x31ff) ||
+		(code >= 0x3400 && code <= 0x4dbf) ||
+		(code >= 0x4e00 && code <= 0x9fff) ||
+		(code >= 0xf900 && code <= 0xfaff) ||
+		(code >= 0xff00 && code <= 0xffef) ||
+		(code >= 0x20000 && code <= 0x2fa1f)
+	);
+}
+
+function firstCharacter(text: string): string {
+	return [...text][0] ?? "";
+}
+
+function lastCharacter(text: string): string {
+	const characters = [...text];
+	return characters[characters.length - 1] ?? "";
+}
+
+function isLineStartProhibited(text: string): boolean {
+	return LINE_START_PROHIBITED.has(firstCharacter(text));
+}
+
+function isLineEndProhibited(text: string): boolean {
+	return LINE_END_PROHIBITED.has(lastCharacter(text));
+}
+
+/** A run of natural text: one atom for `en`, CJK characters split apart for a CJK locale. */
+function pushTextAtoms(atoms: WrapAtom[], text: string, locale: WrapLocale): void {
+	if (text === "") return;
+	if (locale === "en") {
+		atoms.push({ kind: "text", text });
+		return;
+	}
+	let buffer = "";
+	const flushBuffer = (): void => {
+		if (buffer !== "") atoms.push({ kind: "text", text: buffer });
+		buffer = "";
+	};
+	for (const character of text) {
+		if (isCjkCharacter(character)) {
+			flushBuffer();
+			atoms.push({ kind: "text", text: character });
+		} else {
+			buffer += character;
+		}
+	}
+	flushBuffer();
+}
+
+/** Split one string segment into space, text, and explicit-break atoms. */
+function pushSegmentAtoms(atoms: WrapAtom[], segment: string, locale: WrapLocale): void {
+	const paragraphs = segment.split("\n");
+	for (let index = 0; index < paragraphs.length; index += 1) {
+		if (index > 0) atoms.push({ kind: "break" });
+		let buffer = "";
+		let spaces = false;
+		const flushBuffer = (): void => {
+			if (buffer === "") return;
+			if (spaces) atoms.push({ kind: "space", text: buffer });
+			else pushTextAtoms(atoms, buffer, locale);
+			buffer = "";
+		};
+		for (const character of paragraphs[index] ?? "") {
+			const isSpace = character === " ";
+			if (buffer !== "" && isSpace !== spaces) flushBuffer();
+			spaces = isSpace;
+			buffer += character;
+		}
+		flushBuffer();
+	}
+}
+
+function joinAtoms(atoms: readonly WrapAtom[]): string {
+	return atoms.map((atom) => (atom.kind === "break" ? "" : atom.text)).join("");
+}
+
+/**
+ * Wrap human-facing text into terminal lines.
+ *
+ * Natural text breaks at runs of ASCII spaces and, in a CJK locale, at every
+ * CJK boundary. A `ProtectedValue` segment is one atom: it is never split, even
+ * when it is wider than the column, so a path, digest, or model ID survives a
+ * copy and paste. Lines are neither padded nor truncated; a word or protected
+ * value wider than the column overflows.
+ *
+ * A CJK locale also applies the CJK prohibitions: a line never begins with a
+ * closing mark or small kana, and never ends with an opening mark. The
+ * preceding breakable character is moved down so the prohibited character does
+ * not sit alone; a run of prohibited characters hangs on the previous line when
+ * no breakable character is available.
+ *
+ * The design signature is `wrapHumanText(value: string, options)`; the first
+ * argument also accepts pre-tokenized segments, and `options.segments` is an
+ * equivalent alternative.
+ */
+export function wrapHumanText(value: string | readonly HumanTextSegment[], options: WrapOptions): string[] {
+	const columns = Math.max(1, Math.floor(options.columns));
+	const locale: WrapLocale = options.locale ?? "en";
+	const content: readonly HumanTextSegment[] = options.segments ?? (typeof value === "string" ? [value] : value);
+	const atoms: WrapAtom[] = [];
+	for (const segment of content) {
+		if (typeof segment === "string") pushSegmentAtoms(atoms, segment, locale);
+		else atoms.push({ kind: "protected", text: segment.value });
+	}
+
+	const lines: string[] = [];
+	let current: WrapAtom[] = [];
+	let pendingSpace = "";
+
+	const flush = (): void => {
+		lines.push(joinAtoms(current));
+		current = [];
+	};
+
+	/** The last atom when it is one breakable character, so it can move down. */
+	const movableTail = (): TextAtom | undefined => {
+		const last = current[current.length - 1];
+		if (last === undefined || last.kind !== "text") return undefined;
+		return [...last.text].length === 1 ? last : undefined;
+	};
+
+	for (const atom of atoms) {
+		if (atom.kind === "break") {
+			flush();
+			pendingSpace = "";
+			continue;
+		}
+		if (atom.kind === "space") {
+			if (current.length === 0) continue;
+			pendingSpace = atom.text;
+			continue;
+		}
+		if (current.length === 0) {
+			current = [atom];
+			pendingSpace = "";
+			continue;
+		}
+		const separator = pendingSpace;
+		if (terminalTextWidth(joinAtoms(current) + separator + atom.text) <= columns) {
+			if (separator !== "") current.push({ kind: "space", text: separator });
+			current.push(atom);
+			pendingSpace = "";
+			continue;
+		}
+
+		// Overflow: apply the prohibitions before the ordinary break.
+		if (locale !== "en" && atom.kind === "text" && isLineStartProhibited(atom.text)) {
+			const tail = movableTail();
+			if (tail !== undefined && !isLineStartProhibited(tail.text) && !isLineEndProhibited(tail.text)) {
+				current.pop();
+				if (current.length > 0) flush();
+				current = [tail, atom];
+			} else {
+				// No breakable character to move: hang the prohibited run on this line.
+				current.push(atom);
+			}
+			pendingSpace = "";
+			continue;
+		}
+		if (locale !== "en") {
+			const tail = current[current.length - 1];
+			if (tail !== undefined && tail.kind === "text" && isLineEndProhibited(tail.text)) {
+				const previous = movableTail();
+				if (previous !== undefined && !isLineStartProhibited(previous.text)) {
+					current.pop();
+					if (current.length > 0) flush();
+					current = [previous, atom];
+					pendingSpace = "";
+					continue;
+				}
+			}
+		}
+		flush();
+		current = [atom];
+		pendingSpace = "";
+	}
+	flush();
+	return lines;
+}
+
+/**
  * Prepare external text for styling: control characters and escape sequences are removed,
  * and the line breaks and tabs among them become spaces so words do not run together.
  */
@@ -155,39 +422,29 @@ function widestColumn(values: readonly string[], limit: number): number {
  */
 export class CommandReport {
 	private readonly blocks: Block[] = [];
-	private readonly columns: number;
-	private readonly colorMode: TerminalColorMode;
-	private readonly colorEnabled: boolean;
+	private readonly display: DisplayContext;
 
 	constructor(options: CommandReportOptions = {}) {
-		const env = options.env ?? process.env;
-		const stdoutIsTTY = options.stdoutIsTTY ?? process.stdout.isTTY === true;
-		this.colorMode =
-			options.colorMode ??
-			detectTerminalColorMode({
-				env,
-				stdoutIsTTY,
-				...(options.colorDepth !== undefined ? { colorDepth: options.colorDepth } : {}),
-			});
-		// Styling a redirected stream would put escape sequences into the file a user pastes,
-		// so color needs a terminal unless FORCE_COLOR asks for it.
-		this.colorEnabled =
-			options.colorEnabled ?? (this.colorMode !== "none" && (stdoutIsTTY || envFlagIsTrue(env.FORCE_COLOR)));
-		this.columns = clampColumns(options.columns ?? process.stdout.columns);
+		this.display = resolveDisplayContext(options);
+	}
+
+	/** Natural text goes through the locale-aware wrapper; data keeps the ASCII-only rule. */
+	private wrapHuman(value: string, columns: number): string[] {
+		return wrapHumanText(value, { columns, locale: this.display.locale });
 	}
 
 	private bold(value: string): string {
-		return this.colorEnabled && value ? `[1m${value}[22m` : value;
+		return this.display.colorEnabled && value ? `[1m${value}[22m` : value;
 	}
 
 	private dim(value: string): string {
-		return this.colorEnabled && value ? `[2m${value}[22m` : value;
+		return this.display.colorEnabled && value ? `[2m${value}[22m` : value;
 	}
 
 	private tone(status: CommandReportStatus, value: string): string {
 		const code = STATUS_COLORS[status];
 		if (code === undefined) return this.dim(value);
-		return this.colorEnabled && value ? `[${code}m${value}[39m` : value;
+		return this.display.colorEnabled && value ? `[${code}m${value}[39m` : value;
 	}
 
 	private joinDetails(details: readonly (string | undefined)[]): string {
@@ -256,9 +513,9 @@ export class CommandReport {
 		const alignedStart = INDENT.length + labelColumns + GAP.length;
 		// Below the minimum value width the two-column form would clip values, so put each
 		// value on its own line under an unclipped label instead.
-		const stacked = this.columns - alignedStart < MINIMUM_VALUE_COLUMNS;
+		const stacked = this.display.columns - alignedStart < MINIMUM_VALUE_COLUMNS;
 		const valueStart = stacked ? INDENT.length + DETAIL_INDENT.length : alignedStart;
-		const valueColumns = Math.max(MINIMUM_VALUE_COLUMNS, this.columns - valueStart);
+		const valueColumns = Math.max(MINIMUM_VALUE_COLUMNS, this.display.columns - valueStart);
 		for (const field of block.fields) {
 			const label = clean(field.label);
 			const value = wrapTerminalWords(clean(field.value), valueColumns);
@@ -270,7 +527,7 @@ export class CommandReport {
 				for (const line of value.slice(1)) lines.push(`${" ".repeat(valueStart)}${line}`);
 			}
 			const detailStart = valueStart + DETAIL_INDENT.length;
-			const detailColumns = Math.max(MINIMUM_VALUE_COLUMNS, this.columns - detailStart - DETAIL_INDENT.length);
+			const detailColumns = Math.max(MINIMUM_VALUE_COLUMNS, this.display.columns - detailStart - DETAIL_INDENT.length);
 			for (const detailLine of field.details ?? []) {
 				const wrapped = wrapTerminalWords(clean(detailLine), detailColumns);
 				lines.push(`${" ".repeat(detailStart)}${this.dim(wrapped[0])}`);
@@ -284,12 +541,12 @@ export class CommandReport {
 	private renderEntries(block: Extract<Block, { kind: "entries" }>, keyColumns: number, lines: string[]): void {
 		lines.push(this.bold(clean(block.heading)));
 		const messageStart = INDENT.length + MARKER_WIDTH + keyColumns + GAP.length;
-		const messageColumns = Math.max(MINIMUM_VALUE_COLUMNS, this.columns - messageStart);
+		const messageColumns = Math.max(MINIMUM_VALUE_COLUMNS, this.display.columns - messageStart);
 		for (const entry of block.entries) {
 			const key = clean(entry.key);
 			const marker = this.tone(entry.status, STATUS_MARKERS[entry.status]);
 			const head = `${INDENT}${marker} ${this.tone(entry.status, key)}${padColumns(key, keyColumns)}${GAP}`;
-			const message = wrapTerminalWords(clean(entry.message), messageColumns);
+			const message = this.wrapHuman(clean(entry.message), messageColumns);
 			lines.push(`${head}${message[0]}`);
 			for (const line of message.slice(1)) lines.push(`${" ".repeat(messageStart)}${line}`);
 		}
@@ -314,14 +571,14 @@ export class CommandReport {
 					separate();
 					break;
 				case "rule":
-					lines.push(this.dim("─".repeat(this.columns)));
+					lines.push(this.dim("─".repeat(this.display.columns)));
 					break;
 				case "line":
 					lines.push(block.text);
 					break;
 				case "paragraph": {
 					separate();
-					for (const line of wrapTerminalWords(clean(block.text), this.columns - INDENT.length)) {
+					for (const line of this.wrapHuman(clean(block.text), this.display.columns - INDENT.length)) {
 						lines.push(`${INDENT}${this.dim(line)}`);
 					}
 					break;

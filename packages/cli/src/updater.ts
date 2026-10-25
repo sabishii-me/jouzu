@@ -3,6 +3,14 @@ import { createHash, randomUUID } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, realpathSync, rmdirSync, unlinkSync } from "node:fs";
 import { dirname, join, posix, resolve, win32 } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+	CatalogMessageId,
+	type CatalogMessageRef,
+	catalogMessage,
+	catalogText,
+	defaultCatalog,
+} from "./cli-messages.js";
+import type { CatalogBundle } from "./locale-catalog.js";
 import type { JouzuPaths } from "./paths.js";
 import { ensurePrivateDirectory, validatePrivateDirectory, writeFilePrivateAtomic } from "./private-fs.js";
 import { acquireStateLock, STATE_LOCK_STALE_MS } from "./state-lock.js";
@@ -35,6 +43,52 @@ const SEMVER_RE =
 export type UpdatePolicy = (typeof UPDATE_POLICIES)[number];
 export type UpdateResult = (typeof UPDATE_RESULTS)[number];
 export type UpdateInstallChannel = "global-npm" | "local-npm" | "ephemeral-npx" | "source" | "other";
+
+const UPDATE_POLICY_IDS: Readonly<Record<UpdatePolicy, CatalogMessageId>> = Object.freeze({
+	"auto-restart": CatalogMessageId.selfUpdatePolicyAutoRestart,
+	notify: CatalogMessageId.selfUpdatePolicyNotify,
+	off: CatalogMessageId.selfUpdatePolicyOff,
+});
+
+const UPDATE_INSTALL_CHANNEL_IDS: Readonly<Record<UpdateInstallChannel, CatalogMessageId>> = Object.freeze({
+	"global-npm": CatalogMessageId.selfUpdateChannelGlobalNpm,
+	"local-npm": CatalogMessageId.selfUpdateChannelLocalNpm,
+	"ephemeral-npx": CatalogMessageId.selfUpdateChannelEphemeralNpx,
+	source: CatalogMessageId.selfUpdateChannelSource,
+	other: CatalogMessageId.selfUpdateChannelOther,
+});
+
+/**
+ * The catalog IDs for the self-update failure and recovery text a user reads.
+ * A version, an npm command name, an exit status or error code, an npm error
+ * message, and an invalid policy token are protected values passed as
+ * arguments; the sentence resolves from the session bundle. The IDs stay local
+ * to this module, like the catalog-failure IDs, so a parallel migration does
+ * not conflict on the shared table.
+ */
+const UPDATE_MESSAGE_ID = {
+	unsupportedChannel: "jouzu.cli.selfUpdate.unsupportedChannel",
+	npmCommandFailed: "jouzu.cli.selfUpdate.npmCommandFailed",
+	npmCommandExit: "jouzu.cli.selfUpdate.npmCommandExit",
+	integrityMismatch: "jouzu.cli.selfUpdate.integrityMismatch",
+	updateRolledBack: "jouzu.cli.selfUpdate.updateRolledBack",
+	updateNotInstalled: "jouzu.cli.selfUpdate.updateNotInstalled",
+	rollbackFailed: "jouzu.cli.selfUpdate.rollbackFailed",
+	restartFailed: "jouzu.cli.selfUpdate.restartFailed",
+	invalidPolicy: "jouzu.cli.selfUpdate.invalidPolicy",
+	updateFailed: "jouzu.cli.selfUpdate.updateFailed",
+	checkFailed: "jouzu.cli.selfUpdate.checkFailed",
+} as const;
+
+/** The catalog identity of a self-update policy word, for a doctor field or a status line. */
+export function updatePolicyMessage(policy: UpdatePolicy): CatalogMessageRef {
+	return catalogMessage(UPDATE_POLICY_IDS[policy]);
+}
+
+/** The catalog identity of a self-update install-channel word, for a doctor field or a status line. */
+export function updateInstallChannelMessage(channel: UpdateInstallChannel): CatalogMessageRef {
+	return catalogMessage(UPDATE_INSTALL_CHANNEL_IDS[channel]);
+}
 
 export interface UpdateState {
 	schemaVersion: 1;
@@ -87,13 +141,15 @@ export interface UpdaterOptions {
 	now?: () => Date;
 	runNpm?: NpmRunner;
 	verifyInstalled?: (expectedVersion: string) => void;
-	report?: (message: string) => void;
+	report?: (message: CatalogMessageRef) => void;
+	/** The resolved catalog the update-busy cause reads its text from. */
+	catalog?: CatalogBundle;
 }
 
 export interface StartupUpdateResult {
 	action: "continue" | "restart";
 	version?: string;
-	message?: string;
+	message?: CatalogMessageRef;
 }
 
 interface ParsedSemver {
@@ -336,13 +392,19 @@ function defaultNpmRunner(env: NodeJS.ProcessEnv, platform: NodeJS.Platform): Np
 	};
 }
 
-function requireCommandSuccess(result: NpmRunResult, operation: string): string {
+function requireCommandSuccess(result: NpmRunResult, operation: string, catalog: CatalogBundle): string {
 	if (result.error) {
 		const code = "code" in result.error && typeof result.error.code === "string" ? result.error.code : "spawn";
-		throw new UpdateError(`${operation} failed (${code})`, `npm-${operation}-${code}`);
+		throw new UpdateError(
+			catalogText(catalog, UPDATE_MESSAGE_ID.npmCommandFailed, { operation, code }),
+			`npm-${operation}-${code}`,
+		);
 	}
 	if (result.status !== 0) {
-		throw new UpdateError(`${operation} failed (npm exit ${result.status ?? "unknown"})`, `npm-${operation}-exit`);
+		throw new UpdateError(
+			catalogText(catalog, UPDATE_MESSAGE_ID.npmCommandExit, { operation, status: result.status ?? "unknown" }),
+			`npm-${operation}-exit`,
+		);
 	}
 	return result.stdout;
 }
@@ -393,17 +455,17 @@ function parsePackedArtifact(stdout: string, directory: string, expectedVersion?
 	return { path: join(directory, value.filename), integrity: value.integrity };
 }
 
-function verifyFileIntegrity(path: string, integrity: string): void {
+function verifyFileIntegrity(path: string, integrity: string, catalog: CatalogBundle): void {
 	const metadata = lstatSync(path);
 	if (!metadata.isFile() || metadata.isSymbolicLink()) {
 		throw new UpdateError("downloaded update is not a regular file", "invalid-update-artifact");
 	}
 	const observed = `sha512-${createHash("sha512").update(readFileSync(path)).digest("base64")}`;
 	if (observed !== integrity)
-		throw new UpdateError("downloaded update failed SHA-512 verification", "integrity-mismatch");
+		throw new UpdateError(catalogText(catalog, UPDATE_MESSAGE_ID.integrityMismatch), "integrity-mismatch");
 }
 
-function acquireUpdateLock(path: string, now: Date): () => void {
+function acquireUpdateLock(path: string, now: Date, catalog: CatalogBundle = defaultCatalog()): () => void {
 	return acquireStateLock({
 		path,
 		now,
@@ -411,7 +473,9 @@ function acquireUpdateLock(path: string, now: Date): () => void {
 		describe: "self-update",
 		onBusy: (inspection) =>
 			new UpdateError(
-				inspection.status === "invalid" ? "self-update lock is not a regular file" : "another Jouzu update is running",
+				inspection.status === "invalid"
+					? "self-update lock is not a regular file"
+					: catalogText(catalog, CatalogMessageId.selfUpdateLockBusy),
 				"update-busy",
 			),
 	});
@@ -476,7 +540,8 @@ export class JouzuUpdater {
 	private readonly now: () => Date;
 	private readonly runNpm: NpmRunner;
 	private readonly verifyInstalled: (expectedVersion: string) => void;
-	private readonly report: (message: string) => void;
+	private readonly report: (message: CatalogMessageRef) => void;
+	private readonly catalog: CatalogBundle;
 	private cachedInstallChannel: UpdateInstallChannel | undefined;
 
 	constructor(options: UpdaterOptions) {
@@ -493,6 +558,7 @@ export class JouzuUpdater {
 			options.verifyInstalled ??
 			((expectedVersion) => defaultVerifyInstalled(this.packageRoot, this.executable, expectedVersion, this.env));
 		this.report = options.report ?? (() => {});
+		this.catalog = options.catalog ?? defaultCatalog();
 	}
 
 	private readState(): UpdateState {
@@ -519,7 +585,11 @@ export class JouzuUpdater {
 
 	private globalNpmRoot(): string | undefined {
 		try {
-			const root = requireCommandSuccess(this.runNpm(["root", "--global", "--loglevel=error"], 15_000), "root").trim();
+			const root = requireCommandSuccess(
+				this.runNpm(["root", "--global", "--loglevel=error"], 15_000),
+				"root",
+				this.catalog,
+			).trim();
 			return canonicalExistingPath(root);
 		} catch {
 			return undefined;
@@ -549,7 +619,9 @@ export class JouzuUpdater {
 
 	setPolicy(policy: UpdatePolicy): UpdateState {
 		if (!UPDATE_POLICIES.includes(policy))
-			throw new UpdateError(`unknown update policy: ${policy}`, "invalid-policy", { exitCode: 2 });
+			throw new UpdateError(catalogText(this.catalog, UPDATE_MESSAGE_ID.invalidPolicy, { policy }), "invalid-policy", {
+				exitCode: 2,
+			});
 		const state = this.readState();
 		const updated = { ...state, policy };
 		this.writeState(updated);
@@ -574,6 +646,7 @@ export class JouzuUpdater {
 					12_000,
 				),
 				"view",
+				this.catalog,
 			);
 			const release = parseRegistryRelease(stdout);
 			const status = compareSemver(release.version, this.currentVersion) > 0 ? "available" : "current";
@@ -590,7 +663,10 @@ export class JouzuUpdater {
 			});
 			return { status, installedVersion: this.currentVersion, ...release };
 		} catch (error) {
-			const updateError = error instanceof UpdateError ? error : new UpdateError("update check failed", "check-failed");
+			const updateError =
+				error instanceof UpdateError
+					? error
+					: new UpdateError(catalogText(this.catalog, UPDATE_MESSAGE_ID.checkFailed), "check-failed");
 			this.recordFailure(updateError.code, now, true);
 			throw updateError;
 		}
@@ -619,6 +695,7 @@ export class JouzuUpdater {
 				NPM_PACK_TIMEOUT_MS,
 			),
 			"pack",
+			this.catalog,
 		);
 		return parsePackedArtifact(stdout, directory, expectedVersion);
 	}
@@ -630,6 +707,7 @@ export class JouzuUpdater {
 				NPM_INSTALL_TIMEOUT_MS,
 			),
 			"install",
+			this.catalog,
 		);
 	}
 
@@ -650,29 +728,29 @@ export class JouzuUpdater {
 	apply(checkResult?: UpdateCheckResult): { changed: boolean; version: string } {
 		if (this.installChannel() !== "global-npm") {
 			throw new UpdateError(
-				"automatic installation is available only for a real global npm install; update this source, local, or npx invocation through its owning channel",
+				catalogText(this.catalog, UPDATE_MESSAGE_ID.unsupportedChannel),
 				"unsupported-install-channel",
 			);
 		}
 		const check = checkResult ?? this.check();
 		if (check.status === "current") return { changed: false, version: this.currentVersion };
 		const now = this.now();
-		const releaseLock = acquireUpdateLock(updateLockPath(this.paths), now);
+		const releaseLock = acquireUpdateLock(updateLockPath(this.paths), now, this.catalog);
 		let directory: string | undefined;
 		let backup: PackedArtifact | undefined;
 		let candidate: PackedArtifact | undefined;
 		let installedAndVerified = false;
 		try {
 			directory = this.createDownloadDirectory();
-			this.report(`Downloading Jouzu ${check.version}…`);
+			this.report(catalogMessage(CatalogMessageId.selfUpdateReportDownloading, { version: check.version }));
 			backup = this.pack(this.packageRoot, directory, this.currentVersion);
-			verifyFileIntegrity(backup.path, backup.integrity);
+			verifyFileIntegrity(backup.path, backup.integrity, this.catalog);
 			candidate = this.pack(`jouzu@${check.version}`, directory, check.version);
 			if (candidate.integrity !== check.integrity) {
 				throw new UpdateError("npm metadata changed during update download", "registry-integrity-drift");
 			}
-			verifyFileIntegrity(candidate.path, check.integrity);
-			this.report(`Installing Jouzu ${check.version}…`);
+			verifyFileIntegrity(candidate.path, check.integrity, this.catalog);
+			this.report(catalogMessage(CatalogMessageId.selfUpdateReportInstalling, { version: check.version }));
 			try {
 				this.installTarball(candidate.path);
 				this.verifyInstalled(check.version);
@@ -685,23 +763,32 @@ export class JouzuUpdater {
 				} catch {}
 				if (currentRemainsVerified) {
 					throw new UpdateError(
-						`Jouzu ${check.version} was not installed; ${this.currentVersion} remains verified`,
+						catalogText(this.catalog, UPDATE_MESSAGE_ID.updateNotInstalled, {
+							version: check.version,
+							current: this.currentVersion,
+						}),
 						"update-not-installed",
 					);
 				}
-				this.report(`Jouzu ${check.version} failed verification; restoring ${this.currentVersion}…`);
+				this.report(
+					catalogMessage(CatalogMessageId.selfUpdateReportRestoring, {
+						version: check.version,
+						current: this.currentVersion,
+					}),
+				);
 				try {
-					verifyFileIntegrity(backup.path, backup.integrity);
+					verifyFileIntegrity(backup.path, backup.integrity, this.catalog);
 					this.restoreTarball(backup.path, this.currentVersion);
 				} catch {
-					throw new UpdateError(
-						"Jouzu update and automatic rollback both failed; reinstall the previous Jouzu version with npm",
-						"rollback-failed",
-						{ fatal: true },
-					);
+					throw new UpdateError(catalogText(this.catalog, UPDATE_MESSAGE_ID.rollbackFailed), "rollback-failed", {
+						fatal: true,
+					});
 				}
 				throw new UpdateError(
-					`Jouzu ${check.version} failed verification and ${this.currentVersion} was restored`,
+					catalogText(this.catalog, UPDATE_MESSAGE_ID.updateRolledBack, {
+						version: check.version,
+						current: this.currentVersion,
+					}),
 					"update-rolled-back",
 				);
 			}
@@ -718,13 +805,15 @@ export class JouzuUpdater {
 					lastErrorCode: null,
 				});
 			} catch {
-				this.report("Jouzu was updated and verified, but its update status could not be recorded.");
+				this.report(catalogMessage(CatalogMessageId.selfUpdateReportStatusUnrecorded));
 			}
 			return { changed: true, version: check.version };
 		} catch (error) {
 			if (installedAndVerified) return { changed: true, version: check.version };
 			const updateError =
-				error instanceof UpdateError ? error : new UpdateError("Jouzu update failed", "update-failed");
+				error instanceof UpdateError
+					? error
+					: new UpdateError(catalogText(this.catalog, UPDATE_MESSAGE_ID.updateFailed), "update-failed");
 			this.recordFailure(updateError.code, now);
 			throw updateError;
 		} finally {
@@ -751,7 +840,9 @@ export class JouzuUpdater {
 		} catch (error) {
 			return {
 				action: "continue",
-				message: `Automatic update skipped: ${error instanceof Error ? error.message : error}`,
+				message: catalogMessage(CatalogMessageId.selfUpdateStartupSkipped, {
+					message: error instanceof Error ? error.message : String(error),
+				}),
 			};
 		}
 		const policy = effectivePolicy(state, this.env);
@@ -780,7 +871,10 @@ export class JouzuUpdater {
 			} catch (error) {
 				return {
 					action: "continue",
-					message: `Jouzu update check failed; continuing with ${this.currentVersion} (${error instanceof UpdateError ? error.code : "unknown"})`,
+					message: catalogMessage(CatalogMessageId.selfUpdateStartupCheckFailed, {
+						current: this.currentVersion,
+						code: error instanceof UpdateError ? error.code : "unknown",
+					}),
 				};
 			}
 		}
@@ -788,7 +882,7 @@ export class JouzuUpdater {
 		if (policy === "notify") {
 			return {
 				action: "continue",
-				message: `Jouzu ${check.version} is available; run "jouzu self-update apply"`,
+				message: catalogMessage(CatalogMessageId.selfUpdateStartupAvailable, { version: check.version }),
 			};
 		}
 		try {
@@ -798,39 +892,67 @@ export class JouzuUpdater {
 			if (error instanceof UpdateError && error.fatal) throw error;
 			return {
 				action: "continue",
-				message: `Jouzu update failed; continuing with ${this.currentVersion} (${error instanceof UpdateError ? error.code : "unknown"})`,
+				message: catalogMessage(CatalogMessageId.selfUpdateStartupFailed, {
+					current: this.currentVersion,
+					code: error instanceof UpdateError ? error.code : "unknown",
+				}),
 			};
 		}
 	}
 }
 
-export function relaunchUpdatedJouzu(options: { executable: string; args: string[]; env?: NodeJS.ProcessEnv }): number {
+export function relaunchUpdatedJouzu(options: {
+	executable: string;
+	args: string[];
+	env?: NodeJS.ProcessEnv;
+	catalog?: CatalogBundle;
+}): number {
 	const result = spawnSync(process.execPath, [options.executable, ...options.args], {
 		stdio: "inherit",
 		env: { ...(options.env ?? process.env), JOUZU_INTERNAL_UPDATE_RESTARTED: "1" },
 	});
 	if (result.error)
-		throw new UpdateError(`updated Jouzu could not restart: ${result.error.message}`, "restart-failed", {
-			fatal: true,
-		});
+		throw new UpdateError(
+			catalogText(options.catalog ?? defaultCatalog(), UPDATE_MESSAGE_ID.restartFailed, {
+				message: result.error.message,
+			}),
+			"restart-failed",
+			{
+				fatal: true,
+			},
+		);
 	if (result.signal) return 128;
 	return result.status ?? 1;
 }
 
-export function formatUpdateStatus(status: UpdateStatus): string {
+export function formatUpdateStatus(status: UpdateStatus, catalog: CatalogBundle = defaultCatalog()): string {
 	const state = status.state;
+	const text = (id: CatalogMessageId, args?: Readonly<Record<string, string | number>>): string =>
+		catalogText(catalog, id, args);
 	return [
-		"Jouzu self-update status",
-		`Policy: ${status.policy}`,
-		`Install channel: ${status.installChannel}`,
-		`Automatic startup update: ${status.startupEligible ? "eligible" : "not eligible"}`,
-		`Installed version: ${state.installedVersion}`,
-		`Latest observed version: ${state.latestVersion ?? "not checked"}`,
-		`Last result: ${state.lastResult}`,
-		`Last checked: ${state.lastCheckedAt ?? "never"}`,
-		`Next check: ${state.nextCheckAt ?? "due"}`,
-		`Last updated: ${state.lastUpdatedAt ?? "never"}`,
-		`Previous version: ${state.previousVersion ?? "none"}`,
-		`Last error: ${state.lastErrorCode ?? "none"}`,
+		text(CatalogMessageId.selfUpdateTitle),
+		text(CatalogMessageId.selfUpdatePolicy, { value: text(UPDATE_POLICY_IDS[status.policy]) }),
+		text(CatalogMessageId.selfUpdateInstallChannel, { value: text(UPDATE_INSTALL_CHANNEL_IDS[status.installChannel]) }),
+		text(CatalogMessageId.selfUpdateAutomatic, {
+			value: status.startupEligible
+				? text(CatalogMessageId.selfUpdateEligible)
+				: text(CatalogMessageId.selfUpdateNotEligible),
+		}),
+		text(CatalogMessageId.selfUpdateInstalled, { version: state.installedVersion }),
+		text(CatalogMessageId.selfUpdateLatest, {
+			value: state.latestVersion ?? text(CatalogMessageId.selfUpdateNotChecked),
+		}),
+		text(CatalogMessageId.selfUpdateLastResult, { value: state.lastResult }),
+		text(CatalogMessageId.selfUpdateLastChecked, {
+			value: state.lastCheckedAt ?? text(CatalogMessageId.selfUpdateNever),
+		}),
+		text(CatalogMessageId.selfUpdateNextCheck, { value: state.nextCheckAt ?? text(CatalogMessageId.selfUpdateDue) }),
+		text(CatalogMessageId.selfUpdateLastUpdated, {
+			value: state.lastUpdatedAt ?? text(CatalogMessageId.selfUpdateNever),
+		}),
+		text(CatalogMessageId.selfUpdatePrevious, {
+			value: state.previousVersion ?? text(CatalogMessageId.selfUpdateNone),
+		}),
+		text(CatalogMessageId.selfUpdateLastError, { value: state.lastErrorCode ?? text(CatalogMessageId.selfUpdateNone) }),
 	].join("\n");
 }

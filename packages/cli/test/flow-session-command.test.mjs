@@ -212,6 +212,107 @@ test("a nested command callback cannot relinquish its parent's host boundary", a
 	await boundary.abortAndJoin();
 });
 
+test("replacement reservations release on cancellation and failure across reload and navigation", async (t) => {
+	const { session } = await fixture(t);
+	const calls = [];
+	const options = { parentSession: "fixture-parent" };
+	await session.bindExtensions({
+		commandContextActions: {
+			newSession: async (received) => {
+				calls.push(received);
+				if (received?.fail) throw new Error("replacement failed before teardown");
+				return { cancelled: true };
+			},
+			reload: () => session.reload(),
+		},
+	});
+	const ctx = session.extensionRunner.createCommandContext();
+	assert.deepEqual(await ctx.newSession(options), { cancelled: true });
+	await assert.rejects(ctx.newSession({ fail: true }), /replacement failed before teardown/);
+	assert.deepEqual(await ctx.newSession(options), { cancelled: true });
+	await ctx.reload();
+	const reloaded = session.extensionRunner.createCommandContext();
+	assert.deepEqual(await reloaded.newSession(options), { cancelled: true });
+	const target = session.sessionManager.appendMessage({ role: "user", content: "target", timestamp: 1 });
+	session.sessionManager.appendMessage({ role: "user", content: "later", timestamp: 2 });
+	await session.navigateTree(target);
+	const navigated = session.extensionRunner.createCommandContext();
+	assert.deepEqual(await navigated.newSession(options), { cancelled: true });
+	assert.deepEqual(calls, [options, { fail: true }, options, options, options]);
+});
+
+for (const competing of ["newSession", "fork", "switchSession", "reload"]) {
+	test(`replacement commands reserve teardown before ${competing} can emit shutdown`, async (t) => {
+		const shutdownEntered = deferred(),
+			releaseShutdown = deferred(),
+			invalidated = deferred();
+		const errors = [];
+		const outcomes = [];
+		let shutdowns = 0;
+		const f = await fixture(t, {
+			extensions: [
+				(pi) => {
+					pi.on("session_shutdown", async (_event, ctx) => {
+						if (++shutdowns === 1) {
+							shutdownEntered.resolve();
+							await releaseShutdown.promise;
+						} else {
+							// Without the reservation, let the first teardown invalidate this
+							// context while the competing shutdown handler is still running.
+							releaseShutdown.resolve();
+							await invalidated.promise;
+						}
+						assert.equal(ctx.mode, "rpc");
+					});
+					pi.registerCommand("replace", {
+						handler: async (method, ctx) => {
+							try {
+								await ctx[method]();
+								outcomes.push("replaced");
+							} catch (error) {
+								outcomes.push(error.code);
+							} finally {
+								releaseShutdown.resolve();
+							}
+						},
+					});
+				},
+			],
+		});
+		const { session } = f;
+		const runner = session.extensionRunner;
+		const invalidate = runner.invalidate.bind(runner);
+		t.mock.method(runner, "invalidate", (...args) => {
+			invalidate(...args);
+			invalidated.resolve();
+		});
+		// Match AgentSessionRuntime teardown: shutdown handlers precede disposal.
+		const replace = async () => {
+			await runner.emit({ type: "session_shutdown", reason: "new" });
+			await session.dispose();
+			return { cancelled: false };
+		};
+		await session.bindExtensions({
+			mode: "rpc",
+			onError: (error) => errors.push(error),
+			commandContextActions: {
+				newSession: replace,
+				fork: replace,
+				switchSession: replace,
+				reload: replace,
+			},
+		});
+		const first = session.prompt("/replace newSession");
+		await shutdownEntered.promise;
+		const second = session.prompt(`/replace ${competing}`);
+		await Promise.all([first, second]);
+		assert.deepEqual(errors, []);
+		assert.equal(shutdowns, 1);
+		assert.deepEqual(outcomes.sort(), ["busy", "replaced"]);
+		assert.equal(f.sent.length, 0);
+	});
+}
+
 test("overlapping commands cannot join each other's session disposal", { timeout: 10000 }, async (t) => {
 	const release = deferred(),
 		bothEntered = deferred();

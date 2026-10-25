@@ -1,5 +1,7 @@
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
+import { CatalogMessageId, catalogText, defaultCatalog } from "../cli-messages.js";
 import { SUBAGENT_READ_RECEIPT, type SubagentReadReceipt } from "../flow-control/subagent-observation-extension.js";
+import type { CatalogBundle } from "../locale-catalog.js";
 import { type NotificationRecord, notificationHash } from "../notifications/inbox.js";
 import { sanitizeTerminalText } from "../terminal-layout.js";
 import { type AgentRun, isActiveRun } from "./manager.js";
@@ -92,6 +94,7 @@ export function subagentCompletionBatch(
 	batchId: string,
 	records: NotificationRecord[],
 	runs: AgentRun[],
+	catalog: CatalogBundle = defaultCatalog(),
 ) {
 	const ids = new Set(records.map((record) => record.id));
 	const pending = runs.filter((run) => ids.has(run.id));
@@ -102,7 +105,13 @@ export function subagentCompletionBatch(
 			Number(a.status === "completed" && (!a.review || a.review.status === "unchanged")) -
 			Number(b.status === "completed" && (!b.review || b.review.status === "unchanged")),
 	);
-	const summary = `Agents: ${pending.length} finished — completed ${counts.completed}, failed ${counts.failed}, cancelled ${counts.cancelled}, interrupted ${counts.interrupted}.`;
+	const summary = catalogText(catalog, CatalogMessageId.subagentBatchSummary, {
+		total: pending.length,
+		completed: counts.completed,
+		failed: counts.failed,
+		cancelled: counts.cancelled,
+		interrupted: counts.interrupted,
+	});
 	const row = (run: AgentRun) => ({
 		id: run.id,
 		role: clip(run.role.id, 64),
@@ -110,14 +119,16 @@ export function subagentCompletionBatch(
 		outcome: clip(run.result ?? "Read its output for details.", 256),
 		...(run.review && run.review.status !== "unchanged"
 			? {
-					reviewWarning: `Review candidate ${run.review.status}; this result does not establish the final workspace state.`,
+					reviewWarning: catalogText(catalog, CatalogMessageId.subagentReviewCandidateWarning, {
+						status: run.review.status,
+					}),
 				}
 			: {}),
 	});
 	type Row = ReturnType<typeof row>;
 	function assemble(sample: Row[]) {
 		const omitted = pending.length - sample.length;
-		const retrieval = `${omitted} omitted; use subagent list for IDs and subagent read for output.`;
+		const retrieval = catalogText(catalog, CatalogMessageId.subagentBatchOmitted, { count: omitted });
 		return {
 			display: true,
 			content: [

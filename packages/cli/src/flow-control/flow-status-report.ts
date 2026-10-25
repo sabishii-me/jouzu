@@ -1,15 +1,16 @@
+import { CatalogMessageId, catalogText, defaultCatalog } from "../cli-messages.js";
 import { wrapTerminalWords } from "../command-report.js";
+import type { CatalogBundle } from "../locale-catalog.js";
 import type { FlowActiveWork, FlowStatus, FlowSuspendedWork } from "./flow-status.js";
-import { flowDisplayText } from "./flow-status-context.js";
-import { UNAVAILABLE_INPUT_REASON } from "./submission-view.js";
+import { flowDisplayText, FlowStatusMessageId as Id } from "./flow-status-context.js";
 
-function age(acceptedAt: number, now: number): string {
+function age(acceptedAt: number, now: number, catalog: CatalogBundle): string {
 	const minutes = Math.floor(Math.max(0, now - acceptedAt) / 60_000);
 	return minutes < 1
-		? "just now"
+		? catalogText(catalog, Id.ageJustNow)
 		: minutes < 60
-			? `${minutes}m ago`
-			: `${Math.floor(minutes / 60)}h ${minutes % 60}m ago`;
+			? catalogText(catalog, Id.ageMinutes, { minutes })
+			: catalogText(catalog, Id.ageHoursMinutes, { hours: Math.floor(minutes / 60), minutes: minutes % 60 });
 }
 
 /** Human labels are display metadata; full identities remain the only command targets. */
@@ -17,6 +18,7 @@ export function formatFlowReport(
 	status: FlowStatus,
 	now: number,
 	options: { details?: boolean; columns?: number; page?: number },
+	catalog: CatalogBundle = defaultCatalog(),
 ): string {
 	const context = status.context;
 	if (!context) throw new Error("Flow report requires source descriptions.");
@@ -32,8 +34,12 @@ export function formatFlowReport(
 		if (items.length > limit)
 			lines.push(
 				result.length
-					? `Showing ${offset + 1}-${offset + result.length} of ${items.length}.`
-					: `No entries on page ${page}.`,
+					? catalogText(catalog, Id.showingEntries, {
+							from: offset + 1,
+							to: offset + result.length,
+							total: items.length,
+						})
+					: catalogText(catalog, Id.noEntriesOnPage, { page }),
 			);
 		return result;
 	};
@@ -46,168 +52,199 @@ export function formatFlowReport(
 		const input = context.inputs[id];
 		return input
 			? `${flowDisplayText(input.sender, 64)}: ${flowDisplayText(input.summary, previewColumns)}`
-			: "Input details unavailable";
+			: catalogText(catalog, Id.inputDetailsUnavailable);
 	};
 	const showInput = (id: string) => {
 		const input = context.inputs[id];
-		lines.push(`- ${inputLabel(id)}${input ? ` (${age(input.acceptedAt, now)})` : ""}`);
-		if (details) lines.push(`  Input: ${id}`);
+		lines.push(`- ${inputLabel(id)}${input ? ` (${age(input.acceptedAt, now, catalog)})` : ""}`);
+		if (details) lines.push(`  ${catalogText(catalog, Id.inputLine, { id })}`);
 	};
 	if (status.retryable.length) {
 		const count = status.retryable.length;
-		lines.push(`Blocked: ${count} request${count === 1 ? " was" : "s were"} not sent.`);
-		lines.push("Correct the reported cause, then run /flow clear to release the saved hold.");
+		lines.push(catalogText(catalog, count === 1 ? Id.blockedOneRequest : Id.blockedManyRequests, { count }));
+		lines.push(catalogText(catalog, Id.correctCauseThenClear));
 		if (status.paused)
-			lines.push(
-				`Automation is also paused: ${flowDisplayText(status.paused)}. /flow resume alone cannot clear the request block.`,
-			);
-		heading("Requests not sent");
+			lines.push(catalogText(catalog, Id.automationAlsoPaused, { reason: flowDisplayText(status.paused) }));
+		heading(catalogText(catalog, Id.requestsNotSentHeading));
 		for (const request of visible(status.retryable)) {
 			const source = context.requests[request.requestId];
 			const inputs = source?.inputIds.length ? source.inputIds : request.submissionId ? [request.submissionId] : [];
 			if (inputs.length) {
 				for (const id of inputs.slice(0, limit)) showInput(id);
-				if (inputs.length > limit) lines.push(`  ${inputs.length - limit} more required inputs share this request.`);
-			} else lines.push("- Required context (no submitted message is linked)");
+				if (inputs.length > limit)
+					lines.push(`  ${catalogText(catalog, Id.moreRequiredInputs, { count: inputs.length - limit })}`);
+			} else lines.push(catalogText(catalog, Id.requiredContextUnlinked));
+			const removed = source
+				? catalogText(
+						catalog,
+						request.reason === "required-input" ? Id.requiredInputRemovedDuring : Id.requiredContextRemovedDuring,
+						{ stage: source.stage },
+					)
+				: catalogText(
+						catalog,
+						request.reason === "required-input"
+							? Id.requiredInputRemovedBeforeSending
+							: Id.requiredContextRemovedBeforeSending,
+					);
 			lines.push(
 				source?.problem === "not-admitted"
 					? source.failure
-						? `  Request ended during ${source.stage}; no payload was admitted.`
-						: "  Request ended before payload admission. No send was recorded; the receipt does not identify the cause."
-					: `  Required ${request.reason === "required-input" ? "input" : "context"} was removed or changed${source ? ` during ${source.stage}` : " before sending"}.`,
+						? `  ${catalogText(catalog, Id.requestEndedDuring, { stage: source.stage })}`
+						: `  ${catalogText(catalog, Id.requestEndedBeforeAdmission)}`
+					: `  ${removed}`,
 			);
 			if (source?.failure) {
-				lines.push(`  Reason: ${flowDisplayText(source.failure.message, 300)}`);
+				lines.push(
+					`  ${catalogText(catalog, Id.reasonLine, { reason: flowDisplayText(source.failure.message, 300) })}`,
+				);
 				if (details)
 					lines.push(
-						`  Failure: ${source.failure.code}, recorded ${new Date(source.failure.recordedAt).toISOString()}`,
+						`  ${catalogText(catalog, Id.failureLine, { code: source.failure.code, recordedAt: new Date(source.failure.recordedAt).toISOString() })}`,
 					);
 			}
 			if (source?.provider || source?.model)
 				lines.push(
-					`  Destination: ${flowDisplayText(source.provider ?? "provider")} / ${flowDisplayText(source.model ?? "model")}`,
+					`  ${catalogText(catalog, Id.destinationLine, { provider: flowDisplayText(source.provider ?? catalogText(catalog, Id.providerFallback)), model: flowDisplayText(source.model ?? catalogText(catalog, Id.modelFallback)) })}`,
 				);
-			lines.push(`  Request: ${request.requestId}`);
-			if (details) lines.push(`  Retry after correction: /flow retry ${request.requestId}`);
+			lines.push(`  ${catalogText(catalog, Id.requestLine, { id: request.requestId })}`);
+			if (details) lines.push(`  ${catalogText(catalog, Id.retryAfterCorrection, { id: request.requestId })}`);
 		}
-		lines.push("Reset preserves these records; it does not resend the failed request.");
+		lines.push(catalogText(catalog, Id.resetPreservesRecords));
 	} else if (status.uncertain.length || context.recovery?.length) {
-		lines.push("Blocked: saved work needs a recovery decision.");
+		lines.push(catalogText(catalog, Id.blockedRecoveryDecision));
 	} else if (context.turnActive) {
-		lines.push("A model turn is in progress.");
-		if (status.paused) lines.push(`Further automation is paused: ${flowDisplayText(status.paused)}`);
+		lines.push(catalogText(catalog, Id.turnInProgress));
+		if (status.paused)
+			lines.push(catalogText(catalog, Id.furtherAutomationPaused, { reason: flowDisplayText(status.paused) }));
 	} else if (status.paused) {
-		lines.push(`Paused: ${flowDisplayText(status.paused)}`);
-		lines.push("Resume automation with /flow resume, or send a new message.");
+		lines.push(catalogText(catalog, Id.pausedLine, { reason: flowDisplayText(status.paused) }));
+		lines.push(catalogText(catalog, Id.resumeAutomation));
 	}
 	if (context.recovery?.length) {
-		heading("Other recovery blockers");
+		heading(catalogText(catalog, Id.otherRecoveryBlockersHeading));
 		for (const reason of visible(context.recovery)) lines.push(`- ${flowDisplayText(reason, 240)}`);
 	}
 	if (context.warnings?.length) {
-		heading("Status incomplete");
+		heading(catalogText(catalog, Id.statusIncompleteHeading));
 		for (const warning of visible(context.warnings)) lines.push(`- ${flowDisplayText(warning, 500)}`);
-		lines.push("Unreadable state has not been cleared. Run /flow runtime for build details.");
+		lines.push(catalogText(catalog, Id.unreadableState));
 	}
 	if (status.uncertain.length) {
-		heading("Sent, outcome unknown");
+		heading(catalogText(catalog, Id.sentOutcomeUnknownHeading));
 		for (const attempt of visible(status.uncertain)) {
 			lines.push(`- ${flowDisplayText(attempt.reason)}`);
-			lines.push(`  Send again (may repeat work): /flow resolve ${attempt.id} retry`);
-			lines.push(`  Do not resend: /flow resolve ${attempt.id} discard`);
+			lines.push(`  ${catalogText(catalog, Id.sendAgain, { id: attempt.id })}`);
+			lines.push(`  ${catalogText(catalog, Id.doNotResend, { id: attempt.id })}`);
 		}
 	}
 	const workLabel = (work: FlowActiveWork | FlowSuspendedWork) => {
 		if (work.owner === "tasks") {
 			const task = context.tasks.find((item) => item.key === work.campaign?.[0]);
 			return task
-				? `Task #${flowDisplayText(task.taskId)}: ${flowDisplayText(task.subject ?? "Title unavailable", previewColumns)}`
-				: "Task: details unavailable";
+				? catalogText(catalog, Id.taskLabel, {
+						id: flowDisplayText(task.taskId),
+						subject: flowDisplayText(task.subject ?? catalogText(catalog, Id.titleUnavailable), previewColumns),
+					})
+				: catalogText(catalog, Id.taskDetailsUnavailable);
 		}
 		return `${flowDisplayText(work.owner)}${work.campaign?.length ? `: ${work.campaign.map((key) => flowDisplayText(key)).join(" / ")}` : ""}`;
 	};
 	if (status.waiting.length) {
-		heading("Waiting on jobs");
+		heading(catalogText(catalog, Id.waitingOnJobsHeading));
 		for (const wait of visible(status.waiting)) {
 			const work = [...status.active, ...status.suspended].find((item) => item.id === wait.workId);
 			lines.push(
-				`- ${work ? workLabel(work) : flowDisplayText(wait.owner ?? "Work")}: ${flowDisplayText(wait.reason)}`,
+				`- ${work ? workLabel(work) : flowDisplayText(wait.owner ?? catalogText(catalog, Id.workFallback))}: ${flowDisplayText(wait.reason)}`,
 			);
 			for (const dependency of wait.dependencies?.slice(0, limit) ?? [])
-				lines.push(`  Waiting for ${flowDisplayText(dependency)}`);
+				lines.push(`  ${catalogText(catalog, Id.waitingForDependency, { dependency: flowDisplayText(dependency) })}`);
 			if (wait.dependencies && wait.dependencies.length > limit)
-				lines.push(`  ${wait.dependencies.length - limit} more job dependencies.`);
+				lines.push(`  ${catalogText(catalog, Id.moreJobDependencies, { count: wait.dependencies.length - limit })}`);
 			const minutes = Math.ceil((wait.expiresAt - now) / 60_000);
-			lines.push(`  ${wait.unmet} unmet; ${minutes > 0 ? `deadline in ${minutes}m` : "past its deadline"}.`);
-			if (details) lines.push(`  Cancel the wait only: /flow cancel ${wait.token}`);
+			lines.push(
+				`  ${catalogText(catalog, minutes > 0 ? Id.waitUnmetDeadline : Id.waitUnmetPastDeadline, { unmet: wait.unmet, minutes })}`,
+			);
+			if (details) lines.push(`  ${catalogText(catalog, Id.cancelWaitOnly, { token: wait.token })}`);
 		}
 	}
-	const unavailable = status.held.filter((input) => input.reason === UNAVAILABLE_INPUT_REASON);
-	const pending = status.held.filter((input) => input.reason !== UNAVAILABLE_INPUT_REASON);
+	// The unavailable sentinel is resolved from the same bundle the submission view used to write
+	// `input.reason`, so the classification survives localization. The rendered text is not a key.
+	const unavailableReason = catalogText(catalog, CatalogMessageId.flowSubmissionUnavailable);
+	const unavailable = status.held.filter((input) => input.reason === unavailableReason);
+	const pending = status.held.filter((input) => input.reason !== unavailableReason);
 	if (pending.length) {
 		heading(
-			status.retryable.length || status.uncertain.length || context.recovery?.length
-				? "Held behind the blocker"
-				: "Held input",
+			catalogText(
+				catalog,
+				status.retryable.length || status.uncertain.length || context.recovery?.length
+					? Id.heldBehindBlocker
+					: Id.heldInput,
+			),
 		);
 		for (const input of visible(pending)) {
 			showInput(input.id);
 			lines.push(
 				`  ${
-					input.reason === "Input is waiting for recovery reconciliation."
-						? status.retryable.length
-							? "Waiting for the request block above to be cleared."
-							: "Saved flow state still blocks this input. Run /flow details to inspect it before resetting."
+					input.reason === catalogText(catalog, CatalogMessageId.flowIngressRecoveryReconciliation)
+						? catalogText(catalog, status.retryable.length ? Id.waitingForRequestBlock : Id.savedStateBlocksInput)
 						: flowDisplayText(input.reason, 240)
 				}`,
 			);
 		}
 	}
 	if (unavailable.length) {
-		heading("Undelivered input");
+		heading(catalogText(catalog, Id.undeliveredInputHeading));
 		for (const input of visible(unavailable)) {
 			showInput(input.id);
 			const kind = context.inputs[input.id]?.kind;
 			lines.push(
-				kind === "command"
-					? "  Command was not run. Run it again only if still needed."
-					: kind === "notice" || kind === "context"
-						? "  Extension notice was not delivered. It is not queued for replay."
-						: "  Not queued for replay. Submit it again only if still needed.",
+				`  ${catalogText(
+					catalog,
+					kind === "command"
+						? Id.commandNotRun
+						: kind === "notice" || kind === "context"
+							? Id.extensionNoticeNotDelivered
+							: Id.notQueuedForReplay,
+				)}`,
 			);
 		}
 	}
 	if (status.active.length || status.suspended.length) {
-		heading("Work eligibility");
+		heading(catalogText(catalog, Id.workEligibilityHeading));
 		for (const work of visible([...status.active, ...status.suspended])) {
 			lines.push(`- ${workLabel(work)}`);
 			const task = work.owner === "tasks" ? context.tasks.find((item) => item.key === work.campaign?.[0]) : undefined;
 			const held = "state" in work;
 			const stale = task && work.producerRevision !== task.revision;
 			const reason = stale
-				? "Task details changed; flow status has not synchronized yet."
+				? catalogText(catalog, Id.taskDetailsChanged)
 				: held
 					? work.reason === "Producer state changed" && task
-						? (task.reason ?? (task.state === "completed" ? "Task completed." : `Task state: ${task.state}`))
+						? (task.reason ??
+							(task.state === "completed"
+								? catalogText(catalog, Id.taskCompleted)
+								: catalogText(catalog, Id.taskState, { state: task.state })))
 						: work.reason
-					: `Eligible for automation${task?.status ? `; task status: ${task.status}` : ""}.`;
+					: task?.status
+						? catalogText(catalog, Id.eligibleForAutomationWithStatus, { status: task.status })
+						: catalogText(catalog, Id.eligibleForAutomation);
 			lines.push(`  ${flowDisplayText(reason, 240)}`);
 			if (details) {
-				lines.push(`  Work: ${work.id}`);
-				if (!held) lines.push(`  Pause: /flow pause ${work.id}`);
-				lines.push(`  Stop: /flow stop ${work.id}`);
+				lines.push(`  ${catalogText(catalog, Id.workLine, { id: work.id })}`);
+				if (!held) lines.push(`  ${catalogText(catalog, Id.pauseLine, { id: work.id })}`);
+				lines.push(`  ${catalogText(catalog, Id.stopLine, { id: work.id })}`);
 			}
 		}
 	}
 	if (status.unaccountable.length) {
-		heading("Not attached to this session");
+		heading(catalogText(catalog, Id.notAttachedHeading));
 		for (const item of visible(status.unaccountable))
 			lines.push(`- ${flowDisplayText(item.producer)}: ${flowDisplayText(item.description, 240)}`);
 	}
-	if (!lines.length) return "Nothing is held, withheld, waiting, or unresolved.";
-	if (!details) lines.push("", "Full identifiers and controls: /flow details");
-	if (page < pages) lines.push(`More entries: /flow details ${page + 1}`);
-	if (details && page > 1) lines.push(`Previous entries: /flow details ${page - 1}`);
+	if (!lines.length) return catalogText(catalog, Id.nothingHeld);
+	if (!details) lines.push("", catalogText(catalog, Id.fullIdentifiers));
+	if (page < pages) lines.push(catalogText(catalog, Id.moreEntries, { page: page + 1 }));
+	if (details && page > 1) lines.push(catalogText(catalog, Id.previousEntries, { page: page - 1 }));
 	return lines
 		.flatMap((line) => {
 			const indent = line.match(/^ */)?.[0] ?? "";

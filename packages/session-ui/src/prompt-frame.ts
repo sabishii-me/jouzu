@@ -1,5 +1,13 @@
 import { CustomEditor, type KeybindingsManager } from "@earendil-works/pi-coding-agent";
 import type { AutocompleteProvider, Component, EditorTheme, TUI } from "@earendil-works/pi-tui";
+import {
+	SESSION_UI_BUILTIN_SLASH_COMMANDS,
+	SESSION_UI_BUNDLED_SLASH_COMMAND_DESCRIPTIONS,
+	SESSION_UI_INSTALLED_SLASH_COMMAND_DESCRIPTIONS,
+	SESSION_UI_SLASH_COMMAND_CANONICAL_DESCRIPTIONS,
+	SESSION_UI_SLASH_COMMAND_IDS,
+	type SessionUiCatalog,
+} from "./contracts.js";
 import { fillTerminalColumns, fitTerminalText, padTerminalText, terminalTextWidth } from "./layout.js";
 import type { SessionUiStyles } from "./styles.js";
 
@@ -44,9 +52,195 @@ export type ModelCycleDirection = "forward" | "backward";
 export interface SessionPromptEditorOptions {
 	/** A line drawn directly above the frame, so it stays attached to the prompt whatever widgets do. */
 	topLine?: (width: number) => string | undefined;
+	/** Resolve an owned slash-command description from the current catalog, or leave the suggestion unchanged. */
+	slashCommandLocalizer?: SlashCommandLocalizer;
 	onModelPicker?: (query?: string) => Promise<boolean>;
 	onModelCycle?: (direction: ModelCycleDirection) => Promise<boolean>;
 	onScopedModelsCommand?: () => Promise<boolean>;
+}
+
+/** One command registration as Pi reports it to an extension. */
+export interface SlashCommandRegistration {
+	readonly name: string;
+	readonly description?: string;
+	readonly source?: string;
+	readonly sourceInfo?: {
+		readonly source?: string;
+		readonly scope?: "user" | "project" | "temporary";
+	};
+}
+
+type SlashCommandScope = "u" | "p" | "t";
+
+interface SlashCommandOwnership {
+	readonly scopes: Set<SlashCommandScope>;
+	allowUntagged: boolean;
+	readonly descriptions: Set<string>;
+}
+
+/** Ownership evidence accumulated across session starts and locale changes. */
+export interface SlashCommandOwnershipState {
+	readonly commands: Map<string, SlashCommandOwnership>;
+}
+
+export function createSlashCommandOwnershipState(): SlashCommandOwnershipState {
+	return { commands: new Map() };
+}
+
+/** Return the localized description to use, or undefined to leave the suggestion unchanged. */
+export type SlashCommandLocalizer = (command: string, currentDescription: string | undefined) => string | undefined;
+
+interface SlashCommandDescriptionParts {
+	readonly prefix: string;
+	readonly sourceTag?: string;
+	readonly description: string;
+}
+
+/**
+ * Split the prefix Pi composes before a command description: one or more
+ * argument hints, the source tag, or both. The em dash inside a description is
+ * left alone because a hint is only recognized at the start of the text.
+ */
+function splitSlashCommandDescription(current: string): SlashCommandDescriptionParts {
+	let prefix = "";
+	let rest = current;
+	const hint = /^(?:<[^<>]+>\s*)+/u.exec(rest);
+	if (hint) {
+		const afterHint = rest.slice(hint[0].length);
+		const separator = /^—\s*/u.exec(afterHint);
+		if (separator) {
+			prefix = hint[0] + separator[0];
+			rest = afterHint.slice(separator[0].length);
+		} else if (afterHint.trim() === "") {
+			return { prefix: rest, description: "" };
+		}
+	}
+	const tag = /^\[([upt](?::[^\]]*)?)\]\s*/u.exec(rest);
+	if (!tag) return { prefix, description: rest };
+	return { prefix: prefix + tag[0], sourceTag: tag[1], description: rest.slice(tag[0].length) };
+}
+
+/**
+ * Preserve every argument hint and source tag while replacing only the
+ * description text. A standalone source tag keeps a separating space.
+ */
+export function formatSlashCommandDescription(current: string | undefined, localized: string): string {
+	if (!current) return localized;
+	const { prefix } = splitSlashCommandDescription(current);
+	if (!prefix) return localized;
+	if (/\s$/u.test(prefix)) return `${prefix}${localized}`;
+	if (prefix.endsWith("]")) return `${prefix} ${localized}`;
+	if (prefix.endsWith("—")) return `${prefix} ${localized}`;
+	return `${prefix} — ${localized}`;
+}
+
+function ownershipFor(state: SlashCommandOwnershipState, command: string): SlashCommandOwnership {
+	let entry = state.commands.get(command);
+	if (!entry) {
+		entry = { scopes: new Set(), allowUntagged: false, descriptions: new Set() };
+		state.commands.set(command, entry);
+	}
+	return entry;
+}
+
+function scopeFor(sourceInfo: SlashCommandRegistration["sourceInfo"]): SlashCommandScope | undefined {
+	switch (sourceInfo?.scope) {
+		case "user":
+			return "u";
+		case "project":
+			return "p";
+		case "temporary":
+			return "t";
+		default:
+			return undefined;
+	}
+}
+
+function activeSlashCommandDescription(catalog: SessionUiCatalog, command: string): string | undefined {
+	if (!Object.hasOwn(SESSION_UI_SLASH_COMMAND_IDS, command)) return undefined;
+	const id = SESSION_UI_SLASH_COMMAND_IDS[command];
+	if (!id) return undefined;
+	const value = catalog.format(id);
+	return typeof value === "string" && value.length > 0 && value !== id ? value : undefined;
+}
+
+/**
+ * Build a localizer that only rewrites commands whose ownership is known: Pi
+ * built-ins (untagged), bundled extension/skill registrations, or installed
+ * Jouzu resources whose full registered description matches. A user prompt,
+ * skill, or extension that merely shares a command name keeps its text.
+ */
+export function createSlashCommandLocalizer(
+	catalog: SessionUiCatalog,
+	registrations: readonly SlashCommandRegistration[] = [],
+	state: SlashCommandOwnershipState = createSlashCommandOwnershipState(),
+): SlashCommandLocalizer {
+	for (const command of SESSION_UI_BUILTIN_SLASH_COMMANDS) {
+		ownershipFor(state, command).allowUntagged = true;
+	}
+	for (const registration of registrations) {
+		if (!Object.hasOwn(SESSION_UI_SLASH_COMMAND_IDS, registration.name)) continue;
+		const entry = ownershipFor(state, registration.name);
+		const installed = SESSION_UI_INSTALLED_SLASH_COMMAND_DESCRIPTIONS[registration.name];
+		const source = registration.sourceInfo?.source;
+		const scope = scopeFor(registration.sourceInfo);
+		if (installed) {
+			if (registration.description === undefined || !installed.includes(registration.description)) continue;
+			for (const description of installed) entry.descriptions.add(description);
+			if (source === "builtin") entry.allowUntagged = true;
+			else entry.scopes.add(scope ?? "u");
+			continue;
+		}
+		// Prompt templates are user content even when loaded from the command line; only the
+		// installed-resource table above can grant them ownership.
+		if (registration.source === "prompt") continue;
+		if (source === "builtin") {
+			entry.allowUntagged = true;
+			if (registration.description) entry.descriptions.add(registration.description);
+			continue;
+		}
+		const description = registration.description;
+		if (description === undefined) continue;
+		const active = activeSlashCommandDescription(catalog, registration.name);
+		const canonical = SESSION_UI_SLASH_COMMAND_CANONICAL_DESCRIPTIONS[registration.name];
+		const bundled = SESSION_UI_BUNDLED_SLASH_COMMAND_DESCRIPTIONS[registration.name];
+		if (description !== canonical && description !== active && bundled?.includes(description) !== true) continue;
+		if (source === "cli" || source === "inline") {
+			entry.scopes.add(scope ?? "t");
+			entry.descriptions.add(description);
+			continue;
+		}
+		// A bundled command installed through settings or auto-discovery keeps its
+		// source scope, but only a canonical description grants ownership.
+		if (scope) entry.scopes.add(scope);
+		else entry.allowUntagged = true;
+		entry.descriptions.add(description);
+	}
+	return (command, currentDescription) => {
+		if (currentDescription === undefined) return undefined;
+		const entry = state.commands.get(command);
+		if (!entry) return undefined;
+		const localized = activeSlashCommandDescription(catalog, command);
+		if (!localized) return undefined;
+		const parts = splitSlashCommandDescription(currentDescription);
+		if (!parts.description) return undefined;
+		const scope = parts.sourceTag?.[0] as SlashCommandScope | undefined;
+		if (scope === undefined) {
+			if (!entry.allowUntagged) return undefined;
+			// Untagged commands are Pi built-ins, so their text is canonical by provenance.
+			return parts.description === localized
+				? currentDescription
+				: formatSlashCommandDescription(currentDescription, localized);
+		}
+		if (!entry.scopes.has(scope)) return undefined;
+		if (parts.description === localized) {
+			entry.descriptions.add(parts.description);
+			return currentDescription;
+		}
+		if (!entry.descriptions.has(parts.description)) return undefined;
+		entry.descriptions.add(localized);
+		return formatSlashCommandDescription(currentDescription, localized);
+	};
 }
 
 /** Keep the one private Pi-TUI compatibility read isolated until a frame partition API exists. */
@@ -95,7 +289,13 @@ export class SessionPromptEditor extends CustomEditor {
 			getSuggestions: async (lines, cursorLine, cursorCol, options) => {
 				const suggestions = await provider.getSuggestions(lines, cursorLine, cursorCol, options);
 				if (!suggestions?.prefix.startsWith("/")) return suggestions;
-				const items = suggestions.items.filter((item) => item.value !== "scoped-models");
+				const items = suggestions.items
+					.filter((item) => item.value !== "scoped-models")
+					.map((item) => {
+						const localized = this.options.slashCommandLocalizer?.(item.value, item.description);
+						if (localized === undefined || localized === item.description) return item;
+						return { ...item, description: localized };
+					});
 				return items.length > 0 ? { ...suggestions, items } : null;
 			},
 			applyCompletion: (lines, cursorLine, cursorCol, item, prefix) =>

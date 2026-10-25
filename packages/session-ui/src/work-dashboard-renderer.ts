@@ -1,3 +1,4 @@
+import type { SessionUiWorkDashboardText } from "./contracts.js";
 import { fitTerminalText, sanitizeTerminalText, terminalTextWidth } from "./layout.js";
 import { sessionActivityGlyph } from "./session-line.js";
 import type { SessionUiStyleRole, SessionUiStyles } from "./styles.js";
@@ -43,15 +44,6 @@ function rowMarker(unit: WorkUnit, frame = 0): { marker: string; role: SessionUi
 	if (unit.state === "failed" || unit.state === "cancelled") return { marker: "✗", role: "session.hint.error" };
 	return { marker: sessionActivityGlyph({ active: false, text: "" }), role: "session.activity.idle" };
 }
-/** Compact elapsed time: 45s, 12m, 1h 5m. */
-export function formatElapsed(ms: number): string {
-	const seconds = Math.max(0, Math.floor(ms / 1000));
-	if (seconds < 60) return `${seconds}s`;
-	const minutes = Math.floor(seconds / 60);
-	if (minutes < 60) return `${minutes}m`;
-	const hours = Math.floor(minutes / 60);
-	return minutes % 60 ? `${hours}h ${minutes % 60}m` : `${hours}h`;
-}
 /** Fit plain segments, each with its own style, into one terminal row. */
 function styledRow(parts: [string, SessionUiStyleRole][], width: number, styles: SessionUiStyles): string {
 	let remaining = width;
@@ -66,16 +58,8 @@ function styledRow(parts: [string, SessionUiStyleRole][], width: number, styles:
 	}
 	return row;
 }
-const SECTIONS: Record<WorkUnit["kind"], string> = {
-	agent: "Agents",
-	job: "Jobs",
-	task: "Tasks",
-	loop: "Loops",
-	goal: "Goals",
-	prompt: "Scheduled",
-	flow: "Flow",
-};
-const SECTION_ORDER = Object.keys(SECTIONS) as WorkUnit["kind"][];
+/** The section order is the internal work-kind order; the displayed titles come from the catalog. */
+const SECTION_ORDER: WorkUnit["kind"][] = ["agent", "job", "task", "loop", "goal", "prompt", "flow"];
 const isTerminal = (unit: WorkUnit) =>
 	unit.state === "completed" || unit.state === "failed" || unit.state === "cancelled";
 /** Section counts cover every unit of the kind, so a collapsed section still summarizes it. */
@@ -84,6 +68,7 @@ function sectionTitle(
 	units: WorkUnit[],
 	shown: WorkUnit[],
 	now: number,
+	text: SessionUiWorkDashboardText,
 ): [string, SessionUiStyleRole][] {
 	const running = units.filter((unit) => unit.state === "running").length;
 	const open = units.filter((unit) => !isTerminal(unit) && unit.state !== "running").length;
@@ -109,26 +94,20 @@ function sectionTitle(
 	];
 	const route = hidden && units[0] ? ` · ${units[0].route}` : "";
 	return [
-		[SECTIONS[kind], "session.hint.text"],
+		[text.sections[kind], "session.hint.text"],
 		...counts
 			.filter(([count]) => count)
-			.flatMap(([, text, role]): [string, SessionUiStyleRole][] => [
+			.flatMap(([, segment, role]): [string, SessionUiStyleRole][] => [
 				[" · ", "session.hint.muted"],
-				[text, role],
+				[segment, role],
 			]),
 		[`${route} `, "session.hint.muted"],
 	];
 }
-const ATTENTION_TEXT: Record<WorkUnit["attention"][number]["type"], string> = {
-	result: "unread result",
-	input: "needs input",
-	recovery: "needs recovery",
-	authority: "needs decision",
-};
 /** The marker already says running, queued, and done; words appear only where they add meaning. */
-function rowStatus(unit: WorkUnit): string {
+function rowStatus(unit: WorkUnit, text: SessionUiWorkDashboardText): string {
 	const reason = unit.attention[0];
-	if (reason) return ` · ${ATTENTION_TEXT[reason.type]}`;
+	if (reason) return ` · ${text.attention[reason.type]}`;
 	return ["failed", "cancelled", "waiting", "paused"].includes(unit.state) ? ` · ${unit.state}` : "";
 }
 function divider(title: [string, SessionUiStyleRole][], width: number, styles: SessionUiStyles): string {
@@ -144,11 +123,15 @@ function divider(title: [string, SessionUiStyleRole][], width: number, styles: S
  * The panel sits above the Session Line as one titled divider per producer kind with indented rows
  * beneath. Dividers carry each section's counts, so when the budget runs out a section collapses to
  * its divider and still summarizes its work. Attention rows come first within the whole budget.
+ *
+ * The function is pure over the snapshot and layout: it resolves no locale. The caller passes the
+ * catalog text it resolved once, so a locale change never reaches a render.
  */
 export function renderWorkDashboard(
 	snapshot: WorkDashboardSnapshot,
 	layout: WorkDashboardLayout,
 	styles: SessionUiStyles,
+	text: SessionUiWorkDashboardText,
 ): string[] {
 	const budget = dashboardLineBudget(layout);
 	if (!budget || layout.width < 1) return [];
@@ -176,6 +159,7 @@ export function renderWorkDashboard(
 					all.filter((unit) => unit.kind === kind),
 					members,
 					layout.now,
+					text,
 				),
 				layout.width,
 				styles,
@@ -183,9 +167,14 @@ export function renderWorkDashboard(
 		);
 		for (const unit of members) {
 			const { marker, role } = rowMarker(unit, layout.frame);
-			const stale = snapshot.sources[unit.producer]?.availability === "stale" ? " [stale]" : "";
+			const status =
+				snapshot.sources[unit.producer]?.availability === "stale"
+					? text.markStale(rowStatus(unit, text))
+					: rowStatus(unit, text);
 			const elapsed =
-				unit.createdAt === undefined ? "" : ` · ${formatElapsed((unit.completedAt ?? layout.now) - unit.createdAt)}`;
+				unit.createdAt === undefined
+					? ""
+					: ` · ${text.formatElapsed((unit.completedAt ?? layout.now) - unit.createdAt)}`;
 			rows.push(
 				styledRow(
 					[
@@ -196,7 +185,7 @@ export function renderWorkDashboard(
 							unit.label,
 							unit.state === "running" || unit.attention.length ? "session.hint.text" : "session.hint.muted",
 						],
-						[`${rowStatus(unit)}${stale}${elapsed}${unit.detail ? ` · ${unit.detail}` : ""}`, "session.hint.muted"],
+						[`${status}${elapsed}${unit.detail ? ` · ${unit.detail}` : ""}`, "session.hint.muted"],
 					],
 					layout.width,
 					styles,

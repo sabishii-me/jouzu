@@ -68,6 +68,15 @@ function validateTarget(target: string): void {
 	if (parts[0] === "skills" && parts.length >= 3 && parts[1].startsWith("jouzu-") && parts.at(-1) === "SKILL.md") {
 		return;
 	}
+	if (
+		parts[0] === "skills" &&
+		parts.length === 4 &&
+		parts[1].startsWith("jouzu-") &&
+		parts[2] === "references" &&
+		/^[a-z0-9][a-z0-9-]*\.md$/.test(parts[3])
+	) {
+		return;
+	}
 	if (parts[0] === "prompts" && parts.length === 2 && parts[1].startsWith("jouzu-") && parts[1].endsWith(".md")) {
 		return;
 	}

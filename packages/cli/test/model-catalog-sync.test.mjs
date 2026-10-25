@@ -207,8 +207,24 @@ test("missing endpoint performs no fetch and is a successful unconfigured state"
 		});
 		assert.equal(result.status, "unconfigured");
 		assert.equal(result.catalogStatus.status, "unconfigured");
+		assert.equal(
+			result.catalogStatus.message,
+			"No model catalog endpoint is configured. Jouzu continues using Pi and local model configuration.",
+		);
 		assert.equal(calls, 0);
 		assert.equal(loadActiveModelCatalogs(paths(temporary), {})[0]?.document, undefined);
+	} finally {
+		rmSync(temporary, { recursive: true, force: true });
+	}
+});
+
+test("a missing catalog source keeps its code and English message", async () => {
+	const temporary = mkdtempSync(join(tmpdir(), "jouzu-catalog-source-missing-"));
+	try {
+		const result = await refreshModelCatalog(paths(temporary), { env: env(), sourceId: "does-not-exist" });
+		assert.equal(result.status, "error");
+		assert.equal(result.code, "source_not_found");
+		assert.equal(result.message, "catalog source not found or disabled: does-not-exist");
 	} finally {
 		rmSync(temporary, { recursive: true, force: true });
 	}

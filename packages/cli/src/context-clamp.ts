@@ -1,5 +1,7 @@
 import { existsSync, lstatSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { catalogText, defaultCatalog } from "./cli-messages.js";
+import type { CatalogBundle } from "./locale-catalog.js";
 import { parseStrictJson } from "./model-catalog.js";
 import type { JouzuPaths } from "./paths.js";
 import { writeFilePrivateAtomic } from "./private-fs.js";
@@ -30,6 +32,30 @@ export const CONTEXT_CLAMP_CHOICES: readonly number[] = [
 const POLICY_MAX_BYTES = 8 * 1024;
 const POLICY_MIN_TOKENS = 1_024;
 const POLICY_MAX_TOKENS = 100_000_000;
+const POLICY_SCHEMA_VERSION = 1;
+
+/**
+ * The catalog IDs for the stored-context-policy diagnostics.
+ *
+ * They are local to this module rather than added to the shared
+ * `CatalogMessageId` table, so a parallel migration of another surface does
+ * not conflict on that file; `scripts/check-locales.mjs` allows a catalog-only
+ * ID present in both locales. The Settings view renders `error` inside
+ * `jouzu.cli.settings.contextLimitNotApplied`, so the text is user-facing; a
+ * caller that has a resolved catalog passes it in, and the default keeps the
+ * English bytes the module already produced.
+ *
+ * The byte limits, the schema version, and the token bounds are protected
+ * values passed as string arguments, so Fluent never reformats them (a number
+ * argument would gain locale grouping separators).
+ */
+const CONTEXT_POLICY_MESSAGE_IDS = {
+	notBoundedFile: "jouzu.cli.context.policy.notBoundedFile",
+	notObject: "jouzu.cli.context.policy.notObject",
+	unknownKeys: "jouzu.cli.context.policy.unknownKeys",
+	schemaVersionRequired: "jouzu.cli.context.policy.schemaVersionRequired",
+	maxTokensRange: "jouzu.cli.context.policy.maxTokensRange",
+} as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -39,20 +65,34 @@ export function contextPolicyPath(paths: JouzuPaths): string {
 	return join(paths.configDir, "context-policy.json");
 }
 
-/** Read the stored clamp. A rejected file reports an error and behaves as off. */
-export function loadContextPolicy(paths: JouzuPaths): LoadedContextPolicy {
+/**
+ * Read the stored clamp. A rejected file reports an error and behaves as off.
+ *
+ * `catalog` supplies the diagnostic text, so a caller with a resolved bundle
+ * (the Settings view) renders the cause in the active locale. The default is
+ * the English bundle, which keeps the previous English bytes.
+ */
+export function loadContextPolicy(paths: JouzuPaths, catalog: CatalogBundle = defaultCatalog()): LoadedContextPolicy {
 	const path = contextPolicyPath(paths);
 	if (!existsSync(path)) return {};
 	try {
 		const metadata = lstatSync(path);
 		if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size > POLICY_MAX_BYTES) {
-			return { error: "context policy must be a bounded regular file" };
+			return { error: catalogText(catalog, CONTEXT_POLICY_MESSAGE_IDS.notBoundedFile) };
 		}
 		const value = parseStrictJson(readFileSync(path, "utf8"));
-		if (!isRecord(value)) return { error: "context policy must be an object" };
+		if (!isRecord(value)) return { error: catalogText(catalog, CONTEXT_POLICY_MESSAGE_IDS.notObject) };
 		const unknown = Object.keys(value).filter((key) => key !== "schemaVersion" && key !== "maxContextTokens");
-		if (unknown.length > 0) return { error: `context policy has unknown keys: ${unknown.join(", ")}` };
-		if (value.schemaVersion !== 1) return { error: "context policy requires schemaVersion 1" };
+		if (unknown.length > 0) {
+			return { error: catalogText(catalog, CONTEXT_POLICY_MESSAGE_IDS.unknownKeys, { keys: unknown.join(", ") }) };
+		}
+		if (value.schemaVersion !== POLICY_SCHEMA_VERSION) {
+			return {
+				error: catalogText(catalog, CONTEXT_POLICY_MESSAGE_IDS.schemaVersionRequired, {
+					version: String(POLICY_SCHEMA_VERSION),
+				}),
+			};
+		}
 		const maxContextTokens = value.maxContextTokens;
 		if (maxContextTokens === undefined) return {};
 		if (
@@ -62,7 +102,10 @@ export function loadContextPolicy(paths: JouzuPaths): LoadedContextPolicy {
 			maxContextTokens > POLICY_MAX_TOKENS
 		) {
 			return {
-				error: `context policy maxContextTokens must be an integer from ${POLICY_MIN_TOKENS} to ${POLICY_MAX_TOKENS}`,
+				error: catalogText(catalog, CONTEXT_POLICY_MESSAGE_IDS.maxTokensRange, {
+					min: String(POLICY_MIN_TOKENS),
+					max: String(POLICY_MAX_TOKENS),
+				}),
 			};
 		}
 		return { maxContextTokens };
@@ -78,7 +121,7 @@ export function writeContextPolicy(paths: JouzuPaths, maxContextTokens: number |
 		rmSync(path, { force: true });
 		return;
 	}
-	const file: ContextPolicyFile = { schemaVersion: 1, maxContextTokens };
+	const file: ContextPolicyFile = { schemaVersion: POLICY_SCHEMA_VERSION, maxContextTokens };
 	writeFilePrivateAtomic(path, `${JSON.stringify(file, null, 2)}\n`, paths.configDir);
 }
 

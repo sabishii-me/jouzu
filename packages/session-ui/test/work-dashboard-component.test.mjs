@@ -3,6 +3,20 @@ import { test } from "node:test";
 import { WorkDashboardComponent } from "../dist/work-dashboard-component.js";
 
 const styles = { apply: (_role, text) => text };
+const dashboardText = {
+	sections: {
+		agent: "Agents",
+		job: "Jobs",
+		task: "Tasks",
+		loop: "Loops",
+		goal: "Goals",
+		prompt: "Scheduled",
+		flow: "Flow",
+	},
+	attention: { result: "unread result", input: "needs input", recovery: "needs recovery", authority: "needs decision" },
+	markStale: (status) => `${status} [stale]`,
+	formatElapsed: (ms) => `${Math.floor(ms / 1000)}s`,
+};
 function fixture(t, state = "running", animate = true) {
 	t.mock.timers.enable({ apis: ["setTimeout"] });
 	let changed;
@@ -39,6 +53,7 @@ function fixture(t, state = "running", animate = true) {
 			},
 		},
 		styles,
+		dashboardText,
 		() => ({ mode, animate, terminalRows: 24, availableRows: 8 }),
 		() => renders++,
 		() => now,

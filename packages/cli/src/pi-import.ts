@@ -2,9 +2,28 @@ import { closeSync, constants, existsSync, fstatSync, lstatSync, openSync, readF
 import { homedir } from "node:os";
 import { dirname, posix, win32 } from "node:path";
 import { createInterface } from "node:readline/promises";
+import { catalogText, defaultCatalog } from "./cli-messages.js";
+import type { CatalogBundle } from "./locale-catalog.js";
 import type { JouzuPaths } from "./paths.js";
 import { validatePrivateDirectory, writeFilePrivateAtomic, writeFilePrivateExclusive } from "./private-fs.js";
 import { acquireStateLock } from "./state-lock.js";
+
+/**
+ * The catalog IDs for the interactive Pi-import prompt and its output. A file
+ * name, a path, and an error detail are protected values passed as arguments;
+ * the sentence around them resolves from the session bundle. The IDs stay local
+ * to this module, like the catalog-failure IDs, so a parallel migration does not
+ * conflict on the shared table.
+ */
+const PI_IMPORT_MESSAGE_ID = {
+	questionModels: "jouzu.cli.piImport.questionModels",
+	questionAuth: "jouzu.cli.piImport.questionAuth",
+	invalidSource: "jouzu.cli.piImport.invalidSource",
+	imported: "jouzu.cli.piImport.imported",
+	skipped: "jouzu.cli.piImport.skipped",
+	importFailed: "jouzu.cli.piImport.importFailed",
+	lockBusy: "jouzu.cli.piImport.lockBusy",
+} as const;
 
 const IMPORT_FILE_LIMIT = 10 * 1024 * 1024;
 const IMPORT_STATE_FIELDS = new Set(["schemaVersion", "models", "auth", "decidedAt"]);
@@ -36,6 +55,8 @@ export interface PiImportOptions {
 	now?: Date;
 	maxFileBytes?: number;
 	ask?: (question: string) => Promise<string>;
+	/** The resolved catalog the prompt and output render from; English when omitted. */
+	catalog?: CatalogBundle;
 }
 
 interface ImportCandidate {
@@ -204,17 +225,11 @@ function candidateFor(
 	return { kind, filename, status: "not-found" };
 }
 
-function questionFor(candidate: ImportCandidate): string {
+function questionFor(candidate: ImportCandidate, catalog: CatalogBundle): string {
 	if (candidate.kind === "models") {
-		return (
-			`Found existing Pi custom models at ${candidate.sourcePath}.\n` +
-			"Copy models.json into Jouzu's isolated configuration? The Pi source will not be changed. [y/N] "
-		);
+		return catalogText(catalog, PI_IMPORT_MESSAGE_ID.questionModels, { path: String(candidate.sourcePath) });
 	}
-	return (
-		`Found saved Pi provider credentials at ${candidate.sourcePath}.\n` +
-		"Copy auth.json into Jouzu's private configuration? The Pi source will not be changed. [y/N] "
-	);
+	return catalogText(catalog, PI_IMPORT_MESSAGE_ID.questionAuth, { path: String(candidate.sourcePath) });
 }
 
 async function offerPiConfigurationImportLocked(
@@ -223,6 +238,7 @@ async function offerPiConfigurationImportLocked(
 ): Promise<PiImportReceipt | undefined> {
 	const platform = options.platform ?? process.platform;
 	const env = options.env ?? process.env;
+	const catalog = options.catalog ?? defaultCatalog();
 	if (env.JOUZU_NO_PI_IMPORT === "1") return undefined;
 	const statePath = importStatePath(paths, platform);
 	const existing = readPiImportReceipt(statePath);
@@ -252,11 +268,13 @@ async function offerPiConfigurationImportLocked(
 					...(candidate.source ? { source: candidate.source } : {}),
 				};
 				if (candidate.status === "invalid-source") {
-					output.write(`Existing Pi ${candidate.filename} was not imported because it is not a regular JSON object.\n`);
+					output.write(
+						`${catalogText(catalog, PI_IMPORT_MESSAGE_ID.invalidSource, { filename: candidate.filename })}\n`,
+					);
 				}
 				continue;
 			}
-			const accepted = parsePiImportAnswer(await ask(questionFor(candidate)));
+			const accepted = parsePiImportAnswer(await ask(questionFor(candidate, catalog)));
 			if (!accepted) {
 				results[candidate.kind] = { status: "declined", source: candidate.source };
 				continue;
@@ -271,15 +289,18 @@ async function offerPiConfigurationImportLocked(
 					paths.agentDir,
 				);
 				results[candidate.kind] = { status: "imported", source: candidate.source };
-				output.write(`Imported ${candidate.filename} into Jouzu.\n`);
+				output.write(`${catalogText(catalog, PI_IMPORT_MESSAGE_ID.imported, { filename: candidate.filename })}\n`);
 			} catch (error) {
 				if (error instanceof Error && "code" in error && error.code === "EEXIST") {
 					results[candidate.kind] = { status: "destination-exists", source: candidate.source };
-					output.write(`Skipped ${candidate.filename} because Jouzu already has one.\n`);
+					output.write(`${catalogText(catalog, PI_IMPORT_MESSAGE_ID.skipped, { filename: candidate.filename })}\n`);
 					continue;
 				}
 				throw new PiImportError(
-					`could not import ${candidate.filename}: ${error instanceof Error ? error.message : String(error)}`,
+					catalogText(catalog, PI_IMPORT_MESSAGE_ID.importFailed, {
+						filename: candidate.filename,
+						detail: error instanceof Error ? error.message : String(error),
+					}),
 				);
 			}
 		}
@@ -309,7 +330,7 @@ export async function offerPiConfigurationImport(
 		path: pathApi(platform).join(paths.stateDir, "pi-import.lock"),
 		describe: "Pi import",
 		now: options.now,
-		onBusy: () => new PiImportError("another Pi import decision is in progress"),
+		onBusy: () => new PiImportError(catalogText(options.catalog ?? defaultCatalog(), PI_IMPORT_MESSAGE_ID.lockBusy)),
 	});
 	try {
 		return await offerPiConfigurationImportLocked(paths, options);

@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import type { ProfileId } from "./args.js";
+import type { CatalogBundle } from "./locale-catalog.js";
 import type { JouzuPaths } from "./paths.js";
 import { readProfileChoice } from "./profile-choice.js";
 import { readProfileState } from "./profile-manager.js";
@@ -16,6 +17,8 @@ export interface ProfileResolutionOptions {
 	env?: NodeJS.ProcessEnv;
 	allowSavedChoice?: boolean;
 	interactiveStartup?: boolean;
+	/** The resolved catalog the profile-state failure text renders from; English when omitted. */
+	catalog?: CatalogBundle;
 }
 
 export type { ProfileSelection };
@@ -25,7 +28,8 @@ function isProfileId(value: unknown): value is ProfileId {
 }
 
 export function resolveProfileSelection(paths: JouzuPaths, options: ProfileResolutionOptions = {}): ProfileSelection {
-	const state = readProfileState(paths.profileStatePath);
+	const catalog = options.catalog;
+	const state = readProfileState(paths.profileStatePath, catalog);
 	const explicitProfile = options.explicitProfile;
 	const env = options.env ?? process.env;
 	if (explicitProfile) {
@@ -55,7 +59,7 @@ export function resolveProfileSelection(paths: JouzuPaths, options: ProfileResol
 	if (isProfileId(state?.activeProfile)) {
 		const savedChoice =
 			interactiveStartup && state.activeProfile === "core"
-				? readProfileChoice(join(paths.stateDir, "profile-choice.json"))
+				? readProfileChoice(join(paths.stateDir, "profile-choice.json"), catalog)
 				: undefined;
 		return {
 			id: state.activeProfile,
@@ -66,7 +70,7 @@ export function resolveProfileSelection(paths: JouzuPaths, options: ProfileResol
 	}
 
 	if (options.allowSavedChoice !== false) {
-		const savedChoice = readProfileChoice(join(paths.stateDir, "profile-choice.json"));
+		const savedChoice = readProfileChoice(join(paths.stateDir, "profile-choice.json"), catalog);
 		if (savedChoice) {
 			return { id: savedChoice.profile, source: "saved choice", needsFirstRunInput: false };
 		}

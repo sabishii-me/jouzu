@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { parseJouzuArgs } from "../dist/args.js";
 import { applyProfile } from "../dist/profile-manager.js";
 import { loadBundledProfile } from "../dist/profiles.js";
+import { fitTerminalText, padTerminalText, terminalTextWidth } from "../dist/terminal-layout.js";
 
 const packageRoot = fileURLToPath(new URL("..", import.meta.url));
 const cli = join(packageRoot, "dist", "cli.js");
@@ -35,6 +36,70 @@ test("the reviewed mixed-width Japanese fixture remains byte-stable", () => {
 	const text = bytes.toString("utf8");
 	for (const expected of ["こんにちは", "ジョウズ", "ｼﾞｮｳｽﾞ", "上手", "ば", "ば", "🦁", "左　右"]) {
 		assert.ok(text.includes(expected), expected);
+	}
+});
+
+test("combining marks, full-width spaces, emoji, and variation selectors measure by display width", () => {
+	// The product width helper delegates to Pi TUI's terminal-width
+	// implementation: zero-width marks add nothing and wide glyphs count as two.
+	assert.equal(terminalTextWidth("か\u3099"), 2);
+	assert.equal(terminalTextWidth("\u3000"), 2);
+	assert.equal(terminalTextWidth("🦁"), 2);
+	assert.equal(terminalTextWidth("❤\ufe0f"), 2);
+	assert.equal(terminalTextWidth("👨‍👩‍👧"), 2);
+	assert.equal(terminalTextWidth("か\u3099\u3000🦁\ufe0f❤\ufe0f"), 8);
+});
+
+test("combining characters, full-width spaces, variant characters, and emoji keep a correct width", () => {
+	// A combining mark adds no column to the character it modifies, whether the
+	// base is a kana, a CJK ideograph, or a Latin letter.
+	assert.equal(terminalTextWidth("か\u3099"), terminalTextWidth("か"));
+	assert.equal(terminalTextWidth("は\u3099"), terminalTextWidth("は"));
+	assert.equal(terminalTextWidth("e\u0301"), terminalTextWidth("e"));
+
+	// A full-width space and a full-width letter are each two columns.
+	assert.equal(terminalTextWidth("\u3000"), 2);
+	assert.equal(terminalTextWidth("Ａ"), 2);
+
+	// Variant characters: the CJK Compatibility Ideographs and the common
+	// variant forms of a character are all wide, so replacing a character with
+	// its variant never changes the column count.
+	for (const variant of ["邊", "邉", "國", "国", "高", "髙", "斎", "齋", "\uF900", "\uFA0C"]) {
+		assert.equal(terminalTextWidth(variant), 2, `variant ${JSON.stringify(variant)} is not two columns`);
+	}
+
+	// Emoji: a ZWJ sequence, a skin-tone modifier, a regional-indicator flag, a
+	// keycap, and an emoji-presentation selector each stay one wide glyph, while
+	// a text-presentation selector keeps the narrow base width.
+	assert.equal(terminalTextWidth("👨‍👩‍👧"), 2, "a ZWJ sequence is one wide glyph");
+	assert.equal(terminalTextWidth("👍🏽"), 2, "a skin-tone modifier adds no column");
+	assert.equal(terminalTextWidth("🇯🇵"), 2, "a regional-indicator flag is one wide glyph");
+	assert.equal(terminalTextWidth("1️⃣"), 2, "a keycap is one wide glyph");
+	assert.equal(terminalTextWidth("❤\ufe0f"), 2, "an emoji-presentation selector is zero width");
+	assert.equal(terminalTextWidth("❤\ufe0e"), 1, "a text-presentation selector keeps the narrow base");
+});
+
+test("fitting and padding keep every combining, full-width, variant, and emoji case inside its column", () => {
+	// A wrong width shows up as a line that is short or over its column, so each
+	// case is fitted and padded to every column from zero and the result must
+	// land exactly on the column.
+	const cases = [
+		["combining mark", "か\u3099"],
+		["full-width space", "\u3000"],
+		["full-width letter", "Ａ"],
+		["variant character", "邊"],
+		["compatibility ideograph", "\uF900"],
+		["emoji ZWJ sequence", "👨‍👩‍👧"],
+		["emoji skin tone", "👍🏽"],
+		["emoji flag", "🇯🇵"],
+		["emoji keycap", "1️⃣"],
+		["emoji variation selector", "❤\ufe0f"],
+	];
+	for (const [name, value] of cases) {
+		for (let columns = 0; columns <= 12; columns += 1) {
+			assert.ok(terminalTextWidth(fitTerminalText(value, columns)) <= columns, `${name} fit at ${columns}`);
+			assert.equal(terminalTextWidth(padTerminalText(value, columns)), columns, `${name} pad at ${columns}`);
+		}
 	}
 });
 

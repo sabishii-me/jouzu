@@ -8,8 +8,8 @@ Jouzu distributes the following release-owned Pi extensions and their default ru
 | `@vanillagreen/pi-background-tasks` | `1ab9fef053de921ea9d1741bf547cfed47808147` (2.0.0) | MIT in `package.json`; `THIRD_PARTY_NOTICES.md` contains the upstream attribution and license text |
 | `pi-webaio` | `f65ae726bc95c50dc0e2c5a0ea95c2cdfb9a1bc2` (1.0.5) | MIT; `LICENSE` |
 | `pi-code-previews` | 0.1.36 | MIT; `LICENSE` |
-| `@lhl/pi-tasks` | `3626078819db11d90e394d77752577956063b71d` | MIT; `LICENSE` |
-| `pi-multiloop` | `689cb09350da503a857eebc5f2c1e1edbbd41feb` (v0.4.1) | MIT; `LICENSE` |
+| `@lhl/pi-tasks` | `ec7eb8625a98b15926fba7377f22614c12b524d7` | MIT; `LICENSE` |
+| `pi-multiloop` | `4b79f551c901f85c73141025c42e1df0b818009b` (after v0.4.1) | MIT; `LICENSE` |
 | `@sting8k/pi-vcc` | 0.10.2 | The upstream `README.md` declares MIT under its License heading; the package has no separate license file |
 | `pi-skill-dollar` | `d4225d96a9121a7d14735758464f18416b603d50` (v0.2.1) | MIT; `LICENSE` |
 | `@napi-rs/canvas` | 1.0.13 | MIT; `LICENSE`; installed by npm with the target platform's native binding |
@@ -19,6 +19,14 @@ Jouzu distributes the following release-owned Pi extensions and their default ru
 | `wreq-js` | 3.2.0 | MIT; `LICENSE` |
 
 The bundled `pi-webaio` entrypoint supplies Jouzu's static `web_fetch` and `batch_web_fetch` tools without starting a browser. The package bundle also contains transitive dependencies. Their package metadata and included license or notice files remain with their source files under `node_modules`.
+
+## CLI localization catalogs
+
+| Package | Version | License evidence |
+| --- | --- | --- |
+| `@fluent/bundle` | 0.19.1 | Apache-2.0 in `package.json`; the package ships no separate license file |
+
+The CLI renders its own interface text from the Fluent catalogs in `dist/locales/`. `@fluent/syntax` is a build and CI dependency only and is not distributed.
 
 ## Native TextGuard helper
 

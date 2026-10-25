@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
+import { catalogMessageText } from "../dist/cli-messages.js";
+import { loadCatalog } from "../dist/locale-catalog.js";
 import { renderVoiceWidget } from "../dist/voice/integration.js";
 import { VoiceReviewRequired, VoiceTranscript } from "../dist/voice/transcript.js";
 
@@ -212,4 +214,19 @@ test("hybrid widget labels states, retains history, and fits small terminals", (
 	assert.match(rendered, /4 earlier chunks retained/);
 	assert.match(rendered, /Final.*Pending|Pending/s);
 	assert.match(rendered, /\/voice stop/);
+});
+
+test("the transcript diagnostics carry a catalog identity the ja bundle resolves", () => {
+	const ja = loadCatalog("ja");
+	const transcript = new VoiceTranscript();
+	let error;
+	try {
+		transcript.accept({ type: "asr.partial_result", result_id: 42, utterance_id: "u" });
+	} catch (caught) {
+		error = caught;
+	}
+	assert.ok(error, "an invalid segment identifier must throw");
+	// `VoiceError.message` keeps the English bytes a generic catch prints.
+	assert.equal(error.message, "Voice returned an invalid segment identifier.");
+	assert.equal(catalogMessageText(ja, error.catalogMessage), "音声が無効なセグメント識別子を返しました。");
 });

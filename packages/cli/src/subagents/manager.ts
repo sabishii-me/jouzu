@@ -12,12 +12,15 @@ import {
 	realpathSync,
 } from "node:fs";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
+import { CatalogMessageId, catalogText, defaultCatalog } from "../cli-messages.js";
+import type { CatalogBundle } from "../locale-catalog.js";
 import type { NotificationRecord } from "../notifications/inbox.js";
 import { pathDigest } from "../path-digest.js";
 import type { JouzuPaths } from "../paths.js";
 import { ensurePrivateDirectory, writeFilePrivateAtomic } from "../private-fs.js";
 import { acquireProcessLock, type ProcessLock, ProcessLockError } from "../process-lock.js";
 import type { ChildContext } from "./context.js";
+import { parseLanguageLimitation, roleLanguageContract, snapshotLanguageContract } from "./language.js";
 import type { WorkerCommand, WorkerEvent, WorkerLaunch } from "./protocol.js";
 import { captureReviewCandidate, type ReviewCandidate } from "./review.js";
 import {
@@ -76,6 +79,8 @@ export type WorkerFactory = (
 	launch: WorkerLaunch,
 	emit: (event: WorkerEvent) => void,
 	exit: (success: boolean) => void,
+	/** The session bundle, so a factory-rendered failure sentence localizes. */
+	catalog?: CatalogBundle,
 ) => WorkerHandle;
 
 const ACTIVE = new Set<RunStatus>(["queued", "starting", "running"]);
@@ -132,7 +137,7 @@ function killTree(child: ChildProcess): Promise<void> {
 		}
 	});
 }
-export const processWorker: WorkerFactory = (launch, emit, onExit) => {
+export const processWorker: WorkerFactory = (launch, emit, onExit, catalog = defaultCatalog()) => {
 	const child = fork(new URL("./worker.js", import.meta.url), [], {
 		cwd: launch.cwd,
 		env: workerEnvironment(),
@@ -161,7 +166,7 @@ export const processWorker: WorkerFactory = (launch, emit, onExit) => {
 	});
 	return {
 		send(command) {
-			if (exited || !child.connected) throw new Error("Agent is no longer running.");
+			if (exited || !child.connected) throw new Error(catalogText(catalog, CatalogMessageId.subagentAgentNotRunning));
 			child.send(command, (error) => {
 				if (error) finish(false);
 			});
@@ -265,6 +270,7 @@ export class SubagentManager {
 		maxConcurrent: number,
 		private readonly factory: WorkerFactory = processWorker,
 		private readonly onComplete?: (run: AgentRun) => void,
+		private readonly catalog: CatalogBundle = defaultCatalog(),
 	) {
 		this.maxConcurrent = parseConcurrency(maxConcurrent);
 		this.root = join(paths.stateDir, "subagents", pathDigest(parentSessionId));
@@ -276,13 +282,20 @@ export class SubagentManager {
 				const run = ownedJson(join(this.root, id, "run.json"));
 				if (run.id === id && run.parentSessionId === parentSessionId) this.runs.set(id, run);
 			} catch {
-				this.storageError = "Storage: an agent record could not be read. Inspect the stored session before retrying.";
+				// The record's own invariant sentence never reaches a user: this catch replaces it
+				// with the recovery sentence below, which is the only text the manager rethrows.
+				this.storageError = catalogText(this.catalog, CatalogMessageId.subagentStorageRecordUnreadable);
 			}
 		}
 	}
+	/** Render a human-facing failure sentence from this manager's session bundle. */
+	private msg(id: CatalogMessageId, args?: Readonly<Record<string, string | number>>): string {
+		return catalogText(this.catalog, id, args);
+	}
 	private directory(id: string): string {
 		const path = join(this.root, id);
-		if (existsSync(path) && lstatSync(path).isSymbolicLink()) throw new Error("Storage: invalid run directory.");
+		if (existsSync(path) && lstatSync(path).isSymbolicLink())
+			throw new Error(this.msg(CatalogMessageId.subagentInvalidRunDirectory));
 		return path;
 	}
 	attach(): void {
@@ -301,7 +314,7 @@ export class SubagentManager {
 		this.pump();
 	}
 	private acquireOwner(): void {
-		if (this.disposed) throw new Error("This agent session has closed.");
+		if (this.disposed) throw new Error(this.msg(CatalogMessageId.subagentSessionClosed));
 		if (this.storageError) throw new Error(this.storageError);
 		if (this.releaseOwner) return;
 		ensurePrivateDirectory(this.paths.stateDir, this.root);
@@ -311,9 +324,7 @@ export class SubagentManager {
 			this.releaseOwner = acquireProcessLock(join(this.root, "owner.sqlite"));
 		} catch (error) {
 			if (error instanceof ProcessLockError && error.reason === "busy")
-				throw new Error(
-					"This session's agents are controlled by another Jouzu process. Close it before starting more work.",
-				);
+				throw new Error(this.msg(CatalogMessageId.subagentAgentsOwnedByAnotherProcess));
 			throw error;
 		}
 		for (const run of this.runs.values())
@@ -329,7 +340,8 @@ export class SubagentManager {
 	}
 	private event(run: AgentRun, event: unknown): void {
 		const path = join(this.directory(run.id), "events.jsonl");
-		if (existsSync(path) && lstatSync(path).isSymbolicLink()) throw new Error("Storage: invalid agent event file.");
+		if (existsSync(path) && lstatSync(path).isSymbolicLink())
+			throw new Error(this.msg(CatalogMessageId.subagentInvalidEventFile));
 		appendFileSync(path, `${JSON.stringify({ at: new Date().toISOString(), ...(event as object) })}\n`, {
 			mode: 0o600,
 		});
@@ -352,13 +364,13 @@ export class SubagentManager {
 	}
 	get(id: string): AgentRun {
 		const run = this.runs.get(id);
-		if (!run) throw new Error("Agent run was not found in this parent session.");
+		if (!run) throw new Error(this.msg(CatalogMessageId.subagentRunNotFoundInSession));
 		return structuredClone(run);
 	}
 	saveNotification(id: string, change: Partial<NotificationRecord>): void {
 		this.acquireOwner();
 		const run = this.runs.get(id);
-		if (!run?.completion) throw new Error("Agent completion record was not found.");
+		if (!run?.completion) throw new Error(this.msg(CatalogMessageId.subagentCompletionRecordNotFound));
 		const next = structuredClone(run);
 		next.completion = { ...run.completion, ...change };
 		writeFilePrivateAtomic(join(this.directory(id), "run.json"), `${JSON.stringify(next)}\n`, this.root);
@@ -368,12 +380,12 @@ export class SubagentManager {
 	read(id: string, offset = 0, limit = 12_000): { text: string; nextOffset: number | null; totalBytes: number } {
 		this.get(id);
 		if (!Number.isInteger(offset) || offset < 0 || !Number.isInteger(limit) || limit < 1 || limit > 32_000)
-			throw new Error("Read: use a nonnegative byte offset and a limit of 1–32000 bytes.");
+			throw new Error(this.msg(CatalogMessageId.subagentReadBounds));
 		const path = join(this.directory(id), "events.jsonl");
 		if (!existsSync(path)) return { text: "No output yet.", nextOffset: null, totalBytes: 0 };
 		const stat = lstatSync(path);
-		if (stat.isSymbolicLink() || !stat.isFile()) throw new Error("Storage: invalid agent event file.");
-		if (offset > stat.size) throw new Error("Read offset is past the end of the agent output.");
+		if (stat.isSymbolicLink() || !stat.isFile()) throw new Error(this.msg(CatalogMessageId.subagentInvalidEventFile));
+		if (offset > stat.size) throw new Error(this.msg(CatalogMessageId.subagentReadPastEnd));
 		const fd = openSync(path, "r");
 		try {
 			const data = Buffer.alloc(Math.min(Math.max(limit, 4) + 3, stat.size - offset));
@@ -382,7 +394,7 @@ export class SubagentManager {
 			// Include a complete UTF-8 character at the page boundary.
 			while (bytes < read && (data[bytes] & 0xc0) === 0x80) bytes++;
 			if (offset && read && (data[0] & 0xc0) === 0x80)
-				throw new Error("Read offset must begin at a UTF-8 character boundary. Use nextOffset from the previous page.");
+				throw new Error(this.msg(CatalogMessageId.subagentReadCharacterBoundary));
 			return {
 				text: data.subarray(0, bytes).toString("utf8"),
 				nextOffset: offset + bytes < stat.size ? offset + bytes : null,
@@ -397,14 +409,15 @@ export class SubagentManager {
 		if (!run.sessionFile)
 			return { records: [], nextOffset: null, totalBytes: 0, notice: "No saved child messages yet." };
 		if (!existsSync(run.sessionFile) || !this.containsSession(run.sessionFile))
-			throw new Error("Trace: the saved child session is unavailable.");
-		return readSessionTrace(run.sessionFile, options);
+			throw new Error(this.msg(CatalogMessageId.subagentChildSessionUnavailable));
+		return readSessionTrace(run.sessionFile, options, this.catalog);
 	}
 	launch(launch: Omit<WorkerLaunch, "directory">, parentEntryId?: string, previousRunId?: string): AgentRun {
 		this.acquireOwner();
-		if (!launch.task.trim() || launch.task.length > 32_000) throw new Error("Task: enter 1–32000 characters.");
-		if (launch.role.placement === "main") throw new Error("Choose a role that can run as a child agent.");
-		if (this.pending.size >= 32) throw new Error("Agent queue is full. Wait for work to finish.");
+		if (!launch.task.trim() || launch.task.length > 32_000)
+			throw new Error(this.msg(CatalogMessageId.subagentTaskLength));
+		if (launch.role.placement === "main") throw new Error(this.msg(CatalogMessageId.subagentChildPlacementRequired));
+		if (this.pending.size >= 32) throw new Error(this.msg(CatalogMessageId.subagentQueueFull));
 		const id = randomUUID();
 		const now = new Date().toISOString();
 		const run: AgentRun = {
@@ -425,21 +438,21 @@ export class SubagentManager {
 		};
 		let sessionFile: string | undefined;
 		if (previousRunId) {
-			if (launch.context) throw new Error("Resume keeps the original parent context. Launch a new agent to change it.");
+			if (launch.context) throw new Error(this.msg(CatalogMessageId.subagentResumeParentContextKeep));
 			const previous = this.get(previousRunId);
-			if (isActiveRun(previous)) throw new Error("Stop or finish this agent before resuming it.");
+			if (isActiveRun(previous)) throw new Error(this.msg(CatalogMessageId.subagentResumeActiveRun));
 			if (
 				previous.cwd !== run.cwd ||
 				previous.roleRevision !== run.roleRevision ||
 				(!isSameModelSelector(previous.role.model) &&
 					(previous.model.id !== run.model.id || previous.model.provider !== run.model.provider))
 			)
-				throw new Error("Resume requires the original workspace, role revision, and explicitly selected model.");
+				throw new Error(this.msg(CatalogMessageId.subagentResumeIdentityRequired));
 			sessionFile = previous.sessionFile;
 			run.context = previous.context;
 			run.parentContextFile = previous.parentContextFile;
 			if (run.parentContextFile && (!existsSync(run.parentContextFile) || !this.containsSession(run.parentContextFile)))
-				throw new Error("The saved parent context is unavailable.");
+				throw new Error(this.msg(CatalogMessageId.subagentParentContextUnavailable));
 			if (
 				[...this.runs.values()].some(
 					(other) =>
@@ -447,9 +460,9 @@ export class SubagentManager {
 						(other.sessionFile === sessionFile || this.pending.get(other.id)?.sessionFile === sessionFile),
 				)
 			)
-				throw new Error("This child session already has an active follow-up.");
+				throw new Error(this.msg(CatalogMessageId.subagentChildFollowUpActive));
 			if (!sessionFile || !existsSync(sessionFile) || !this.containsSession(sessionFile))
-				throw new Error("The saved child session is unavailable.");
+				throw new Error(this.msg(CatalogMessageId.subagentChildSessionMissing));
 		}
 		run.sessionFile = sessionFile;
 		if (run.role.judging) run.review = { candidate: captureReviewCandidate(run.cwd), status: "pending" };
@@ -463,9 +476,7 @@ export class SubagentManager {
 					...entries.map((entry) => JSON.stringify(entry)),
 				].join("\n")}\n`;
 				if (Buffer.byteLength(snapshot) > 32_000_000)
-					throw new Error(
-						"Context: parent snapshot exceeds 32 MB. Use parentContext: false with fresh context or a focused splice.",
-					);
+					throw new Error(this.msg(CatalogMessageId.subagentParentSnapshotTooLarge));
 				run.parentContextFile = join(this.directory(id), "parent-context.jsonl");
 				writeFilePrivateAtomic(run.parentContextFile, snapshot, this.root);
 			}
@@ -478,6 +489,11 @@ export class SubagentManager {
 			role: structuredClone(run.role),
 			model: structuredClone(launch.model),
 			auth: structuredClone(launch.auth),
+			// Snapshot the role's language contract at launch. A parent-side change
+			// after this point cannot reach the running child.
+			languageContract: snapshotLanguageContract(
+				launch.languageContract ?? roleLanguageContract(run.role, undefined, launch.profile),
+			),
 			task: run.review
 				? `${launch.task}\n\nReview candidate for workspace ${JSON.stringify(run.cwd)}: ${JSON.stringify(run.review.candidate)}. This identity covers only that workspace, not sibling repositories or the full assignment. Inspect the assigned scope independently. Return findings with severity, file/line, failure conditions and evidence, then coverage and checks you could not perform. A response is not approval to ship.`
 				: launch.task,
@@ -556,6 +572,7 @@ export class SubagentManager {
 						launch,
 						(event) => this.receive(id, event),
 						(ok) => this.exited(id, ok),
+						this.catalog,
 					);
 					this.workers.set(id, handle);
 					this.timers.set(
@@ -628,6 +645,11 @@ export class SubagentManager {
 		this.finalize(run);
 	}
 	private finalize(run: AgentRun): void {
+		const limitation = parseLanguageLimitation(run.result);
+		if (limitation) {
+			const notice = `The child reported a language limitation (contract ${limitation.contractId}): ${limitation.detail}`;
+			if (!run.result?.includes(notice)) run.result = [notice, run.result].filter(Boolean).join("\n");
+		}
 		if (run.scheduleWarning && !run.result?.includes(run.scheduleWarning))
 			run.result = [run.scheduleWarning, run.result].filter(Boolean).join("\n");
 		if (run.cancelledSchedules) {
@@ -651,7 +673,7 @@ export class SubagentManager {
 			this.persist(run);
 			this.event(run, { type: "terminal", status: run.status });
 		} catch {
-			this.storageError = "Storage failed while saving an agent result.";
+			this.storageError = this.msg(CatalogMessageId.subagentStorageSaveFailed);
 		}
 		this.changed();
 		if (!this.disposed) this.onComplete?.(structuredClone(run));
@@ -660,9 +682,9 @@ export class SubagentManager {
 	steer(id: string, text: string): string {
 		this.acquireOwner();
 		this.get(id);
-		if (!text.trim() || text.length > 16_000) throw new Error("Message: enter 1–16000 characters.");
+		if (!text.trim() || text.length > 16_000) throw new Error(this.msg(CatalogMessageId.subagentMessageLength));
 		const worker = this.workers.get(id);
-		if (!worker) throw new Error("This agent is not running. Use Resume for a follow-up.");
+		if (!worker) throw new Error(this.msg(CatalogMessageId.subagentNotRunningUseResume));
 		const receipt = randomUUID();
 		const run = this.runs.get(id);
 		if (run) this.event(run, { type: "steer", id: receipt, status: "accepted", text });
@@ -676,7 +698,7 @@ export class SubagentManager {
 	): Promise<void> {
 		if (!this.releaseOwner) this.acquireOwner();
 		const run = this.runs.get(id);
-		if (!run) throw new Error("Agent run not found.");
+		if (!run) throw new Error(this.msg(CatalogMessageId.subagentRunNotFound));
 		if (!isActiveRun(run)) return;
 		const previousStatus = run.status;
 		const previousResult = run.result;
@@ -708,7 +730,7 @@ export class SubagentManager {
 		const ids = [...pending, ...this.workers.keys()];
 		const results = await Promise.allSettled(ids.map((id) => this.stop(id, reason)));
 		if (results.some((result) => result.status === "rejected"))
-			throw new Error("Some subagents could not be stopped. Inspect Runs and retry Stop for each active child.");
+			throw new Error(this.msg(CatalogMessageId.subagentStopIncomplete));
 	}
 	async dispose(): Promise<void> {
 		if (this.disposed) {
@@ -747,7 +769,9 @@ export class SubagentManager {
 			lock?.release();
 		} catch (cause) {
 			this.releaseError ??= new Error(
-				`Process lock release failed; restart Jouzu before starting more agents. ${cause instanceof Error ? cause.message : String(cause)}`,
+				this.msg(CatalogMessageId.subagentLockReleaseFailed, {
+					detail: cause instanceof Error ? cause.message : String(cause),
+				}),
 				{ cause },
 			);
 			this.storageError = this.releaseError.message;

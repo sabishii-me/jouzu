@@ -1,6 +1,8 @@
 import type { ExtensionContext, InlineExtension } from "@earendil-works/pi-coding-agent";
 import { type KeyId, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { CatalogMessageId, catalogMessageText, catalogText, defaultCatalog } from "../cli-messages.js";
 import { createJouzuKeybindingsManager, effectiveJouzuKeys, isPrintableKeyId } from "../jouzu-keybindings.js";
+import type { CatalogBundle } from "../locale-catalog.js";
 import type { JouzuPaths } from "../paths.js";
 import { isShisaSignedOut, onShisaAuthChange, readShisaLoginToken } from "../shisa-link/credentials.js";
 import { readShisaLinkState, shisaLinkStatePath } from "../shisa-link/state.js";
@@ -8,7 +10,7 @@ import { fitTerminalText, sanitizeTerminalText } from "../terminal-layout.js";
 import type { CaptureOptions, VoiceCapture } from "./capture.js";
 import { VoiceError } from "./errors.js";
 import type { VoiceConnection, VoiceConnectionOptions, VoiceLanguage } from "./realtime.js";
-import { VoiceReviewRequired, type VoiceSnapshot } from "./transcript.js";
+import { VoiceReviewRequired, type VoiceSegmentState, type VoiceSnapshot } from "./transcript.js";
 
 export type VoiceState = "starting" | "recording" | "finishing";
 export interface VoiceDependencies {
@@ -27,39 +29,57 @@ const defaults: VoiceDependencies = {
 	maxRecordingMs: 10 * 60_000,
 };
 
+/** The catalog ID of each segment state's display word; the state value itself is internal. */
+const SEGMENT_LABEL_IDS: Readonly<Record<VoiceSegmentState, CatalogMessageId>> = {
+	final: CatalogMessageId.voiceSegmentFinal,
+	pending: CatalogMessageId.voiceSegmentPending,
+	live: CatalogMessageId.voiceSegmentLive,
+	failed: CatalogMessageId.voiceSegmentFailed,
+};
+
 export function renderVoiceWidget(
 	state: VoiceState,
 	preview: string,
 	width: number,
 	snapshot?: VoiceSnapshot,
+	catalog: CatalogBundle = defaultCatalog(),
 ): string[] {
-	if (width < 12) return [fitTerminalText("Voice", width)];
+	if (width < 12) return [fitTerminalText(catalogText(catalog, CatalogMessageId.voiceLabel), width)];
 	const status =
 		state === "starting"
-			? "Voice: connecting…"
+			? CatalogMessageId.voiceStateConnecting
 			: state === "recording"
-				? "Voice: recording"
-				: "Voice: finishing transcription…";
+				? CatalogMessageId.voiceStateRecording
+				: CatalogMessageId.voiceStateFinishing;
+	const hint = state === "recording" ? CatalogMessageId.voiceHintRecording : CatalogMessageId.voiceHintIdle;
 	return [
-		...wrapTextWithAnsi(status, width),
-		...wrapTextWithAnsi(
-			state === "recording" ? "/voice stop to insert · /voice cancel to discard" : "/voice cancel to discard",
-			width,
-		),
+		...wrapTextWithAnsi(catalogText(catalog, status), width),
+		...wrapTextWithAnsi(catalogText(catalog, hint), width),
 		...(snapshot?.segments.length
 			? [
 					...wrapTextWithAnsi(
-						`${snapshot.segments.filter((segment) => segment.state === "final").length} finalized · ${snapshot.segments.filter((segment) => segment.state === "pending").length} awaiting final · ${snapshot.segments.filter((segment) => segment.state === "failed").length} failed`,
+						catalogText(catalog, CatalogMessageId.voiceSegmentProgress, {
+							finalized: snapshot.segments.filter((segment) => segment.state === "final").length,
+							pending: snapshot.segments.filter((segment) => segment.state === "pending").length,
+							failed: snapshot.segments.filter((segment) => segment.state === "failed").length,
+						}),
 						width,
 					),
 					...(snapshot.segments.length > 6
-						? [fitTerminalText(`${snapshot.segments.length - 6} earlier chunks retained`, width)]
+						? [
+								fitTerminalText(
+									catalogText(catalog, CatalogMessageId.voiceSegmentRetained, {
+										count: snapshot.segments.length - 6,
+									}),
+									width,
+								),
+							]
 						: []),
 					...snapshot.segments
 						.slice(-6)
 						.map((segment, index) =>
 							fitTerminalText(
-								`${{ final: "Final", pending: "Pending", live: "Live", failed: "Failed" }[segment.state]} ${Math.max(0, snapshot.segments.length - 6) + index + 1}: ${sanitizeTerminalText(segment.text) || "…"}`,
+								`${catalogText(catalog, SEGMENT_LABEL_IDS[segment.state])} ${Math.max(0, snapshot.segments.length - 6) + index + 1}: ${sanitizeTerminalText(segment.text) || "…"}`,
 								width,
 							),
 						),
@@ -70,8 +90,17 @@ export function renderVoiceWidget(
 	];
 }
 
-export function createVoiceExtension(paths: JouzuPaths, overrides: Partial<VoiceDependencies> = {}): InlineExtension {
-	const deps = { ...defaults, ...overrides };
+export interface VoiceExtensionOptions extends Partial<VoiceDependencies> {
+	/** The resolved catalog the voice surface renders its text from. */
+	catalog?: CatalogBundle;
+}
+
+export function createVoiceExtension(paths: JouzuPaths, options: VoiceExtensionOptions = {}): InlineExtension {
+	const { catalog: resolvedCatalog, ...overrides } = options;
+	const deps: VoiceDependencies = { ...defaults, ...overrides };
+	// A caller without a resolved catalog (a unit test, for example) renders from
+	// the English bundle rather than resolving the locale again.
+	const catalog = resolvedCatalog ?? defaultCatalog();
 	return {
 		name: "jouzu-voice",
 		factory(pi) {
@@ -104,9 +133,12 @@ export function createVoiceExtension(paths: JouzuPaths, overrides: Partial<Voice
 			const refresh = () => {
 				if (!run) return;
 				const active = run;
-				active.ctx.ui.setStatus("jouzu-voice", `Voice: ${active.state}`);
+				active.ctx.ui.setStatus(
+					"jouzu-voice",
+					catalogText(catalog, CatalogMessageId.voiceStatus, { state: active.state }),
+				);
 				active.ctx.ui.setWidget("jouzu-voice", () => ({
-					render: (width) => renderVoiceWidget(active.state, active.preview, width, active.snapshot),
+					render: (width) => renderVoiceWidget(active.state, active.preview, width, active.snapshot, catalog),
 					invalidate() {},
 				}));
 			};
@@ -117,16 +149,13 @@ export function createVoiceExtension(paths: JouzuPaths, overrides: Partial<Voice
 				const text = chunks.filter(Boolean).join("\n");
 				cancel();
 				active.ctx.ui.pasteToEditor(`${active.ctx.ui.getEditorText() ? "\n" : ""}${text}`);
-				active.ctx.ui.notify(
-					"Voice text inserted with [garbled] for missing speech. Edit the prompt, then press Enter to send.",
-					"warning",
-				);
+				active.ctx.ui.notify(catalogText(catalog, CatalogMessageId.voiceInsertedGarbled), "warning");
 			};
 			const stop = async () => {
 				const active = run;
 				if (!active) return;
 				if (active.state !== "recording") {
-					active.ctx.ui.notify("Voice is still preparing or finishing. Use /voice cancel to discard it.", "info");
+					active.ctx.ui.notify(catalogText(catalog, CatalogMessageId.voiceStillFinishing), "info");
 					return;
 				}
 				active.state = "finishing";
@@ -141,8 +170,8 @@ export function createVoiceExtension(paths: JouzuPaths, overrides: Partial<Voice
 					if (text) {
 						// Read the live draft only at insertion time; never restore a stale snapshot.
 						active.ctx.ui.pasteToEditor(`${active.ctx.ui.getEditorText() ? "\n" : ""}${text}`);
-						active.ctx.ui.notify("Voice text inserted. Review it, then press Enter to send.", "info");
-					} else active.ctx.ui.notify("No speech was transcribed. Your prompt is unchanged.", "info");
+						active.ctx.ui.notify(catalogText(catalog, CatalogMessageId.voiceInserted), "info");
+					} else active.ctx.ui.notify(catalogText(catalog, CatalogMessageId.voiceNoSpeech), "info");
 				} catch (error) {
 					if (run !== active) return;
 					if (error instanceof VoiceReviewRequired) {
@@ -154,25 +183,22 @@ export function createVoiceExtension(paths: JouzuPaths, overrides: Partial<Voice
 						return;
 					}
 					cancel();
-					active.ctx.ui.notify("Voice could not finish. Your prompt is unchanged; try recording again.", "error");
+					active.ctx.ui.notify(catalogText(catalog, CatalogMessageId.voiceFinishFailed), "error");
 				}
 			};
 			const start = async (ctx: ExtensionContext) => {
 				if (run || deviceQuery) {
-					ctx.ui.notify("Voice is already active. Stop or cancel it first.", "info");
+					ctx.ui.notify(catalogText(catalog, CatalogMessageId.voiceAlreadyActive), "info");
 					return;
 				}
 				if (isShisaSignedOut(paths)) {
-					ctx.ui.notify("Signed out of Shisa. Run /login shisa before using /voice.", "error");
+					ctx.ui.notify(catalogText(catalog, CatalogMessageId.voiceSignedOut), "error");
 					return;
 				}
 				const envKey = deps.env.SHISA_API_KEY?.trim();
 				const apiKey = envKey || readShisaLoginToken(paths);
 				if (!apiKey) {
-					ctx.ui.notify(
-						"Voice requires a Shisa login or SHISA_API_KEY. Run /login shisa or set SHISA_API_KEY.",
-						"error",
-					);
+					ctx.ui.notify(catalogText(catalog, CatalogMessageId.voiceRequiresLogin), "error");
 					return;
 				}
 				// An explicit environment key uses the public endpoint, independently of
@@ -191,7 +217,7 @@ export function createVoiceExtension(paths: JouzuPaths, overrides: Partial<Voice
 							throw new Error("Invalid voice endpoint");
 						}
 					} catch {
-						ctx.ui.notify("The saved Shisa voice endpoint is invalid. Run /login shisa again.", "error");
+						ctx.ui.notify(catalogText(catalog, CatalogMessageId.voiceEndpointInvalid), "error");
 						return;
 					}
 				}
@@ -208,8 +234,10 @@ export function createVoiceExtension(paths: JouzuPaths, overrides: Partial<Voice
 					// Only our capture/transport diagnostics reach this callback, never raw remote/native errors.
 					ctx.ui.notify(
 						error instanceof VoiceError
-							? error.message
-							: "Voice could not start. Check your microphone, network, and Shisa access.",
+							? error.catalogMessage
+								? catalogMessageText(catalog, error.catalogMessage)
+								: error.message
+							: catalogText(catalog, CatalogMessageId.voiceStartFailed),
 						"error",
 					);
 				};
@@ -256,14 +284,12 @@ export function createVoiceExtension(paths: JouzuPaths, overrides: Partial<Voice
 					refresh();
 				} catch (error) {
 					if (run !== active) return;
-					onError(
-						error instanceof Error ? error : new Error("Voice could not start. Check your microphone and network."),
-					);
+					onError(error instanceof Error ? error : new Error(catalogText(catalog, CatalogMessageId.voiceStartFailed)));
 				}
 			};
 			const command = async (args: string, ctx: ExtensionContext) => {
 				if (ctx.mode !== "tui" || deps.env.TERM === "dumb") {
-					ctx.ui.notify("Voice input requires an interactive terminal on the machine with the microphone.", "error");
+					ctx.ui.notify(catalogText(catalog, CatalogMessageId.voiceNonInteractive), "error");
 					return;
 				}
 				const action = args.trim();
@@ -271,14 +297,14 @@ export function createVoiceExtension(paths: JouzuPaths, overrides: Partial<Voice
 					deviceQuery?.abort();
 					deviceQuery = undefined;
 					cancel();
-					ctx.ui.notify("Voice cancelled. Your prompt is unchanged.", "info");
+					ctx.ui.notify(catalogText(catalog, CatalogMessageId.voiceCancelled), "info");
 				} else if (action === "stop" || (!action && run)) {
 					await stop();
 				} else if (!action || action === "start") {
 					await start(ctx);
 				} else if (action === "devices") {
 					if (run || deviceQuery) {
-						ctx.ui.notify("Stop or cancel voice before choosing a microphone.", "info");
+						ctx.ui.notify(catalogText(catalog, CatalogMessageId.voiceDevicesBusy), "info");
 						return;
 					}
 					const controller = new AbortController();
@@ -286,32 +312,31 @@ export function createVoiceExtension(paths: JouzuPaths, overrides: Partial<Voice
 					try {
 						const devices = await deps.devices(controller.signal);
 						if (controller.signal.aborted) return;
-						const labels = ["Default microphone", ...devices.map((name, i) => `${i}: ${sanitizeTerminalText(name)}`)];
-						const choice = await ctx.ui.select("Voice microphone (this machine)", labels, {
+						const labels = [
+							catalogText(catalog, CatalogMessageId.voiceDevicesDefault),
+							...devices.map((name, i) => `${i}: ${sanitizeTerminalText(name)}`),
+						];
+						const choice = await ctx.ui.select(catalogText(catalog, CatalogMessageId.voiceDevicesTitle), labels, {
 							signal: controller.signal,
 						});
 						if (!controller.signal.aborted && choice !== undefined) device = labels.indexOf(choice) - 1;
 					} catch {
 						if (!controller.signal.aborted)
-							ctx.ui.notify("Could not list microphones. Check audio device and platform support.", "error");
+							ctx.ui.notify(catalogText(catalog, CatalogMessageId.voiceDevicesFailed), "error");
 					} finally {
 						if (deviceQuery === controller) deviceQuery = undefined;
 					}
 				} else if (/^language (auto|ja|en|zh)$/.test(action)) {
 					if (run) {
-						ctx.ui.notify("Stop or cancel voice before changing language.", "info");
+						ctx.ui.notify(catalogText(catalog, CatalogMessageId.voiceLanguageBusy), "info");
 						return;
 					}
 					language = action.slice(9) as VoiceLanguage;
-					ctx.ui.notify(`Voice language: ${language}.`, "info");
-				} else
-					ctx.ui.notify(
-						"Use /voice [start|stop|cancel|devices|language auto|language ja|language en|language zh].",
-						"info",
-					);
+					ctx.ui.notify(catalogText(catalog, CatalogMessageId.voiceLanguageSet, { language }), "info");
+				} else ctx.ui.notify(catalogText(catalog, CatalogMessageId.voiceUsage), "info");
 			};
 			pi.registerCommand("voice", {
-				description: "Dictate into the prompt; start, stop, cancel, or configure voice",
+				description: catalogText(catalog, CatalogMessageId.voiceCommandDescription),
 				getArgumentCompletions: (prefix) =>
 					["start", "stop", "cancel", "devices", "language auto", "language ja", "language en", "language zh"]
 						.filter((value) => value.startsWith(prefix))
@@ -323,7 +348,7 @@ export function createVoiceExtension(paths: JouzuPaths, overrides: Partial<Voice
 				// Bare keys remain editor input; only modified keys become shortcuts.
 				if (!isPrintableKeyId(key))
 					pi.registerShortcut(key as KeyId, {
-						description: "Start or stop voice dictation",
+						description: catalogText(catalog, CatalogMessageId.voiceShortcutDescription),
 						handler: (ctx) => command("", ctx),
 					});
 			}
