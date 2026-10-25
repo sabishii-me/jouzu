@@ -289,7 +289,7 @@ test("a Japanese catalog renders the approved generic prompt and hint in Japanes
 	await offerShisaOnboarding({ ...h.options, catalog: resolveCatalog("ja").bundle });
 	assert.equal(
 		h.text(),
-		"\n  \u25c6 Shisa AI に接続すると、クラウドモデルや音声入力を利用できます。\n  \u25c6 ボーナスクレジットなどの特典や適用条件はこちら: https://platform.shisa.ai/jouzu\n\n後で `/login shisa` からでも接続できます。\n",
+		"\n  \u25c6 Shisa AI に接続すると、クラウドモデルや音声入力が利用できます。\n  \u25c6 無料クレジットなどの特典・利用条件はこちら: https://platform.shisa.ai/jouzu\n\n後で `/login shisa` からでも接続できます。\n",
 	);
 	assert.equal(asked, "  今すぐ接続しますか？ [y/N] （後で `/login shisa` でも接続できます） ");
 	assert.doesNotMatch(h.text(), /Connect to Shisa AI|connect later/u);
