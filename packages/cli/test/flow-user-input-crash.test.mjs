@@ -32,7 +32,12 @@ async function crash(t, mode) {
 		child.kill("SIGKILL");
 		await exited;
 	}
-	assert.equal(child.signalCode, "SIGKILL", "the fixture did not die from an uncatchable signal");
+	// Windows reports the fixture's self-inflicted SIGKILL as exit code 1 without a signal.
+	assert.ok(
+		(child.signalCode === "SIGKILL" && child.exitCode === null) ||
+			(process.platform === "win32" && child.signalCode === null && child.exitCode === 1),
+		`the fixture did not die from an uncatchable signal: ${child.exitCode}/${child.signalCode}`,
+	);
 	return message;
 }
 
