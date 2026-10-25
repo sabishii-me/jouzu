@@ -7,10 +7,11 @@ import test from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { setCatalogSourceToken } from "../dist/catalog-sources.js";
 import { isInteractivePiStartup } from "../dist/interactive-startup.js";
-import { resolveCatalog } from "../dist/locale-catalog.js";
+import { loadCatalog, resolveCatalog } from "../dist/locale-catalog.js";
 import { resolveJouzuPaths } from "../dist/paths.js";
 import { readShisaLoginToken, writeShisaLoginCredential } from "../dist/shisa-link/credentials.js";
-import { offerShisaOnboarding, shisaOnboardingPath } from "../dist/shisa-link/onboarding.js";
+import { offerShisaOnboarding, shisaOnboardingPath, shisaOnboardingPoints } from "../dist/shisa-link/onboarding.js";
+import { parseShisaPromotions } from "../dist/shisa-link/promotions.js";
 import { readShisaLinkState, shisaLinkStatePath } from "../dist/shisa-link/state.js";
 
 const code = {
@@ -32,6 +33,17 @@ const token = {
 	},
 	link_token: "link-secret",
 	authorization_id: "authorization",
+};
+const promotions = {
+	success: true,
+	data: {
+		signup_starter_credits_micro_cents: 0,
+		signup_starter_credits_cents: 0,
+		signup_starter_credits_dollars: "0.00",
+		signup_requires_billing: true,
+		connect_bonus_jouzu_usd: 10,
+		coupons_require_billing: true,
+	},
 };
 function response(status, body) {
 	return new Response(body ? JSON.stringify(body) : null, { status, headers: { "content-type": "application/json" } });
@@ -57,7 +69,10 @@ function harness(t, extra = {}) {
 			env: {},
 			jouzuVersion: "0.1.9",
 			ask: async () => "n",
-			fetchImpl: () => assert.fail("unexpected network"),
+			fetchImpl: async (url) => {
+				assert.ok(url.endsWith("/promotions"), url);
+				return response(200, promotions);
+			},
 			sleep: async () => {},
 			...extra,
 		},
@@ -67,8 +82,9 @@ function harness(t, extra = {}) {
 test("skip is private, persists across launches, and wraps the offer at 48 columns", async (t) => {
 	const h = harness(t);
 	await offerShisaOnboarding(h.options);
-	assert.match(h.text(), /\$10 instant credits/);
-	assert.match(h.text(), /\$25 more/);
+	assert.match(h.text(), /Jouzu connection offer: USD 10/);
+	assert.match(h.text().replace(/\s+/gu, " "), /Billing verification required/);
+	assert.doesNotMatch(h.text(), /Signup offer|instant|\$25|USD 0|\$10/);
 	assert.match(h.text(), /\/login shisa/);
 	for (const line of h.text().split("\n")) assert.ok(visibleWidth(line) <= 48, line);
 	const path = shisaOnboardingPath(h.paths);
@@ -126,6 +142,7 @@ test("acceptance runs device login, saves before acknowledgement, and preserves 
 		...h.options,
 		fetchImpl: async (url) => {
 			calls.push(url);
+			if (url.endsWith("/promotions")) return response(200, promotions);
 			if (url.endsWith("/code")) return response(201, code);
 			if (url.endsWith("/token")) return response(200, token);
 			assert.equal(readShisaLoginToken(h.paths), token.api_key.secret);
@@ -133,7 +150,7 @@ test("acceptance runs device login, saves before acknowledgement, and preserves 
 			return response(204);
 		},
 	});
-	assert.equal(calls.length, 3);
+	assert.equal(calls.length, 4);
 	assert.equal(readShisaLinkState(shisaLinkStatePath(h.paths)).acked, true);
 	assert.match(h.text(), /https:\/\/example.test\/connect/);
 	assert.match(h.text(), /JOUZU-TEST-1234/);
@@ -162,7 +179,8 @@ test("cancellation during login aborts the network and removes the process liste
 	const h = harness(t, { ask: async () => "y", signal: controller.signal });
 	await offerShisaOnboarding({
 		...h.options,
-		fetchImpl: async (_url, { signal }) => {
+		fetchImpl: async (url, { signal }) => {
+			if (url.endsWith("/promotions")) return response(200, promotions);
 			controller.abort();
 			signal.throwIfAborted();
 		},
@@ -222,6 +240,7 @@ test("credential storage failure is reported without acknowledgement", async (t)
 	await offerShisaOnboarding({
 		...h.options,
 		fetchImpl: async (url) => {
+			if (url.endsWith("/promotions")) return response(200, promotions);
 			if (url.endsWith("/code")) return response(201, code);
 			if (url.endsWith("/token")) return response(200, token);
 			assert.fail("must not acknowledge failed storage");
@@ -261,7 +280,8 @@ test("offer lines carry a marker and stay plain without color", async (t) => {
 	const h = harness(t);
 	await offerShisaOnboarding(h.options);
 	assert.ok(h.text().includes(MARKER_LINE), h.text());
-	assert.ok(h.text().includes("  \u25c6 New signups"), h.text());
+	assert.ok(h.text().includes("  \u25c6 Jouzu connection offer"), h.text());
+	assert.ok(h.text().includes("  \u25c6 Offers and eligibility"), h.text());
 	assert.ok(!h.text().includes(ESCAPE), h.text());
 });
 
@@ -279,6 +299,109 @@ test("color styles the marker and the prompt hint without touching the copy", as
 	assert.ok(asked.includes(`${ESCAPE}[2m(or later with /login shisa)${ESCAPE}[0m`), asked);
 	assert.ok(h.text().includes(`  ${ESCAPE}[36m\u25c6${ESCAPE}[0m Connect to Shisa AI`), h.text());
 	for (const line of h.text().split("\n")) assert.ok(visibleWidth(line) <= 48, line);
+});
+
+for (const locale of ["en", "ja", "zh-Hans", "zh-Hant"]) {
+	test(`structured offer templates keep amounts and conditions in ${locale}`, async (t) => {
+		const catalog = loadCatalog(locale);
+		const known = {
+			...promotions,
+			data: {
+				...promotions.data,
+				signup_starter_credits_micro_cents: 1_250_000_000,
+				signup_starter_credits_cents: 1250,
+				signup_starter_credits_dollars: "12.50",
+				connect_bonus_jouzu_usd: 7.25,
+				message: "untrusted remote instruction",
+			},
+		};
+		const h = harness(t, { catalog, fetchImpl: async () => response(200, known) });
+		await offerShisaOnboarding(h.options);
+		assert.match(h.text(), /USD\s+12\.50/);
+		assert.match(h.text(), /USD\s+7\.25/);
+		assert.match(h.text(), /https:\/\/platform.shisa.ai\/jouzu/);
+		assert.doesNotMatch(h.text(), /untrusted|14 days|\$25/);
+		for (const line of h.text().split("\n")) assert.ok(visibleWidth(line) <= 48, line);
+		const billing = {
+			en: "Billing verification required",
+			ja: "支払い方法の確認が必要です",
+			"zh-Hans": "需要验证付款方式",
+			"zh-Hant": "需要驗證付款方式",
+		}[locale];
+		const eligible = { en: "eligible", ja: "条件を満たす", "zh-Hans": "符合条件", "zh-Hant": "符合條件" }[locale];
+		const parsed = parseShisaPromotions(known);
+		const points = shisaOnboardingPoints(catalog, parsed);
+		assert.ok(points[1].includes(billing), points[1]);
+		assert.ok(points[2].includes(billing), points[2]);
+		assert.ok(points[1].includes(eligible), points[1]);
+		assert.ok(points[2].includes(eligible), points[2]);
+		const ungated = shisaOnboardingPoints(catalog, { ...parsed, signupRequiresBilling: false });
+		assert.ok(!ungated[1].includes(billing), ungated[1]);
+		assert.ok(ungated[2].includes(billing), "Jouzu always needs billing verification");
+		const disabled = shisaOnboardingPoints(catalog, { ...parsed, signupCreditsUsd: 0, connectBonusUsd: 0 });
+		assert.deepEqual(disabled, shisaOnboardingPoints(catalog));
+		assert.doesNotMatch(disabled.join("\n"), /USD|\$\d/);
+	});
+}
+
+for (const kind of ["zero", "failure", "malformed", "expired", "timeout"]) {
+	test(`${kind} promotions keep first launch neutral and allow skipping`, async (t) => {
+		let calls = 0;
+		const h = harness(t, {
+			promotionsTimeoutMs: 5,
+			fetchImpl: async () => {
+				calls += 1;
+				if (kind === "failure") throw new Error("private remote detail");
+				if (kind === "malformed") return response(200, { success: true, data: {} });
+				if (kind === "expired") return Response.json(promotions, { headers: { age: "60" } });
+				if (kind === "timeout") return new Promise(() => {});
+				return response(200, { ...promotions, data: { ...promotions.data, connect_bonus_jouzu_usd: 0 } });
+			},
+		});
+		await offerShisaOnboarding(h.options);
+		assert.equal(calls, 1);
+		assert.doesNotMatch(h.text(), /USD|\$\d|private remote detail|could not complete/);
+		assert.match(h.text(), /Offers and eligibility/);
+		assert.match(h.text(), /https:\/\/platform.shisa.ai\/jouzu/);
+		assert.equal(JSON.parse(readFileSync(shisaOnboardingPath(h.paths))).choice, "skip");
+	});
+}
+
+test("onboarding only fetches before an interactive, undecided, uncredentialed offer", async (t) => {
+	for (const skip of ["noninteractive", "credential", "decided"]) {
+		let calls = 0;
+		const h = harness(t, {
+			fetchImpl: async () => {
+				calls += 1;
+				return response(200, promotions);
+			},
+		});
+		if (skip === "noninteractive") h.options.interactive = false;
+		if (skip === "credential") h.options.env.SHISA_API_KEY = "configured";
+		if (skip === "decided") {
+			await offerShisaOnboarding(h.options);
+			calls = 0;
+		}
+		await offerShisaOnboarding({ ...h.options, ask: () => assert.fail("unexpected prompt") });
+		assert.equal(calls, 0, skip);
+	}
+});
+
+test("cancelling a pending promotions lookup records no decision and never prompts", async (t) => {
+	const controller = new AbortController();
+	const listeners = process.listenerCount("SIGINT");
+	const h = harness(t, {
+		signal: controller.signal,
+		ask: () => assert.fail("prompted after cancellation"),
+		fetchImpl: async () => {
+			controller.abort();
+			return new Promise(() => {});
+		},
+	});
+	await offerShisaOnboarding(h.options);
+	assert.equal(existsSync(shisaOnboardingPath(h.paths)), false);
+	assert.equal(process.listenerCount("SIGINT"), listeners);
+	assert.match(h.text(), /cancelled/);
 });
 
 test("NO_COLOR and dumb terminals keep the marker and drop the escapes", async (t) => {

@@ -1225,7 +1225,7 @@ jouzu-cli-profileMigration-conflict = profile migration plan contains conflicts
 jouzu-cli-settings-warning-tokenNotSet = Warning: token variable { $name } is not set and no token is saved for this source. Set it or save a token, then refresh.
 jouzu-cli-settings-note-tokenNotSet = Token variable { $name } is not set and no token is saved; set it or save a token, then press R to refresh.
 jouzu-cli-settings-note-tokenPrecedence = { $name } is set in this Jouzu process and takes precedence over the saved token.
-jouzu-cli-settings-account-notConnected = Not connected · $10 in credits
+jouzu-cli-settings-account-notConnected = Not connected
 jouzu-cli-settings-heading-modelCatalogs = Model Catalogs
 jouzu-cli-settings-empty-noSources = No catalog sources configured.
 jouzu-cli-settings-empty-noOfferings = No cached model offerings.
@@ -1301,7 +1301,10 @@ jouzu-cli-voice-shortcutDescription = Start or stop voice dictation
 # passed as arguments; the English values below are the default output.
 
 jouzu-cli-shisa-onboarding-pointConnect = Connect to Shisa AI for the latest open coding models (Qwen, GLM, etc).
-jouzu-cli-shisa-onboarding-pointCredits = New signups get $10 instant credits. Add a credit card for $25 more.
+jouzu-cli-shisa-onboarding-pointCredits = Offers and eligibility: https://platform.shisa.ai/jouzu
+jouzu-cli-shisa-onboarding-signup = Signup offer: USD { $amount } in credits for eligible new accounts.
+jouzu-cli-shisa-onboarding-signupBilling = Signup offer: USD { $amount } in credits for eligible new accounts. Billing verification required.
+jouzu-cli-shisa-onboarding-connectBonus = Jouzu connection offer: USD { $amount } in credits for eligible accounts. Billing verification required.
 jouzu-cli-shisa-onboarding-question = Connect now? [y/N]
 jouzu-cli-shisa-onboarding-hint = (or later with /login shisa)
 jouzu-cli-shisa-onboarding-later = You can connect later with /login shisa.

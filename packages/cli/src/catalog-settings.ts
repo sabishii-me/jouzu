@@ -357,6 +357,7 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 	private aboutOffset = 0;
 	private aboutRows = 1;
 	private scrollOffset = 0;
+	private pageAnchor?: { key: string; offset: number };
 	private modalOffset = 0;
 	private modalCapacity = 1;
 	private modalTotal = 0;
@@ -627,6 +628,8 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 			const visible = [...this.focusRows.entries()].filter(([, row]) => row >= next && row < next + this.viewportRows);
 			if (visible.length > 0) {
 				const chosen = direction > 0 ? visible[visible.length - 1] : visible[0];
+				// Focus can add or remove catalog details above the next page.
+				this.pageAnchor = { key: chosen[0], offset: chosen[1] - next };
 				this.focusControl(chosen[0]);
 			}
 		}
@@ -2262,7 +2265,7 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 	/** The global ceiling row, rendered above the catalog list and dropped when the list needs its room. */
 	/**
 	 * One row for the Shisa account: connection state and organization when signed
-	 * in, and the signup offer when signed out. The dashboard address and the
+	 * in, and a neutral connection state when signed out. The dashboard address and
 	 * connect key ride in the metadata column, which truncates before the value.
 	 */
 	private accountRow(innerWidth: number, line: (value?: string) => string): string {
@@ -2469,6 +2472,12 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 		for (const text of wrapTextWithAnsi(`  ${upstreamSwitchNotice(this.catalog)}`, innerWidth))
 			lines.push(line(this.styles.apply("palette.hint", text)));
 		add("account", this.accountRow(innerWidth, line));
+		if (!this.account.signedIn)
+			for (const text of wrapTextWithAnsi(
+				catalogText(this.catalog, CatalogMessageId.shisaOnboardingPointCredits),
+				innerWidth,
+			))
+				lines.push(line(this.styles.apply("palette.hint", text)));
 		add("context", this.contextRow(innerWidth, line));
 		const dashboardRow = this.onDashboardChanged
 			? line(
@@ -2649,7 +2658,11 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 			this.scrollOffset = this.aboutFocused ? aboutHeading : this.languageFocused ? 0 : catalogHeading;
 			this.scrollToSection = false;
 			this.ensureFocusVisible = true;
+		} else if (this.pageAnchor) {
+			const row = this.focusRows.get(this.pageAnchor.key);
+			if (row !== undefined) this.scrollOffset = row - this.pageAnchor.offset;
 		}
+		this.pageAnchor = undefined;
 		if (this.ensureFocusVisible || !this.manualScroll) {
 			const end = Math.max(selectedRow + 1, selectedEnd);
 			if (selectedRow < this.scrollOffset) this.scrollOffset = selectedRow;

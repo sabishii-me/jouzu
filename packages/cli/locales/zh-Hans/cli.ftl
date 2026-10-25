@@ -1235,7 +1235,7 @@ jouzu-cli-profileMigration-conflict = 配置档案迁移计划包含冲突
 jouzu-cli-settings-warning-tokenNotSet = 警告：令牌变量 { $name } 未设置，且此源未保存令牌。请设置它或保存令牌，然后刷新。
 jouzu-cli-settings-note-tokenNotSet = 令牌变量 { $name } 未设置且未保存令牌；请设置它或保存令牌，然后按 R 刷新。
 jouzu-cli-settings-note-tokenPrecedence = { $name } 已在此 Jouzu 进程中设置，优先于已保存的令牌。
-jouzu-cli-settings-account-notConnected = 未连接 · $10 额度
+jouzu-cli-settings-account-notConnected = 未连接
 jouzu-cli-settings-heading-modelCatalogs = 模型目录
 jouzu-cli-settings-empty-noSources = 未配置目录源。
 jouzu-cli-settings-empty-noOfferings = 没有缓存的模型提供项。
@@ -1311,7 +1311,10 @@ jouzu-cli-voice-shortcutDescription = 启动或停止语音口述
 # passed as arguments; the English values below are the default output.
 
 jouzu-cli-shisa-onboarding-pointConnect = 连接到 Shisa AI 以获取最新的开放编码模型（Qwen、GLM 等）。
-jouzu-cli-shisa-onboarding-pointCredits = 新注册用户可立即获得 $10 额度。添加信用卡可再获得 $25。
+jouzu-cli-shisa-onboarding-pointCredits = 优惠及适用条件：https://platform.shisa.ai/jouzu
+jouzu-cli-shisa-onboarding-signup = 注册优惠：符合条件的新账户可获 USD { $amount } 额度。
+jouzu-cli-shisa-onboarding-signupBilling = 注册优惠：符合条件的新账户可获 USD { $amount } 额度。需要验证付款方式。
+jouzu-cli-shisa-onboarding-connectBonus = Jouzu 连接优惠：符合条件的账户可获 USD { $amount } 额度。需要验证付款方式。
 jouzu-cli-shisa-onboarding-question = 现在连接？[y/N]
 jouzu-cli-shisa-onboarding-hint = （或稍后用 /login shisa）
 jouzu-cli-shisa-onboarding-later = 你可以稍后用 /login shisa 连接。

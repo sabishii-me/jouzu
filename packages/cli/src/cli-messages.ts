@@ -823,6 +823,9 @@ export const CatalogMessageId = {
 	// as arguments, never stored here.
 	shisaOnboardingPointConnect: "jouzu.cli.shisa.onboarding.pointConnect",
 	shisaOnboardingPointCredits: "jouzu.cli.shisa.onboarding.pointCredits",
+	shisaOnboardingSignup: "jouzu.cli.shisa.onboarding.signup",
+	shisaOnboardingSignupBilling: "jouzu.cli.shisa.onboarding.signupBilling",
+	shisaOnboardingConnectBonus: "jouzu.cli.shisa.onboarding.connectBonus",
 	shisaOnboardingQuestion: "jouzu.cli.shisa.onboarding.question",
 	shisaOnboardingHint: "jouzu.cli.shisa.onboarding.hint",
 	shisaOnboardingLater: "jouzu.cli.shisa.onboarding.later",

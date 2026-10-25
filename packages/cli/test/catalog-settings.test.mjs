@@ -1499,7 +1499,7 @@ async function signIn(paths, extra = {}) {
 	});
 }
 
-test("the account row leads Settings and offers credits when no account is connected", (t) => {
+test("the account row leads Settings with a neutral offer link when signed out", (t) => {
 	const f = setup();
 	t.after(() => rmSync(f.root, { recursive: true, force: true }));
 	const component = new CatalogSettingsComponent({ context: f.context, paths: f.paths, env: {} });
@@ -1507,8 +1507,12 @@ test("the account row leads Settings and offers credits when no account is conne
 	const accountIndex = rendered.findIndex((row) => row.includes("Shisa AI"));
 	const catalogIndex = rendered.findIndex((row) => row.includes("Model Catalogs"));
 	assert.ok(accountIndex >= 0 && accountIndex < catalogIndex, "the account row renders above the catalog list");
-	assert.match(rendered.join("\n"), /Not connected · \$10 in credits/u);
+	assert.match(rendered.join("\n"), /Not connected/u);
+	assert.match(rendered.join("\n"), /Offers and eligibility: https:\/\/platform.shisa.ai\/jouzu/u);
+	assert.doesNotMatch(rendered.join("\n"), /\$\d|USD \d/u);
 	assert.ok(rendered.every((line) => terminalTextWidth(line) <= 84));
+	const narrow = component.render(48);
+	assert.ok(narrow.every((line) => terminalTextWidth(line) <= 48));
 });
 
 test("a connected account shows its organization and dashboard", async (t) => {

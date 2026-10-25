@@ -1204,7 +1204,7 @@ jouzu-cli-profileMigration-conflict = プロファイル移行プランに競合
 jouzu-cli-settings-warning-tokenNotSet = 警告: トークン変数 { $name } が設定されておらず、このソースに保存されたトークンもありません。設定するかトークンを保存してから更新してください。
 jouzu-cli-settings-note-tokenNotSet = トークン変数 { $name } が設定されておらず、保存されたトークンもありません。設定するかトークンを保存してから R で更新してください。
 jouzu-cli-settings-note-tokenPrecedence = { $name } はこの Jouzu プロセスで設定されており、保存されたトークンより優先されます。
-jouzu-cli-settings-account-notConnected = 未接続 · クレジット $10
+jouzu-cli-settings-account-notConnected = 未接続
 jouzu-cli-settings-heading-modelCatalogs = モデルカタログ
 jouzu-cli-settings-empty-noSources = カタログソースが設定されていません。
 jouzu-cli-settings-empty-noOfferings = キャッシュされた提供モデルがありません。
@@ -1279,7 +1279,10 @@ jouzu-cli-voice-shortcutDescription = 音声入力を開始または停止しま
 #
 
 jouzu-cli-shisa-onboarding-pointConnect = 最新のオープンコーディングモデル（Qwen、GLM など）を使うには Shisa AI に接続します。
-jouzu-cli-shisa-onboarding-pointCredits = 新規登録では $10 のクレジットがすぐに付与されます。クレジットカードを追加するとさらに $25 が付与されます。
+jouzu-cli-shisa-onboarding-pointCredits = 特典と適用条件: https://platform.shisa.ai/jouzu
+jouzu-cli-shisa-onboarding-signup = 新規登録特典: 条件を満たす新規アカウントに USD { $amount } のクレジット。
+jouzu-cli-shisa-onboarding-signupBilling = 新規登録特典: 条件を満たす新規アカウントに USD { $amount } のクレジット。支払い方法の確認が必要です。
+jouzu-cli-shisa-onboarding-connectBonus = Jouzu 接続特典: 条件を満たすアカウントに USD { $amount } のクレジット。支払い方法の確認が必要です。
 jouzu-cli-shisa-onboarding-question = 今すぐ接続しますか？ [y/N]
 jouzu-cli-shisa-onboarding-hint = （後で `/login shisa` でも接続できます）
 jouzu-cli-shisa-onboarding-later = 後で `/login shisa` からでも接続できます。
