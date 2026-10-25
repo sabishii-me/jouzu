@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { CATALOG_FIELD_LABEL_IDS, DOCTOR_FIELD_LABEL_IDS } from "../dist/cli-messages.js";
+import { CATALOG_FIELD_LABEL_IDS, CatalogMessageId, DOCTOR_FIELD_LABEL_IDS } from "../dist/cli-messages.js";
 import { CommandReport, resolveDisplayContext } from "../dist/command-report.js";
 import {
 	CliMessageId,
@@ -78,6 +78,30 @@ test("both catalogs load with the CatalogBundle shape", () => {
 		assert.match(bundle.digest, /^[0-9a-f]{64}$/u);
 		assert.equal(typeof bundle.format, "function");
 	}
+});
+
+test("the ja catalog localizes the Catalogs view name and en keeps the fallback", () => {
+	assert.equal(loadCatalog("ja").format(CatalogMessageId.settingsViewCatalogs), "カタログ");
+	assert.equal(loadCatalog("en").format(CatalogMessageId.settingsViewCatalogs), "Catalogs");
+});
+
+test("the ja catalog routes Catalogs prose through the visible label and keeps /catalogs exact", () => {
+	const ja = loadCatalog("ja");
+	const cases = [
+		[CatalogMessageId.helpFooterCatalogs, { command: "/catalogs" }],
+		[CatalogMessageId.catalogTokenMissing, { name: "SHISA_API_KEY" }],
+		[CatalogMessageId.catalogTokenMissingWithSaved, { name: "SHISA_API_KEY" }],
+		[CatalogMessageId.modelPickerCatalogsNotRefreshed, { sources: "fixture" }],
+		[CatalogMessageId.modelPickerCatalogsWereNotRefreshed, { message: "failed" }],
+		[CatalogMessageId.modelPickerNoAuthenticationCredential, { model: "fixture/model" }],
+		[CatalogMessageId.settingsTitle, { view: "カタログ" }],
+	];
+	for (const [id, args] of cases) {
+		const text = ja.format(id, args);
+		assert.match(text, /カタログ/u, id);
+		assert.doesNotMatch(text, /Catalogs|Settings/u, id);
+	}
+	assert.match(ja.format(CatalogMessageId.helpFooterCatalogs, { command: "/catalogs" }), /\/catalogs/u);
 });
 
 test("the digest is the sha256 of the catalog file bytes", () => {

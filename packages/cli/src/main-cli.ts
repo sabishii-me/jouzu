@@ -603,7 +603,7 @@ export async function runMainCli(args: string[]): Promise<void> {
 					.split("/")
 					.map((key) => formatKeyId(key))
 					.join("/")
-			: "unbound";
+			: text(CatalogMessageId.keybindingsBindingUnbound);
 	};
 	// The Session Line's shortcut hint is catalog text. Pi installs app-level
 	// keybindings when the TUI starts, so resolve them when rendering hints.
@@ -783,7 +783,12 @@ export async function runMainCli(args: string[]): Promise<void> {
 				: startPi();
 		if (!interactiveStartup) return execute();
 		const { withPiUiLocalization } = await import("./pi-ui-localization.js");
-		return withPiUiLocalization(() => displayCatalog.bundle, execute, pi);
+		const { withPiProseWrapping } = await import("./pi-prose-wrapping.js");
+		return withPiUiLocalization(
+			() => displayCatalog.bundle,
+			() => withPiProseWrapping(execute),
+			pi,
+		);
 	};
 	try {
 		await withJouzuOutput(runPi, {

@@ -16,6 +16,7 @@ import {
 } from "../dist/catalog-sources.js";
 import { createLabelPolicy, labelPolicyPath } from "../dist/label-policy.js";
 import { resolveResponseLanguage } from "../dist/language-settings.js";
+import { resolveCatalog } from "../dist/locale-catalog.js";
 import { parseAndValidateModelCatalog } from "../dist/model-catalog.js";
 import { loadActiveCatalogForSource, refreshCatalogSource } from "../dist/model-catalog-sync.js";
 import { resolveJouzuPaths } from "../dist/paths.js";
@@ -335,6 +336,36 @@ test("Catalogs settings uses Enter to edit and horizontal arrows for model discl
 		component.handleInput("\u001b[D");
 		assert.doesNotMatch(component.render(84).join("\n"), /Example Model/u);
 		assert.ok(rendered.every((line) => terminalTextWidth(line) <= 84));
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("the Model Catalogs heading count localizes its state word", async () => {
+	const { root, paths, context } = setup();
+	try {
+		const store = new CatalogSourceStore(paths);
+		const source = store.add({
+			label: "Office pool",
+			url: "http://127.0.0.1:8989/v1/jouzu/model-catalog",
+			auth: { type: "none" },
+		});
+		await refreshCatalogSource(paths, source, { env: {}, fetch: async () => response(fixture) });
+		for (const [locale, headingText, stateWord, otherWord] of [
+			["en", "Model Catalogs", "active", "有効"],
+			["ja", "モデルカタログ", "有効", "active"],
+		]) {
+			context.catalog = resolveCatalog(locale).bundle;
+			const component = new CatalogSettingsComponent({ context, paths, env: {} });
+			openCatalogs(component);
+			const rendered = component.render(84);
+			const headingLine = rendered.find((line) => line.includes(headingText));
+			assert.ok(headingLine, `${locale} heading renders`);
+			assert.match(headingLine, new RegExp(`\\d+/\\d+ ${stateWord}`, "u"));
+			assert.ok(!headingLine.includes(otherWord), `${locale} heading does not use the other state word`);
+			assert.ok(rendered.every((line) => terminalTextWidth(line) <= 84));
+			component.dispose();
+		}
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}

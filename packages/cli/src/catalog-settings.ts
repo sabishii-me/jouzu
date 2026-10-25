@@ -2519,7 +2519,12 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 		if (labelsRow) add("labels", labelsRow);
 		const active = this.views.filter((view) => view.source.enabled && view.status.status === "active").length;
 		const catalogHeading = lines.length;
-		lines.push(heading(CatalogMessageId.settingsHeadingModelCatalogs, `${active}/${this.views.length} active`));
+		lines.push(
+			heading(
+				CatalogMessageId.settingsHeadingModelCatalogs,
+				`${active}/${this.views.length} ${catalogText(this.catalog, CatalogMessageId.catalogStateActive)}`,
+			),
+		);
 		if (this.views.length === 0) {
 			add(
 				"catalogs",

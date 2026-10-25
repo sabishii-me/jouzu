@@ -73,6 +73,13 @@ test("main applies first-run display and independent response choices in the sam
 	assert.equal(JSON.parse(observed.settingsAfter).localization.responseLanguage, "zh-Hant");
 });
 
+test("an unbound model shortcut uses the active catalog and falls back to English", (t) => {
+	const ja = run(t, { choice: { uiLocale: "ja", responseLanguage: "ja" }, missingCycleKey: true });
+	assert.equal(ja.shortcutHint, "Ctrl+L モデル · 未バインド お気に入り · Ctrl+/ ヘルプ");
+	const en = run(t, { settings, missingCycleKey: true });
+	assert.equal(en.shortcutHint, "Ctrl+L models · unbound favorites · Ctrl+/ help");
+});
+
 test("Japanese first-run UI with Automatic responses does not install a Japanese-response profile", (t) => {
 	const observed = run(t, { choice: { uiLocale: "ja", responseLanguage: "auto" } });
 	assert.ok(Object.values(observed.catalogs).every((locale) => locale === "ja"));

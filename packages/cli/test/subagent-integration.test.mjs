@@ -551,6 +551,26 @@ test("role and run displays use catalog names without changing selectors or read
 	}
 });
 
+test("roles keep display metadata stable while the active catalog localizes the same selector", async () => {
+	const f = fixture(false, { catalog: resolveCatalog("ja").bundle });
+	try {
+		await f.handlers.get("session_start")({}, f.ctx);
+		const result = await f.tool.execute("id", { op: "roles" });
+		const payload = JSON.parse(result.content[0].text);
+		const coder = payload.roles.find((role) => role.id === "coder");
+		assert.equal(coder.model, "same");
+		assert.equal(coder.modelLabel, "Same as this session");
+		const output = f.tool
+			.renderResult(result, { expanded: false }, { fg: (_role, value) => value }, { args: { op: "roles" } })
+			.render(120)
+			.join("\n");
+		assert.match(output, /このセッションと同じ/u);
+		assert.doesNotMatch(output, /Same as this session/u);
+	} finally {
+		await f.shutdown();
+	}
+});
+
 test("saving concurrency and writer settings applies to the running session", async () => {
 	const f = fixture();
 	try {

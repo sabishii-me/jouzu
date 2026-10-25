@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
+import { resolveCatalog } from "../dist/locale-catalog.js";
 import { catalogRuntimeProvider } from "../dist/model-catalog-projection.js";
 import { agentModelDisplay, agentModelSelectorLabel } from "../dist/subagents/model-display.js";
 import { parseSubagentResult, subagentComponent } from "../dist/subagents/render.js";
@@ -15,6 +16,7 @@ test("friendly labels retain exact selectors and readable catalog source", () =>
 	assert.equal(agentModelSelectorLabel(`${provider}/${model.id}`, [model]), model.name);
 	assert.equal(agentModelSelectorLabel(model.id, [model]), model.name);
 	assert.equal(agentModelSelectorLabel("same", [model]), "Same as this session");
+	assert.equal(agentModelSelectorLabel("same", [model], resolveCatalog("ja").bundle), "このセッションと同じ");
 	assert.equal(agentModelSelectorLabel(`${provider}/${model.id}`, []), "local/deepseek-flash");
 	assert.equal(agentModelSelectorLabel("unknown", []), "unknown");
 	assert.equal(agentModelDisplay({ ...model, name: [] }).name, model.id);
@@ -28,6 +30,25 @@ test("friendly labels retain exact selectors and readable catalog source", () =>
 		assert.doesNotMatch(compact, /catalog:/);
 		assert.match(subagentComponent(value, plain, true).render(120).join("\n"), /catalog:office:local:/);
 	}
+});
+
+test("role displays resolve same-selector hints from the active catalog without rewriting other labels", () => {
+	const ja = resolveCatalog("ja").bundle;
+	const value = {
+		roles: [
+			{ id: "coder", model: "same", modelLabel: "Same as this session" },
+			{ id: "reviewer", model: "same" },
+			{ id: "orchestrator", model: `${provider}/${model.id}`, modelLabel: model.name },
+		],
+	};
+	const japanese = subagentComponent(value, plain, false, "roles", ja).render(120).join("\n");
+	assert.match(japanese, /coder · このセッションと同じ/u);
+	assert.match(japanese, /reviewer · このセッションと同じ/u);
+	assert.match(japanese, /orchestrator · DeepSeek Flash 日本語/u);
+	assert.doesNotMatch(japanese, /Same as this session/u);
+	const english = subagentComponent(value, plain, false, "roles").render(120).join("\n");
+	assert.match(english, /coder · Same as this session/u);
+	assert.match(english, /orchestrator · DeepSeek Flash 日本語/u);
 });
 
 const events = [

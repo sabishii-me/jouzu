@@ -154,6 +154,7 @@ globalThis.__languageWiring = {
 	},
 	keyText(action) {
 		if (!tuiStarted) return "";
+		if (scenario.missingCycleKey && action === "app.model.cycleForward") return "";
 		if (action === "app.model.select") return "ctrl+l";
 		if (action === "app.model.cycleForward") return "ctrl+p";
 		return "";

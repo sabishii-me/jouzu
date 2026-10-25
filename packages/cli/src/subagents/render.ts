@@ -6,6 +6,7 @@ import { createSessionUiStyles } from "../session-ui/index.js";
 import { fitTerminalText, sanitizeTerminalText } from "../terminal-layout.js";
 import type { AgentRun } from "./manager.js";
 import { agentModelDisplay, agentModelSelectorLabel } from "./model-display.js";
+import { isSameModelSelector } from "./roles.js";
 
 export function runPresentation(run: AgentRun) {
 	return {
@@ -160,7 +161,15 @@ export function subagentComponent(
 				detail("", root.reason, 5);
 				for (const raw of roles.slice(0, expanded ? 64 : 5)) {
 					const role = object(raw);
-					const modelLabel = text(role.modelLabel, 200) || agentModelSelectorLabel(text(role.model, 500), []);
+					const selector = text(role.model, 500);
+					const suppliedLabel = text(role.modelLabel, 200);
+					// modelLabel is a display hint from the roles result. A same-selector
+					// hint may have been precomputed in English; resolve it from the active
+					// catalog so the visible row follows the rest of the localized view.
+					const modelLabel =
+						isSameModelSelector(selector) || !suppliedLabel
+							? agentModelSelectorLabel(selector, [], catalog)
+							: suppliedLabel;
 					add(accent(`${text(role.id, 100)} · ${modelLabel}`));
 					detail("", role.description, 2);
 					if (expanded) {

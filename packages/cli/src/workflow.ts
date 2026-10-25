@@ -549,7 +549,7 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 					refId: role.id,
 					label: role.id,
 					labelRole: "palette.identity" as const,
-					value: agentModelSelectorLabel(role.model, this.service.models()),
+					value: agentModelSelectorLabel(role.model, this.service.models(), this.catalog),
 					...(this.service.activeRole() === role.id ? { meta: this.msg(CatalogMessageId.workflowMetaInSession) } : {}),
 					...(index === 0
 						? {
@@ -611,7 +611,7 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 				{ label: this.msg(CatalogMessageId.workflowRowDescription), input: this.fields.get("description") },
 				{
 					label: this.msg(CatalogMessageId.workflowRowModel),
-					value: agentModelSelectorLabel(role.model, this.service.models()),
+					value: agentModelSelectorLabel(role.model, this.service.models(), this.catalog),
 					meta: "›",
 					run: () => {
 						this.modelSearch.setValue("");
@@ -754,10 +754,11 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 				this.selected = 2;
 			};
 			const rows: Row[] = [];
+			const sameAsSessionLabel = this.msg(CatalogMessageId.workflowRowSameAsThisSession);
 			// The literal value stays visible in the value column so the saved selector is unambiguous.
-			if (`${SAME_MODEL} same as this session`.includes(query))
+			if (`${SAME_MODEL} ${sameAsSessionLabel}`.toLowerCase().includes(query))
 				rows.push({
-					label: this.msg(CatalogMessageId.workflowRowSameAsThisSession),
+					label: sameAsSessionLabel,
 					labelRole: "palette.identity",
 					value: SAME_MODEL,
 					heading: this.msg(CatalogMessageId.workflowLabelModels),

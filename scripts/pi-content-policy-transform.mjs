@@ -12,6 +12,52 @@ const JOUZU_BUG_REPORT_SOURCE = readFileSync(
 	join(import.meta.dirname, "../upstream/pi-content-policy/bug-report.js"),
 	"utf8",
 );
+// A Japanese IME commonly produces U+FF0F for the slash key. Interactive
+// command entry normalizes only a leading U+FF0F; arguments, later lines, RPC,
+// adapters, and automated input stay literal.
+const JOUZU_IME_SLASH_SOURCE = `const FULLWIDTH_SLASH = "\\uFF0F";
+const LEADING_FULLWIDTH_SLASH = /^(\\s*)\\uFF0F/u;
+export function normalizeCommandEntry(text) {
+    return text.startsWith(FULLWIDTH_SLASH) ? "/" + text.slice(1) : text;
+}
+function normalizeCommandLine(line) {
+    return line.replace(LEADING_FULLWIDTH_SLASH, "$1/");
+}
+export class JouzuFullwidthSlashAutocompleteProvider {
+    base;
+    triggerCharacters;
+    constructor(base) {
+        this.base = base;
+        this.triggerCharacters = [...new Set([...(base.triggerCharacters ?? []), FULLWIDTH_SLASH])];
+    }
+    normalizedCommandLines(lines, cursorLine, cursorCol) {
+        if (cursorLine !== 0)
+            return undefined;
+        const currentLine = lines[cursorLine] || "";
+        if (!LEADING_FULLWIDTH_SLASH.test(currentLine.slice(0, cursorCol)))
+            return undefined;
+        const normalized = [...lines];
+        normalized[cursorLine] = normalizeCommandLine(currentLine);
+        return normalized;
+    }
+    async getSuggestions(lines, cursorLine, cursorCol, options = {}) {
+        const normalized = this.normalizedCommandLines(lines, cursorLine, cursorCol);
+        if (!normalized)
+            return this.base.getSuggestions(lines, cursorLine, cursorCol, options);
+        const commandText = normalized[cursorLine].slice(0, cursorCol).trimStart();
+        const force = commandText.includes(" ") ? options.force : false;
+        return this.base.getSuggestions(normalized, cursorLine, cursorCol, { ...options, force });
+    }
+    applyCompletion(lines, cursorLine, cursorCol, item, prefix) {
+        const normalized = this.normalizedCommandLines(lines, cursorLine, cursorCol);
+        return this.base.applyCompletion(normalized ?? lines, cursorLine, cursorCol, item, prefix);
+    }
+    shouldTriggerFileCompletion(lines, cursorLine, cursorCol) {
+        const normalized = this.normalizedCommandLines(lines, cursorLine, cursorCol);
+        return this.base.shouldTriggerFileCompletion?.(normalized ?? lines, cursorLine, cursorCol) ?? true;
+    }
+}
+`;
 export function transform(path, source) {
 	let text = source;
 	const change = (before, after, count) => {
@@ -275,6 +321,24 @@ export function sessionEntryToContextMessages(entry) {`,
 			"export interface MainOptions {\n    sessionInfoFooter?: () => string;\n    flowIngressFactory?: (context: { cwd: string; sessionManager: SessionManager }) => FlowIngress | Promise<FlowIngress>;\n    contentPolicyFactory?: (context: { cwd: string; sessionId: string }) => ContentPolicy | Promise<ContentPolicy>;",
 		);
 	} else if (path === "dist/modes/interactive/interactive-mode.js") {
+		change("export class InteractiveMode {", `${JOUZU_IME_SLASH_SOURCE}export class InteractiveMode {`);
+		change(
+			`        this.defaultEditor.onSubmit = async (text) => {
+            text = text.trim();`,
+			`        this.defaultEditor.onSubmit = async (text) => {
+            text = normalizeCommandEntry(text.trim());`,
+		);
+		// Alt+Enter is also command entry; normalize before the compaction/streaming gates.
+		change(
+			`    async handleFollowUp() {
+        const text = (this.editor.getExpandedText?.() ?? this.editor.getText()).trim();`,
+			`    async handleFollowUp() {
+        const text = normalizeCommandEntry((this.editor.getExpandedText?.() ?? this.editor.getText()).trim());`,
+		);
+		change(
+			"        return new CombinedAutocompleteProvider([...slashCommands, ...templateCommands, ...extensionCommands, ...skillCommandList], this.sessionManager.getCwd(), this.fdPath);",
+			"        return new JouzuFullwidthSlashAutocompleteProvider(new CombinedAutocompleteProvider([...slashCommands, ...templateCommands, ...extensionCommands, ...skillCommandList], this.sessionManager.getCwd(), this.fdPath));",
+		);
 		// Terminal clipboard requests cannot confirm delivery, including OSC 52 outside tmux.
 		change(
 			'this.showStatus("Copied selected message to clipboard");',
@@ -320,6 +384,17 @@ export function sessionEntryToContextMessages(entry) {`,
 		change(
 			"export interface InteractiveModeOptions {",
 			"export interface InteractiveModeOptions {\n    /** Host runtime identity appended to /session output. */\n    sessionInfoFooter?: () => string;",
+		);
+	} else if (path === "dist/modes/interactive/components/custom-editor.js") {
+		// The editor's slash-context check is ASCII-only. Recognize a leading
+		// full-width slash for argument completion without rewriting editor text.
+		change(
+			"    handleInput(data) {",
+			`    isInSlashCommandContext(textBeforeCursor) {
+        return super.isInSlashCommandContext(textBeforeCursor) ||
+            super.isInSlashCommandContext(textBeforeCursor.replace(/^(\\s*)\\uFF0F/u, "$1/"));
+    }
+    handleInput(data) {`,
 		);
 	} else if (path === "dist/modes/interactive/bug-report.js") {
 		// /bug becomes a reviewable Markdown draft with optional gh submission.
@@ -1950,6 +2025,7 @@ export const paths = [
 	"dist/main.d.ts",
 	"dist/modes/interactive/interactive-mode.js",
 	"dist/modes/interactive/interactive-mode.d.ts",
+	"dist/modes/interactive/components/custom-editor.js",
 	"dist/core/resource-loader.js",
 	"dist/core/resource-loader.d.ts",
 	"dist/core/sdk.js",

@@ -1,3 +1,5 @@
+import { CatalogMessageId, catalogText, defaultCatalog } from "../cli-messages.js";
+import type { CatalogBundle } from "../locale-catalog.js";
 import { catalogRuntimeIdentity } from "../model-catalog-projection.js";
 import { sanitizeTerminalText } from "../terminal-layout.js";
 import { type AgentModel, isSameModelSelector, resolveAgentModel } from "./roles.js";
@@ -15,8 +17,12 @@ export function agentModelDisplay(model: { provider: string; id: string; name?: 
 	};
 }
 
-export function agentModelSelectorLabel(selector: string, models: readonly AgentModel[]): string {
-	if (isSameModelSelector(selector)) return "Same as this session";
+export function agentModelSelectorLabel(
+	selector: string,
+	models: readonly AgentModel[],
+	catalog: CatalogBundle = defaultCatalog(),
+): string {
+	if (isSameModelSelector(selector)) return catalogText(catalog, CatalogMessageId.workflowRowSameAsThisSession);
 	try {
 		return agentModelDisplay(resolveAgentModel(selector, models)).label;
 	} catch {

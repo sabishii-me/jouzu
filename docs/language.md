@@ -37,6 +37,20 @@ Startup precedence, highest first:
 
 The locale environment does not select response or artifact languages. Preview changes the Settings panel immediately. Confirmation saves the choice and refreshes supported Jouzu and Pi screens. Screens that retain their opening language switch when reopened or after a restart; third-party extensions and service-owned web pages control their own language.
 
+## Japanese text wrapping
+
+Interactive Markdown prose keeps Japanese closing punctuation with the preceding
+text and opening brackets with the following text when the terminal width allows
+it. This applies regardless of the interface language. Explicit line breaks are
+preserved. Code blocks and tables retain their own wrapping behavior.
+
+## Japanese command entry
+
+In the interactive editor, a leading full-width slash (`／`) works as a command
+prefix: `／model` invokes `/model`, and command completion accepts either slash.
+Only that leading slash is converted; command names and arguments are not
+Unicode-normalized. RPC and external input adapters keep `／` literal.
+
 ## Response language and artifacts
 
 `responseLanguage` accepts `auto`, `en`, `ja`, `zh-Hans` or `zh-Hant`. The default `auto` adds no fixed conversational-language instruction; it does not mean “use the UI locale.” A fixed preference adds an instruction such as `Response language: Japanese (ja)`. The instruction itself may be written in English; the requested answer language is Japanese.

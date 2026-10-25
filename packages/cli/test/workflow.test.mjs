@@ -133,6 +133,31 @@ test("Workflow localizes navigation, nested headings, and actions without changi
 	f.view.dispose();
 });
 
+test("Workflow renders the same-as-session model label from the active catalog", () => {
+	for (const [locale, label] of [
+		["ja", "このセッションと同じ"],
+		["en", "Same as this session"],
+	]) {
+		const f = fixture(resolveCatalog(locale).bundle);
+		assert.ok(f.text(120).includes(label), `${locale} browse rows use the catalog label`);
+		select(f, "coder");
+		enter(f.view);
+		assert.ok(f.text(120).includes(label), `${locale} role form uses the catalog label`);
+		f.view.dispose();
+	}
+});
+
+test("the same-as-session search alias follows the active catalog", () => {
+	const f = fixture(resolveCatalog("ja").bundle);
+	select(f, "coder");
+	enter(f.view);
+	down(f.view, 2);
+	enter(f.view);
+	f.view.handleInput("このセッション");
+	assert.match(f.text(120), /このセッションと同じ/);
+	f.view.dispose();
+});
+
 test("Workflow uses tall terminals and keeps selected actions and rebound hints inside short frames", () => {
 	for (const locale of ["en", "ja"]) {
 		const f = fixture(resolveCatalog(locale).bundle);

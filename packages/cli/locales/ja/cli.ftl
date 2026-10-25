@@ -78,7 +78,7 @@ jouzu-cli-help-footer-resume = 終了時に表示される `{ $command }` コマ
 jouzu-cli-help-footer-profile = 最初の対話起動では、任意の JA プロファイルを有効にする前に確認します。Core がフォールバックです。
 jouzu-cli-help-footer-startup = 対話起動ではビューポートを消去し、Jouzu ヘッダーを表示します。`{ $setting }` を設定すると既存の画面を保持します。
 jouzu-cli-help-footer-palette = `{ $command }` または { $key } で Jouzu Palette を開きます。
-jouzu-cli-help-footer-catalogs = `{ $command }` は Settings / Catalogs を直接開きます。
+jouzu-cli-help-footer-catalogs = `{ $command }` は設定 / カタログを直接開きます。
 jouzu-cli-help-footer-sections = 閲覧モードでは { $nextKey } または { $previousKey } で Palette のセクションを切り替えます。
 jouzu-cli-help-footer-pi = Pi の CLI ヘルプには `{ $command }` を使用します。
 
@@ -296,8 +296,8 @@ jouzu-cli-catalog-credential-savedToken = 保存されたトークン（環境�
 jouzu-cli-catalog-credential-environmentNotSet = 環境変数 { $name }（未設定）
 jouzu-cli-catalog-status-disabled = 無効
 jouzu-cli-catalog-sourceNotFound = カタログソースが見つかりません: { $id }
-jouzu-cli-catalog-tokenMissing = トークン変数 { $name } はこの Jouzu プロセスで設定されていません。Jouzu を起動する前にエクスポートするか、Settings / Catalogs でトークンを保存してから再試行してください。
-jouzu-cli-catalog-tokenMissingWithSaved = トークン変数 { $name } はこの Jouzu プロセスで設定されておらず、このソースに保存されたトークンもありません。Jouzu を起動する前にエクスポートするか、Settings / Catalogs でトークンを保存してから再試行してください。
+jouzu-cli-catalog-tokenMissing = トークン変数 { $name } はこの Jouzu プロセスで設定されていません。Jouzu を起動する前にエクスポートするか、設定 / カタログでトークンを保存してから再試行してください。
+jouzu-cli-catalog-tokenMissingWithSaved = トークン変数 { $name } はこの Jouzu プロセスで設定されておらず、このソースに保存されたトークンもありません。Jouzu を起動する前にエクスポートするか、設定 / カタログでトークンを保存してから再試行してください。
 jouzu-cli-catalog-attempt-http = HTTP { $status }
 jouzu-cli-catalog-attempt-timedOut = タイムアウト
 jouzu-cli-catalog-discovery-authFailed = カタログの認証に失敗しました（HTTP { $status }）。このカタログが bearer トークン認証を必要とする場合は設定してください。
@@ -686,8 +686,8 @@ jouzu-cli-modelPicker-compacting = { $model } に切り替える前に圧縮し�
 jouzu-cli-modelPicker-selecting = { $model } を選択しています…
 jouzu-cli-modelPicker-favoriteAdded = { $model } をお気に入りに追加しました。
 jouzu-cli-modelPicker-favoriteRemoved = { $model } をお気に入りから削除しました。
-jouzu-cli-modelPicker-catalogsNotRefreshed = カタログを再取得できませんでした: { $sources }。キャッシュされたカタログデータは引き続き利用できます。Catalogs を開いて再試行してください。
-jouzu-cli-modelPicker-catalogsWereNotRefreshed = カタログを再取得できませんでした: { $message } キャッシュされたカタログデータは引き続き利用できます。Catalogs を開いて再試行してください。
+jouzu-cli-modelPicker-catalogsNotRefreshed = カタログを再取得できませんでした: { $sources }。キャッシュされたカタログデータは引き続き利用できます。カタログを開いて再試行してください。
+jouzu-cli-modelPicker-catalogsWereNotRefreshed = カタログを再取得できませんでした: { $message } キャッシュされたカタログデータは引き続き利用できます。カタログを開いて再試行してください。
 jouzu-cli-modelPicker-modelAvailabilityNotRefreshed = モデルの可用性を再取得できませんでした: { $message } `/reload` を実行してください。
 jouzu-cli-modelPicker-switchQueued = モデルの切り替えを次のモデル呼び出しに予約しました: { $model }。
 jouzu-cli-modelPicker-thinkingLevelNotApplied = 保存された思考レベルを適用できませんでした: { $message }
@@ -721,7 +721,7 @@ jouzu-cli-modelPicker-row-contextSmall = {" "}コンテキスト不足
 jouzu-cli-modelPicker-empty = 一致するモデルがありません
 jouzu-cli-modelPicker-catalogDisabled = 選択したモデルカタログが無効か利用できません。Models を開いてモデルを選択してください。
 jouzu-cli-modelPicker-modelUnavailableDetail = モデルを利用できません: { $model }
-jouzu-cli-modelPicker-noAuthenticationCredential = { $model } の認証がありません。Catalogs を開いて資格情報を確認してください。
+jouzu-cli-modelPicker-noAuthenticationCredential = { $model } の認証がありません。カタログを開いて資格情報を確認してください。
 # Models ビューの残りの失敗文言。選択コールバックが最初の 1 つをピッカーの
 # メッセージ領域へ投げ、更新コールバックが後の 2 つを更新失敗の `{ $detail }` として
 # 投げる。モデル ID は保護値として渡す。
@@ -1103,8 +1103,9 @@ jouzu-cli-settings-refresh-status = カタログ { $status }。
 jouzu-cli-settings-hint-scroll = スクロール
 
 # 条件式が持っていた設定パネルの文言。状態語（資格情報、自動ラベル）は内部値を
-# キーにした select の variant である。ビュー名はオーナーの決定により Palette の
-# 製品名として英語のまま置く。
+# キーにした select の variant である。ビュー名はカタログの表示語に従い、
+# Catalogs は「カタログ」、Settings は「設定」と表示する。`/catalogs` と
+# 識別子は翻訳しない。
 jouzu-cli-settings-warning = 警告: { $message }
 jouzu-cli-settings-savedQuarantined = { $label } を保存しました。カタログリビジョンは隔離されました: { $reasons }。
 jouzu-cli-settings-savedWithCount = { $count ->
@@ -1143,7 +1144,7 @@ jouzu-cli-settings-autoLabelsState = { $state ->
    *[off] オフ
 }
 jouzu-cli-settings-view-about = About
-jouzu-cli-settings-view-catalogs = Catalogs
+jouzu-cli-settings-view-catalogs = カタログ
 # Settings の「言語」ビュー。3 項目が実効値とその設定元を表示する。設定元の
 # トークン（cli、env、config、os、session、project、task、builtin）と
 # プレビュー印は引数または保護値として渡される。
@@ -1208,7 +1209,7 @@ jouzu-cli-settings-account-notConnected = 未接続
 jouzu-cli-settings-heading-modelCatalogs = モデルカタログ
 jouzu-cli-settings-empty-noSources = カタログソースが設定されていません。
 jouzu-cli-settings-empty-noOfferings = キャッシュされた提供モデルがありません。
-jouzu-cli-settings-title = · Settings / { $view }
+jouzu-cli-settings-title = · 設定 / { $view }
 jouzu-cli-settings-signIn-requestingCode = Shisa のデバイスコードを要求しています。{ $cancel } でキャンセルできます。
 jouzu-cli-settings-signIn-deviceCode = { $uri } を開き、コード { $code } を入力してこのデバイスを承認してください。{ $cancel } でキャンセルできます。
 jouzu-cli-settings-signIn-unexpectedPrompt = 想定外の Shisa サインインプロンプトです。

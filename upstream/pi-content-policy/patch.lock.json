@@ -121,11 +121,15 @@
 		},
 		"dist/modes/interactive/interactive-mode.js": {
 			"before": "633000038a8a9c60111fc9b32481c4015285fe530685277068bc5ed74f77dafa",
-			"after": "4cd91f367924e0908bb0351466d3c9f113fbe25326510df0bd68db53e2874fbb"
+			"after": "cdae9dd912b30ca99d57d26449b9cd3e3b304adf6f90a474179a0912c2d92d6c"
 		},
 		"dist/modes/interactive/interactive-mode.d.ts": {
 			"before": "bfe4955c7b026ce5e91b60426837f277f65d5d5544c8a316ff416dbe2874078f",
 			"after": "d2f384a3ca9a74fe1cabcba846afeb6422368f26137d6d3cb8c5e37c109c21f9"
+		},
+		"dist/modes/interactive/components/custom-editor.js": {
+			"before": "000b0056f2bf645537537468bdd6f6ee0c82e4110f5417c1c70c2e8fefc04f29",
+			"after": "7e939c3aa80b1d5503b43731acb09a28110a5af1b2278960f3ecc58637a0d113"
 		},
 		"dist/core/slash-commands.js": {
 			"before": "cdbaa9cb7594702d5b5608cf0d26764e6218163087801d220d31c3fb9e2ac7c5",

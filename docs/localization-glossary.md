@@ -37,8 +37,7 @@ another script.
   `guarded`, `strict`, `bearer` and `Bearer`.
 - **Product names:** `Jouzu`, `Pi`, `Shisa`, `TextGuard`, `Camoufox`.
 - **Palette product nouns:** `Jouzu Palette`, `Palette`, `Settings`,
-  `Catalogs`, `Models`, `About`, `Dashboard`, `Workflow`, `Session UI`,
-  `Jouzu Help`.
+  `Models`, `About`, `Dashboard`, `Workflow`, `Session UI`, `Jouzu Help`.
 - **Profile ids:** `core`, `ja`.
 - **Locale tags:** `en`, `ja`, `zh-Hans`, `zh-Hant`.
 - **Settings keys and file names:** `schemaVersion`, `uiLocale`,
@@ -55,10 +54,11 @@ another script.
 - **Thinking levels**, **paths**, **URLs**, **HTTP status codes**, **exit
   codes**, **digests**, and **version strings**.
 
-A `Palette` product noun stays English even inside a translated sentence,
-because it names a view the user sees in the Palette. A term such as
+A `Palette` product noun in the list above stays English in ordinary translated
+prose. The `Settings / Catalogs` route uses the visible Japanese labels
+`設定 / カタログ`; keep `/catalogs` and catalog identifiers exact. A term such as
 `catalog`, `session`, or `workflow` is vocabulary, not a product noun, and is
-translated; only the exact view names in the list above are protected.
+translated.
 
 ## Japanese terminology
 
@@ -67,6 +67,9 @@ translated; only the exact view names in the list above are protected.
   `書き込み可能なサブエージェント`), so the `/subagents` and Workflow text names
   one kind of agent. Do not reintroduce `子エージェント`; `子セッション` (child
   session) is a separate term.
+- **Catalogs view:** Japanese renders the Palette's Catalogs view as
+  `カタログ`. Route prose uses the visible `設定 / カタログ` path; keep
+  `/catalogs` and catalog identifiers exact.
 
 ## Message semantics and composition
 
