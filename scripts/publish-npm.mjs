@@ -25,9 +25,7 @@ const jobs = JSON.parse(readFileSync(join(directory, "ci-jobs.json"), "utf8"));
 const artifactJobsPath = join(directory, "artifact-jobs.json");
 const artifactJobs = existsSync(artifactJobsPath) ? JSON.parse(readFileSync(artifactJobsPath, "utf8")) : jobs;
 verifyQualification(run, jobs, qualificationManifest(manifest, run, jobs, artifactJobs));
-if (existsSync(join(directory, "windows-qualification.json"))) {
-	verifyWindowsQualification(JSON.parse(readFileSync(join(directory, "windows-qualification.json"), "utf8")), manifest);
-}
+verifyWindowsQualification(JSON.parse(readFileSync(join(directory, "windows-qualification.json"), "utf8")), manifest);
 const npm = (args, capture = false) => {
 	const result = spawnSync("npm", args, {
 		encoding: "utf8",

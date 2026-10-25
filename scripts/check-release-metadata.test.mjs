@@ -340,24 +340,25 @@ test("windows artifacts are named for the Jouzu release and land on it", () => {
 	assert.match(publish, /launcher-notes\.mjs" \(Join-Path \$PSScriptRoot '\.\.\/\.\.\/CHANGELOG\.md'\)/u);
 });
 
-test("publish accepts the Linux/macOS candidate before post-publication Windows installer qualification", () => {
+test("publish requires exact-candidate Windows qualification before npm invocation", () => {
 	const workflow = readFileSync(join(root, ".github", "workflows", "publish-npm.yml"), "utf8");
 	assert.match(
 		workflow,
-		/windows-evidence:\n\s+description: Native Windows qualification JSON when available; installer qualification may follow npm publication\n\s+required: false\n\s+default: ''\n\s+type: string/u,
+		/windows-evidence:\n\s+description: Passing native Windows qualification JSON for the exact candidate\n\s+required: true\n\s+type: string/u,
 	);
 	assert.match(workflow, /WINDOWS_QUALIFICATION_JSON: \$\{\{ inputs\.windows-evidence \}\}/u);
-	assert.match(workflow, /if \[\[ -n "\$WINDOWS_QUALIFICATION_JSON" \]\]; then/u);
+	assert.match(workflow, /\[\[ -n "\$WINDOWS_QUALIFICATION_JSON" \]\] \|\| .*exit 1/u);
 	assert.match(workflow, /dist\/ci-artifacts\/windows-qualification\.json/u);
 	const publisher = readFileSync(join(root, "scripts", "publish-npm.mjs"), "utf8");
 	assert.match(publisher, /import \{[^}]*verifyWindowsQualification[^}]*\} from "\.\/release-artifact\.mjs";/u);
-	assert.match(publisher, /if \(existsSync\(join\(directory, "windows-qualification\.json"\)\)\)/u);
+	assert.doesNotMatch(publisher, /if \(existsSync\(join\(directory, "windows-qualification\.json"\)\)\)/u);
 	assert.match(
 		publisher,
 		/verifyWindowsQualification\(JSON\.parse\(readFileSync\(join\(directory, "windows-qualification\.json"\), "utf8"\)\), manifest\)/u,
 	);
 	assert.ok(
-		publisher.indexOf('npm", [') < publisher.indexOf("verifyWindowsQualification("),
-		"optional Windows qualification must be checked before npm publish when supplied",
+		publisher.indexOf("verifyWindowsQualification(") > 0 &&
+			publisher.indexOf("verifyWindowsQualification(") < publisher.indexOf('npm(["--version"]'),
+		"required Windows qualification must be checked before any npm invocation",
 	);
 });
