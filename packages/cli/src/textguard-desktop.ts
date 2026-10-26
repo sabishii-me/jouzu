@@ -24,19 +24,28 @@ export function createTextGuardDesktopExtension(
 				const policy = runtime.forSession(ctx.sessionManager.getSessionId());
 				if (!policy) return reply(ctx, { ok: false, error: "TextGuard is unavailable for this session." });
 				let request: { action?: unknown; id?: unknown; ticket?: unknown; mode?: unknown; persist?: unknown };
-				try { request = JSON.parse(args.trim() || "{}") as typeof request; }
-				catch { return reply(ctx, { ok: false, error: "Invalid TextGuard request." }); }
+				try {
+					request = JSON.parse(args.trim() || "{}") as typeof request;
+				} catch {
+					return reply(ctx, { ok: false, error: "Invalid TextGuard request." });
+				}
 				const sessionId = ctx.sessionManager.getSessionId();
 				if (request.action === "inspect") {
 					const pending = policy.reviews();
-					const pendingIds = new Set(pending.map(item => item.id));
-					const reports = policy.scanReports().filter(item => !pendingIds.has(item.id));
+					const pendingIds = new Set(pending.map((item) => item.id));
+					const reports = policy.scanReports().filter((item) => !pendingIds.has(item.id));
 					const items = [
-						...pending.map(review => ({ review, withheld: true })),
-						...reports.map(review => ({ review, withheld: false })),
+						...pending.map((review) => ({ review, withheld: true })),
+						...reports.map((review) => ({ review, withheld: false })),
 					].map(({ review, withheld }) => {
 						const ticket = randomUUID();
-						tickets.set(ticket, { sessionId, reviewId: review.id, withheld, expires: Date.now() + TICKET_MS, used: false });
+						tickets.set(ticket, {
+							sessionId,
+							reviewId: review.id,
+							withheld,
+							expires: Date.now() + TICKET_MS,
+							used: false,
+						});
 						return {
 							id: review.id,
 							withheld,
@@ -52,16 +61,30 @@ export function createTextGuardDesktopExtension(
 				}
 				if (request.action === "mode") {
 					const mode = request.mode === "on" ? "guarded" : request.mode;
-					if (!["guarded", "strict", "off"].includes(String(mode))) return reply(ctx, { ok: false, error: "Invalid TextGuard mode." });
-					if (!runtime.setMode(mode as TextGuardMode)) return reply(ctx, { ok: true, action: "mode", changed: false, mode: policy.currentMode() });
+					if (!["guarded", "strict", "off"].includes(String(mode)))
+						return reply(ctx, { ok: false, error: "Invalid TextGuard mode." });
+					if (!runtime.setMode(mode as TextGuardMode))
+						return reply(ctx, { ok: true, action: "mode", changed: false, mode: policy.currentMode() });
 					reply(ctx, { ok: true, action: "mode", changed: true, mode: mode as TextGuardMode });
-					try { await ctx.reload(); } catch { /* A failed reload is visible on the next inspect. */ }
+					try {
+						await ctx.reload();
+					} catch {
+						/* A failed reload is visible on the next inspect. */
+					}
 					return;
 				}
-				if (request.action !== "approve" && request.action !== "dismiss") return reply(ctx, { ok: false, error: "Unsupported TextGuard action." });
-				if (typeof request.ticket !== "string" || typeof request.id !== "string") return reply(ctx, { ok: false, error: "Missing TextGuard ticket." });
+				if (request.action !== "approve" && request.action !== "dismiss")
+					return reply(ctx, { ok: false, error: "Unsupported TextGuard action." });
+				if (typeof request.ticket !== "string" || typeof request.id !== "string")
+					return reply(ctx, { ok: false, error: "Missing TextGuard ticket." });
 				const ticket = tickets.get(request.ticket);
-				if (!ticket || ticket.used || ticket.expires <= Date.now() || ticket.sessionId !== sessionId || ticket.reviewId !== request.id) {
+				if (
+					!ticket ||
+					ticket.used ||
+					ticket.expires <= Date.now() ||
+					ticket.sessionId !== sessionId ||
+					ticket.reviewId !== request.id
+				) {
 					return reply(ctx, { ok: false, error: "This TextGuard review expired. Refresh the panel." });
 				}
 				ticket.used = true;
@@ -70,9 +93,14 @@ export function createTextGuardDesktopExtension(
 					policy.dismissReport(request.id);
 					return reply(ctx, { ok: true, action: "dismiss" });
 				}
-				if (!runtime.approve(policy, request.id, request.persist === true)) return reply(ctx, { ok: false, error: "This TextGuard review expired." });
+				if (!runtime.approve(policy, request.id, request.persist === true))
+					return reply(ctx, { ok: false, error: "This TextGuard review expired." });
 				reply(ctx, { ok: true, action: "approve", reloaded: true });
-				try { await ctx.reload(); } catch { /* The approval is durable; the next inspect reports the current state. */ }
+				try {
+					await ctx.reload();
+				} catch {
+					/* The approval is durable; the next inspect reports the current state. */
+				}
 				return;
 			},
 		});

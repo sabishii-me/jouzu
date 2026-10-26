@@ -704,11 +704,12 @@ export async function runMainCli(args: string[]): Promise<void> {
 		onModelCycle: (direction) => modelPicker.cycleFavorite(direction),
 		onScopedModelsCommand: () => modelPicker.handleScopedModelsCommand(),
 	});
-	const [{ TextGuardRuntime }, { createTextGuardReviewExtension }, { createTextGuardDesktopExtension }] = await Promise.all([
-		import("./textguard-runtime.js"),
-		import("./textguard-review.js"),
-		import("./textguard-desktop.js"),
-	]);
+	const [{ TextGuardRuntime }, { createTextGuardReviewExtension }, { createTextGuardDesktopExtension }] =
+		await Promise.all([
+			import("./textguard-runtime.js"),
+			import("./textguard-review.js"),
+			import("./textguard-desktop.js"),
+		]);
 	const nativeTextguard = new TextGuardRuntime({
 		cachePath: join(paths.cacheDir, "textguard", "scans.json"),
 		approvalPath: join(paths.cacheDir, "textguard", "approvals.json"),

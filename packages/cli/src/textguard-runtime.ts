@@ -90,7 +90,8 @@ export class TextGuardRuntime {
 	}
 	/** Call only after user confirmation. A session change while its dialog was open invalidates the action. */
 	approve(policy: NativeContentPolicy, reviewId: string, persist = false): boolean {
-		const known = this.active?.policy === policy || [...this.sessions.values()].some(entry => entry.policy === policy);
+		const known =
+			this.active?.policy === policy || [...this.sessions.values()].some((entry) => entry.policy === policy);
 		return !this.closed && known && policy.admission.approve(reviewId, persist);
 	}
 	close(): Promise<void> {

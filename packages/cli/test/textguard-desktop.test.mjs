@@ -25,9 +25,12 @@ function setup() {
 		dismissReport() {},
 	};
 	const runtime = {
-		forSession: id => id === "session" ? policy : undefined,
+		forSession: (id) => (id === "session" ? policy : undefined),
 		setMode: () => false,
-		approve: () => { approved++; return true; },
+		approve: () => {
+			approved++;
+			return true;
+		},
 	};
 	const commands = new Map();
 	createTextGuardDesktopExtension(runtime, { enabled: true })({
@@ -38,11 +41,19 @@ function setup() {
 		hasUI: true,
 		sessionManager: { getSessionId: () => "session" },
 		ui: { notify: (message, kind) => messages.push({ message, kind }) },
-		reload: async () => { reloads++; },
+		reload: async () => {
+			reloads++;
+		},
 	};
-	return { handler: commands.get("textguard-desktop").handler, ctx, messages, approved: () => approved, reloads: () => reloads };
+	return {
+		handler: commands.get("textguard-desktop").handler,
+		ctx,
+		messages,
+		approved: () => approved,
+		reloads: () => reloads,
+	};
 }
-const payload = message => JSON.parse(message.replace(/^JOUZU_TEXTGUARD /u, ""));
+const payload = (message) => JSON.parse(message.replace(/^JOUZU_TEXTGUARD /u, ""));
 
 test("desktop inspect issues a one-use ticket for real review state", async () => {
 	const f = setup();
@@ -78,7 +89,10 @@ test("desktop approval requires the issued ticket and consumes it", async () => 
 
 test("desktop control is inert when disabled", () => {
 	const commands = new Map();
-	createTextGuardDesktopExtension({ forSession: () => undefined }, { enabled: false })({
+	createTextGuardDesktopExtension(
+		{ forSession: () => undefined },
+		{ enabled: false },
+	)({
 		registerCommand: (name, command) => commands.set(name, command),
 	});
 	assert.equal(commands.size, 0);
