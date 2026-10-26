@@ -164,7 +164,11 @@ export class MultiloopFlowProducer implements FlowProducer {
 			);
 			const settled = attempts.filter((attempt) => attempt.phase === "settled" && attempt.outcome === "success");
 			const retired = await this.attachment.ledger.retired({ settled: [id] });
-			entry.revision ??= String(settled.length + retiredSettledCount(retired, id) + 1);
+			// A pending successor can be observed before its predecessor settles. Recompute
+			// until consumption so that early read cannot pin it to an already spent revision.
+			// Once admitted, keep the revision fixed so later snapshots cannot replay it.
+			if (entry.retained || entry.revision === undefined)
+				entry.revision = String(settled.length + retiredSettledCount(retired, id) + 1);
 			const revision = entry.revision;
 			intents.push({
 				id,
