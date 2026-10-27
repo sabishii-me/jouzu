@@ -338,14 +338,14 @@ for (const earlySnapshot of [false, true])
 		assert.equal(f.calls.length, 3);
 	});
 
-test("an early reserved multiloop successor stays blocked after predecessor failure and retirement", async (t) => {
+test("an early observed multiloop successor stays blocked after predecessor failure and retirement", async (t) => {
 	let adapter;
 	const f = await fixture(t, true, {
 		fetch: async () => new Response("unavailable", { status: 400 }),
 		consumedAttempt: (attempt) => adapter.admitted(attempt),
 		extensions: [
 			{
-				name: "reserve-before-failure-settlement",
+				name: "observe-before-failure-settlement",
 				factory(pi) {
 					pi.on("agent_end", async () => {
 						adapter.submit(input);
@@ -374,11 +374,14 @@ test("an early reserved multiloop successor stays blocked after predecessor fail
 	await f.controller.wake();
 	const snapshot = () => adapter.snapshot(new AbortController().signal);
 	assert.equal((await f.ledger.snapshot()).attempts[0].outcome, "failure");
-	assert.equal((await snapshot())[0].revision, "2");
+	// A pending successor keeps the failed predecessor's identity until a success advances it,
+	// so the failure receipt fences it instead of pinning a reservation above the failure.
+	assert.equal((await snapshot())[0].revision, "1");
 	assert.equal((await snapshot())[0].runnable, false);
 	await f.ledger.retire(0);
 	assert.equal((await f.ledger.snapshot()).attempts.length, 0, "the failure is represented by retired receipts");
-	assert.equal((await snapshot())[0].runnable, false, "retirement cannot authorize the reserved successor");
+	assert.equal((await snapshot())[0].revision, "1", "retirement preserves the failed identity");
+	assert.equal((await snapshot())[0].runnable, false, "retirement cannot authorize the fenced successor");
 	await f.controller.wake();
 	assert.equal((await f.ledger.snapshot()).attempts.length, 0);
 });
