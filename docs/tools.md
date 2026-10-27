@@ -17,7 +17,7 @@ The `core` and `ja` profiles load the same tools.
 
 Also included:
 
-- Code previews for supported tool calls and results.
+- Code previews for supported tool calls and results. Syntax colors follow Pi's light or dark theme when a session starts. To choose a fixed Shiki theme, set `CODE_PREVIEW_THEME` (for example `CODE_PREVIEW_THEME=github-light`) or pick one in `/code-preview-settings`.
 - Skill suggestions when you type `$` at the start of a word.
 
 ## MCP servers

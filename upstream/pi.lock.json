@@ -55,7 +55,7 @@
 		},
 		{
 			"path": "upstream/code-previews/patch.lock.json",
-			"sha256": "7adea50d8fa1e6e6522ca54e020fecb33819e2c98f4d91138b73af45cd2d0300"
+			"sha256": "998be81efca44a32e3a56bcab7fa6c53856bc92419e0f04d00263ad93f28b75e"
 		}
 	]
 }

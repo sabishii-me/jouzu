@@ -22,6 +22,42 @@ export function resolvePreviewPath(path: string, cwd: string): string {
 }
 `;
 
+const PRISTINE_EXTENSION = `import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { registerHealthCommand } from "../commands/health";
+import { registerSettingsCommand } from "../commands/settings";
+import { codePreviewSettings } from "../settings/index";
+import { loadCodePreviewSettings } from "../settings/bootstrap";
+import { initializeShiki } from "../syntax/shiki";
+import { type CodePreviewToolName } from "../tools/names";
+import { registerToolRenderers } from "../tool-renderers/registration";
+
+export async function codePreviews(pi: ExtensionAPI) {
+  await loadCodePreviewSettings();
+  const registeredTools = new Set<CodePreviewToolName>();
+  const activatedTools = new Set<CodePreviewToolName>();
+
+  registerHealthCommand(pi);
+  registerSettingsCommand(pi);
+
+  pi.on("session_start", async (_event, ctx) => {
+    const projectTrusted =
+      typeof ctx.isProjectTrusted === "function" ? ctx.isProjectTrusted() : true;
+    try {
+      await loadCodePreviewSettings(ctx.cwd, projectTrusted);
+      if (codePreviewSettings.syntaxHighlighting)
+        void initializeShiki(codePreviewSettings.shikiTheme);
+    } catch (error) {
+      console.warn("[pi-code-previews] Failed to load settings.", error);
+    }
+    registerToolRenderers(pi, ctx.cwd, {
+      registeredTools,
+      activatedTools,
+      projectTrusted,
+    });
+  });
+}
+`;
+
 test("code previews deviation locks exact bytes and both installed host trees are idempotent", async () => {
 	const pin = JSON.parse(await readFile(new URL("../upstream/pi.lock.json", import.meta.url)));
 	const bytes = await readFile(new URL("../upstream/code-previews/patch.lock.json", import.meta.url));
@@ -135,4 +171,79 @@ test("code previews migration removes the earlier fallback revision without touc
 		createHash("sha256").update(transform("src/paths/resolve.ts", fallback)).digest("hex"),
 		lock.files["src/paths/resolve.ts"].after,
 	);
+});
+
+// Stubs for the extension's imports, so the patched session_start hook runs without Pi or Shiki.
+const EXTENSION_STUBS = {
+	"../commands/health": "export function registerHealthCommand() {}",
+	"../commands/settings": "export function registerSettingsCommand() {}",
+	"../settings/index": "export { codePreviewSettings } from './defaults.mjs';",
+	"../settings/bootstrap": `import { codePreviewSettings, defaultCodePreviewSettings } from "./defaults.mjs";
+export async function loadCodePreviewSettings() { Object.assign(codePreviewSettings, defaultCodePreviewSettings, globalThis.savedCodePreviewSettings); }`,
+	"../settings/defaults": `export const defaultCodePreviewSettings = { shikiTheme: "dark-plus", syntaxHighlighting: true };
+export const codePreviewSettings = { ...defaultCodePreviewSettings };`,
+	"../settings/definitions": `export function isBundledThemeName(value) { return ["dark-plus", "light-plus", "github-dark"].includes(value); }`,
+	"../syntax/shiki": "export async function initializeShiki(theme) { globalThis.initializedShikiThemes.push(theme); }",
+	"../tools/names": "export {};",
+	"../tool-renderers/registration": "export function registerToolRenderers() {}",
+};
+
+async function loadPatchedExtension(t) {
+	const dir = await mkdtemp(join(tmpdir(), "jouzu-code-previews-theme-"));
+	t.after(() => rm(dir, { recursive: true, force: true }));
+	let source = transform("src/extension/index.ts", PRISTINE_EXTENSION)
+		.replace(/^import type .*\n/gm, "")
+		.replace("(pi: ExtensionAPI)", "(pi)")
+		.replace(/new Set<CodePreviewToolName>\(\)/g, "new Set()")
+		.replace(/import \{ type CodePreviewToolName \} from "\.\.\/tools\/names";\n/, "");
+	for (const [specifier, stub] of Object.entries(EXTENSION_STUBS)) {
+		const file = `${specifier.split("/").pop()}.mjs`;
+		await writeFile(join(dir, file), stub);
+		source = source.replaceAll(`"${specifier}"`, `"./${file}"`);
+	}
+	await writeFile(join(dir, "extension.mjs"), source);
+	const extension = await import(pathToFileURL(join(dir, "extension.mjs")).href);
+	const settings = await import(pathToFileURL(join(dir, "defaults.mjs")).href);
+	const handlers = {};
+	await extension.codePreviews({ on: (event, handler) => (handlers[event] = handler) });
+	return { settings, start: (appearance) => handlers.session_start({}, { cwd: dir, ui: { theme: { appearance } } }) };
+}
+
+test("code previews pristine extension source matches the pinned before hash", async () => {
+	const lock = JSON.parse(await readFile(new URL("../upstream/code-previews/patch.lock.json", import.meta.url)));
+	const hashes = lock.files["src/extension/index.ts"];
+	assert.equal(createHash("sha256").update(PRISTINE_EXTENSION).digest("hex"), hashes.before);
+	const patched = transform("src/extension/index.ts", PRISTINE_EXTENSION);
+	assert.equal(createHash("sha256").update(patched).digest("hex"), hashes.after);
+	assert.equal(transform("src/extension/index.ts", patched), patched, "the transform must be idempotent");
+	assert.throws(() => transform("src/extension/index.ts", "unrecognized"), /contract mismatch/);
+});
+
+test("code previews follow Pi's light or dark theme unless a Shiki theme is chosen", async (t) => {
+	const savedEnv = process.env.CODE_PREVIEW_THEME;
+	t.after(() => {
+		if (savedEnv === undefined) delete process.env.CODE_PREVIEW_THEME;
+		else process.env.CODE_PREVIEW_THEME = savedEnv;
+		delete globalThis.savedCodePreviewSettings;
+		delete globalThis.initializedShikiThemes;
+	});
+	delete process.env.CODE_PREVIEW_THEME;
+	globalThis.initializedShikiThemes = [];
+	const { settings, start } = await loadPatchedExtension(t);
+
+	await start("light");
+	assert.equal(settings.codePreviewSettings.shikiTheme, "light-plus");
+	await start("dark");
+	assert.equal(settings.codePreviewSettings.shikiTheme, "dark-plus");
+	assert.deepEqual(globalThis.initializedShikiThemes, ["light-plus", "dark-plus"]);
+
+	globalThis.savedCodePreviewSettings = { shikiTheme: "github-dark" };
+	await start("light");
+	assert.equal(settings.codePreviewSettings.shikiTheme, "github-dark", "a saved theme must win");
+	delete globalThis.savedCodePreviewSettings;
+
+	process.env.CODE_PREVIEW_THEME = "dark-plus";
+	settings.defaultCodePreviewSettings.shikiTheme = "dark-plus";
+	await start("light");
+	assert.equal(settings.codePreviewSettings.shikiTheme, "dark-plus", "CODE_PREVIEW_THEME must win");
 });
