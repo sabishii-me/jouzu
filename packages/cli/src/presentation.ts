@@ -68,7 +68,7 @@ export interface BannerPalette {
 	version16: { jouzu: number; pi: number };
 }
 
-export const DEFAULT_BANNER_PALETTE: BannerPalette = {
+export const DARK_BANNER_PALETTE: BannerPalette = {
 	markTruecolor: { start: [34, 211, 238], end: [244, 114, 182] },
 	mark256: [45, 81, 117, 141, 177, 213],
 	mark16: [96, 94, 95],
@@ -76,6 +76,21 @@ export const DEFAULT_BANNER_PALETTE: BannerPalette = {
 	version256: { jouzu: 117, pi: 218 },
 	version16: { jouzu: 96, pi: 95 },
 };
+
+/** The same cyan-to-pink brand gradient, darkened to read on a light terminal background. */
+export const LIGHT_BANNER_PALETTE: BannerPalette = {
+	markTruecolor: { start: [14, 116, 144], end: [190, 24, 93] },
+	mark256: [30, 25, 61, 97, 132, 125],
+	mark16: [36, 34, 35],
+	versionTruecolor: { jouzu: [14, 116, 144], pi: [157, 23, 77] },
+	version256: { jouzu: 30, pi: 125 },
+	version16: { jouzu: 36, pi: 35 },
+};
+
+/** The banner palette for the active Pi theme's appearance. */
+export function bannerPaletteFor(appearance: "dark" | "light" | undefined): BannerPalette {
+	return appearance === "light" ? LIGHT_BANNER_PALETTE : DARK_BANNER_PALETTE;
+}
 
 export interface BannerRenderOptions {
 	colorMode?: BannerColorMode;
@@ -364,29 +379,10 @@ export function detectBannerColorMode(options: BannerRenderOptions = {}): Banner
 	});
 }
 
-export function renderBrandAccent(
-	value: string,
-	tone: "blue" | "pink",
-	mode: BannerColorMode = detectBannerColorMode(),
-	palette: BannerPalette = DEFAULT_BANNER_PALETTE,
-): string {
-	if (mode === "none") return value;
-	if (mode === "truecolor") {
-		const rgb = tone === "blue" ? palette.versionTruecolor.jouzu : palette.markTruecolor.end;
-		return `\u001b[38;2;${rgb.join(";")}m${value}\u001b[39m`;
-	}
-	if (mode === "256") {
-		const color = tone === "blue" ? palette.version256.jouzu : palette.mark256.at(-1);
-		return `\u001b[38;5;${color}m${value}\u001b[39m`;
-	}
-	const color = tone === "blue" ? palette.version16.jouzu : palette.mark16.at(-1);
-	return `\u001b[${color}m${value}\u001b[39m`;
-}
-
 export function renderBrandGradient(
 	line: string,
 	mode: BannerColorMode,
-	palette: BannerPalette = DEFAULT_BANNER_PALETTE,
+	palette: BannerPalette = DARK_BANNER_PALETTE,
 ): string {
 	if (mode === "none") return line;
 	const characters = Array.from(line);
@@ -412,6 +408,11 @@ export function renderBrandGradient(
 			return `\u001b[${color}m${character}${ANSI_RESET}`;
 		})
 		.join("");
+}
+
+/** The gradient JOUZU wordmark for Palette titles, colored for the theme's appearance. */
+export function renderBrandWordmark(theme: Pick<Theme, "appearance">): string {
+	return renderBrandGradient("JOUZU", detectBannerColorMode(), bannerPaletteFor(theme.appearance));
 }
 
 function colorizeVersion(
@@ -479,9 +480,10 @@ export function renderBannerLines(
 	metadata: JouzuMetadata,
 	width: number,
 	colorMode: BannerColorMode,
-	palette: BannerPalette = DEFAULT_BANNER_PALETTE,
+	paletteOverride?: BannerPalette,
 	catalog: CatalogBundle = defaultCatalog(),
 ): string[] {
+	const palette = paletteOverride ?? bannerPaletteFor(theme.appearance);
 	const versions = versionLine(metadata, width, colorMode, palette, catalog);
 	const hints = fitPresentationText(bannerHints(catalog), width);
 	const details = colorMode === "none" ? [versions, hints] : [versions, theme.fg("dim", hints)];

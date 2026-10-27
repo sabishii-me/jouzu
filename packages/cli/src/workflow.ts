@@ -25,7 +25,7 @@ import {
 	renderPaletteKeyBar,
 	renderPaletteTabs,
 } from "./palette.js";
-import { detectBannerColorMode, renderBrandGradient } from "./presentation.js";
+import { renderBrandWordmark } from "./presentation.js";
 import type { SessionUiStyleRole } from "./session-ui/index.js";
 import type { WorkflowService } from "./subagents/integration.js";
 import { type AgentRun, isActiveRun } from "./subagents/manager.js";
@@ -176,7 +176,7 @@ export class WorkflowComponent implements PaletteComponent, Focusable {
 			initialRoute.query === "runs" || (initialRoute.query === undefined && service.runs().some(isActiveRun))
 				? "runs"
 				: "agents";
-		this.wordmark = renderBrandGradient("JOUZU", detectBannerColorMode());
+		this.wordmark = renderBrandWordmark(context.theme);
 		// A caller without a resolved catalog (a unit test, for example) renders
 		// English rather than a second copy of the text.
 		this.catalog = context.catalog ?? defaultCatalog();

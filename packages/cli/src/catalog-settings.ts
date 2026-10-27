@@ -88,7 +88,7 @@ import {
 	renderPaletteTabs,
 } from "./palette.js";
 import type { JouzuPaths } from "./paths.js";
-import { detectBannerColorMode, renderBrandGradient } from "./presentation.js";
+import { renderBrandWordmark } from "./presentation.js";
 import type { RuntimeDiagnostics } from "./runtime-diagnostics.js";
 import type { SessionUiStyleRole, SessionUiStyles } from "./session-ui/index.js";
 import { readShisaAccountStatus, type ShisaAccountStatus } from "./shisa-link/account.js";
@@ -449,7 +449,7 @@ export class CatalogSettingsComponent implements PaletteComponent, Focusable {
 		this.refreshSource = options.refresh ?? refreshCatalogSource;
 		this.onCatalogsChanged = options.onCatalogsChanged;
 		this.onAccountChanged = options.onAccountChanged;
-		this.wordmark = renderBrandGradient("JOUZU", detectBannerColorMode());
+		this.wordmark = renderBrandWordmark(this.theme);
 		this.runtime = options.runtime;
 		this.jouzuVersion = options.jouzuVersion;
 		this.uiLocaleCli = options.uiLocaleCli;

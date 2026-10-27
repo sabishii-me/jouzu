@@ -26,7 +26,7 @@ Jouzu adds surfaces to Pi rather than replacing Pi's input model. Read this tabl
 | Submit, newline, autocomplete Tab (`tui.input.*`) | Pi | Inherited. The prompt frame preserves Pi routing and only adds framing. |
 | Transcript scroll and search (`tui.altScreen.*`) | Pi | Inherited. Jouzu adds no competing scroll keys. |
 | Slash commands, `/hotkeys`, dialogs, autocomplete menus | Pi | Inherited. Jouzu registers commands; it does not intercept a working Pi command to show an unavailable view. |
-| Theme roles and color capability | Pi theme, Jouzu `session-ui/styles.ts` | Jouzu maps its own semantic roles onto Pi's theme and emits no raw escapes from views. |
+| Theme roles and color capability | Pi theme, Jouzu `session-ui/styles.ts` | Jouzu maps its own semantic roles onto Pi's theme and emits no raw escapes from views. Jouzu's brand colors have light and dark sets, chosen from the active Pi theme's appearance. |
 | Overlay compositing, placement, z-order, focus capture | Pi | Inherited through one adapter in `palette.ts`. Views never call Pi overlay methods directly. |
 | Keybinding file format and resolution | Pi (`keybindings.json`) | Inherited. Jouzu seeds two defaults into its isolated agent root, preserves user-owned entries, and may migrate entries it recorded as its own with a backup. Explicit keybinding commands can also update the file. Jouzu-owned `jouzu.*` actions resolve through a Jouzu registry reading the same file; Pi ignores entries it does not define. |
 | Palette views, model ranking, catalog settings, Session Frame, startup header | Jouzu | Owned outright. |

@@ -7,6 +7,10 @@
 - Add exact `/exit` as an alias for `/quit` in the interactive prompt, using the same immediate shutdown path while idle or busy. A third-party `/exit` command keeps its meaning.
 - Add `jouzu acp` for Agent Client Protocol hosts, using Jouzu RPC child sessions for streamed text and tools, persisted session loading, cancellation, model selection, and extension dialogs. See [ACP hosts](docs/acp.md) for setup, host capabilities, and permission limits.
 
+### Fixed
+
+- Use readable brand colors on light terminals. The prompt cursor, model name, Models list, Palette headings, JOUZU wordmark, banner versions, and the status bar's workspace, context, and token counts now follow Pi's light or dark theme. They previously used colors meant for dark backgrounds, such as light cyan.
+
 ## 0.2.3 - 2026-10-25
 
 ### Added

@@ -409,6 +409,18 @@ test("shares the teal-purple-pink banner gradient with compact wordmarks", () =>
 	);
 });
 
+test("darkens the banner gradient and versions for a light theme", () => {
+	const lightTheme = { ...identityTheme, appearance: "light" };
+	const truecolorLines = renderBannerLines(lightTheme, metadata, 80, "truecolor");
+	assert.ok(truecolorLines[0].includes("\u001b[38;2;14;116;144m"));
+	assert.ok(!truecolorLines[0].includes("\u001b[38;2;34;211;238m"));
+	assert.ok(truecolorLines[2].includes("\u001b[38;2;14;116;144m0.1.0"));
+	assert.ok(truecolorLines[2].includes("\u001b[38;2;157;23;77m0.84.2"));
+	assert.ok(renderBannerLines(lightTheme, metadata, 80, "256")[0].includes("\u001b[38;5;30m"));
+	assert.ok(renderBannerLines(lightTheme, metadata, 80, "16")[2].includes("\u001b[36m0.1.0"));
+	assert.ok(renderBannerLines(identityTheme, metadata, 80, "truecolor")[0].includes("\u001b[38;2;34;211;238m"));
+});
+
 test("selects truecolor, indexed, basic, and NO_COLOR banner modes deterministically", () => {
 	assert.equal(detectBannerColorMode({ colorDepth: 24, env: { TERM: "xterm" } }), "truecolor");
 	assert.equal(detectBannerColorMode({ colorDepth: 8, env: { TERM: "xterm-256color" } }), "256");

@@ -82,79 +82,116 @@ const theme = (value: ThemeColor): SessionUiColor => Object.freeze({ source: "th
 const rgb = (red: number, green: number, blue: number): SessionUiColor =>
 	Object.freeze({ source: "rgb", red, green, blue });
 
-/** Jouzu brand accents, shared by the prompt leader, the model label, and the Palette under one capability policy. */
-const BRAND_BLUE = rgb(103, 232, 249);
-const BRAND_PINK = rgb(244, 114, 182);
+export type SessionUiAppearance = "dark" | "light";
 
-/** Jouzu-owned semantic roles with defaults matched to the retained Session UI baseline. */
-export const DEFAULT_SESSION_UI_STYLE_SCHEME: SessionUiStyleScheme = Object.freeze({
-	"prompt.border": theme("borderMuted"),
-	"prompt.leader": BRAND_BLUE,
-	"session.hint.text": theme("text"),
-	"session.hint.muted": theme("muted"),
-	"session.hint.accent": theme("accent"),
-	"session.hint.success": theme("success"),
-	"session.hint.warning": theme("warning"),
-	"session.hint.error": theme("error"),
-	"session.activity": theme("accent"),
-	"session.activity.idle": theme("dim"),
-	"session.provider": theme("dim"),
-	"session.model": BRAND_BLUE,
-	"status.text": theme("text"),
-	"status.muted": theme("muted"),
-	"status.accent": theme("accent"),
-	"status.success": theme("success"),
-	"status.warning": theme("warning"),
-	"status.error": theme("error"),
-	"status.workspace": rgb(215, 215, 255),
-	"status.git.branch": theme("syntaxKeyword"),
-	"status.git.changes": theme("error"),
-	"status.runtime.default": theme("text"),
-	"status.runtime.node": theme("success"),
-	"status.runtime.deno": theme("syntaxType"),
-	"status.runtime.bun": theme("warning"),
-	"status.runtime.python": theme("warning"),
-	"status.runtime.java": theme("warning"),
-	"status.runtime.rust": theme("error"),
-	"status.runtime.ruby": theme("error"),
-	"status.runtime.go": theme("syntaxType"),
-	"status.runtime.lua": theme("accent"),
-	"status.runtime.php": theme("accent"),
-	"status.context.normal": rgb(250, 204, 21),
-	"status.context.warning": theme("warning"),
-	"status.context.error": theme("error"),
-	"status.tokens": rgb(255, 175, 215),
-	"status.separator": theme("borderMuted"),
-	"status.health": theme("error"),
-	"status.unknown": theme("warning"),
-	"palette.border": theme("borderAccent"),
-	"palette.title": theme("accent"),
-	"palette.count": theme("muted"),
-	"palette.marker": BRAND_BLUE,
-	"palette.identity": theme("text"),
-	"palette.identity.selected": BRAND_BLUE,
-	"palette.favorite": theme("warning"),
-	"palette.default": theme("success"),
-	"palette.unavailable": theme("error"),
-	"palette.context.small": theme("warning"),
-	"palette.section": theme("muted"),
-	"palette.section.current": BRAND_PINK,
-	"palette.detail": BRAND_BLUE,
-	"palette.tab.active": theme("accent"),
-	"palette.tab.inactive": theme("muted"),
-	"palette.heading": BRAND_BLUE,
-	"palette.rule": theme("borderMuted"),
-	"palette.key": theme("accent"),
-	"palette.label": theme("muted"),
-	"palette.value": theme("text"),
-	"palette.status.ready": theme("success"),
-	"palette.status.attention": theme("warning"),
-	"palette.status.off": theme("dim"),
-	"palette.empty": theme("muted"),
-	"palette.message.error": theme("error"),
-	"palette.message.warning": theme("warning"),
-	"palette.message.info": theme("muted"),
-	"palette.hint": theme("dim"),
+/**
+ * Jouzu's own colors. Each appearance keeps the same brand hues, with light
+ * values dark enough to read on a light terminal background.
+ */
+interface SessionUiBrandColors {
+	/** Prompt leader, model label, and the Palette's selection and headings. */
+	blue: SessionUiColor;
+	pink: SessionUiColor;
+	workspace: SessionUiColor;
+	context: SessionUiColor;
+	tokens: SessionUiColor;
+}
+
+const DARK_BRAND_COLORS: SessionUiBrandColors = {
+	blue: rgb(103, 232, 249),
+	pink: rgb(244, 114, 182),
+	workspace: rgb(215, 215, 255),
+	context: rgb(250, 204, 21),
+	tokens: rgb(255, 175, 215),
+};
+
+const LIGHT_BRAND_COLORS: SessionUiBrandColors = {
+	blue: rgb(14, 116, 144),
+	pink: rgb(190, 24, 93),
+	workspace: rgb(67, 56, 202),
+	context: rgb(180, 83, 9),
+	tokens: rgb(190, 24, 93),
+};
+
+/** Jouzu-owned semantic roles. Roles not tied to the brand use the active Pi theme's colors. */
+function sessionUiStyleScheme(brand: SessionUiBrandColors): SessionUiStyleScheme {
+	return Object.freeze({
+		"prompt.border": theme("borderMuted"),
+		"prompt.leader": brand.blue,
+		"session.hint.text": theme("text"),
+		"session.hint.muted": theme("muted"),
+		"session.hint.accent": theme("accent"),
+		"session.hint.success": theme("success"),
+		"session.hint.warning": theme("warning"),
+		"session.hint.error": theme("error"),
+		"session.activity": theme("accent"),
+		"session.activity.idle": theme("dim"),
+		"session.provider": theme("dim"),
+		"session.model": brand.blue,
+		"status.text": theme("text"),
+		"status.muted": theme("muted"),
+		"status.accent": theme("accent"),
+		"status.success": theme("success"),
+		"status.warning": theme("warning"),
+		"status.error": theme("error"),
+		"status.workspace": brand.workspace,
+		"status.git.branch": theme("syntaxKeyword"),
+		"status.git.changes": theme("error"),
+		"status.runtime.default": theme("text"),
+		"status.runtime.node": theme("success"),
+		"status.runtime.deno": theme("syntaxType"),
+		"status.runtime.bun": theme("warning"),
+		"status.runtime.python": theme("warning"),
+		"status.runtime.java": theme("warning"),
+		"status.runtime.rust": theme("error"),
+		"status.runtime.ruby": theme("error"),
+		"status.runtime.go": theme("syntaxType"),
+		"status.runtime.lua": theme("accent"),
+		"status.runtime.php": theme("accent"),
+		"status.context.normal": brand.context,
+		"status.context.warning": theme("warning"),
+		"status.context.error": theme("error"),
+		"status.tokens": brand.tokens,
+		"status.separator": theme("borderMuted"),
+		"status.health": theme("error"),
+		"status.unknown": theme("warning"),
+		"palette.border": theme("borderAccent"),
+		"palette.title": theme("accent"),
+		"palette.count": theme("muted"),
+		"palette.marker": brand.blue,
+		"palette.identity": theme("text"),
+		"palette.identity.selected": brand.blue,
+		"palette.favorite": theme("warning"),
+		"palette.default": theme("success"),
+		"palette.unavailable": theme("error"),
+		"palette.context.small": theme("warning"),
+		"palette.section": theme("muted"),
+		"palette.section.current": brand.pink,
+		"palette.detail": brand.blue,
+		"palette.tab.active": theme("accent"),
+		"palette.tab.inactive": theme("muted"),
+		"palette.heading": brand.blue,
+		"palette.rule": theme("borderMuted"),
+		"palette.key": theme("accent"),
+		"palette.label": theme("muted"),
+		"palette.value": theme("text"),
+		"palette.status.ready": theme("success"),
+		"palette.status.attention": theme("warning"),
+		"palette.status.off": theme("dim"),
+		"palette.empty": theme("muted"),
+		"palette.message.error": theme("error"),
+		"palette.message.warning": theme("warning"),
+		"palette.message.info": theme("muted"),
+		"palette.hint": theme("dim"),
+	});
+}
+
+export const DARK_SESSION_UI_STYLE_SCHEME = sessionUiStyleScheme(DARK_BRAND_COLORS);
+export const LIGHT_SESSION_UI_STYLE_SCHEME = sessionUiStyleScheme(LIGHT_BRAND_COLORS);
+
+export const SESSION_UI_STYLE_SCHEMES: Readonly<Record<SessionUiAppearance, SessionUiStyleScheme>> = Object.freeze({
+	dark: DARK_SESSION_UI_STYLE_SCHEME,
+	light: LIGHT_SESSION_UI_STYLE_SCHEME,
 });
 
 export interface SessionUiStyles {
@@ -163,6 +200,7 @@ export interface SessionUiStyles {
 }
 
 export interface SessionUiStyleOptions {
+	/** Replaces the appearance-selected scheme for both light and dark terminals. */
 	scheme?: SessionUiStyleScheme;
 	colorEnabled?: boolean;
 	colorMode?: TerminalColorMode;
@@ -177,7 +215,7 @@ function themeSupportsColor(themeValue: Pick<Theme, "fg">): boolean {
 }
 
 export function createSessionUiStyles(
-	themeValue: Pick<Theme, "fg">,
+	themeValue: Pick<Theme, "fg"> & { readonly appearance?: SessionUiAppearance },
 	options: SessionUiStyleOptions = {},
 ): SessionUiStyles {
 	const env = options.env ?? process.env;
@@ -190,12 +228,16 @@ export function createSessionUiStyles(
 	});
 	const colorMode =
 		options.colorMode ?? (options.colorEnabled === true && detectedMode === "none" ? "truecolor" : detectedMode);
-	const scheme = options.scheme ?? DEFAULT_SESSION_UI_STYLE_SCHEME;
+	// Read the appearance on each use: Pi can switch between its light and dark
+	// themes after startup, once the terminal reports its background.
+	const activeScheme = () => options.scheme ?? SESSION_UI_STYLE_SCHEMES[themeValue.appearance ?? "dark"];
 	return Object.freeze({
-		scheme,
+		get scheme() {
+			return activeScheme();
+		},
 		apply(role: SessionUiStyleRole, value: string): string {
 			if (!colorEnabled || value.length === 0) return value;
-			const color = scheme[role];
+			const color = activeScheme()[role];
 			if (color.source === "theme") return themeValue.fg(color.value, value);
 			return renderTerminalRgb(value, color, colorMode);
 		},

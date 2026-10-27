@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { createSessionUiStyles, DEFAULT_SESSION_UI_STYLE_SCHEME } from "../dist/index.js";
+import { createSessionUiStyles, DARK_SESSION_UI_STYLE_SCHEME, LIGHT_SESSION_UI_STYLE_SCHEME } from "../dist/index.js";
 
 const taggedTheme = {
 	fg: (role, value) => `<${role}>${value}</${role}>`,
@@ -64,7 +64,7 @@ test("detects the terminal color mode from the injected environment", () => {
 
 test("styles every declared role when color is enabled", () => {
 	const styles = createSessionUiStyles(taggedTheme, { colorEnabled: true, colorMode: "truecolor" });
-	for (const role of Object.keys(DEFAULT_SESSION_UI_STYLE_SCHEME)) {
+	for (const role of Object.keys(DARK_SESSION_UI_STYLE_SCHEME)) {
 		assert.notEqual(styles.apply(role, "value"), "value", `${role} must style its value when color is enabled`);
 	}
 });
@@ -79,7 +79,7 @@ test("supports no-color output and replacement schemes without renderer changes"
 	assert.equal(noColor.apply("status.workspace", "work"), "work");
 
 	const scheme = {
-		...DEFAULT_SESSION_UI_STYLE_SCHEME,
+		...DARK_SESSION_UI_STYLE_SCHEME,
 		"prompt.leader": { source: "theme", value: "accent" },
 	};
 	const themed = createSessionUiStyles(taggedTheme, { colorEnabled: true, scheme });
@@ -104,18 +104,65 @@ test("routes Palette roles through the same capability policy as the Session UI"
 	assert.equal(basic.apply("palette.marker", "→"), "\u001b[96m→\u001b[39m");
 
 	const plain = createSessionUiStyles(taggedTheme, { colorEnabled: false });
-	for (const role of Object.keys(DEFAULT_SESSION_UI_STYLE_SCHEME).filter((name) => name.startsWith("palette."))) {
+	for (const role of Object.keys(DARK_SESSION_UI_STYLE_SCHEME).filter((name) => name.startsWith("palette."))) {
 		assert.equal(plain.apply(role, "value"), "value", `${role} must emit no escapes without color`);
 	}
 });
 
 test("maps every Palette role to a defined color", () => {
-	const paletteRoles = Object.keys(DEFAULT_SESSION_UI_STYLE_SCHEME).filter((name) => name.startsWith("palette."));
+	const paletteRoles = Object.keys(DARK_SESSION_UI_STYLE_SCHEME).filter((name) => name.startsWith("palette."));
 	assert.ok(paletteRoles.length >= 18, "Palette roles must cover the Models view surface");
 	const themed = createSessionUiStyles(taggedTheme, { colorEnabled: true, colorMode: "truecolor" });
 	for (const role of paletteRoles) {
-		const color = DEFAULT_SESSION_UI_STYLE_SCHEME[role];
+		const color = DARK_SESSION_UI_STYLE_SCHEME[role];
 		assert.ok(color.source === "theme" || color.source === "rgb", `${role} must declare a color source`);
 		assert.notEqual(themed.apply(role, "value"), "value", `${role} must style its value when color is enabled`);
+	}
+});
+
+function relativeLuminance({ red, green, blue }) {
+	const channel = (value) => {
+		const scaled = value / 255;
+		return scaled <= 0.03928 ? scaled / 12.92 : ((scaled + 0.055) / 1.055) ** 2.4;
+	};
+	return 0.2126 * channel(red) + 0.7152 * channel(green) + 0.0722 * channel(blue);
+}
+
+function contrastRatio(a, b) {
+	const [high, low] = [relativeLuminance(a), relativeLuminance(b)].sort((x, y) => y - x);
+	return (high + 0.05) / (low + 0.05);
+}
+
+test("selects the light scheme when the theme reports a light appearance", () => {
+	const lightTheme = { ...taggedTheme, appearance: "light" };
+	const styles = createSessionUiStyles(lightTheme, { colorEnabled: true, colorMode: "truecolor" });
+	assert.equal(styles.scheme, LIGHT_SESSION_UI_STYLE_SCHEME);
+	assert.equal(styles.apply("prompt.leader", "❯"), "\u001b[38;2;14;116;144m❯\u001b[39m");
+	assert.equal(styles.apply("status.workspace", "work"), "\u001b[38;2;67;56;202mwork\u001b[39m");
+	assert.equal(styles.apply("status.context.normal", "19%"), "\u001b[38;2;180;83;9m19%\u001b[39m");
+	assert.equal(styles.apply("palette.section.current", "Current"), "\u001b[38;2;190;24;93mCurrent\u001b[39m");
+	assert.equal(styles.apply("prompt.border", "border"), "<borderMuted>border</borderMuted>");
+});
+
+test("follows a theme whose appearance changes after the styles are created", () => {
+	const liveTheme = { ...taggedTheme, appearance: "dark" };
+	const styles = createSessionUiStyles(liveTheme, { colorEnabled: true, colorMode: "truecolor" });
+	assert.equal(styles.apply("prompt.leader", "❯"), "\u001b[38;2;103;232;249m❯\u001b[39m");
+	liveTheme.appearance = "light";
+	assert.equal(styles.apply("prompt.leader", "❯"), "\u001b[38;2;14;116;144m❯\u001b[39m");
+});
+
+test("keeps both schemes on the same roles and readable on their backgrounds", () => {
+	assert.deepEqual(Object.keys(LIGHT_SESSION_UI_STYLE_SCHEME), Object.keys(DARK_SESSION_UI_STYLE_SCHEME));
+	const backgrounds = {
+		dark: [DARK_SESSION_UI_STYLE_SCHEME, { red: 0, green: 0, blue: 0 }],
+		light: [LIGHT_SESSION_UI_STYLE_SCHEME, { red: 255, green: 255, blue: 255 }],
+	};
+	for (const [appearance, [scheme, background]] of Object.entries(backgrounds)) {
+		for (const [role, color] of Object.entries(scheme)) {
+			if (color.source !== "rgb") continue;
+			const ratio = contrastRatio(color, background);
+			assert.ok(ratio >= 4.5, `${appearance} ${role} contrast ${ratio.toFixed(2)} is below 4.5`);
+		}
 	}
 });

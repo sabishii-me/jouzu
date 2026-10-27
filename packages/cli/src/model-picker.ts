@@ -75,7 +75,7 @@ import {
 	renderPaletteTabs,
 } from "./palette.js";
 import type { JouzuPaths } from "./paths.js";
-import { detectBannerColorMode, renderBrandGradient } from "./presentation.js";
+import { renderBrandWordmark } from "./presentation.js";
 import type { RuntimeDiagnostics } from "./runtime-diagnostics.js";
 import type { SessionUiStyles } from "./session-ui/index.js";
 import { onShisaAuthChange } from "./shisa-link/credentials.js";
@@ -256,7 +256,7 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 		this.catalog = options.context.catalog ?? defaultCatalog();
 		// The gradient wordmark varies per character, so it is rendered once here
 		// rather than resolved through a single-color role on every frame.
-		this.wordmark = renderBrandGradient("JOUZU", detectBannerColorMode());
+		this.wordmark = renderBrandWordmark(this.theme);
 		this.close = options.context.close;
 		this.getRows = options.getRows;
 		this.onSelect = options.onSelect;
