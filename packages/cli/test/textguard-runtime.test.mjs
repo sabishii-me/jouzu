@@ -62,6 +62,8 @@ test("retains a pending review when another session becomes active", async (t) =
 	const second = await runtime.createPolicy({ sessionId: "second", cwd: process.cwd() });
 	assert.equal(runtime.forSession("first"), first);
 	assert.equal(first.reviews().length, 1);
+	assert.equal(runtime.approve(first, review), false);
+	await runtime.createPolicy({ sessionId: "first", cwd: process.cwd() });
 	assert.equal(runtime.approve(first, review), true);
 	assert.equal(second.reviews().length, 0);
 });
