@@ -152,27 +152,57 @@ interface ModelColumns {
 	/** Zero when the terminal is too narrow for the column. */
 	provider: number;
 	context: number;
+	strength: number;
+	speed: number;
+	cost: number;
 }
 
 function modelDisplay(model: PickerModel): NonNullable<PickerModel["display"]> {
 	return model.display ?? displayFields(model);
 }
 
-/** Narrow terminals drop Context first, then Provider, so the name stays readable. */
-function modelColumns(providerWidth: number, innerWidth: number, contextWidth = CONTEXT_COLUMN): ModelColumns {
+/** Hide comparison columns together, then Context and Provider, to keep the name readable. */
+function modelColumns(
+	providerWidth: number,
+	innerWidth: number,
+	contextWidth = CONTEXT_COLUMN,
+	comparisonWidths: { strength: number; speed: number; cost: number },
+): ModelColumns {
 	const available = Math.max(1, innerWidth - ROW_MARKER_COLUMNS);
 	const provider = Math.min(MAX_PROVIDER_COLUMN, providerWidth);
+	const { strength, speed, cost } = comparisonWidths;
+	const comparisonSpace = strength + speed + cost + 3 * COLUMN_GAP;
+	if (innerWidth >= 80 && available - provider - contextWidth - 2 * COLUMN_GAP - comparisonSpace >= MIN_NAME_COLUMN) {
+		return {
+			name: available - provider - contextWidth - 2 * COLUMN_GAP - comparisonSpace,
+			provider,
+			context: contextWidth,
+			strength,
+			speed,
+			cost,
+		};
+	}
+	const comparison = { strength: 0, speed: 0, cost: 0 };
 	if (available - provider - contextWidth - 2 * COLUMN_GAP >= MIN_NAME_COLUMN) {
-		return { name: available - provider - contextWidth - 2 * COLUMN_GAP, provider, context: contextWidth };
+		return {
+			name: available - provider - contextWidth - 2 * COLUMN_GAP,
+			provider,
+			context: contextWidth,
+			...comparison,
+		};
 	}
 	if (available - provider - COLUMN_GAP >= MIN_NAME_COLUMN) {
-		return { name: available - provider - COLUMN_GAP, provider, context: 0 };
+		return { name: available - provider - COLUMN_GAP, provider, context: 0, ...comparison };
 	}
-	return { name: available, provider: 0, context: 0 };
+	return { name: available, provider: 0, context: 0, ...comparison };
 }
 
 function contextLabel(contextWindow: number | undefined): string {
 	return contextWindow ? compactNumber(contextWindow) : "—";
+}
+
+function comparisonLabel(value: number | undefined, symbol: string): string {
+	return Number.isInteger(value) && value !== undefined && value >= 1 && value <= 4 ? symbol.repeat(value) : "—";
 }
 
 export function compactContextForModelSwitch(
@@ -673,6 +703,13 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 					alignment: "right",
 				}),
 			);
+		for (const [key, id] of [
+			["strength", "jouzu.cli.modelPicker.columnStrength"],
+			["speed", "jouzu.cli.modelPicker.columnSpeed"],
+			["cost", "jouzu.cli.modelPicker.columnCost"],
+		] as const) {
+			if (columns[key]) cells.push(padTerminalText(catalogText(this.catalog, id), columns[key]));
+		}
 		return this.styles.apply("palette.section", `${" ".repeat(ROW_MARKER_COLUMNS)}${cells.join("  ")}`);
 	}
 
@@ -716,6 +753,16 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 					padTerminalText(contextLabel(row.model.contextWindow), columns.context, { alignment: "right" }),
 				),
 			);
+		}
+		for (const [key, symbol] of [
+			["strength", "★"],
+			["speed", "⚡"],
+			["cost", "$"],
+		] as const) {
+			if (columns[key]) {
+				const value = comparisonLabel(row.model.comparison?.[key], symbol);
+				cells.push(this.styles.apply("palette.detail", padTerminalText(value, columns[key])));
+			}
 		}
 		const text = `${marker} ${status}${favorite}${projectDefault} ${cells.join("  ")}`;
 		return selected ? this.theme.bg("selectedBg", text) : text;
@@ -782,6 +829,17 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 			),
 			innerWidth,
 			Math.max(CONTEXT_COLUMN, terminalTextWidth(catalogText(this.catalog, "jouzu.cli.modelPicker.columnContext"))),
+			{
+				strength: Math.max(
+					terminalTextWidth("★★★★"),
+					terminalTextWidth(catalogText(this.catalog, "jouzu.cli.modelPicker.columnStrength")),
+				),
+				speed: Math.max(
+					terminalTextWidth("⚡⚡⚡⚡"),
+					terminalTextWidth(catalogText(this.catalog, "jouzu.cli.modelPicker.columnSpeed")),
+				),
+				cost: Math.max(4, terminalTextWidth(catalogText(this.catalog, "jouzu.cli.modelPicker.columnCost"))),
+			},
 		);
 		const listHeaderLine =
 			this.rows.length === 0

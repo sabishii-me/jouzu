@@ -15,6 +15,8 @@ export interface PickerModel extends ModelReference {
 	catalogLabel?: string;
 	contextWindow?: number;
 	maxTokens?: number;
+	/** Comparable assessment tiers; absent values are unknown. */
+	comparison?: { strength?: number; speed?: number; cost?: number };
 	available: boolean;
 	display?: {
 		provider: string;

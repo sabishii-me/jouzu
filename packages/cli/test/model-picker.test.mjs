@@ -857,6 +857,51 @@ test("Models view selects and saves for the project, toggles favorites, and canc
 	assert.equal(second.calls.close, 1);
 });
 
+test("Models shows comparison columns as unknown without assessment evidence", () => {
+	for (const [locale, headers] of [
+		["en", /Strength\s+Speed\s+Cost/u],
+		["ja", /実力\s+速度\s+コスト/u],
+		["zh-Hans", /Strength\s+Speed\s+Cost/u],
+		["zh-Hant", /Strength\s+Speed\s+Cost/u],
+	]) {
+		const { component } = createComponent({ catalog: resolveCatalog(locale).bundle });
+		const wide = stripSgr(component.render(120).join("\n"));
+		assert.match(wide, headers, locale);
+		assert.match(wide, /→.*Tiny.*—\s+—\s+—/u, locale);
+		for (const width of [24, 48, 72, 80, 96, 120]) {
+			assert.ok(
+				component.render(width).every((line) => visibleWidth(line) <= width),
+				`${locale}: ${width}`,
+			);
+		}
+		const narrow = stripSgr(component.render(48).join("\n"));
+		assert.doesNotMatch(narrow, headers);
+		component.dispose();
+	}
+});
+
+test("Models renders one to four comparison symbols and rejects invalid tiers", () => {
+	const inventory = [1, 2, 3, 4, 0, 5, 1.5].map((tier) => ({
+		...rows()[1],
+		model: { ...rows()[1].model, name: `Tier ${tier}`, comparison: { strength: tier, speed: tier, cost: tier } },
+	}));
+	const { component } = createComponent({ getRows: () => inventory });
+	const lines = component.render(120).map(stripSgr);
+	for (const tier of [1, 2, 3, 4]) {
+		const line = lines.find((value) => value.includes(`Tier ${tier} `));
+		assert.ok(line, `tier ${tier}`);
+		assert.ok(line.includes("★".repeat(tier)));
+		assert.ok(line.includes("⚡".repeat(tier)));
+		assert.ok(line.includes("$".repeat(tier)));
+	}
+	for (const tier of [0, 5, 1.5]) {
+		const line = lines.find((value) => value.includes(`Tier ${tier} `));
+		assert.match(line, /—\s+—\s+—/u);
+	}
+	assert.ok(component.render(120).every((line) => visibleWidth(line) <= 120));
+	component.dispose();
+});
+
 test("Models columns name the catalog for shared identities and drop on narrow terminals", () => {
 	const shared = (catalogLabel, rank) => ({
 		section: "other",
