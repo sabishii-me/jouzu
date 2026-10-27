@@ -343,16 +343,17 @@ function normalizePathForPlatform(path: string, platform: NodeJS.Platform): stri
 
 export function classifyInstallChannel(options: {
 	packageRoot: string;
-	globalNpmRoot?: string;
+	globalNpmRoot?: string | (() => string | undefined);
 	platform?: NodeJS.Platform;
 }): UpdateInstallChannel {
 	const platform = options.platform ?? process.platform;
 	const packageRoot = normalizePathForPlatform(options.packageRoot, platform);
 	if (packageRoot.endsWith("/packages/cli")) return "source";
 	if (packageRoot.includes("/_npx/")) return "ephemeral-npx";
-	if (options.globalNpmRoot) {
+	const globalNpmRoot = typeof options.globalNpmRoot === "function" ? options.globalNpmRoot() : options.globalNpmRoot;
+	if (globalNpmRoot) {
 		const globalPackage = normalizePathForPlatform(
-			(platform === "win32" ? win32 : posix).join(options.globalNpmRoot, "jouzu"),
+			(platform === "win32" ? win32 : posix).join(globalNpmRoot, "jouzu"),
 			platform,
 		);
 		if (packageRoot === globalPackage) return "global-npm";
@@ -599,7 +600,7 @@ export class JouzuUpdater {
 	installChannel(): UpdateInstallChannel {
 		this.cachedInstallChannel ??= classifyInstallChannel({
 			packageRoot: this.packageRoot,
-			globalNpmRoot: this.globalNpmRoot(),
+			globalNpmRoot: () => this.globalNpmRoot(),
 			platform: this.platform,
 		});
 		return this.cachedInstallChannel;

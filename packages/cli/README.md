@@ -82,7 +82,7 @@ Default roots for npm installations are:
 | macOS | `~/Library/Application Support/Jouzu/agent` | `~/Library/Application Support/Jouzu/state` | `~/Library/Caches/Jouzu` |
 | Windows | `%APPDATA%\Jouzu\agent` | `%LOCALAPPDATA%\Jouzu\state` | `%LOCALAPPDATA%\Jouzu\cache` |
 
-The Windows launcher stores everything under `%LOCALAPPDATA%\Shisa.ai\Jouzu`. Override all roots with `--jouzu-home <path>` or `JOUZU_HOME`.
+The Windows launcher stores these roots under `%LOCALAPPDATA%\Shisa.ai\Jouzu`. Override them with `--jouzu-home <path>` or `JOUZU_HOME`. Node's startup compile cache uses the operating system's temporary directory separately; set `NODE_COMPILE_CACHE` to move it or `NODE_DISABLE_COMPILE_CACHE=1` to disable it.
 
 On first setup, Jouzu offers to copy `models.json` and provider credentials from an existing Pi installation. Both prompts default to no.
 

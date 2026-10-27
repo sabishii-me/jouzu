@@ -127,6 +127,106 @@ test("install-channel classification distinguishes global, local, npx, and sourc
 	);
 });
 
+test("install-channel classification defers global npm-root lookup until needed", () => {
+	let lookups = 0;
+	const globalNpmRoot = () => {
+		lookups += 1;
+		return "/opt/npm/lib/node_modules";
+	};
+	assert.equal(classifyInstallChannel({ packageRoot: "/work/jouzu/packages/cli", globalNpmRoot }), "source");
+	assert.equal(
+		classifyInstallChannel({ packageRoot: "/home/u/.npm/_npx/id/node_modules/jouzu", globalNpmRoot }),
+		"ephemeral-npx",
+	);
+	assert.equal(lookups, 0);
+	assert.equal(classifyInstallChannel({ packageRoot: "/opt/npm/lib/node_modules/jouzu", globalNpmRoot }), "global-npm");
+	assert.equal(lookups, 1);
+	assert.equal(classifyInstallChannel({ packageRoot: "/work/node_modules/jouzu", globalNpmRoot }), "local-npm");
+	assert.equal(lookups, 2);
+});
+
+test("install-channel classification handles source and global roots on posix and Windows paths", () => {
+	const cases = [
+		{
+			platform: "linux",
+			sourceRoot: "/work/jouzu/packages/cli",
+			globalNpmRoot: "/opt/npm/lib/node_modules",
+			globalPackage: "/opt/npm/lib/node_modules/jouzu",
+		},
+		{
+			platform: "darwin",
+			sourceRoot: "/Users/u/work/jouzu/packages/cli",
+			globalNpmRoot: "/opt/homebrew/lib/node_modules",
+			globalPackage: "/opt/homebrew/lib/node_modules/jouzu",
+		},
+		{
+			platform: "win32",
+			sourceRoot: "C:\\Work\\Jouzu\\Packages\\Cli",
+			globalNpmRoot: "C:\\Users\\u\\AppData\\Roaming\\npm\\node_modules",
+			globalPackage: "c:\\users\\u\\appdata\\roaming\\npm\\node_modules\\JOUZU",
+		},
+	];
+	for (const { platform, sourceRoot, globalNpmRoot, globalPackage } of cases) {
+		assert.equal(classifyInstallChannel({ packageRoot: sourceRoot, globalNpmRoot, platform }), "source");
+		assert.equal(classifyInstallChannel({ packageRoot: globalPackage, globalNpmRoot, platform }), "global-npm");
+	}
+});
+
+test("source checkouts classify without invoking npm and skip startup updates", () => {
+	const context = fixture();
+	const packageRoot = join(context.root, "work", "jouzu", "packages", "cli");
+	let npmCalls = 0;
+	try {
+		const updater = new JouzuUpdater({
+			paths: context.paths,
+			currentVersion: "0.1.0",
+			executable: join(packageRoot, "dist", "cli.js"),
+			packageRoot,
+			runNpm: (args) => {
+				npmCalls += 1;
+				return { status: 1, stdout: "", stderr: `unexpected npm ${args.join(" ")}` };
+			},
+		});
+		assert.equal(updater.installChannel(), "source");
+		assert.equal(updater.status().installChannel, "source");
+		assert.deepEqual(updater.startup(), { action: "continue" });
+		assert.equal(npmCalls, 0);
+	} finally {
+		rmSync(context.root, { recursive: true, force: true });
+	}
+});
+
+test("install-channel lookup is cached after global and local classification", () => {
+	const cases = [
+		{ packageRoot: (context) => context.packageRoot, expected: "global-npm" },
+		{
+			packageRoot: (context) => join(context.root, "work", "node_modules", "jouzu"),
+			expected: "local-npm",
+		},
+	];
+	for (const { packageRoot: packageRootFor, expected } of cases) {
+		const context = fixture();
+		const latest = release("0.1.1");
+		const npm = fakeNpm({ currentVersion: "0.1.0", latest, globalRoot: context.globalRoot });
+		try {
+			const packageRoot = packageRootFor(context);
+			const updater = new JouzuUpdater({
+				paths: context.paths,
+				currentVersion: "0.1.0",
+				executable: join(packageRoot, "dist", "cli.js"),
+				packageRoot,
+				runNpm: npm.run,
+			});
+			assert.equal(updater.installChannel(), expected);
+			assert.equal(updater.status().installChannel, expected);
+			assert.equal(updater.installChannel(), expected);
+			assert.equal(npm.calls.filter((args) => args[0] === "root").length, 1);
+		} finally {
+			rmSync(context.root, { recursive: true, force: true });
+		}
+	}
+});
+
 test("install-channel classification resolves existing npm-root symlink aliases", {
 	skip: process.platform === "win32" ? "symlink fixture requires privileges" : false,
 }, () => {

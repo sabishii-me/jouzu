@@ -2,7 +2,7 @@
 
 Jouzu keeps its configuration, state, and cache apart from a stock [Pi coding agent](https://pi.dev/) installation. Default locations are listed in the README's [State and isolation](../README.md#state-and-isolation) table.
 
-Move all roots together with `--jouzu-home <path>` or `JOUZU_HOME`:
+Move Jouzu's configuration, state, and application cache together with `--jouzu-home <path>` or `JOUZU_HOME`:
 
 ```bash
 JOUZU_HOME="$PWD/.jouzu" jz doctor
@@ -101,11 +101,19 @@ Jouzu still uses these Pi resources:
 - Trusted project `.pi` resources, through Pi's project-trust rules.
 - `~/.agents/skills`, Pi's shared cross-tool skills directory.
 
+## Startup compile cache
+
+Jouzu uses Node's on-disk compile cache on Linux, macOS, and Windows. It reuses compiled JavaScript on later launches; the first launch populates the cache. Node selects a `node-compile-cache` directory under the operating system's temporary directory unless `NODE_COMPILE_CACHE` specifies another location. This Node-managed cache is separate from `JOUZU_HOME` and contains compiled code, not conversation history.
+
+Set `NODE_DISABLE_COMPILE_CACHE=1` to turn it off, including when collecting precise JavaScript test coverage. If the cache directory is unavailable, Jouzu continues without caching. Node separates cache entries by runtime version and code content; you can remove the cache when Jouzu is stopped, and later launches recreate it.
+
 ## Environment variables
 
 | Variable | Effect |
 | --- | --- |
-| `JOUZU_HOME` | Root for all Jouzu configuration, state, and cache |
+| `JOUZU_HOME` | Root for Jouzu configuration, state, and application cache; excludes Node's compile cache |
+| `NODE_COMPILE_CACHE` | Directory for Node's startup compile cache |
+| `NODE_DISABLE_COMPILE_CACHE=1` | Disable Node's startup compile cache |
 | `JOUZU_PROFILE` | Profile for this launch: `core` or `ja`. The selection is saved. See [Profiles](profiles.md). |
 | `JOUZU_UI_LOCALE` | Startup UI locale when no preference is saved; a CLI option takes precedence in that case. See [Language](#language). |
 | `SHISA_API_KEY` | Shisa API key; overrides the saved login. See [Shisa AI account](shisa.md). |
