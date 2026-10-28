@@ -11,6 +11,7 @@
 
 - Use readable brand colors on light terminals. The prompt cursor, model name, Models list, Palette headings, JOUZU wordmark, banner versions, and the status bar's workspace, context, and token counts now follow Pi's light or dark theme. They previously used colors meant for dark backgrounds, such as light cyan.
 - Use light syntax colors in code previews on light terminals. Without `CODE_PREVIEW_THEME` or a saved code-preview theme, previews use `light-plus` with Pi's light theme and `dark-plus` with its dark theme. See [Tools](docs/tools.md).
+- Ship the patched Defuddle diagnostics sidecar in the Windows launcher runtime, so the web-fetch extension loads after a fresh install.
 
 ## 0.2.3 - 2026-10-25
 

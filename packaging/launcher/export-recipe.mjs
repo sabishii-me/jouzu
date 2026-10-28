@@ -10,6 +10,8 @@ import { PNPM_VERSION } from "./prepare-starter.mjs";
  * Outputs are private build inputs, never automatically published to a registry.
  */
 export const REQUIRED_PATCHED_TRANSITIVES = ["@earendil-works/pi-agent-core"];
+/** Patched transitives only newer releases bundle; older recipes export without them. */
+export const OPTIONAL_PATCHED_TRANSITIVES = ["defuddle"];
 
 export function exportPackageNames(manifest) {
 	return [...new Set(["jouzu", ...(manifest.bundleDependencies ?? []), ...REQUIRED_PATCHED_TRANSITIVES])];
@@ -19,7 +21,9 @@ export function exportPackageRoot(root, name) {
 	// Preserve the core actually used by coding-agent, including nested npm bundles.
 	const consumer = name === "@earendil-works/pi-agent-core"
 		? packageRootFromConsumer(root, "@earendil-works/pi-coding-agent")
-		: root;
+		: name === "defuddle"
+			? packageRootFromConsumer(root, "pi-webaio")
+			: root;
 	return name === "jouzu" ? root : packageRootFromConsumer(consumer, name);
 }
 
@@ -30,12 +34,24 @@ export function exportRecipe(source, output) {
 	const jouzu = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 	if (jouzu.name !== "jouzu") throw new Error("Expected built Jouzu package");
 	if (!existsSync(join(root, "dist", "cli.js"))) throw new Error("Build Jouzu before exporting a recipe");
+	// Defuddle is patched in the installed dependency tree (diagnostics sidecar). Newer releases
+	// nest it under pi-webaio; export that copy so the recipe installs it instead of resolving an
+	// unpatched registry package.
 	const names = exportPackageNames(jouzu);
+	for (const name of OPTIONAL_PATCHED_TRANSITIVES) {
+		try {
+			exportPackageRoot(root, name);
+			names.push(name);
+		} catch {
+			// This release does not carry the patched transitive.
+		}
+	}
+	const uniqueNames = [...new Set(names)];
 
 	mkdirSync(destination, { recursive: true });
 	const artifacts = join(destination, "artifacts"); mkdirSync(artifacts);
 	const overrides = {};
-	for (const name of names) {
+	for (const name of uniqueNames) {
 		const input = exportPackageRoot(root, name);
 		const metadata = JSON.parse(readFileSync(join(input, "package.json"), "utf8"));
 		if (metadata.name !== name) throw new Error(`Unexpected package at ${name}`);
