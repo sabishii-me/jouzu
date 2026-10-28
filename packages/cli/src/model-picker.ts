@@ -364,7 +364,7 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 
 	/**
 	 * A reload keeps the cursor on the same model. Editing the query moves it to
-	 * the best match, and clearing the query returns it to where it was before
+	 * the first matching row, and clearing the query returns it to where it was before
 	 * the search began, so a long list does not leave the user mid-inventory.
 	 */
 	private recomputeRows(): void {

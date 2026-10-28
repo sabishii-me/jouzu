@@ -30,7 +30,7 @@ With an empty search, the list shows models in this order:
 4. Models that sent a request recently, with this project's models first
 5. Every other model, alphabetically by name
 
-Typing ranks the whole list by how well each model matches and moves the cursor to the best match. Models that match equally keep the order above. Clearing the search, with `Esc` or by deleting the text, returns the cursor to where it was before you started typing.
+Typing filters the whole list while keeping the order above and moves the cursor to the first matching model. The remaining models stay alphabetical by displayed name; matching provider/model IDs do not change their order. Clearing the search, with `Esc` or by deleting the text, returns the cursor to where it was before you started typing.
 
 Each row shows the model name, its provider, and its context window. `◆` marks this project's default. The line above the list shows the selected model's exact provider/model ID and catalog. When two catalogs offer the same provider/model ID, the Provider column also names the catalog.
 

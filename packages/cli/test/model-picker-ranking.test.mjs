@@ -77,6 +77,33 @@ test("search indexes sanitized provider display names independently of provider 
 	}
 });
 
+test("search keeps fuzzy, catalog, and normalized identity matching without reordering", () => {
+	const inventory = [
+		{
+			provider: "gateway-17",
+			providerName: "Shisa AI",
+			modelId: "alpha-reasoner-v2",
+			name: "Alpha Reasoner",
+			catalogLabel: "Office Pool",
+			available: true,
+		},
+	];
+	const options = { models: inventory, state: emptyModelPickerState(), projectKey };
+	for (const query of [
+		" gateway-17/alpha-reasoner-v2 ",
+		"gateway-17 alpha",
+		"reasoner",
+		"arv2",
+		"ofpl",
+		"ＳＨＩＳＡ",
+	]) {
+		assert.deepEqual(buildPickerRows({ ...options, query }), buildPickerRows(options), query);
+	}
+	for (const query of ["missing", "pool office", "v3"]) {
+		assert.deepEqual(buildPickerRows({ ...options, query }), [], query);
+	}
+});
+
 test("empty query lists current, previous, favorites, recents, then the rest alphabetically", () => {
 	const inventory = [
 		...models,
@@ -106,6 +133,80 @@ test("empty query lists current, previous, favorites, recents, then the rest alp
 	assert.equal(rows[2].model.available, false, "an unresolved favorite stays visible as unavailable");
 	assert.equal(rows[3].contextFit, "too-small");
 	assert.equal(rows[3].favorite, true);
+});
+
+test("provider filters preserve priority groups and display-name alphabetical order", () => {
+	const offering = (modelId, name) => ({
+		provider: "gateway-42",
+		providerName: "Shisa AI",
+		modelId,
+		name,
+		available: true,
+	});
+	const inventory = [
+		offering("current-long-id", "Zulu Current"),
+		offering("previous-long-id", "Yankee Previous"),
+		{ ...offering("favorite-long-id", "Xray Favorite"), available: false },
+		offering("favorite-two", "Whiskey Favorite"),
+		offering("project-recent", "Victor Recent"),
+		offering("global-recent", "Uniform Recent"),
+		offering("short", "OpenAI GPT-6"),
+		offering("longer-hidden-model-id", "MiniMax M3"),
+		offering("even-longer-hidden-model-id", "GLM 5.2"),
+		offering("a", "Qwen 3.7 Max"),
+		offering("zzzzzzzzzz", "\u001b[31mBeam\u001b[0m"),
+		{ provider: "other", modelId: "unrelated", name: "Unrelated", available: true },
+	];
+	const pickerState = emptyModelPickerState();
+	pickerState.favorites = inventory.slice(2, 4).map(({ provider, modelId }) => ({
+		provider,
+		modelId,
+		addedAt: "2026-10-28T00:00:00.000Z",
+	}));
+	const recent = ({ provider, modelId }) => ({
+		provider,
+		modelId,
+		lastUsedAt: "2026-10-28T00:00:00.000Z",
+		useCount: 1,
+	});
+	pickerState.recents.projects[projectKey] = [recent(inventory[4])];
+	pickerState.recents.global = [recent(inventory[5])];
+	const options = {
+		models: inventory,
+		state: pickerState,
+		projectKey,
+		current: inventory[0],
+		previous: [inventory[1]],
+	};
+	const expected = [
+		["current", "Zulu Current"],
+		["previous", "Yankee Previous"],
+		["favorite", "Xray Favorite"],
+		["favorite", "Whiskey Favorite"],
+		["recent", "Victor Recent"],
+		["recent", "Uniform Recent"],
+		["other", "Beam"],
+		["other", "GLM 5.2"],
+		["other", "MiniMax M3"],
+		["other", "OpenAI GPT-6"],
+		["other", "Qwen 3.7 Max"],
+	];
+	const unfiltered = buildPickerRows(options);
+	for (const query of ["shisa", "ＳＨＩＳＡ", "shs", "gateway-42"]) {
+		const filtered = buildPickerRows({ ...options, query });
+		assert.deepEqual(
+			filtered.map((row) => [row.section, row.model.display.name]),
+			expected,
+			query,
+		);
+		assert.deepEqual(
+			filtered,
+			unfiltered.filter((row) => row.model.provider === "gateway-42"),
+			query,
+		);
+		assert.deepEqual(buildPickerRows({ ...options, query, maxRows: 8 }), filtered.slice(0, 8));
+		assert.deepEqual(buildPickerRows({ ...options, models: [...inventory].reverse(), query }), filtered);
+	}
 });
 
 test("favoritesOnly returns saved favorites in order for favorite cycling", () => {
@@ -244,7 +345,7 @@ test("catalog-qualified identities prevent cross-catalog collisions while legacy
 	assert.equal(legacy[0].model.catalogId, "ai.example.one");
 });
 
-test("typed query ranks exact provider identity before proxy-provider IDs and recency", () => {
+test("typed query keeps session history ahead of exact provider identity matches", () => {
 	const rows = buildPickerRows({
 		models,
 		state: state(),
@@ -253,7 +354,7 @@ test("typed query ranks exact provider identity before proxy-provider IDs and re
 	});
 	assert.deepEqual(
 		rows.slice(0, 2).map((row) => `${row.model.provider}/${row.model.modelId}`),
-		["anthropic/claude-sonnet-test", "openrouter/anthropic/claude-sonnet-test"],
+		["openrouter/anthropic/claude-sonnet-test", "anthropic/claude-sonnet-test"],
 	);
 });
 
@@ -279,7 +380,7 @@ test("typed search normalizes Unicode while display text strips terminal control
 	assert.deepEqual(first, second);
 });
 
-test("query ties among other models are stable regardless of inventory order", () => {
+test("matching other models are alphabetical regardless of inventory order", () => {
 	const candidates = [
 		{ provider: "b", modelId: "x1", name: "Same", available: true },
 		{ provider: "a", modelId: "x2", name: "Same", available: true },
@@ -321,7 +422,7 @@ test("typed search reaches inventory models that are not current, favorite, or r
 		],
 	);
 });
-test("search ranks an exact identity above a favorite prefix match", () => {
+test("search keeps a favorite prefix match ahead of an exact identity match", () => {
 	const inventory = [
 		{
 			provider: "kimi-coding",
@@ -346,12 +447,12 @@ test("search ranks an exact identity above a favorite prefix match", () => {
 	assert.deepEqual(
 		rows.map((row) => [row.section, row.model.modelId, row.favorite]),
 		[
-			["other", "k3", false],
 			["favorite", "k3-256k", true],
+			["other", "k3", false],
 		],
 	);
 });
-test("search breaks equal text scores with the empty-query order", () => {
+test("search keeps project recents ahead of other matches", () => {
 	const inventory = [
 		{ provider: "a", modelId: "sol", name: "Sol", available: true },
 		{ provider: "b", modelId: "sol", name: "Sol", available: true },

@@ -21,7 +21,7 @@ import {
 	ModelPickerComponent,
 	pickerModels,
 } from "../dist/model-picker.js";
-import { modelContextFit } from "../dist/model-picker-ranking.js";
+import { buildPickerRows, modelContextFit } from "../dist/model-picker-ranking.js";
 import { deriveProjectKey, emptyModelPickerState, ModelPickerStore } from "../dist/model-picker-state.js";
 import { JouzuPaletteRouter, paletteHeightBudget } from "../dist/palette.js";
 import { resolveJouzuPaths } from "../dist/paths.js";
@@ -1146,6 +1146,34 @@ test("Models view separates browse keys from search cursor input", () => {
 	assert.equal(directSearch.calls.close, 0);
 });
 
+test("Models provider filtering keeps favorites first and other rows alphabetical", () => {
+	const inventory = [
+		{ provider: "other", modelId: "current", name: "Current", available: true },
+		{ provider: "Shisa AI", modelId: "favorite-with-long-id", name: "Zulu Favorite", available: true },
+		{ provider: "Shisa AI", modelId: "a", name: "MiniMax M3", available: true },
+		{ provider: "Shisa AI", modelId: "long-hidden-id", name: "Beam", available: true },
+		{ provider: "Shisa AI", modelId: "even-longer-hidden-id", name: "Alpha", available: true },
+	];
+	const pickerState = emptyModelPickerState();
+	pickerState.favorites = [{ ...inventory[1], addedAt: "2026-10-28T00:00:00.000Z" }];
+	const { component } = createComponent({
+		getRows: (query) =>
+			buildPickerRows({ models: inventory, state: pickerState, projectKey: "test", current: inventory[0], query }),
+	});
+	component.handleInput("down");
+	component.handleInput("down");
+	assert.match(stripSgr(component.render(120).join("\n")), /→.*Alpha/u);
+	for (const character of "shisa") component.handleInput(character);
+	const filtered = stripSgr(component.render(120).join("\n"));
+	assert.match(filtered, /→.*Zulu Favorite/u, "the first matching row follows the default grouping");
+	assert.ok(filtered.indexOf("Zulu Favorite") < filtered.indexOf("Alpha"));
+	assert.ok(filtered.indexOf("Alpha") < filtered.indexOf("Beam"));
+	assert.ok(filtered.indexOf("Beam") < filtered.indexOf("MiniMax M3"));
+	component.handleInput("escape");
+	assert.match(stripSgr(component.render(120).join("\n")), /→.*Alpha/u, "clearing restores the pre-search selection");
+	component.dispose();
+});
+
 test("Models view returns to the pre-search position when the search is cleared", () => {
 	const inventory = Array.from({ length: 40 }, (_, index) => ({
 		section: "other",
@@ -1170,7 +1198,7 @@ test("Models view returns to the pre-search position when the search is cleared"
 	assert.equal(selectedId(), "m05");
 
 	component.handleInput("3");
-	assert.equal(selectedId(), "m03", "editing the query selects the best match");
+	assert.equal(selectedId(), "m03", "editing the query selects the first matching row");
 	component.handleInput("escape");
 	assert.equal(calls.close, 0);
 	assert.equal(selectedId(), "m05", "the first Esc clears the search and returns to the pre-search position");
@@ -1222,7 +1250,11 @@ test("Models view toggles favorites with the semantic action in browse and searc
 	component.handleInput(" ");
 	assert.deepEqual(calls.favorites, ["fit", "fit"], "Space stays text input while search holds focus");
 	component.handleInput("\u0006");
-	assert.deepEqual(calls.favorites, ["fit", "fit", "tiny"], "Ctrl+F toggles the best match while search holds focus");
+	assert.deepEqual(
+		calls.favorites,
+		["fit", "fit", "tiny"],
+		"Ctrl+F toggles the first matching row while search holds focus",
+	);
 	assert.match(component.render(72).join("\n"), /Added small\/tiny to favorites\./u);
 	component.handleInput("down");
 	assert.doesNotMatch(component.render(72).join("\n"), /· Search/u, "moving into the results leaves search");

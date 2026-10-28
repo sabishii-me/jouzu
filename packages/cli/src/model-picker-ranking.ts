@@ -53,48 +53,24 @@ function normalized(value: string): string {
 	return value.normalize("NFKC").toLowerCase();
 }
 
-function searchScore(model: PickerModel, query: string): number | undefined {
+function matchesSearch(model: PickerModel, query: string): boolean {
 	const needle = normalized(query.trim());
-	if (!needle) return 0;
+	if (!needle) return true;
 	const provider = normalized(model.display?.provider ?? sanitizeTerminalText(model.provider));
 	const modelId = normalized(model.display?.modelId ?? sanitizeTerminalText(model.modelId));
-	const exact = `${provider}/${modelId}`;
 	const name = normalized(model.display?.name ?? sanitizeTerminalText(model.name));
 	const catalogLabel = normalized(sanitizeTerminalText(model.catalogLabel ?? ""));
-	if (exact === needle) return 0;
-	if (modelId === needle) return 1;
-	if (name === needle) return 2;
-	if (exact.startsWith(needle)) return 10 + exact.length - needle.length;
-	if (modelId.startsWith(needle)) return 20 + modelId.length - needle.length;
-	if (name.startsWith(needle)) return 30 + name.length - needle.length;
-
 	const providerName = normalized(model.display?.providerName ?? sanitizeTerminalText(model.providerName ?? ""));
-	const fields = [exact, `${provider} ${modelId}`, name, catalogLabel, providerName];
-	let best: number | undefined;
-	for (const field of fields) {
-		const substring = field.indexOf(needle);
-		if (substring >= 0) {
-			const score = 100 + substring * 2 + field.length - needle.length;
-			best = best === undefined ? score : Math.min(best, score);
-			continue;
-		}
+	const fields = [`${provider}/${modelId}`, `${provider} ${modelId}`, name, catalogLabel, providerName];
+	return fields.some((field) => {
 		let cursor = 0;
-		let gaps = 0;
 		for (const character of needle) {
 			const index = field.indexOf(character, cursor);
-			if (index < 0) {
-				cursor = -1;
-				break;
-			}
-			gaps += index - cursor;
+			if (index < 0) return false;
 			cursor = index + 1;
 		}
-		if (cursor >= 0) {
-			const score = 500 + gaps * 3 + field.length - needle.length;
-			best = best === undefined ? score : Math.min(best, score);
-		}
-	}
-	return best;
+		return true;
+	});
 }
 
 export function modelContextFit(
@@ -185,8 +161,7 @@ export function buildPickerRows(options: BuildPickerRowsOptions): PickerRow[] {
 		return rows.slice(0, options.maxRows ?? Number.MAX_SAFE_INTEGER);
 	}
 	// One list: current, previous, favorites, recents, then the remaining
-	// inventory alphabetically. A query ranks this same list by text match, so
-	// the base order only breaks ties.
+	// inventory alphabetically. A query filters this list without changing its order.
 	add(options.current, "current");
 	for (const reference of options.previous ?? []) add(reference, "previous");
 	for (const favorite of options.state.favorites) add(favorite, "favorite");
@@ -199,15 +174,5 @@ export function buildPickerRows(options: BuildPickerRowsOptions): PickerRow[] {
 	for (const model of remaining) add(model, "other");
 
 	if (!query) return rows.slice(0, options.maxRows ?? Number.MAX_SAFE_INTEGER);
-	return rows
-		.map((row) => ({ row, score: searchScore(row.model, query) }))
-		.filter((value): value is { row: PickerRow; score: number } => value.score !== undefined)
-		.sort(
-			(left, right) =>
-				left.score - right.score ||
-				Number(right.row.model.available) - Number(left.row.model.available) ||
-				left.row.rank - right.row.rank,
-		)
-		.slice(0, options.maxRows ?? 200)
-		.map(({ row, score }) => ({ ...row, rank: score }));
+	return rows.filter((row) => matchesSearch(row.model, query)).slice(0, options.maxRows ?? 200);
 }
