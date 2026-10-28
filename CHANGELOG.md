@@ -1,17 +1,36 @@
 # Changelog
 
-## Unreleased
+## 0.2.4 - 2026-10-29
 
 ### Added
 
-- Add exact `/exit` as an alias for `/quit` in the interactive prompt, using the same immediate shutdown path while idle or busy. A third-party `/exit` command keeps its meaning.
 - Add `jouzu acp` for Agent Client Protocol hosts, using Jouzu RPC child sessions for streamed text and tools, persisted session loading, cancellation, model selection, and extension dialogs. See [ACP hosts](docs/acp.md) for setup, host capabilities, and permission limits.
+- Add catalog-supplied Strength (`★`), Speed (`↯`), and Cost (`$`) ratings to the Models view on wide terminals. Missing or invalid ratings show `—`; ratings do not change numeric prices. See [Models](docs/models.md).
+- Add exact `/exit` as an alias for `/quit` in the interactive prompt, using the same immediate shutdown path while idle or busy. A third-party `/exit` command keeps its meaning.
+
+### Changed
+
+- Enable Node's optional startup compile cache, render help before loading the main application, and avoid unnecessary npm-root lookups. Set `NODE_COMPILE_CACHE` to move the cache or `NODE_DISABLE_COMPILE_CACHE=1` to disable it. See [Configuration](docs/configuration.md).
+- Apply authenticated catalog model recommendations only to untouched first-use sessions. Saved defaults, explicit model choices, resumed sessions, and conversations already started keep their selections. See [Model selection](docs/models.md#which-model-a-new-session-uses).
 
 ### Fixed
 
-- Use readable brand colors on light terminals. The prompt cursor, model name, Models list, Palette headings, JOUZU wordmark, banner versions, and the status bar's workspace, context, and token counts now follow Pi's light or dark theme. They previously used colors meant for dark backgrounds, such as light cyan.
+- Preserve Current, Previous, Favorites, Recents, and alphabetical model ordering while filtering. Keep rating symbols aligned with their headers and request text presentation for terminal glyphs.
+- Refresh authenticated catalogs and the live model registry after `/login shisa`. Report the selected model accurately, preserve saved credentials when a later refresh is cancelled, and show `/reload` guidance without restarting the cancelled work or cancelling independent user choices.
+- Keep multiloop continuation revisions current until consumption, preserving duplicate-delivery and failure safeguards so early history reads cannot strand the next turn.
+- List and load ACP sessions across aliases of the same working directory. Handle disabled automatic-release reporting without accessing unavailable callbacks.
+- Pass the active locale to Labels, TextGuard review, and runtime diagnostics at startup. Translate the exact too-small-compaction error in Japanese while preserving arbitrary provider error details.
+- Use readable brand colors on light terminals. The prompt cursor, model name, Models list, Palette headings, JOUZU wordmark, banner versions, and the status bar's workspace, context, and token counts follow Pi's light or dark theme.
 - Use light syntax colors in code previews on light terminals. Without `CODE_PREVIEW_THEME` or a saved code-preview theme, previews use `light-plus` with Pi's light theme and `dark-plus` with its dark theme. See [Tools](docs/tools.md).
-- Ship the patched Defuddle diagnostics sidecar in the Windows launcher runtime, so the web-fetch extension loads after a fresh install.
+- Preserve Gemini tool-call thought signatures through OpenAI-compatible gateways, saved sessions, and replay. Do not forward those signatures after switching model or provider, or mistake legacy encrypted reasoning metadata for a Google signature.
+
+### Installation
+
+- Ship the patched Defuddle diagnostics sidecar in the Windows launcher runtime so the web-fetch extension loads after a fresh install. Reject a prepared runtime when the extension requires the sidecar and it is missing.
+
+### Development
+
+- Classify CLI-launching regression tests under the child-process duration budgets, including the ACP saved-session reload test.
 
 ## 0.2.3 - 2026-10-25
 
@@ -247,7 +266,6 @@
 - Open Settings on a **Shisa AI** row above the catalog list. It reports the connected organization and the dashboard for the gateway that issued the sign-in, signs in through the same device flow as `/login shisa` without leaving the panel, and signs out after a confirmation. Signed out, the row carries the signup credits.
 - Wait for an exact subagent run or a newly created schedule through copyable `agent_wait` receipts. Subagent waits observe terminal outcomes; schedule waits observe only the first trigger, not completion of the scheduled work. Both support deadline wake-ups without polling.
 - Open `/about` for running and installed Jouzu builds, Pi version, and startup time. `/session` includes a compact runtime line; `/about` stays available while flow work is held without releasing the hold.
-
 - Leave an end-of-run summary card after every measured run, goal, and loop run that finishes, stops, or is paused. It reports the outcome, the objective, the local start and finish times, wall-clock elapsed against active agent time, and the step, turn, tool-call, and token counters, and it names the command that resumes a run that has not finished. A measured run's card also reports the metric it reached against its baseline and how its last iteration was accepted. The card is a session entry: it stays in the transcript and does not enter model context. A host without entry rendering shows it as a notification.
 
 ### Changed
@@ -258,7 +276,6 @@
 - Limit model-picker history to 512 projects and 16 MiB, evicting least recently dispatched histories while preserving explicit defaults, favorites, and reasoning preferences.
 - Use the embedded TextGuard scanner exclusively. The optional Python comparison-scanner flags from v0.1.13 are removed; native scanning modes and approvals remain.
 - State what a Shisa AI account provides in the first-launch offer: open coding models such as Qwen and GLM, $10 in credits for a new signup, and $25 more when a credit card is attached. Each line carries a `◆` marker, so a pipe, `NO_COLOR`, and `TERM=dumb` keep the same shape. The default answer stays `N`, and the prompt names `/login shisa` for connecting later.
-
 - Show when each background task finished in the completion receipt. The expanded heading carries the span from the first start to the last finish, and each task row carries its duration and local finish time. A receipt written before this change still renders, without timing.
 - Stopping or pausing a run no longer repeats the same sentence as a notification, because the summary card carries it.
 
@@ -274,9 +291,7 @@
 - Bound empty request-history records during continuous tool runs, including after compaction, rather than waiting for an idle turn. Preserve records needed by live input, projections, waits, and retries.
 - Keep tool results intact when a cancelled run never reached their content check, and omit message-less sessions from the resume list.
 - Disable SQLite journaling on held process-lock connections and verify that acquisition, contention, and release leave the lock database empty with no journal sidecars.
-
 - Report subagent lock storage failures instead of queueing indefinitely. A failed lock release marks affected work failed and requires a restart; it no longer disappears during run finalization or shutdown.
-
 - Hold the subagent session lock and each workspace-writer lock for as long as the owning process runs, instead of leaving a record file that a later process ages out and reclaims. A Jouzu process that exits for any reason, including a kill, releases its locks immediately, so a stopped process no longer blocks a session or leaves a workspace writer queued, while a suspended process keeps its lock. A lock file left behind by an earlier run no longer blocks a new owner, and the five-second recovery grace period is gone. A Jouzu process running a version from before this change does not share these locks, so close other Jouzu processes before upgrading and start them again afterward.
 
 ### Development
@@ -355,7 +370,6 @@
 ### Added
 
 - Check GitHub Releases daily from the Windows working-folder screen and show a download link for newer stable x64 installers.
-
 - List running and paused goals with `/goal`, and pause, stop, or resume one with `/goal pause`, `/goal stop`, or `/goal resume`, optionally followed by a `lane/run-tag`. Without a target, the command selects the attached goal or the only matching goal; `/multiloop` shows all runs.
 - Show the selected working folder in the Windows launcher before it opens a terminal, with an option to remember it for later launches. If the saved folder is unavailable, the launcher asks for another folder instead of opening a different one. The launchers and installer use a transparent JZ icon.
 - Report catalog access failures with the cause and the action to take: DNS resolution, connection, timeout, proxy authentication, HTTP 401, 403, or 407, certificate verification, or local catalog-data access. The first refresh failure is retained until a refresh succeeds, and `catalog status` reports it as `Last error` with the overall status degraded.
@@ -368,7 +382,6 @@
 ### Fixed
 
 - Shorten Windows installer activation by checking startup files and the CLI instead of hashing the entire payload. Show an animated progress bar and the active step after extraction. Keep full diagnostic verification available through `JouzuConsole.exe --verify`, with file-count progress.
-
 - Continue automatic work across mid-run compaction, including compaction that keeps no original transcript tail. Recovery verifies the compaction boundary and earlier delivery instead of replaying input, and settles the terminal response from history when the active summary covers it.
 - Keep the continuation instruction in model context so a requested compaction continuation is admitted instead of rejected.
 - Keep `/flow` inspection and reset usable while work is held: report released holds, retain the original admission error and request receipts across a reset, and defer competing idle dispatches.
