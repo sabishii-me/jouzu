@@ -11,10 +11,12 @@ import {
 	SessionManager,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
+import { assistant } from "../../../scripts/fixtures/pi-flow-session.mjs";
 import { CatalogSettingsComponent } from "../dist/catalog-settings.js";
 import { MODEL_CATALOG_MEDIA_TYPE } from "../dist/model-catalog.js";
-import { loadActiveModelCatalogs } from "../dist/model-catalog-sync.js";
+import { loadActiveModelCatalogs, refreshAvailableModelCatalogs } from "../dist/model-catalog-sync.js";
 import { createJouzuModelPicker } from "../dist/model-picker.js";
+import { deriveProjectKey, ModelPickerStore } from "../dist/model-picker-state.js";
 import { resolveJouzuPaths } from "../dist/paths.js";
 import { createSessionUiStyles } from "../dist/session-ui/index.js";
 import { readShisaLoginToken, setShisaSignedOut } from "../dist/shisa-link/credentials.js";
@@ -209,7 +211,7 @@ async function harness(t, behavior = {}) {
 	const origin = `http://127.0.0.1:${server.address().port}`;
 	t.after(() => new Promise((resolve) => server.close(resolve)));
 
-	const env = { JOUZU_SHISA_PLATFORM_URL: origin };
+	const env = { JOUZU_SHISA_PLATFORM_URL: origin, ...(behavior.env ?? {}) };
 	// The built-in Shisa source keeps its production URL; substitute only the
 	// transport so the test never reaches the real platform.
 	const catalogFetch = (input, init) => {
@@ -222,6 +224,8 @@ async function harness(t, behavior = {}) {
 		await new Promise((resolve) => setTimeout(resolve, Math.min(ms, 10)));
 	};
 
+	if (behavior.cached) await refreshAvailableModelCatalogs(paths, { env, fetch: catalogFetch });
+	behavior.prepare?.(paths, home, env);
 	const runtime = await ModelRuntime.create({
 		authPath: join(paths.agentDir, "auth.json"),
 		modelsPath: null,
@@ -232,6 +236,7 @@ async function harness(t, behavior = {}) {
 		palette: { env },
 		catalogFetch,
 		jouzuVersion: "0.1.13",
+		...behavior.pickerOptions,
 	});
 	const notifications = [];
 	const loader = new DefaultResourceLoader({
@@ -252,22 +257,32 @@ async function harness(t, behavior = {}) {
 				onSignedIn: () => picker.refreshShisaAccount({ signedIn: true }),
 			}),
 			picker.extension,
+			...(behavior.extensions ?? []),
 		],
 	});
 	await loader.reload();
+	const sessionManager = SessionManager.inMemory(home);
+	if (behavior.conversation) sessionManager.appendMessage({ role: "user", content: "existing", timestamp: Date.now() });
+	const settingsManager = SettingsManager.inMemory({
+		retry: { enabled: false },
+		compaction: { enabled: false },
+		...behavior.settings,
+	});
 	const { session, extensionsResult } = await createAgentSession({
 		cwd: home,
 		agentDir: paths.agentDir,
 		modelRuntime: runtime,
+		flowIngress: picker.wrapSessionIngress(behavior.selectionDelegate),
 		resourceLoader: loader,
-		sessionManager: SessionManager.inMemory(home),
-		settingsManager: SettingsManager.inMemory({ retry: { enabled: false }, compaction: { enabled: false } }),
+		sessionManager,
+		settingsManager,
+		...(behavior.thinkingLevel ? { thinkingLevel: behavior.thinkingLevel } : {}),
 		tools: [],
 	});
 	t.after(() => session.dispose());
 	assert.deepEqual(extensionsResult.errors, []);
 	await session.bindExtensions({
-		mode: "rpc",
+		mode: behavior.mode ?? "rpc",
 		uiContext: sessionUiContext(notifications),
 		onError: (error) => assert.fail(error.message),
 	});
@@ -281,7 +296,7 @@ async function harness(t, behavior = {}) {
 		onCatalogsChanged: picker.reloadCatalogs,
 		onAccountChanged: (change) => picker.refreshShisaAccount(change),
 	});
-	return { home, paths, env, origin, requests, runtime, picker, session, component, notifications };
+	return { home, paths, env, origin, requests, runtime, picker, session, component, notifications, settingsManager };
 }
 
 function focusAccount(component) {
@@ -460,4 +475,349 @@ test("OAuth login keeps the saved credential when the catalog refresh fails", as
 		(notification) => notification.level === "warning" && /Catalogs not refreshed/u.test(notification.message),
 	);
 	assert.ok(warning, "the failed refresh warns without failing sign-in");
+});
+
+function priorityCatalog({ nextUnavailable = false, priorities = true, sequence = "1" } = {}) {
+	const document = structuredClone(fixtureRaw);
+	document.sequence = sequence;
+	document.revision = `priority-${sequence}`;
+	const base = document.modelOfferings[0];
+	document.modelOfferings = [
+		base,
+		...[
+			["flash", 50],
+			["flash-next", 100],
+		].map(([id, priority]) => ({
+			...structuredClone(base),
+			id: `${base.providerId}/${id}`,
+			modelId: id,
+			name: id,
+			capabilities: [...base.capabilities, "reasoning"],
+			metadata: priorities ? { default: priority } : {},
+			availability: {
+				...base.availability,
+				status: id === "flash-next" && nextUnavailable ? "unavailable" : "available",
+			},
+		})),
+	];
+	return document;
+}
+
+const firstUseOptions = {
+	applyCatalogDefaultAtStartup: true,
+	applyProjectDefaultAtStartup: true,
+	restoreLastModelAtStartup: true,
+};
+const login = (h) =>
+	h.runtime.login(SHISA_PROVIDER_ID, "oauth", { prompt: async () => assert.fail("unexpected prompt"), notify() {} });
+
+test("first use selects the highest available catalog priority from a cached startup catalog", async (t) => {
+	const h = await harness(t, {
+		cached: true,
+		env: { SHISA_API_KEY: "fixture-key" },
+		catalogDocument: priorityCatalog(),
+		pickerOptions: firstUseOptions,
+	});
+	assert.equal(h.session.model?.id, "flash-next");
+	assert.equal(h.session.thinkingLevel, "medium", "catalog thinking default accompanies its model");
+	assert.equal(
+		h.settingsManager.getSettings().defaultModel,
+		undefined,
+		"automatic selection does not write a user preference",
+	);
+	assert.equal(new ModelPickerStore(h.paths).load().state.last, undefined, "selection is not a dispatch");
+});
+
+for (const method of ["OAuth", "Settings"]) {
+	test(`${method} first login selects the highest available default without restarting`, async (t) => {
+		const h = await harness(t, { catalogDocument: priorityCatalog(), pickerOptions: firstUseOptions });
+		assert.equal(h.session.model?.id, "unknown");
+		if (method === "OAuth") await login(h);
+		else {
+			focusAccount(h.component);
+			h.component.handleInput("enter");
+			await waitFor(() => h.component.busy === false);
+		}
+		assert.equal(h.session.model?.id, "flash-next");
+	});
+}
+
+test("first use skips an unavailable higher-priority offering", async (t) => {
+	const h = await harness(t, {
+		catalogDocument: priorityCatalog({ nextUnavailable: true }),
+		pickerOptions: firstUseOptions,
+	});
+	await login(h);
+	assert.equal(h.session.model?.id, "flash");
+});
+
+for (const choice of ["project", "last", "pi-settings", "explicit", "scope", "resume", "conversation", "disabled"]) {
+	test(`catalog default does not override ${choice} selection policy`, async (t) => {
+		const h = await harness(t, {
+			cached: true,
+			env: { SHISA_API_KEY: "fixture-key" },
+			catalogDocument: priorityCatalog(),
+			pickerOptions: {
+				...firstUseOptions,
+				...(choice === "disabled" ? { applyCatalogDefaultAtStartup: false } : {}),
+				startupArgs:
+					choice === "explicit"
+						? ["--model", "example-model"]
+						: choice === "scope"
+							? ["--models=example-model"]
+							: choice === "resume"
+								? ["--resume"]
+								: [],
+			},
+			settings: choice === "pi-settings" ? { defaultProvider: "saved-provider", defaultModel: "saved-model" } : {},
+			conversation: choice === "conversation",
+			prepare(paths, home) {
+				const store = new ModelPickerStore(paths);
+				const reference = {
+					catalogId: fixtureRaw.catalogId,
+					offeringId: fixtureRaw.modelOfferings[0].id,
+					provider: fixtureRaw.providers[0].id,
+					modelId: "example-model",
+				};
+				if (choice === "project") store.setProjectDefault(reference, deriveProjectKey(home));
+				if (choice === "last") store.recordDispatch(reference, deriveProjectKey(home));
+			},
+		});
+		assert.notEqual(h.session.model?.id, "flash-next");
+		if (choice === "project" || choice === "last") assert.equal(h.session.model?.id, "example-model");
+		await h.picker.reloadCatalogs();
+		assert.notEqual(h.session.model?.id, "flash-next", "refresh does not bypass a saved or explicit choice");
+	});
+}
+
+test("a delayed catalog default applies only until a model is chosen", async (t) => {
+	const behavior = { catalogDocument: priorityCatalog({ priorities: false }), pickerOptions: firstUseOptions };
+	const h = await harness(t, behavior);
+	await login(h);
+	assert.equal(h.session.model?.id, "unknown", "no hint leaves the existing fallback unchanged");
+	behavior.catalogDocument = priorityCatalog({ sequence: "2" });
+	await h.picker.refreshShisaAccount({ signedIn: true });
+	assert.equal(h.session.model?.id, "flash-next", "late authenticated hints fill an untouched empty session");
+	const flash = (await h.runtime.getAvailable()).find((model) => model.id === "flash");
+	await h.session.setModel(flash);
+	await h.picker.refreshShisaAccount({ signedIn: true });
+	assert.equal(h.session.model?.id, "flash", "later refresh preserves the user's selection");
+});
+
+test("first-use hints preserve explicit startup thinking", async (t) => {
+	const h = await harness(t, {
+		cached: true,
+		env: { SHISA_API_KEY: "fixture-key" },
+		catalogDocument: priorityCatalog(),
+		pickerOptions: { ...firstUseOptions, startupArgs: ["--thinking", "low"] },
+		thinkingLevel: "low",
+	});
+	assert.equal(h.session.model?.id, "flash-next");
+	assert.equal(h.session.thinkingLevel, "low");
+});
+
+test("cached priorities wait for authentication before selecting a model", async (t) => {
+	const h = await harness(t, {
+		cached: true,
+		env: { SHISA_API_KEY: "fixture-key" },
+		catalogDocument: priorityCatalog(),
+		pickerOptions: firstUseOptions,
+		prepare(_paths, _home, env) {
+			delete env.SHISA_API_KEY;
+		},
+	});
+	assert.equal(h.session.model?.id, "unknown");
+	await login(h);
+	assert.equal(h.session.model?.id, "flash-next");
+});
+
+test("login chooses from the refreshed account catalog, not the signed-out cache", async (t) => {
+	const behavior = {
+		cached: true,
+		env: { SHISA_API_KEY: "fixture-key" },
+		catalogDocument: priorityCatalog(),
+		pickerOptions: firstUseOptions,
+		prepare(_paths, _home, env) {
+			delete env.SHISA_API_KEY;
+		},
+	};
+	const h = await harness(t, behavior);
+	behavior.catalogDocument = priorityCatalog({ nextUnavailable: true, sequence: "2" });
+	await login(h);
+	assert.equal(h.session.model?.id, "flash", "fresh entitlement wins over the cached recommendation");
+});
+
+test("an automatic first-use selection remains stable when later priorities change", async (t) => {
+	const behavior = { catalogDocument: priorityCatalog(), pickerOptions: firstUseOptions };
+	const h = await harness(t, behavior);
+	await login(h);
+	assert.equal(h.session.model?.id, "flash-next");
+	behavior.catalogDocument = priorityCatalog({ sequence: "2" });
+	behavior.catalogDocument.modelOfferings.find((offering) => offering.modelId === "flash").metadata.default = 200;
+	await h.picker.refreshShisaAccount({ signedIn: true });
+	assert.equal(h.session.model?.id, "flash-next");
+});
+
+test("automatic selection crosses an asynchronous host hook without waiting on itself", async (t) => {
+	let restore;
+	const h = await harness(t, {
+		catalogDocument: priorityCatalog(),
+		pickerOptions: firstUseOptions,
+		selectionDelegate: {
+			version: 1,
+			attach(session) {
+				const original = session.setModel;
+				session.setModel = async (...args) => {
+					await Promise.resolve();
+					return original.apply(session, args);
+				};
+				restore = () => {
+					session.setModel = original;
+				};
+			},
+			dispose() {
+				restore?.();
+			},
+			async submit(_submission, dispatch) {
+				await dispatch();
+			},
+		},
+	});
+	await login(h);
+	assert.equal(h.session.model?.id, "flash-next");
+});
+
+test("a model_select extension can replace the automatic choice without a self-join", async (t) => {
+	let replaced = false;
+	const h = await harness(t, {
+		catalogDocument: priorityCatalog(),
+		pickerOptions: firstUseOptions,
+		extensions: [
+			{
+				name: "replace-default",
+				factory(pi) {
+					pi.on("model_select", async (event, ctx) => {
+						if (event.model.id !== "flash-next" || replaced) return;
+						replaced = true;
+						await pi.setModel(ctx.modelRegistry.find(event.model.provider, "flash"));
+					});
+				},
+			},
+		],
+	});
+	await login(h);
+	assert.equal(replaced, true);
+	assert.equal(h.session.model?.id, "flash");
+});
+
+function holdNextCatalogAuth(h) {
+	const auth = h.runtime.checkAuth.bind(h.runtime);
+	const entered = Promise.withResolvers();
+	const release = Promise.withResolvers();
+	let held = false;
+	h.runtime.checkAuth = async (provider, ...args) => {
+		if (!held && provider !== SHISA_PROVIDER_ID) {
+			held = true;
+			entered.resolve();
+			await release.promise;
+		}
+		return auth(provider, ...args);
+	};
+	return { entered: entered.promise, release: () => release.resolve() };
+}
+
+for (const action of ["set", "cycle"]) {
+	test(`in-flight first-use auth cannot override a later native ${action} choice`, async (t) => {
+		const h = await harness(t, { catalogDocument: priorityCatalog(), pickerOptions: firstUseOptions });
+		const auth = holdNextCatalogAuth(h);
+		t.after(auth.release);
+		const signingIn = login(h);
+		await auth.entered;
+		const target = (await h.runtime.getAvailable()).find((model) => model.id === "flash");
+		let finished = false;
+		const choice = (action === "set" ? h.session.setModel(target) : h.session.cycleModel("backward")).then(() => {
+			finished = true;
+		});
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.equal(finished, false, "the native selection waits for the automatic auth check");
+		auth.release();
+		await Promise.all([signingIn, choice]);
+		assert.notEqual(h.session.model?.id, "flash-next", "the user's choice runs last");
+		if (action === "set") assert.equal(h.session.model?.id, "flash");
+		await h.picker.reloadCatalogs();
+		assert.notEqual(h.session.model?.id, "flash-next");
+	});
+}
+
+test("input waits for in-flight first-use selection before request preparation", async (t) => {
+	const seen = [];
+	const h = await harness(t, {
+		catalogDocument: priorityCatalog(),
+		pickerOptions: firstUseOptions,
+		extensions: [
+			{
+				name: "capture-input",
+				factory(pi) {
+					pi.on("input", (_event, ctx) => {
+						seen.push(ctx.model?.id);
+						return { action: "handled" };
+					});
+				},
+			},
+		],
+	});
+	const auth = holdNextCatalogAuth(h);
+	t.after(auth.release);
+	const signingIn = login(h);
+	await auth.entered;
+	const prompt = h.session.prompt("hello");
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.deepEqual(seen, [], "request preparation cannot run against the previous model");
+	auth.release();
+	await Promise.all([signingIn, prompt]);
+	assert.deepEqual(seen, ["flash-next"]);
+});
+
+test("custom turns drain in-flight selection before dispatch and close first-use eligibility", async (t) => {
+	const behavior = { catalogDocument: priorityCatalog(), pickerOptions: firstUseOptions };
+	const h = await harness(t, behavior);
+	const dispatched = [];
+	h.session.agent.streamFunction = async (model) => {
+		dispatched.push(model.id);
+		const final = { ...assistant(), provider: model.provider, model: model.id, api: model.api };
+		return {
+			async *[Symbol.asyncIterator]() {
+				yield { type: "done", partial: final };
+			},
+			result: async () => final,
+		};
+	};
+	const auth = holdNextCatalogAuth(h);
+	t.after(auth.release);
+	const signingIn = login(h);
+	await auth.entered;
+	const turn = h.session.sendCustomMessage(
+		{ customType: "fixture", content: "hello", display: false },
+		{ triggerTurn: true },
+	);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.deepEqual(dispatched, []);
+	auth.release();
+	await Promise.all([signingIn, turn]);
+	assert.deepEqual(dispatched, ["flash-next"]);
+	behavior.catalogDocument = priorityCatalog({ sequence: "2" });
+	behavior.catalogDocument.modelOfferings.find((offering) => offering.modelId === "flash").metadata.default = 200;
+	await h.picker.refreshShisaAccount({ signedIn: true });
+	assert.equal(h.session.model?.id, "flash-next");
+});
+
+test("a manual choice before hints arrive prevents a late default override", async (t) => {
+	const behavior = { catalogDocument: priorityCatalog({ priorities: false }), pickerOptions: firstUseOptions };
+	const h = await harness(t, behavior);
+	await login(h);
+	const flash = (await h.runtime.getAvailable()).find((model) => model.id === "flash");
+	await h.session.setModel(flash);
+	behavior.catalogDocument = priorityCatalog({ sequence: "2" });
+	await h.picker.refreshShisaAccount({ signedIn: true });
+	assert.equal(h.session.model?.id, "flash");
 });

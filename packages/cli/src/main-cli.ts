@@ -602,6 +602,7 @@ export async function runMainCli(args: string[]): Promise<void> {
 		profile: () => profile.id,
 		applyProjectDefaultAtStartup: interactiveStartup && projectDefaultAppliesAtStartup(parsed.args),
 		restoreLastModelAtStartup: interactiveStartup && projectDefaultAppliesAtStartup(parsed.args),
+		applyCatalogDefaultAtStartup: interactiveStartup && projectDefaultAppliesAtStartup(parsed.args),
 		startupArgs: parsed.args,
 	});
 	if (interactiveStartup) {
@@ -609,7 +610,7 @@ export async function runMainCli(args: string[]): Promise<void> {
 		// when its credential is available, and cached revisions keep serving.
 		void refreshAvailableModelCatalogs(paths, { catalog: preRuntime.catalog.bundle })
 			.then((result) => {
-				if (result) modelPicker.reloadCatalogs();
+				if (result) return modelPicker.reloadCatalogs();
 			})
 			.catch(() => {});
 	}
@@ -759,7 +760,8 @@ export async function runMainCli(args: string[]): Promise<void> {
 		pi.main(piArgs, {
 			sessionInfoFooter: runtimeDiagnostics.summary,
 			contentPolicyFactory: nativeTextguard.createPolicy,
-			flowIngressFactory: async (context) => scrollbackSession.wrap(await flow?.flowIngressFactory(context)),
+			flowIngressFactory: async (context) =>
+				modelPicker.wrapSessionIngress(scrollbackSession.wrap(await flow?.flowIngressFactory(context))),
 			extensionFactories: [
 				...classicHostBuiltinOverrides(),
 				createDirectToolPolicyExtension(),

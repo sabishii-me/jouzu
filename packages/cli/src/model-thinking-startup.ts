@@ -1,5 +1,23 @@
 import { type ExtensionContext, type ModelRuntime, resolveCliModel } from "@earendil-works/pi-coding-agent";
 
+import { MODEL_PICKER_THINKING_LEVELS, type ModelPickerThinkingLevel } from "./model-picker-state.js";
+
+/** Retain an explicit level even when Pi's initial fallback model clamps it to off. */
+export function startupThinkingArgument(args: readonly string[]): ModelPickerThinkingLevel | undefined {
+	let explicit: ModelPickerThinkingLevel | undefined;
+	for (let index = 0; index < args.length; index++) {
+		const value =
+			args[index] === "--thinking"
+				? args[index + 1]
+				: args[index].startsWith("--thinking=")
+					? args[index].slice("--thinking=".length)
+					: undefined;
+		if (value && MODEL_PICKER_THINKING_LEVELS.some((level) => level === value))
+			explicit = value as ModelPickerThinkingLevel;
+	}
+	return explicit;
+}
+
 /** Ask Pi to distinguish a reasoning suffix from a literal colon-bearing model ID. */
 export function hasExplicitStartupThinking(
 	args: readonly string[],

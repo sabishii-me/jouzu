@@ -44,10 +44,14 @@ Jouzu uses the first of these that applies:
 2. The model recorded in a resumed session
 3. The project default (set with `Enter` in the Models view)
 4. The last model that sent a request
-5. Jouzu's user-wide default, then its fallback
+5. Jouzu's saved user-wide default
+6. The highest-priority available, authenticated catalog recommendation (`metadata.default`)
+7. Pi's fallback model
+
+Catalog recommendations apply only when no model choice is saved. They can also select the first model after sign-in or a delayed catalog refresh, provided you have not selected a model or started a conversation. A later refresh does not change that selection. Models without a priority keep the normal fallback behavior.
 
 - Restoring a model from step 3 or 4 also restores its saved thinking level, unless you pass `--thinking`.
-- Resume, continue, session, model, and scoped-model arguments skip steps 3 and 4.
+- Resume, continue, session, model, and scoped-model arguments skip steps 3, 4, and 6.
 
 ## Thinking levels
 

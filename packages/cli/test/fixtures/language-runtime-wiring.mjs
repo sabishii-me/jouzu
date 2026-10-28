@@ -180,6 +180,7 @@ globalThis.__languageWiring = {
 			registerTool() {},
 			appendEntry: (customType, data) => entries.push({ type: "custom", customType, data: structuredClone(data) }),
 			setModel: async () => true,
+			getSettings: () => ({}),
 			events: {
 				on() {
 					return () => {};

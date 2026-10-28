@@ -1,4 +1,6 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import type {
+	CreateAgentSessionOptions,
 	ExtensionAPI,
 	ExtensionContext,
 	InlineExtension,
@@ -23,6 +25,7 @@ import type { LanguageContractInput } from "./language-contract.js";
 import type { CatalogBundle } from "./locale-catalog.js";
 import { createLocalizationActivityTracker } from "./localization-deferral.js";
 import type { CatalogModelOffering, ModelCatalogDocument } from "./model-catalog.js";
+import { catalogDefaultCandidates } from "./model-catalog-default.js";
 import {
 	CatalogProjectionController,
 	catalogGatewayBase,
@@ -53,8 +56,10 @@ import {
 	modelReferencesEqual,
 	preferredModelThinkingLevel,
 	previousModelStack,
+	projectDefaultAppliesAtStartup,
 } from "./model-picker-state.js";
-import { hasExplicitStartupThinking } from "./model-thinking-startup.js";
+import { wrapModelSelectionIngress } from "./model-selection-ingress.js";
+import { hasExplicitStartupThinking, startupThinkingArgument } from "./model-thinking-startup.js";
 import {
 	compactNumber,
 	JouzuPaletteRouter,
@@ -110,6 +115,8 @@ export interface JouzuModelPickerOptions {
 	profile?: () => "core" | "ja";
 	applyProjectDefaultAtStartup?: boolean;
 	restoreLastModelAtStartup?: boolean;
+	/** Use catalog priorities only for a new session without any saved model choice. */
+	applyCatalogDefaultAtStartup?: boolean;
 	restoreLastThinkingLevelAtStartup?: boolean;
 	startupArgs?: readonly string[];
 	palette?: PaletteSurfaceOptions;
@@ -1010,6 +1017,9 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 export type FavoriteCycleDirection = "forward" | "backward";
 
 export interface JouzuModelPickerIntegration {
+	wrapSessionIngress(
+		delegate?: CreateAgentSessionOptions["flowIngress"],
+	): NonNullable<CreateAgentSessionOptions["flowIngress"]>;
 	workflowService: WorkflowService;
 	workflowExtension: JouzuModelPickerIntegration["extension"];
 	extension: InlineExtension;
@@ -1020,7 +1030,7 @@ export interface JouzuModelPickerIntegration {
 	/** Child runs this session has queued, starting, or running. */
 	activeAgentCount(): number;
 	/** Re-read activated catalog revisions after an external refresh. */
-	reloadCatalogs(): void;
+	reloadCatalogs(): Promise<void>;
 	/**
 	 * After a Settings sign-in or sign-out, refresh authenticated catalogs, re-project
 	 * them into providers, and refresh model availability without a restart.
@@ -1248,7 +1258,7 @@ export function createJouzuModelPicker(
 			message: error instanceof Error ? error.message : String(error),
 		});
 	}
-	const reloadCatalogs = (): void => {
+	const reloadCatalogs = async (selectDefault = true): Promise<void> => {
 		try {
 			catalogs = loadActiveModelCatalogs(paths, catalogEnv, messageCatalog);
 			catalog = catalogs[0]?.document;
@@ -1263,6 +1273,7 @@ export function createJouzuModelPicker(
 		reapplyCatalogProjection?.();
 		// The registry is updated synchronously above; open views recompute now.
 		for (const listener of catalogReloadListeners) listener();
+		if (selectDefault) await applyCatalogDefault();
 	};
 	/**
 	 * The Settings account row signs in through the same device flow as Pi's OAuth
@@ -1300,7 +1311,7 @@ export function createJouzuModelPicker(
 					);
 			}
 		}
-		reloadCatalogs();
+		await reloadCatalogs();
 		if (!ctx) return;
 		try {
 			await ctx.modelRegistry.refresh({ allowNetwork: false });
@@ -1319,6 +1330,10 @@ export function createJouzuModelPicker(
 	let pendingDispatch: ModelReference | undefined;
 	let selectedReference: ModelReference | undefined;
 	let restoringStartupModel = false;
+	let catalogDefaultEligible = false;
+	let catalogDefaultSettled = false;
+	const catalogDefaultSelectionContext = new AsyncLocalStorage<{ active: boolean }>();
+	let catalogDefaultAttempt: Promise<void> | undefined;
 	let applyingSavedThinking = false;
 	let thinkingNotificationCount = 0;
 	const pendingThinkingNotifications: {
@@ -1423,6 +1438,77 @@ export function createJouzuModelPicker(
 		}
 	};
 
+	// Keep late catalog arrival eligible only while the initial session is untouched.
+	const applyCatalogDefault = (): Promise<void> => {
+		if (catalogDefaultAttempt) return catalogDefaultAttempt;
+		const ctx = activeCtx;
+		const pi = extensionApi;
+		if (!ctx || !pi || !catalogDefaultEligible || catalogDefaultSettled) return Promise.resolve();
+		const saved = store.load().state;
+		const settings = pi.getSettings();
+		if (
+			hasConversationEntries(ctx.sessionManager.getBranch()) ||
+			ctx.scopedModels.length > 0 ||
+			saved.defaults.projects[projectKey] ||
+			saved.last ||
+			saved.recents.global.length > 0 ||
+			(saved.recents.projects[projectKey]?.length ?? 0) > 0 ||
+			settings.defaultModel ||
+			settings.defaultProvider
+		) {
+			catalogDefaultEligible = false;
+			return Promise.resolve();
+		}
+		if (!ctx.isIdle()) return Promise.resolve();
+		const attempt = async (): Promise<void> => {
+			const available = pickerModels(ctx, catalogs, catalogEnv, paths).filter((row) => row.available);
+			for (const reference of catalogDefaultCandidates(catalogs)) {
+				if (!catalogDefaultEligible || catalogDefaultSettled || activeCtx !== ctx) return;
+				if (!available.some((row) => modelReferencesEqual(row, reference))) continue;
+				const model = resolveCatalogModel(ctx, reference, catalogs);
+				if (!model) continue;
+				const thinking = startupThinkingArgument(options.startupArgs ?? []) ?? ctx.thinkingLevel;
+				try {
+					restoringStartupModel = true;
+					const frame = { active: true };
+					let applied: boolean;
+					try {
+						applied = await catalogDefaultSelectionContext.run(frame, () => pi.setModel(model));
+					} finally {
+						frame.active = false;
+					}
+					if (!applied) continue;
+					catalogDefaultSettled = true;
+					// An extension may deliberately select another model from model_select.
+					if (ctx.model?.provider !== model.provider || ctx.model.id !== model.id) return;
+					selectedReference = reference;
+					applyThinking(
+						pi,
+						ctx,
+						options.restoreLastThinkingLevelAtStartup !== false &&
+							!hasExplicitStartupThinking(options.startupArgs ?? [], ctx.modelRegistry)
+							? preferredModelThinkingLevel(saved, reference, catalogThinkingLevel(reference, catalogs))
+							: thinking,
+					);
+					return;
+				} catch {
+					// A hint is optional. Try the next authenticated offering without changing saved preferences.
+				} finally {
+					restoringStartupModel = false;
+				}
+			}
+		};
+		catalogDefaultAttempt = attempt().finally(() => {
+			catalogDefaultAttempt = undefined;
+		});
+		return catalogDefaultAttempt;
+	};
+
+	const beforeExternalModelSelection = async (): Promise<void> => {
+		catalogDefaultSettled = true;
+		await catalogDefaultAttempt;
+	};
+
 	const extension: InlineExtension = {
 		name: "jouzu-model-picker",
 		factory: (pi) => {
@@ -1475,7 +1561,9 @@ export function createJouzuModelPicker(
 				});
 			pi.on("session_start", async (event, ctx) => {
 				activeCtx = ctx;
-				removeShisaAuthListener ??= onShisaAuthChange(paths, reloadCatalogs);
+				removeShisaAuthListener ??= onShisaAuthChange(paths, () => {
+					void reloadCatalogs(false);
+				});
 				if (event.reason === "reload") {
 					const refreshes = await Promise.allSettled([
 						catalogProjection.refresh(pi, ctx, catalogs, AbortSignal.timeout(15_000)),
@@ -1486,7 +1574,7 @@ export function createJouzuModelPicker(
 							catalog: messageCatalog,
 						}),
 					]);
-					reloadCatalogs();
+					await reloadCatalogs();
 					const modelRefresh = refreshes[0];
 					if (modelRefresh.status === "rejected") {
 						const message =
@@ -1533,6 +1621,7 @@ export function createJouzuModelPicker(
 					catalogProjection.sync(pi, ctx, catalogs);
 				}
 				syncSession(ctx);
+				if (event.reason !== "reload") catalogDefaultEligible = false;
 				if (
 					(event.reason !== "startup" && event.reason !== "new") ||
 					hasConversationEntries(ctx.sessionManager.getBranch()) ||
@@ -1548,6 +1637,9 @@ export function createJouzuModelPicker(
 					options.restoreLastModelAtStartup === true ? (state.last ?? state.recents.global[0]) : undefined;
 				const reference = projectReference ?? lastUsed;
 				if (!reference) {
+					catalogDefaultEligible =
+						options.applyCatalogDefaultAtStartup === true && projectDefaultAppliesAtStartup(options.startupArgs ?? []);
+					await applyCatalogDefault();
 					const current = modelReference(ctx.model, catalog);
 					if (current && restoreThinking)
 						applyThinking(
@@ -1621,6 +1713,7 @@ export function createJouzuModelPicker(
 				}
 				pendingDispatch = modelReference(event.model, catalog);
 				selectedReference = pendingDispatch;
+				if (!restoringStartupModel) catalogDefaultSettled = true;
 				if (!selectedReference || restoringStartupModel || event.source === "restore") return;
 				const scopedLevel = ctx.scopedModels.find(
 					({ model }) => model.provider === event.model.provider && model.id === event.model.id,
@@ -1669,6 +1762,7 @@ export function createJouzuModelPicker(
 				}
 			});
 			pi.on("input", async (event, ctx) => {
+				await catalogDefaultAttempt;
 				if (!ctx.model || !ctx.isIdle()) return { action: "continue" };
 				const identity = catalogRuntimeIdentity(ctx.model.provider);
 				const reference = modelReference(ctx.model, catalog);
@@ -1702,12 +1796,17 @@ export function createJouzuModelPicker(
 					return { action: "handled" };
 				}
 			});
-			pi.on("agent_start", () => localizationActivity.set("streaming", true));
+			pi.on("before_agent_start", beforeExternalModelSelection);
+			pi.on("agent_start", () => {
+				catalogDefaultSettled = true;
+				localizationActivity.set("streaming", true);
+			});
 			pi.on("agent_end", () => localizationActivity.set("streaming", false));
 			pi.on("agent_settled", () => localizationActivity.set("streaming", false));
 			pi.on("tool_execution_start", () => localizationActivity.set("tool", true));
 			pi.on("tool_execution_end", () => localizationActivity.set("tool", false));
 			pi.on("before_provider_request", (_event, ctx) => {
+				catalogDefaultSettled = true;
 				activeCtx = ctx;
 				const dispatched = modelReference(ctx.model, catalog);
 				if (!dispatched || !pendingDispatch || !modelReferencesEqual(dispatched, pendingDispatch)) return;
@@ -1760,12 +1859,17 @@ export function createJouzuModelPicker(
 					);
 				}
 			});
-			let removeShisaAuthListener: (() => void) | undefined = onShisaAuthChange(paths, reloadCatalogs);
+			// Authentication changes can precede the authenticated fetch. Re-project now,
+			// but wait for refreshShisaAccount before selecting from account-scoped hints.
+			let removeShisaAuthListener: (() => void) | undefined = onShisaAuthChange(paths, () => {
+				void reloadCatalogs(false);
+			});
 			pi.on("session_shutdown", (_event, ctx) => {
 				removeShisaAuthListener?.();
 				removeShisaAuthListener = undefined;
 				catalogProjection.release(pi, ctx);
 				activeCtx = undefined;
+				catalogDefaultEligible = false;
 				pendingDispatch = undefined;
 				selectedReference = undefined;
 				pendingThinkingNotifications.length = 0;
@@ -1881,7 +1985,7 @@ export function createJouzuModelPicker(
 											catalog: messageCatalog,
 										}),
 									]);
-									reloadCatalogs();
+									await reloadCatalogs();
 									const modelRefresh = refreshes[0];
 									if (modelRefresh.status === "rejected") {
 										const message =
@@ -2087,6 +2191,11 @@ export function createJouzuModelPicker(
 		cycleFavorite,
 		handleScopedModelsCommand,
 		activeAgentCount: () => workflow.service.runs().filter(isActiveRun).length,
+		wrapSessionIngress: (delegate) =>
+			wrapModelSelectionIngress(delegate, {
+				enteringAutomaticSelection: () => catalogDefaultSelectionContext.getStore()?.active === true,
+				beforeSelection: beforeExternalModelSelection,
+			}),
 		workflowService: workflow.service,
 		reloadCatalogs,
 		refreshShisaAccount,

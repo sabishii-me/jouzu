@@ -5,7 +5,18 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
 import { ModelPickerStore } from "../dist/model-picker-state.js";
+import { startupThinkingArgument } from "../dist/model-thinking-startup.js";
 import { resolveJouzuPaths } from "../dist/paths.js";
+
+test("first-use thinking preserves valid explicit arguments including max and the last override", () => {
+	for (const level of ["off", "minimal", "low", "medium", "high", "xhigh", "max"]) {
+		assert.equal(startupThinkingArgument(["--thinking", level]), level);
+		assert.equal(startupThinkingArgument([`--thinking=${level}`]), level);
+	}
+	assert.equal(startupThinkingArgument(["--thinking", "high", "--thinking", "low"]), "low");
+	assert.equal(startupThinkingArgument(["--thinking", "invalid"]), undefined);
+	assert.equal(startupThinkingArgument([]), undefined);
+});
 
 test("CLI preserves explicit reasoning suffixes and distinguishes literal colon IDs", { timeout: 120000 }, () => {
 	const root = mkdtempSync(join(tmpdir(), "jouzu-thinking-cli-"));

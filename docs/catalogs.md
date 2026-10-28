@@ -133,6 +133,18 @@ jouzu catalog conformance ./remote-catalog.json --json
 - Unknown thinking levels, including an unknown `defaultThinkingLevel`, are ignored so the catalog still loads.
 - `jz doctor` reads cached data only. Run `jz catalog refresh` before checking a server change.
 
+### First-use default priority
+
+Set optional `metadata.default` on a model offering to recommend it when the user has no saved model choice:
+
+```json
+"metadata": { "default": 100 }
+```
+
+The value must be a safe integer. Higher values take precedence; zero and negative integers are valid, and an omitted value is not a recommendation. Equal priorities use a stable catalog-qualified identity order. Invalid values are ignored.
+
+Jouzu considers only available, authenticated models. Explicit model arguments, scoped models, resumed sessions, and saved project or user choices take precedence. A catalog refresh does not replace a model the user selected or already used. This priority does not change the alphabetical ordering or ratings in the Models view.
+
 ### Picker ratings
 
 Set optional `metadata.strength`, `metadata.speed`, and `metadata.cost` on each model offering to supply the [Models view ratings](models.md#model-list):
