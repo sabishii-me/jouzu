@@ -7,9 +7,11 @@ async function openSetup(page:Page, initial:{profile?:string|null;modelReady?:bo
   (window as any).isTauri=true;
   (window as any).__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener:()=>{}};
   const callbacks:Record<string,unknown>={};
-  const s={profile:state.profile ?? null,modelReady:state.modelReady ?? false,signedIn:false,recent:state.recent ?? []};
+  const s={profile:state.profile ?? null,modelReady:state.modelReady ?? false,signedIn:false,recent:state.recent ?? [],savedUi:null as string|null,savedReply:null as string|null};
   let cancelPending:(()=>void)|null=null;
-  const snapshot=()=>({schemaVersion:1,modelReady:s.modelReady,profile:s.profile,account:{signedIn:s.signedIn},credentials:[],customProviders:[],providers:[{id:'openai',name:'OpenAI'}],models:[]});
+  const effective=(value:string|null)=>value===null||value==='auto'?'en':value;
+  const language=()=>({readable:true,state:s.savedUi||s.savedReply?'ok':'absent',uiLocale:{requested:s.savedUi ?? 'auto',effective:effective(s.savedUi),source:s.savedUi?'config':'builtin'},responseLanguage:{requested:s.savedReply ?? 'auto',effective:s.savedReply ?? 'auto',source:s.savedReply?'config':'builtin'},saved:s.savedUi||s.savedReply?{uiLocale:s.savedUi ?? 'auto',responseLanguage:s.savedReply}:null,suggestedResponseLanguage:s.savedReply ?? (s.profile==='ja'?'ja':'auto'),legacyProfile:s.profile});
+  const snapshot=()=>({schemaVersion:1,language:language(),modelReady:s.modelReady,profile:s.profile,account:{signedIn:s.signedIn},credentials:[],customProviders:[],providers:[{id:'openai',name:'OpenAI'}],models:[]});
   (window as any).__TAURI_INTERNALS__={
    metadata:{currentWindow:{label:'main'},currentWebview:{label:'main'}},
    transformCallback:(callback:unknown)=>{const id=String(Math.random());callbacks[id]=callback;return id;},
@@ -23,6 +25,10 @@ async function openSetup(page:Page, initial:{profile?:string|null;modelReady?:bo
     if(command==='control_request'){
      const action=args?.request?.action;
      if(action==='profile')s.profile=String(args.request.profile);
+     if(action==='language-set'){
+      if(args.request.uiLocale!==undefined)s.savedUi=String(args.request.uiLocale);
+      if(args.request.responseLanguage!==undefined)s.savedReply=String(args.request.responseLanguage);
+     }
      if(action==='shisa-logout')s.signedIn=false;
      if(action==='custom-provider')s.modelReady=true;
      if(action==='shisa-login'){
@@ -114,7 +120,8 @@ test('preferences lead to provider setup and the page frame stays put', async ({
 
 test('languages are discoverable and custom providers accept a key', async ({page}) => {
  await openSetup(page,{});
- for(const name of ['English','日本語','简体中文','繁體中文']) await expect(page.getByRole('button',{name,exact:true})).toBeVisible();
+ const interfaceGroup=page.getByRole('group',{name:'Interface language'});
+ for(const name of ['English','日本語','简体中文','繁體中文']) await expect(interfaceGroup.getByRole('button',{name,exact:true})).toBeVisible();
  await page.getByRole('button',{name:'Continue',exact:true}).click();
  await expect(page.getByRole('textbox',{name:'Search services'})).toHaveCount(0);
  await page.getByRole('combobox',{name:'Service',exact:true}).click();
@@ -124,17 +131,16 @@ test('languages are discoverable and custom providers accept a key', async ({pag
  await expect(page.getByRole('textbox',{name:'API base URL'})).toBeVisible();
 });
 
-test('Japanese-first follows the language until explicitly chosen', async ({page}) => {
+test('the response language is chosen separately and survives an interface change', async ({page}) => {
  await openSetup(page,{});
- const toggle=page.getByRole('switch');
- await expect(toggle).not.toBeChecked();
- await page.getByRole('button',{name:'日本語',exact:true}).click();
- await expect(toggle).toBeChecked();
- await page.getByRole('button',{name:'English',exact:true}).click();
- await expect(toggle).not.toBeChecked();
- await toggle.click();
- await page.getByRole('button',{name:'简体中文',exact:true}).click();
- await expect(toggle).toBeChecked();
+ const interfaceGroup=page.getByRole('group',{name:'Interface language'});
+ const replyGroup=page.getByRole('group',{name:'Response language'});
+ await expect(interfaceGroup.getByRole('button',{name:'English',exact:true})).toHaveAttribute('aria-pressed','true');
+ await expect(replyGroup.getByRole('button',{name:'English',exact:true})).toHaveAttribute('aria-pressed','true');
+ await replyGroup.getByRole('button',{name:'日本語',exact:true}).click();
+ await expect(replyGroup.getByRole('button',{name:'日本語',exact:true})).toHaveAttribute('aria-pressed','true');
+ await interfaceGroup.getByRole('button',{name:'English',exact:true}).click();
+ await expect(replyGroup.getByRole('button',{name:'日本語',exact:true})).toHaveAttribute('aria-pressed','true');
 });
 
 test('Shisa.AI authorization keeps its actions together and cancels cleanly', async ({page}) => {

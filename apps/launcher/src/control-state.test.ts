@@ -24,4 +24,21 @@ describe("configuration response boundary", () => {
    expect(() => parseControlState({...valid,schemaVersion:2})).toThrow();
    expect(() => parseControlState({...valid,providers:[{id:"",name:"bad"}]})).toThrow();
  });
+ const language = {
+   readable: true, state: "ok",
+   uiLocale: { requested: "ja", effective: "ja", source: "config" },
+   responseLanguage: { requested: "auto", effective: "auto", source: "builtin" },
+   saved: { uiLocale: "ja", responseLanguage: null },
+   suggestedResponseLanguage: "auto", legacyProfile: null,
+ };
+ it("accepts the language payload", () => {
+   expect(parseControlState({...valid,language}).language?.uiLocale.effective).toBe("ja");
+   expect(parseControlState({...valid,language}).language?.saved).toEqual({uiLocale:"ja",responseLanguage:null});
+ });
+ it("rejects unsupported language values", () => {
+   expect(() => parseControlState({...valid,language:{...language,uiLocale:{...language.uiLocale,effective:"auto"}}})).toThrow();
+   expect(() => parseControlState({...valid,language:{...language,responseLanguage:{...language.responseLanguage,requested:"fr"}}})).toThrow();
+   expect(() => parseControlState({...valid,language:{...language,saved:{uiLocale:"fr",responseLanguage:null}}})).toThrow();
+   expect(() => parseControlState({...valid,language:{...language,legacyProfile:"other"}})).toThrow();
+ });
 });

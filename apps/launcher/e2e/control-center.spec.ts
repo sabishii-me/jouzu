@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-const state = {schemaVersion:1,profile:'core',account:{signedIn:false},credentials:[],customProviders:[],providers:[{id:'openai',name:'OpenAI'}],models:[]};
+const state = {schemaVersion:1,profile:'core',account:{signedIn:false},credentials:[],customProviders:[],providers:[{id:'openai',name:'OpenAI'}],models:[],language:{readable:true,state:'absent',uiLocale:{requested:'auto',effective:'en',source:'builtin'},responseLanguage:{requested:'auto',effective:'auto',source:'builtin'},saved:null as {uiLocale:string;responseLanguage:string|null}|null,suggestedResponseLanguage:'auto',legacyProfile:null}};
 for (const legacy of [false,true]) {
  test(`control center ${legacy ? 'rejects old protocol without crashing' : 'opens all tabs'}`, async ({page}) => {
   const errors: string[]=[]; page.on('pageerror', error=>errors.push(error.message));
@@ -13,7 +13,16 @@ for (const legacy of [false,true]) {
     invoke:async (command:string, args?:any) => {
      if(command==='launcher_state') return {ready:true,bash:true,recent:[],platform:'windows'};
      if(command==='component_versions') return {jouzu:'0.1.18',development:true};
-     if(command==='control_request') {if(args?.request?.action==='profile')state.profile=args.request.profile;const result={...state};if(legacy)delete (result as any).customProviders;return result;}
+     if(command==='control_request') {
+      if(args?.request?.action==='profile')state.profile=args.request.profile;
+      if(args?.request?.action==='language-set'){
+       const request=args.request as {uiLocale?:string;responseLanguage?:string};
+       if(request.uiLocale){state.language.saved={...(state.language.saved??{responseLanguage:null}),uiLocale:request.uiLocale};state.language.uiLocale={requested:request.uiLocale,effective:request.uiLocale,source:'config'};}
+       if(request.responseLanguage){state.language.saved={...(state.language.saved??{uiLocale:'auto'}),responseLanguage:request.responseLanguage};state.language.responseLanguage={requested:request.responseLanguage,effective:request.responseLanguage,source:'config'};}
+       state.language.suggestedResponseLanguage=state.language.saved?.responseLanguage??'auto';
+      }
+      const result={...state};if(legacy)delete (result as any).customProviders;return result;
+     }
      if(command==='environment_read') return [];
      if(command.includes('version'))return '0.1.0';
      return 1;
@@ -36,15 +45,13 @@ for (const legacy of [false,true]) {
   await dialog.getByRole('button',{name:'Edit',exact:true}).click();
   await expect(dialog.getByLabel('Value',{exact:true})).toHaveValue('fixture-secret');
   await dialog.getByRole('tab',{name:'Language',exact:true}).click();
-  await expect(dialog.getByRole('combobox',{name:'Launcher interface language'})).toBeVisible();
-  await expect(dialog.getByRole('combobox')).toHaveCount(1);
-  const toggle=dialog.getByRole('switch',{name:'Japanese-first mode',exact:true});
-  if(!legacy) {
-   await expect(toggle).not.toBeChecked();
-   await toggle.click(); await expect(toggle).toBeChecked();
-   await toggle.click(); await expect(toggle).not.toBeChecked();
-  } else await expect(toggle).toBeDisabled();
-  await expect(dialog.getByText(/Changing the launcher language does not turn this off/)).toBeVisible();
+  await expect(dialog.getByRole('group',{name:'Interface language'})).toBeVisible();
+  await expect(dialog.getByRole('group',{name:'Response language'})).toBeVisible();
+  await expect(dialog.getByRole('combobox')).toHaveCount(0);
+  if(!legacy){
+   await dialog.getByRole('group',{name:'Interface language'}).getByRole('button',{name:'日本語',exact:true}).click();
+   await expect(dialog.getByRole('group',{name:'回答言語'}).getByRole('button',{name:'English',exact:true})).toHaveAttribute('aria-pressed','true');
+  }
   expect(errors).toEqual([]);
  });
 }

@@ -28,20 +28,23 @@ import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "./com
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "./components/ui/select";
 import { Button } from "./components/ui/button";
 import { JouzuLoader } from "./components/ui/jouzu-loader";
-import { messages, locales, resolveLocale, type Locale } from "./i18n";
+import { messages, resolveLocale, type Locale } from "./i18n";
+import { LanguageRows } from "./language-section";
 import { type Workspace } from "./history";
 import { parseDiagnostics, type Diagnostics } from "./diagnostics";
 import { openReport } from "./report";
 interface LauncherState { platform: "windows" | "macos" | "linux"; recent: Workspace[]; ready: boolean; bash: boolean; bundled_git: boolean }
 interface Components { jouzu: string | null; development: boolean; launcherUpdaterConfigured?: boolean; jouzuUpdaterConfigured?: boolean }
+const initialLocale = (): Locale => resolveLocale(localStorage.getItem("jouzu.ui.language") ?? navigator.language);
 export function App() {
-  const [locale, setLocale] = useState<Locale>(() => resolveLocale(localStorage.getItem("jouzu.ui.language") ?? navigator.language));
+  const [locale, setLocale] = useState<Locale>(initialLocale);
   const t = messages[locale];
   const [workspacePage, setWorkspacePage] = useState(false);
-  const [japaneseOverride, setJapaneseOverride] = useState<boolean | null>(null);
-  const japaneseChoice = japaneseOverride ?? locale === "ja";
+  const [uiPreference, setUiPreference] = useState<string>(initialLocale);
+  const [replyPreference, setReplyPreference] = useState<string>(initialLocale);
+  const [replyTouched, setReplyTouched] = useState(false);
 
-  useEffect(() => { document.documentElement.lang = locale; localStorage.setItem("jouzu.ui.language", locale); }, [locale]);
+  useEffect(() => { document.documentElement.lang = locale; }, [locale]);
   const [state, setState] = useState<LauncherState | null>(null);
   const [error, setError] = useState<string | null>(null);
   // The first status read decides the whole window: the dot loader while it is in flight, the error and a retry if it never lands.
@@ -65,6 +68,27 @@ export function App() {
   const [addingConnection, setAddingConnection] = useState(false);
   const [query, setQuery] = useState("");
   const [setup, setSetup] = useState<ControlState | null>(null);
+  // Adopt the saved runtime values. The controls always show an explicit language.
+  useEffect(() => {
+    const language = setup?.language;
+    if (!language) return;
+    const savedUi = language.saved?.uiLocale;
+    const effective = resolveLocale(language.uiLocale.effective);
+    setUiPreference(savedUi && savedUi !== "auto" ? savedUi : effective);
+    setLocale(effective);
+    if (savedUi) localStorage.setItem("jouzu.ui.language", language.uiLocale.effective);
+    const savedReply = language.saved?.responseLanguage;
+    if (savedReply && savedReply !== "auto") {
+      setReplyPreference(savedReply);
+      setReplyTouched(true);
+    } else if (language.legacyProfile === "ja") {
+      setReplyPreference("ja");
+      setReplyTouched(true);
+    } else {
+      // Onboarding follows the interface until the user picks a reply language; Settings never does.
+      setReplyPreference(current => (!setup?.profile && !replyTouched ? effective : current));
+    }
+  }, [setup?.language, setup?.profile, replyTouched]);
   const modelReady = setup?.modelReady;
   const needsSetup = modelReady === false;
   const showSetup = needsSetup && !workspacePage;
@@ -137,6 +161,21 @@ export function App() {
     controlQueue.current = run.catch(() => {});
     return run;
   }
+  function pickInterface(value: string, followReply: boolean) {
+    setUiPreference(value);
+    setLocale(value as Locale);
+    localStorage.setItem("jouzu.ui.language", value);
+    if (followReply && !replyTouched) setReplyPreference(value);
+  }
+  async function changeInterfaceLanguage(value: string) {
+    pickInterface(value, false);
+    await configure({ action: "language-set", uiLocale: value });
+  }
+  async function changeResponseLanguage(value: string) {
+    setReplyTouched(true);
+    setReplyPreference(value);
+    await configure({ action: "language-set", responseLanguage: value });
+  }
   async function readStatus() {
     // The first status read shares the control pipe with every other request, so it waits its turn like they do.
     const run = controlQueue.current.then(async () => {
@@ -162,7 +201,7 @@ export function App() {
     } catch (error) { setError(String(error)); }
   }
   useEffect(() => { if (!notice) return; const timer = setTimeout(() => setNotice(null), 4000); return () => clearTimeout(timer); }, [notice]);
-  useEffect(() => { if (settingsOpen && isTauri()) { if (!setup && !busyRef.current) void configure({ action: "status" }); void readEnvironment(); } }, [settingsOpen]);
+  useEffect(() => { if (settingsOpen && isTauri()) { if (!busyRef.current) void configure({ action: "status" }); void readEnvironment(); } }, [settingsOpen]);
   const refresh = async () => setState(await invoke<LauncherState>("launcher_state"));
   // Diagnostics are separate from the launcher state: a missing record must not fail the window.
   const refreshDiagnostics = async () => {
@@ -266,13 +305,8 @@ export function App() {
                   <div className="flex gap-2"><Button variant="outline" disabled={!envLoaded || busy} onClick={() => { setEditingEnv(envRows.length); setEnvRows(rows => [...rows,{name:"",value:"",enabled:true}]); }}><Plus />{t.addEntry}</Button><Button className="ml-auto" disabled={!envLoaded || busy} onClick={saveEnvironment}>{t.save}</Button></div>
                 </CardContent></Card></TabsContent>
                 <TabsContent value="general" className="m-0 space-y-4">
-                  <Card className="border-border shadow-none"><CardHeader><CardTitle>{t.language}</CardTitle><CardDescription>{t.languageHint}</CardDescription></CardHeader><CardContent>
-                    <Select value={locale} onValueChange={value => setLocale(value as Locale)}><SelectTrigger aria-label={t.language} className="w-full"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(locales).map(([key,label]) => <SelectItem key={key} value={key}>{label}</SelectItem>)}</SelectContent></Select>
-                    <div className="mt-6 space-y-3 border-t border-border pt-5">
-                      <div className="flex items-center justify-between gap-4"><Label htmlFor="japanese-first">{t.profile}</Label><Switch id="japanese-first" disabled={busy || !setup} checked={setup?.profile === "ja"} aria-describedby="japanese-first-description" onCheckedChange={enabled => void configure({ action: "profile", profile: enabled ? "ja" : "core" })} /></div>
-                      <p id="japanese-first-description" className="text-sm leading-relaxed text-muted-foreground">{t.profileHint}</p>
-                      <p className="text-sm leading-relaxed text-muted-foreground">{t.profileOffHint}</p>
-                    </div>
+                  <Card className="border-border shadow-none"><CardHeader><CardTitle>{t.language}</CardTitle></CardHeader><CardContent className="space-y-5">
+                    <LanguageRows locale={locale} uiLocale={uiPreference} responseLanguage={replyPreference} busy={busy || !setup} onChangeUiLocale={value => void changeInterfaceLanguage(value)} onChangeResponseLanguage={value => void changeResponseLanguage(value)} />
                   </CardContent></Card>
 
                 </TabsContent>
@@ -327,12 +361,18 @@ export function App() {
         </DialogContent>
       </Dialog>
     {error && <div role="alert" className="mt-5 flex items-start justify-between gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-900"><div><p className="font-medium">{t.error}</p><details className="mt-2 break-all"><summary className="cursor-pointer">{t.details}</summary><p className="mt-2">{error}</p></details></div><button onClick={() => setError(null)} aria-label={t.dismiss}><X className="size-4" /></button></div>}
-    {!setup ? <section aria-label={t.connecting} className="flex min-h-0 flex-1 flex-col items-center justify-center gap-5"><JouzuLoader className="scale-125" /><span role="status" aria-live="polite" className="sr-only">{t.connecting}</span>{statusError && <div className="flex w-full max-w-xl flex-col items-center gap-3"><p className="text-sm text-muted-foreground" role="alert">{t.connectFailed}</p><div className="flex w-full items-center gap-2 rounded-lg border border-border bg-card py-2 pl-3 pr-1"><code className="select-text min-w-0 flex-1 truncate text-xs text-muted-foreground" title={statusError}>{statusError}</code><Button variant="ghost" className="shrink-0" aria-label={t.copy} title={t.copy} onClick={() => void copyStatusError()}>{statusCopied ? <Check className="text-primary" /> : <Copy />}</Button></div><Button onClick={() => void readStatus()}>{t.retry}</Button></div>}</section> : showSetup ? <LauncherPage title={setup?.profile ? t.setupConnect : t.setupMake} description={setup?.profile ? t.setupHint : t.setupPreferencesHint} action={!!state?.recent.length && <Button variant="ghost" onClick={()=>setWorkspacePage(true)}>{t.setupWorkspaces}</Button>}>
+    {!setup ? <section aria-label={t.connecting} className="flex min-h-0 flex-1 flex-col items-center justify-center gap-5"><JouzuLoader className="scale-125" /><span role="status" aria-live="polite" className="sr-only">{t.connecting}</span>{statusError && <div className="flex w-full max-w-xl flex-col items-center gap-3"><p className="text-sm text-muted-foreground" role="alert">{t.connectFailed}</p><div className="flex w-full items-center gap-2 rounded-lg border border-border bg-card py-2 pl-3 pr-1"><code className="select-text min-w-0 flex-1 truncate text-xs text-muted-foreground" title={statusError}>{statusError}</code><Button variant="ghost" className="shrink-0" aria-label={t.copy} title={t.copy} onClick={() => void copyStatusError()}>{statusCopied ? <Check className="text-primary" /> : <Copy />}</Button></div><Button onClick={() => void readStatus()}>{t.retry}</Button></div>}</section> : showSetup ? <LauncherPage title={setup?.profile ? t.setupConnect : t.setupMake} description={setup?.profile ? t.setupHint : ""} action={!!state?.recent.length && <Button variant="ghost" onClick={()=>setWorkspacePage(true)}>{t.setupWorkspaces}</Button>}>
       <ScrollArea className="min-h-0 flex-1"><div className="p-5 sm:p-6">
         {!setup?.profile ? <div className="space-y-6 pt-2">
-          <div className="space-y-2"><Label>{t.language}</Label><div role="group" aria-label={t.language} className="flex flex-wrap gap-2">{Object.entries(locales).map(([key,label])=><Button key={key} lang={key} className="min-w-28" variant={locale===key ? "default" : "outline"} aria-pressed={locale===key} onClick={()=>setLocale(key as Locale)}>{label}</Button>)}</div><p className="text-sm text-muted-foreground">{t.languageHint}</p></div>
-          <div className="space-y-2"><div className="flex items-center gap-4"><Label htmlFor="onboarding-japanese">{t.profile}</Label><Switch id="onboarding-japanese" checked={japaneseChoice} onCheckedChange={setJapaneseOverride}/></div><p className="max-w-prose text-sm leading-relaxed text-muted-foreground">{t.setupJapaneseHint}</p></div>
-          <div className="flex justify-end pt-1"><Button onClick={()=>void configure({action:"profile",profile:japaneseChoice ? "ja" : "core"})}>{t.setupContinue}</Button></div>
+          <LanguageRows
+            locale={locale}
+            uiLocale={uiPreference}
+            responseLanguage={replyPreference}
+            busy={busy}
+            onChangeUiLocale={value => pickInterface(value, true)}
+            onChangeResponseLanguage={value => { setReplyTouched(true); setReplyPreference(value); }}
+          />
+          <div className="flex justify-end pt-1"><Button onClick={async () => { if (await configure({ action: "language-set", uiLocale: uiPreference, responseLanguage: replyPreference })) void configure({ action: "profile", profile: "core" }); }}>{t.setupContinue}</Button></div>
         </div> : <>{!settingsOpen && providerContent}</>}
       </div></ScrollArea>
     </LauncherPage> : <LauncherPage title={t.heading} description={t.intro} action={needsSetup && <Button variant="ghost" onClick={()=>setWorkspacePage(false)}>{t.setupModels}</Button>}>
