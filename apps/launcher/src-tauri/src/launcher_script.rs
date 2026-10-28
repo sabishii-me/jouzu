@@ -1,18 +1,39 @@
 use std::{
+    ffi::OsString,
     path::{Path, PathBuf},
     process::{Command, Output},
 };
+
+/// The module path a Windows PowerShell helper may use.
+///
+/// A caller can start the launcher from PowerShell 7, whose module path makes Windows
+/// PowerShell load a conflicting Security module: `Get-AuthenticodeSignature` then fails with a
+/// type-data conflict. Helpers need the system modules only, never the caller's.
+fn system_module_path(system_root: &Path, program_files: Option<&Path>) -> Option<OsString> {
+    let mut paths = Vec::new();
+    if let Some(program_files) = program_files {
+        paths.push(program_files.join("WindowsPowerShell/Modules"));
+    }
+    paths.push(system_root.join("System32/WindowsPowerShell/v1.0/Modules"));
+    std::env::join_paths(paths).ok()
+}
 
 /// Runs a packaged PowerShell helper, which owns every Windows-specific detail of that component:
 /// which trees are usable, which versions they report, and how a bundled archive is verified.
 pub fn run(root: &Path, script: &str, arguments: &[String]) -> Result<Output, String> {
     let windows = std::env::var_os("SystemRoot").ok_or("Windows directory unavailable")?;
-    let mut command = Command::new(PathBuf::from(windows).join("System32/WindowsPowerShell/v1.0/powershell.exe"));
+    let mut command = Command::new(PathBuf::from(&windows).join("System32/WindowsPowerShell/v1.0/powershell.exe"));
     command
         .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File"])
         .arg(root.join("runtime/launcher-update").join(script))
         .arg("-InstallRoot")
         .arg(root);
+    if let Some(module_path) = system_module_path(
+        Path::new(&windows),
+        std::env::var_os("ProgramFiles").as_deref().map(Path::new),
+    ) {
+        command.env("PSModulePath", module_path);
+    }
     for argument in arguments {
         command.arg(argument);
     }
@@ -50,4 +71,18 @@ pub fn printed_path(output: &Output, message: &str) -> Result<PathBuf, String> {
         return Err(message.to_string());
     }
     Ok(path)
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn helpers_get_the_system_module_path_not_the_callers() {
+        let path = system_module_path(Path::new("C:\\Windows"), Some(Path::new("C:\\Program Files"))).unwrap();
+        let text = path.to_string_lossy().to_lowercase().replace('/', "\\");
+        assert!(text.contains("windows\\system32\\windowspowershell\\v1.0\\modules"));
+        assert!(text.contains("program files\\windowspowershell\\modules"));
+        assert!(!text.contains("powershell\\7"));
+    }
 }

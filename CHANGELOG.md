@@ -10,6 +10,10 @@
 
 - Set Jouzu's interface and response languages from the Windows launcher. The Japanese-first switch is replaced; an existing Japanese choice maps to the Japanese response language, and other existing choices keep following the conversation. See [Windows launcher](docs/language.md#windows-launcher).
 
+### Fixed
+
+- Start launcher PowerShell helpers with the system module path, so Git Bash and terminal setup work when the launcher is started from a PowerShell 7 session.
+
 ## 0.2.3 - 2026-10-25
 
 ### Added
