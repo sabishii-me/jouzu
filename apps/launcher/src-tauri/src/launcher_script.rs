@@ -18,9 +18,8 @@ fn system_module_path(system_root: &Path, program_files: Option<&Path>) -> Optio
     std::env::join_paths(paths).ok()
 }
 
-/// Runs a packaged PowerShell helper, which owns every Windows-specific detail of that component:
-/// which trees are usable, which versions they report, and how a bundled archive is verified.
-pub fn run(root: &Path, script: &str, arguments: &[String]) -> Result<Output, String> {
+/// Builds the helper command without running it, so a test can inspect its environment.
+fn helper_command(root: &Path, script: &str, arguments: &[String]) -> Result<Command, String> {
     let windows = std::env::var_os("SystemRoot").ok_or("Windows directory unavailable")?;
     let mut command = Command::new(PathBuf::from(&windows).join("System32/WindowsPowerShell/v1.0/powershell.exe"));
     command
@@ -42,7 +41,15 @@ pub fn run(root: &Path, script: &str, arguments: &[String]) -> Result<Output, St
         use std::os::windows::process::CommandExt;
         command.creation_flags(0x08000000);
     }
-    command.output().map_err(|_| "Cannot run a launcher helper".to_string())
+    Ok(command)
+}
+
+/// Runs a packaged PowerShell helper, which owns every Windows-specific detail of that component:
+/// which trees are usable, which versions they report, and how a bundled archive is verified.
+pub fn run(root: &Path, script: &str, arguments: &[String]) -> Result<Output, String> {
+    helper_command(root, script, arguments)?
+        .output()
+        .map_err(|_| "Cannot run a launcher helper".to_string())
 }
 
 /// PowerShell puts the message the script printed first, and its own frames after it.
@@ -83,6 +90,19 @@ mod tests {
         let text = path.to_string_lossy().to_lowercase().replace('/', "\\");
         assert!(text.contains("windows\\system32\\windowspowershell\\v1.0\\modules"));
         assert!(text.contains("program files\\windowspowershell\\modules"));
+        assert!(!text.contains("powershell\\7"));
+    }
+
+    #[test]
+    fn the_helper_command_overrides_the_callers_module_path() {
+        let command = helper_command(Path::new("C:\\Jouzu"), "git-environment.ps1", &["-Report".to_string()]).unwrap();
+        let module_path = command
+            .get_envs()
+            .find(|(key, _)| key.eq_ignore_ascii_case("PSModulePath"))
+            .and_then(|(_, value)| value)
+            .expect("the helper sets PSModulePath");
+        let text = module_path.to_string_lossy().to_lowercase().replace('/', "\\");
+        assert!(text.contains("windowspowershell\\v1.0\\modules"));
         assert!(!text.contains("powershell\\7"));
     }
 }
