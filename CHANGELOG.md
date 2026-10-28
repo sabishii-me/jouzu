@@ -13,6 +13,7 @@
 ### Fixed
 
 - Start launcher PowerShell helpers with the system module path, so Git Bash and terminal setup work when the launcher is started from a PowerShell 7 session.
+- Ship the patched Defuddle diagnostics sidecar in the Windows launcher runtime, so the web-fetch extension loads after a fresh install.
 
 ## 0.2.3 - 2026-10-25
 
