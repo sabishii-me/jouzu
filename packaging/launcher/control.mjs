@@ -25,6 +25,30 @@ try {
   const settings = SettingsManager.create(paths.configDir, paths.agentDir);
   const runtime = await ModelRuntime.create({ authPath: join(paths.agentDir, 'auth.json'), modelsPath: join(paths.agentDir, 'models.json'), allowModelNetwork: false, refreshOnCreate: false });
   const profilePath = join(paths.stateDir, 'profile-choice.json');
+  const { readLocalizationSettings, readLocalizationConfigSnapshot, saveLocalizationConfig, resolveUiLocale, osLocaleCandidates, isUiLocalePreference } = await load('ui-locale');
+  const { resolveResponseLanguage, isResponseLanguagePreference } = await load('language-settings');
+  // The launcher reads the same file the runtime reads, through the same resolution order.
+  const languageState = () => {
+    const snapshot = readLocalizationConfigSnapshot(paths.configDir);
+    const settingsState = readLocalizationSettings(paths.configDir);
+    const settings = settingsState.status === 'ok' ? settingsState.settings : undefined;
+    const ui = resolveUiLocale({
+      ...(process.env.JOUZU_UI_LOCALE ? { env: process.env.JOUZU_UI_LOCALE } : {}),
+      config: snapshot.state,
+      os: osLocaleCandidates(process.env),
+    });
+    const reply = resolveResponseLanguage(settings?.responseLanguage ? { config: settings.responseLanguage } : {});
+    const legacyProfile = readProfileChoice(profilePath)?.profile ?? null;
+    return {
+      readable: snapshot.state.status === 'absent' || snapshot.state.status === 'ok',
+      state: snapshot.state.status,
+      uiLocale: { requested: ui.requested, effective: ui.effective, source: ui.source, ...(ui.fallback ? { fallback: ui.fallback.requested } : {}) },
+      responseLanguage: { requested: reply.requested, effective: reply.effective, source: reply.source },
+      saved: settings ? { uiLocale: settings.uiLocale, responseLanguage: settings.responseLanguage ?? null } : null,
+      suggestedResponseLanguage: settings?.responseLanguage ?? (legacyProfile === 'ja' ? 'ja' : 'auto'),
+      legacyProfile,
+    };
+  };
   if (request.action === 'profile') {
     if (!['core', 'ja'].includes(request.profile)) throw new Error('Invalid profile');
     const { loadBundledProfile } = await load('profiles');
@@ -94,6 +118,23 @@ try {
     if (!runtime.getModel(request.provider, request.model)) throw new Error('Unknown model');
     settings.setDefaultModelAndProvider(request.provider, request.model);
     await settings.flush();
+  } else if (request.action === 'language-set') {
+    const hasUiLocale = request.uiLocale !== undefined;
+    const hasResponseLanguage = request.responseLanguage !== undefined;
+    if (!hasUiLocale && !hasResponseLanguage) throw new Error('No language setting requested');
+    if (hasUiLocale && !isUiLocalePreference(request.uiLocale)) throw new Error('Unsupported interface language');
+    if (hasResponseLanguage && !isResponseLanguagePreference(request.responseLanguage)) throw new Error('Unsupported reply language');
+    const snapshot = readLocalizationConfigSnapshot(paths.configDir);
+    if (snapshot.state.status !== 'absent' && snapshot.state.status !== 'ok') throw new Error('Language settings cannot be read');
+    // A reply-only change keeps the saved interface preference; without one it writes `auto`.
+    const preference = hasUiLocale ? request.uiLocale : (snapshot.state.status === 'ok' ? snapshot.state.preference : 'auto');
+    saveLocalizationConfig(
+      { configDir: paths.configDir, stateDir: paths.stateDir },
+      preference,
+      snapshot,
+      undefined,
+      hasResponseLanguage ? { responseLanguage: request.responseLanguage } : {},
+    );
   } else if (request.action !== 'status') throw new Error('Unsupported operation');
   if (request.action === "custom-provider") await runtime.refresh({ allowNetwork: false });
   const { ModelConfig } = await pi('model-config');
@@ -108,7 +149,7 @@ try {
   // Readiness means the user has configured a usable model source, matching the
   // conditions Jouzu's own doctor reports as "provider.unconfigured".
   const modelReady = account.signedIn || credentials.length > 0 || customProviders.length > 0;
-  console.log(JSON.stringify({ schemaVersion: 1, modelReady, profile: readProfileChoice(profilePath)?.profile ?? null, account, customProviders, providers: runtime.getProviders().map(p => ({ id: p.id, name: p.name ?? p.id })), credentials, models: runtime.getModels().map(m => ({ provider: m.provider, id: m.id, name: m.name })), defaultProvider: settings.getDefaultProvider(), defaultModel: settings.getDefaultModel() }));
+  console.log(JSON.stringify({ schemaVersion: 1, language: languageState(), modelReady, profile: readProfileChoice(profilePath)?.profile ?? null, account, customProviders, providers: runtime.getProviders().map(p => ({ id: p.id, name: p.name ?? p.id })), credentials, models: runtime.getModels().map(m => ({ provider: m.provider, id: m.id, name: m.name })), defaultProvider: settings.getDefaultProvider(), defaultModel: settings.getDefaultModel() }));
 } catch {
   // Do not relay raw upstream errors: they can contain credentials or server input.
   const messages = {
@@ -120,6 +161,7 @@ try {
     'default-model': 'Could not save the default model. Refresh the model list and retry.',
     'shisa-login': 'Shisa.AI sign-in did not complete. Refresh its state before retrying.',
     'shisa-logout': 'Shisa.AI sign-out could not be fully confirmed. Refresh its state and check the Shisa.AI dashboard.',
+    'language-set': 'Could not save the language settings. Reopen Language settings and retry.',
   };
   console.log(JSON.stringify({ error: messages[action] ?? 'Unsupported configuration operation.' }));
   process.exitCode = 1;
