@@ -1204,6 +1204,7 @@ jouzu-cli-shisa-logout-serverUnconfirmed = 伺服器撤銷尚未確認。請在 
 jouzu-cli-shisa-logout-envKeyRemains = { $message } SHISA_API_KEY 仍保持設定，但在你再次登入之前，Jouzu 不會在此處理程序中使用 Shisa。若要保持登出，請在重新啟動前取消設定該變數。
 
 jouzu-cli-shisa-refreshFailed = Shisa 模型可用性無法重新整理。請執行 /reload。
+jouzu-cli-shisa-signedInRefreshCancelled = 已登入 Shisa；目錄重新整理已取消。
 jouzu-cli-shisa-signOutFailed = Shisa 登出無法完成。請等待任何登入或登出完成後，再重試 /logout shisa。
 jouzu-cli-shisa-signedOutReconnect = 已登出 Shisa。執行 /login shisa 以重新連線。
 

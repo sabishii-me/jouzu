@@ -1349,6 +1349,7 @@ jouzu-cli-shisa-logout-serverUnconfirmed = 服务器端撤销未确认。请在 
 jouzu-cli-shisa-logout-envKeyRemains = { $message } SHISA_API_KEY 仍处于设置状态，但 Jouzu 在你再次登录前不会在此进程中使用 Shisa。要保持在退出登录状态，请在重启前取消设置该变量。
 
 jouzu-cli-shisa-refreshFailed = 无法刷新 Shisa 模型可用性。请运行 /reload。
+jouzu-cli-shisa-signedInRefreshCancelled = 已登录 Shisa；目录刷新已取消。
 jouzu-cli-shisa-signOutFailed = Shisa 退出登录未能完成。请等待任何登录或退出登录结束后重试 /logout shisa。
 jouzu-cli-shisa-signedOutReconnect = 已退出 Shisa。运行 /login shisa 重新连接。
 # The subagent result renderer. The status table maps an internal run state to

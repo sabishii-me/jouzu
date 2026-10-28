@@ -547,6 +547,7 @@ export interface RefreshCatalogOptions {
 	now?: Date;
 	sourceId?: string;
 	timeoutMs?: number;
+	signal?: AbortSignal;
 	/** The resolved catalog the sync failure text renders from; English when omitted. */
 	catalog?: CatalogBundle;
 }
@@ -567,6 +568,7 @@ export async function refreshCatalogSource(
 	let originLoaded = false;
 	let phase: "network" | "filesystem" = "filesystem";
 	try {
+		options.signal?.throwIfAborted();
 		release = acquireStateLock({
 			path: lockPath(paths, config.url),
 			describe: "model catalog refresh",
@@ -594,8 +596,9 @@ export async function refreshCatalogSource(
 				headers,
 				// Never follow a redirect with an Authorization header attached.
 				redirect: "error",
-				signal: controller.signal,
+				signal: options.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal,
 			});
+			options.signal?.throwIfAborted();
 			if (response.status === 304) {
 				phase = "filesystem";
 				if (!activeState || !origin?.activeAccountRefHash)
@@ -630,9 +633,11 @@ export async function refreshCatalogSource(
 		} finally {
 			clearTimeout(timeout);
 		}
+		options.signal?.throwIfAborted();
 		phase = "filesystem";
 		return activateCatalogDocument(paths, source, text, response.headers.get("etag") ?? undefined, now, env, catalog);
 	} catch (error) {
+		options.signal?.throwIfAborted();
 		const { code, message } =
 			error instanceof ModelCatalogError || error instanceof CatalogSyncError || error instanceof CatalogSourceError
 				? { code: error.code, message: safeCatalogMessage(error.message, token) }

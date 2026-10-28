@@ -602,7 +602,7 @@ export async function runMainCli(args: string[]): Promise<void> {
 		profile: () => profile.id,
 		applyProjectDefaultAtStartup: interactiveStartup && projectDefaultAppliesAtStartup(parsed.args),
 		restoreLastModelAtStartup: interactiveStartup && projectDefaultAppliesAtStartup(parsed.args),
-		applyCatalogDefaultAtStartup: interactiveStartup && projectDefaultAppliesAtStartup(parsed.args),
+		applyCatalogDefaultAtStartup: interactiveStartup,
 		startupArgs: parsed.args,
 	});
 	if (interactiveStartup) {
@@ -793,7 +793,7 @@ export async function runMainCli(args: string[]): Promise<void> {
 					// Pi's OAuth login saves the credential but does not run the Settings
 					// account refresh. Fetch and project authenticated catalogs before the
 					// login resolves so the new models work without a restart.
-					onSignedIn: () => modelPicker.refreshShisaAccount({ signedIn: true }),
+					onSignedIn: (signal) => modelPicker.refreshShisaAccount({ signedIn: true, signal }),
 				}),
 				modelPicker.extension,
 				modelPicker.workflowExtension,
@@ -814,9 +814,10 @@ export async function runMainCli(args: string[]): Promise<void> {
 		if (!interactiveStartup) return execute();
 		const { withPiUiLocalization } = await import("./pi-ui-localization.js");
 		const { withPiProseWrapping } = await import("./pi-prose-wrapping.js");
+		const { withPiAuthCompletion } = await import("./pi-auth-completion.js");
 		return withPiUiLocalization(
 			() => displayCatalog.bundle,
-			() => withPiProseWrapping(execute),
+			() => withPiProseWrapping(() => withPiAuthCompletion(execute, pi, () => displayCatalog.bundle)),
 			pi,
 		);
 	};

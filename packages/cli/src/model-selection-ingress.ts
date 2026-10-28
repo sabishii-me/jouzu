@@ -6,7 +6,11 @@ type FlowIngress = NonNullable<CreateAgentSessionOptions["flowIngress"]>;
 /** Order native and extension model choices after an in-flight first-use selection. */
 export function wrapModelSelectionIngress(
 	delegate: FlowIngress | undefined,
-	selection: { enteringAutomaticSelection(): boolean; beforeSelection(): Promise<void> },
+	selection: {
+		enteringAutomaticSelection(): boolean;
+		beforeSelection(): Promise<void>;
+		automaticSelectionSignal?(): AbortSignal | undefined;
+	},
 ): FlowIngress {
 	const hooks = new PiHostHooks();
 	return {
@@ -16,6 +20,23 @@ export function wrapModelSelectionIngress(
 			: {}),
 		...(delegate?.authorizeExternal ? { authorizeExternal: delegate.authorizeExternal.bind(delegate) } : {}),
 		async attach(session) {
+			// Reject an aborted automatic choice before Pi mutates the selected model.
+			if (selection.automaticSelectionSignal) {
+				const runtime = session.modelRuntime;
+				const checkAuth = runtime.checkAuth.bind(runtime);
+				hooks.set(runtime, "checkAuth", async (provider, options) => {
+					const signal = selection.automaticSelectionSignal?.();
+					signal?.throwIfAborted();
+					const result = await checkAuth(
+						provider,
+						signal
+							? { ...options, signal: options?.signal ? AbortSignal.any([signal, options.signal]) : signal }
+							: options,
+					);
+					signal?.throwIfAborted();
+					return result;
+				});
+			}
 			// Session-lifetime hooks must sit below the delegate's branch-owned hooks.
 			const setModel = session.setModel.bind(session);
 			hooks.set(session, "setModel", async (...args) => {

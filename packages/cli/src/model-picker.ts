@@ -1035,7 +1035,7 @@ export interface JouzuModelPickerIntegration {
 	 * After a Settings sign-in or sign-out, refresh authenticated catalogs, re-project
 	 * them into providers, and refresh model availability without a restart.
 	 */
-	refreshShisaAccount(change: { signedIn: boolean }): Promise<void>;
+	refreshShisaAccount(change: { signedIn: boolean; signal?: AbortSignal }): Promise<void>;
 }
 
 const CONTROL_LABEL_COLUMN = 8;
@@ -1258,7 +1258,8 @@ export function createJouzuModelPicker(
 			message: error instanceof Error ? error.message : String(error),
 		});
 	}
-	const reloadCatalogs = async (selectDefault = true): Promise<void> => {
+	const reloadCatalogs = async (selectDefault = true, signal?: AbortSignal): Promise<void> => {
+		signal?.throwIfAborted();
 		try {
 			catalogs = loadActiveModelCatalogs(paths, catalogEnv, messageCatalog);
 			catalog = catalogs[0]?.document;
@@ -1273,7 +1274,7 @@ export function createJouzuModelPicker(
 		reapplyCatalogProjection?.();
 		// The registry is updated synchronously above; open views recompute now.
 		for (const listener of catalogReloadListeners) listener();
-		if (selectDefault) await applyCatalogDefault();
+		if (selectDefault) await applyCatalogDefault(signal);
 	};
 	/**
 	 * The Settings account row signs in through the same device flow as Pi's OAuth
@@ -1281,7 +1282,9 @@ export function createJouzuModelPicker(
 	 * the now-authenticated catalogs, project them, and refresh availability so the
 	 * newly available models work in this live session.
 	 */
-	const refreshShisaAccount = async (change: { signedIn: boolean }): Promise<void> => {
+	const refreshShisaAccount = async (change: { signedIn: boolean; signal?: AbortSignal }): Promise<void> => {
+		const { signal } = change;
+		signal?.throwIfAborted();
 		const ctx = activeCtx;
 		if (change.signedIn) {
 			try {
@@ -1289,8 +1292,10 @@ export function createJouzuModelPicker(
 					env: catalogEnv,
 					fetch: options.catalogFetch,
 					timeoutMs: 15_000,
+					signal,
 					catalog: messageCatalog,
 				});
+				signal?.throwIfAborted();
 				const failed = (refreshed?.results ?? [])
 					.filter(({ result }) => result.status === "error" || result.status === "rejected")
 					.map(({ source }) => sanitizeTerminalText(source.label));
@@ -1302,6 +1307,7 @@ export function createJouzuModelPicker(
 						"warning",
 					);
 			} catch (error) {
+				signal?.throwIfAborted();
 				if (ctx)
 					ctx.ui.notify(
 						catalogText(messageCatalog, CatalogMessageId.modelPickerCatalogsWereNotRefreshed, {
@@ -1311,11 +1317,12 @@ export function createJouzuModelPicker(
 					);
 			}
 		}
-		await reloadCatalogs();
+		await reloadCatalogs(true, signal);
 		if (!ctx) return;
 		try {
-			await ctx.modelRegistry.refresh({ allowNetwork: false });
+			await ctx.modelRegistry.refresh({ allowNetwork: false, signal });
 		} catch (error) {
+			signal?.throwIfAborted();
 			ctx.ui.notify(
 				catalogText(messageCatalog, CatalogMessageId.modelPickerModelAvailabilityNotRefreshed, {
 					message: sanitizeTerminalText(error instanceof Error ? error.message : String(error)),
@@ -1332,7 +1339,7 @@ export function createJouzuModelPicker(
 	let restoringStartupModel = false;
 	let catalogDefaultEligible = false;
 	let catalogDefaultSettled = false;
-	const catalogDefaultSelectionContext = new AsyncLocalStorage<{ active: boolean }>();
+	const catalogDefaultSelectionContext = new AsyncLocalStorage<{ active: boolean; signal?: AbortSignal }>();
 	let catalogDefaultAttempt: Promise<void> | undefined;
 	let applyingSavedThinking = false;
 	let thinkingNotificationCount = 0;
@@ -1439,7 +1446,8 @@ export function createJouzuModelPicker(
 	};
 
 	// Keep late catalog arrival eligible only while the initial session is untouched.
-	const applyCatalogDefault = (): Promise<void> => {
+	const applyCatalogDefault = (signal?: AbortSignal): Promise<void> => {
+		signal?.throwIfAborted();
 		if (catalogDefaultAttempt) return catalogDefaultAttempt;
 		const ctx = activeCtx;
 		const pi = extensionApi;
@@ -1463,6 +1471,7 @@ export function createJouzuModelPicker(
 		const attempt = async (): Promise<void> => {
 			const available = pickerModels(ctx, catalogs, catalogEnv, paths).filter((row) => row.available);
 			for (const reference of catalogDefaultCandidates(catalogs)) {
+				signal?.throwIfAborted();
 				if (!catalogDefaultEligible || catalogDefaultSettled || activeCtx !== ctx) return;
 				if (!available.some((row) => modelReferencesEqual(row, reference))) continue;
 				const model = resolveCatalogModel(ctx, reference, catalogs);
@@ -1470,7 +1479,7 @@ export function createJouzuModelPicker(
 				const thinking = startupThinkingArgument(options.startupArgs ?? []) ?? ctx.thinkingLevel;
 				try {
 					restoringStartupModel = true;
-					const frame = { active: true };
+					const frame = { active: true, signal };
 					let applied: boolean;
 					try {
 						applied = await catalogDefaultSelectionContext.run(frame, () => pi.setModel(model));
@@ -1492,6 +1501,7 @@ export function createJouzuModelPicker(
 					);
 					return;
 				} catch {
+					signal?.throwIfAborted();
 					// A hint is optional. Try the next authenticated offering without changing saved preferences.
 				} finally {
 					restoringStartupModel = false;
@@ -1504,9 +1514,13 @@ export function createJouzuModelPicker(
 		return catalogDefaultAttempt;
 	};
 
+	const waitForCatalogDefault = async (): Promise<void> => {
+		// Independent user work waits for completion, not for the login's outcome.
+		await catalogDefaultAttempt?.catch(() => {});
+	};
 	const beforeExternalModelSelection = async (): Promise<void> => {
 		catalogDefaultSettled = true;
-		await catalogDefaultAttempt;
+		await waitForCatalogDefault();
 	};
 
 	const extension: InlineExtension = {
@@ -1762,7 +1776,7 @@ export function createJouzuModelPicker(
 				}
 			});
 			pi.on("input", async (event, ctx) => {
-				await catalogDefaultAttempt;
+				await waitForCatalogDefault();
 				if (!ctx.model || !ctx.isIdle()) return { action: "continue" };
 				const identity = catalogRuntimeIdentity(ctx.model.provider);
 				const reference = modelReference(ctx.model, catalog);
@@ -2194,6 +2208,10 @@ export function createJouzuModelPicker(
 		wrapSessionIngress: (delegate) =>
 			wrapModelSelectionIngress(delegate, {
 				enteringAutomaticSelection: () => catalogDefaultSelectionContext.getStore()?.active === true,
+				automaticSelectionSignal: () => {
+					const frame = catalogDefaultSelectionContext.getStore();
+					return frame?.active ? frame.signal : undefined;
+				},
 				beforeSelection: beforeExternalModelSelection,
 			}),
 		workflowService: workflow.service,

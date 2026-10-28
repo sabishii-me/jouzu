@@ -857,6 +857,7 @@ export const CatalogMessageId = {
 	shisaLogoutServerUnconfirmed: "jouzu.cli.shisa.logout.serverUnconfirmed",
 	shisaLogoutEnvKeyRemains: "jouzu.cli.shisa.logout.envKeyRemains",
 	shisaRefreshFailed: "jouzu.cli.shisa.refreshFailed",
+	shisaSignedInRefreshCancelled: "jouzu.cli.shisa.signedInRefreshCancelled",
 	shisaSignOutFailed: "jouzu.cli.shisa.signOutFailed",
 	shisaSignedOutReconnect: "jouzu.cli.shisa.signedOutReconnect",
 	// The subagent result renderer. The internal run state values (queued,

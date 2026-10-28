@@ -18,10 +18,12 @@ import { loadActiveModelCatalogs, refreshAvailableModelCatalogs } from "../dist/
 import { createJouzuModelPicker } from "../dist/model-picker.js";
 import { deriveProjectKey, ModelPickerStore } from "../dist/model-picker-state.js";
 import { resolveJouzuPaths } from "../dist/paths.js";
+import { withPiAuthCompletion } from "../dist/pi-auth-completion.js";
 import { createSessionUiStyles } from "../dist/session-ui/index.js";
 import { readShisaLoginToken, setShisaSignedOut } from "../dist/shisa-link/credentials.js";
 import { createShisaExtension, SHISA_PROVIDER_ID } from "../dist/shisa-link/extension.js";
 import { loginShisa } from "../dist/shisa-link/login.js";
+import { interactiveLoginHost } from "./fixtures/interactive-login.mjs";
 
 const fixtureRaw = JSON.parse(
 	readFileSync(join(import.meta.dirname, "..", "catalog", "fixtures", "account-snapshot-v1.json"), "utf8"),
@@ -232,9 +234,10 @@ async function harness(t, behavior = {}) {
 		modelsStorePath: join(home, "models-store.json"),
 		refreshOnCreate: false,
 	});
+	behavior.prepareRuntime?.(runtime);
 	const picker = createJouzuModelPicker(paths, {
 		palette: { env },
-		catalogFetch,
+		catalogFetch: behavior.catalogFetch ?? catalogFetch,
 		jouzuVersion: "0.1.13",
 		...behavior.pickerOptions,
 	});
@@ -254,7 +257,13 @@ async function harness(t, behavior = {}) {
 				fetchImpl: fetch,
 				// Production wiring: Pi's OAuth login refreshes the same account state
 				// the Settings account row refreshes after saving a credential.
-				onSignedIn: () => picker.refreshShisaAccount({ signedIn: true }),
+				onSignedIn: async (signal) => {
+					try {
+						await picker.refreshShisaAccount({ signedIn: true, signal });
+					} finally {
+						behavior.onRefreshSettled?.();
+					}
+				},
 			}),
 			picker.extension,
 			...(behavior.extensions ?? []),
@@ -508,8 +517,12 @@ const firstUseOptions = {
 	applyProjectDefaultAtStartup: true,
 	restoreLastModelAtStartup: true,
 };
-const login = (h) =>
-	h.runtime.login(SHISA_PROVIDER_ID, "oauth", { prompt: async () => assert.fail("unexpected prompt"), notify() {} });
+const login = (h, signal) =>
+	h.runtime.login(SHISA_PROVIDER_ID, "oauth", {
+		signal,
+		prompt: async () => assert.fail("unexpected prompt"),
+		notify() {},
+	});
 
 test("first use selects the highest available catalog priority from a cached startup catalog", async (t) => {
 	const h = await harness(t, {
@@ -526,6 +539,58 @@ test("first use selects the highest available catalog priority from a cached sta
 		"automatic selection does not write a user preference",
 	);
 	assert.equal(new ModelPickerStore(h.paths).load().state.last, undefined, "selection is not a dispatch");
+});
+
+test("interactive first login selects Flash Next without false default-selection guidance", async (t) => {
+	const h = await harness(t, { catalogDocument: priorityCatalog(), pickerOptions: firstUseOptions });
+	const ui = interactiveLoginHost(h.session);
+	await withPiAuthCompletion(() => ui.login());
+	assert.equal(h.session.model?.id, "flash-next");
+	assert.deepEqual(ui.errors, []);
+	assert.match(ui.statuses[0], /Logged in to Shisa.*Credentials saved/);
+	assert.equal(ui.refreshes.length, 1);
+});
+
+test("interactive cancellation after authorization reports signed in with refresh cancelled", async (t) => {
+	const entered = Promise.withResolvers();
+	const settled = Promise.withResolvers();
+	const h = await harness(t, {
+		pickerOptions: firstUseOptions,
+		onRefreshSettled: () => settled.resolve(),
+		catalogFetch: async (_url, { signal }) => {
+			entered.resolve();
+			return new Promise((_resolve, reject) =>
+				signal.addEventListener("abort", () => reject(signal.reason), { once: true }),
+			);
+		},
+	});
+	const ui = interactiveLoginHost(h.session);
+	await withPiAuthCompletion(async () => {
+		const login = ui.login();
+		await entered.promise;
+		ui.focused.handleInput("\u001b");
+		await login;
+		await settled.promise;
+	});
+	assert.ok(readShisaLoginToken(h.paths));
+	assert.equal(h.session.model?.id, "unknown");
+	assert.deepEqual(ui.errors, []);
+	assert.deepEqual(ui.statuses, ["Signed in to Shisa; catalog refresh cancelled."]);
+	assert.equal(ui.refreshes.length, 0, "completion must not restart the cancelled refresh");
+});
+
+test("interactive cancellation before approval does not report signed in", async (t) => {
+	const h = await harness(t, { token: "pending", pickerOptions: firstUseOptions });
+	const ui = interactiveLoginHost(h.session);
+	await withPiAuthCompletion(async () => {
+		const login = ui.login();
+		await waitFor(() => h.requests.some((request) => request.url === "/device/token"));
+		ui.focused.handleInput("\u001b");
+		await login;
+	});
+	assert.equal(readShisaLoginToken(h.paths), undefined);
+	assert.deepEqual(ui.statuses, []);
+	assert.equal(ui.refreshes.length, 0);
 });
 
 for (const method of ["OAuth", "Settings"]) {
@@ -710,7 +775,101 @@ test("a model_select extension can replace the automatic choice without a self-j
 	assert.equal(h.session.model?.id, "flash");
 });
 
-function holdNextCatalogAuth(h) {
+for (const honorsAbort of [true, false]) {
+	test(`cancelling login during catalog fetch stops late selection (transport honors abort: ${honorsAbort})`, async (t) => {
+		const entered = Promise.withResolvers();
+		const release = Promise.withResolvers();
+		const settled = Promise.withResolvers();
+		t.after(() => release.resolve());
+		let fetchSignal;
+		const h = await harness(t, {
+			pickerOptions: firstUseOptions,
+			onRefreshSettled: () => settled.resolve(),
+			catalogFetch: async (_url, { signal }) => {
+				fetchSignal = signal;
+				entered.resolve();
+				if (honorsAbort)
+					await new Promise((_resolve, reject) => {
+						signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+					});
+				else await release.promise;
+				return new Response(JSON.stringify(priorityCatalog()), {
+					headers: { "content-type": MODEL_CATALOG_MEDIA_TYPE },
+				});
+			},
+		});
+		const controller = new AbortController();
+		const signingIn = login(h, controller.signal);
+		const rejected = assert.rejects(signingIn, /Login cancelled/);
+		await entered.promise;
+		assert.ok(readShisaLoginToken(h.paths), "device authorization has already saved the credential");
+		controller.abort(new Error("Login cancelled"));
+		await rejected;
+		assert.equal(fetchSignal.aborted, true);
+		release.resolve();
+		await settled.promise;
+		assert.equal(h.session.model?.id, "unknown");
+		assert.equal(loadActiveModelCatalogs(h.paths, h.env).length, 0, "aborted response is not activated");
+		assert.deepEqual(h.notifications, [], "cancellation is not reported as a refresh failure");
+	});
+}
+
+test("cancelling login during default authentication prevents model mutation", async (t) => {
+	const settled = Promise.withResolvers();
+	let auth;
+	const h = await harness(t, {
+		catalogDocument: priorityCatalog(),
+		pickerOptions: firstUseOptions,
+		onRefreshSettled: () => settled.resolve(),
+		prepareRuntime(runtime) {
+			auth = holdNextCatalogAuth({ runtime }, true);
+		},
+	});
+	t.after(auth.release);
+	const controller = new AbortController();
+	const signingIn = login(h, controller.signal);
+	const rejected = assert.rejects(signingIn, /Login cancelled/);
+	await auth.entered;
+	controller.abort(new Error("Login cancelled"));
+	await rejected;
+	auth.release();
+	await settled.promise;
+	assert.equal(h.session.model?.id, "unknown");
+	assert.equal(
+		h.session.sessionManager
+			.getEntries()
+			.some((entry) => entry.type === "model_change" && entry.modelId === "flash-next"),
+		false,
+	);
+	assert.deepEqual(h.notifications, []);
+});
+
+for (const action of ["set", "cycle"]) {
+	test(`cancelling automatic selection does not cancel a waiting native ${action}`, async (t) => {
+		let auth;
+		const h = await harness(t, {
+			catalogDocument: priorityCatalog(),
+			pickerOptions: firstUseOptions,
+			prepareRuntime(runtime) {
+				auth = holdNextCatalogAuth({ runtime });
+			},
+		});
+		t.after(auth.release);
+		const controller = new AbortController();
+		const rejected = assert.rejects(login(h, controller.signal), /Login cancelled/);
+		await auth.entered;
+		const target = (await h.runtime.getAvailable()).find((model) => model.id === "flash");
+		const choice = action === "set" ? h.session.setModel(target) : h.session.cycleModel("forward");
+		controller.abort(new Error("Login cancelled"));
+		await rejected;
+		auth.release();
+		await choice;
+		if (action === "set") assert.equal(h.session.model?.id, "flash");
+		else assert.notEqual(h.session.model?.id, "unknown");
+	});
+}
+
+function holdNextCatalogAuth(h, afterAuth = false) {
 	const auth = h.runtime.checkAuth.bind(h.runtime);
 	const entered = Promise.withResolvers();
 	const release = Promise.withResolvers();
@@ -718,8 +877,10 @@ function holdNextCatalogAuth(h) {
 	h.runtime.checkAuth = async (provider, ...args) => {
 		if (!held && provider !== SHISA_PROVIDER_ID) {
 			held = true;
+			const result = afterAuth ? await auth(provider, ...args) : undefined;
 			entered.resolve();
 			await release.promise;
+			if (afterAuth) return result;
 		}
 		return auth(provider, ...args);
 	};

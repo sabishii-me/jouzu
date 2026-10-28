@@ -6,6 +6,7 @@ import type { JouzuPaths } from "../paths.js";
 import { isShisaSignedOut, onShisaAuthChange, setShisaSignedOut } from "./credentials.js";
 import { resolveShisaGatewayUrl } from "./device-flow.js";
 import { loginShisa } from "./login.js";
+import { markShisaLoginSaved } from "./login-completion.js";
 import { logoutShisa, shisaLogoutMessage } from "./logout.js";
 import { installShisaLogoutHook } from "./logout-hook.js";
 import { readShisaLinkState, shisaLinkStatePath } from "./state.js";
@@ -27,9 +28,10 @@ export interface ShisaExtensionOptions {
 	/**
 	 * Awaited after a successful OAuth login has saved the credential and registered
 	 * the provider. The model picker uses it to fetch and project authenticated
-	 * catalogs into the live runtime; a failure here never fails the sign-in.
+	 * catalogs into the live runtime. Refresh errors do not fail sign-in; cancellation
+	 * stops the remaining work without undoing a credential already saved.
 	 */
-	onSignedIn?: () => Promise<void>;
+	onSignedIn?: (signal?: AbortSignal) => Promise<void>;
 }
 
 export function createShisaExtension(options: ShisaExtensionOptions): InlineExtension {
@@ -48,11 +50,13 @@ export function createShisaExtension(options: ShisaExtensionOptions): InlineExte
 				name: "Shisa",
 				async login(callbacks: OAuthLoginCallbacks): Promise<OAuthCredentials> {
 					const credential = await loginShisa(callbacks, { ...options, gatewayUrl });
+					markShisaLoginSaved(callbacks.signal);
 					pi.registerProvider(SHISA_PROVIDER_ID, providerConfig());
 					setShisaSignedOut(options.paths, false);
 					try {
-						await options.onSignedIn?.();
+						await options.onSignedIn?.(callbacks.signal);
 					} catch {
+						callbacks.signal?.throwIfAborted();
 						// The credential is already saved. Keep the sign-in successful and let
 						// the user retry the catalog refresh without signing in again.
 						activeCtx?.ui.notify(catalogText(catalog, CatalogMessageId.shisaRefreshFailed), "warning");
