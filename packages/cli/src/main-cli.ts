@@ -788,6 +788,10 @@ export async function runMainCli(args: string[]): Promise<void> {
 					paths,
 					jouzuVersion: metadata.jouzuVersion,
 					catalog: preRuntime.catalog.bundle,
+					// Pi's OAuth login saves the credential but does not run the Settings
+					// account refresh. Fetch and project authenticated catalogs before the
+					// login resolves so the new models work without a restart.
+					onSignedIn: () => modelPicker.refreshShisaAccount({ signedIn: true }),
 				}),
 				modelPicker.extension,
 				modelPicker.workflowExtension,

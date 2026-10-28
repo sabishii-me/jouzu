@@ -13,6 +13,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { CatalogSettingsComponent } from "../dist/catalog-settings.js";
 import { MODEL_CATALOG_MEDIA_TYPE } from "../dist/model-catalog.js";
+import { loadActiveModelCatalogs } from "../dist/model-catalog-sync.js";
 import { createJouzuModelPicker } from "../dist/model-picker.js";
 import { resolveJouzuPaths } from "../dist/paths.js";
 import { createSessionUiStyles } from "../dist/session-ui/index.js";
@@ -62,6 +63,41 @@ function paletteContext() {
 		keybindings: fakeKeybindings(),
 		styles: createSessionUiStyles(identityTheme),
 		close() {},
+	};
+}
+
+/** The session UI surface these extensions touch; notifications are recorded for assertions. */
+function sessionUiContext(notifications) {
+	const noop = () => undefined;
+	return {
+		notify: (message, level) => notifications.push({ message, level }),
+		select: noop,
+		confirm: noop,
+		input: noop,
+		onTerminalInput: () => noop,
+		setStatus: noop,
+		setWorkingMessage: noop,
+		setWorkingVisible: noop,
+		setWorkingIndicator: noop,
+		setHiddenThinkingLabel: noop,
+		setWidget: noop,
+		setFooter: noop,
+		setHeader: noop,
+		setTitle: noop,
+		custom: async () => undefined,
+		pasteToEditor: noop,
+		setEditorText: noop,
+		getEditorText: () => "",
+		editor: async () => undefined,
+		addAutocompleteProvider: noop,
+		setEditorComponent: noop,
+		getEditorComponent: () => undefined,
+		theme: identityTheme,
+		getAllThemes: () => [],
+		getTheme: () => undefined,
+		setTheme: () => ({ success: false, error: "UI not available" }),
+		getToolsExpanded: () => false,
+		setToolsExpanded: noop,
 	};
 }
 
@@ -159,8 +195,12 @@ async function harness(t, behavior = {}) {
 			return;
 		}
 		if (request.url === "/v1/jouzu/model-catalog" && request.method === "GET") {
+			if (behavior.catalogStatus && behavior.catalogStatus !== 200) {
+				json(behavior.catalogStatus, { error: "unavailable" });
+				return;
+			}
 			response.writeHead(200, { "content-type": MODEL_CATALOG_MEDIA_TYPE, etag: '"loopback"' });
-			response.end(JSON.stringify(fixtureRaw));
+			response.end(JSON.stringify(behavior.catalogDocument ?? fixtureRaw));
 			return;
 		}
 		json(404, { error: "not_found" });
@@ -193,6 +233,7 @@ async function harness(t, behavior = {}) {
 		catalogFetch,
 		jouzuVersion: "0.1.13",
 	});
+	const notifications = [];
 	const loader = new DefaultResourceLoader({
 		cwd: home,
 		agentDir: paths.agentDir,
@@ -201,7 +242,15 @@ async function harness(t, behavior = {}) {
 		noContextFiles: true,
 		noPromptTemplates: true,
 		extensionFactories: [
-			createShisaExtension({ paths, jouzuVersion: "0.1.13", env, fetchImpl: fetch }),
+			createShisaExtension({
+				paths,
+				jouzuVersion: "0.1.13",
+				env,
+				fetchImpl: fetch,
+				// Production wiring: Pi's OAuth login refreshes the same account state
+				// the Settings account row refreshes after saving a credential.
+				onSignedIn: () => picker.refreshShisaAccount({ signedIn: true }),
+			}),
 			picker.extension,
 		],
 	});
@@ -217,7 +266,11 @@ async function harness(t, behavior = {}) {
 	});
 	t.after(() => session.dispose());
 	assert.deepEqual(extensionsResult.errors, []);
-	await session.bindExtensions({ mode: "rpc", onError: (error) => assert.fail(error.message) });
+	await session.bindExtensions({
+		mode: "rpc",
+		uiContext: sessionUiContext(notifications),
+		onError: (error) => assert.fail(error.message),
+	});
 
 	const component = new CatalogSettingsComponent({
 		context: paletteContext(),
@@ -228,7 +281,7 @@ async function harness(t, behavior = {}) {
 		onCatalogsChanged: picker.reloadCatalogs,
 		onAccountChanged: (change) => picker.refreshShisaAccount(change),
 	});
-	return { home, paths, env, origin, requests, runtime, picker, session, component };
+	return { home, paths, env, origin, requests, runtime, picker, session, component, notifications };
 }
 
 function focusAccount(component) {
@@ -322,4 +375,89 @@ test("an unconfirmed acknowledgement warns but keeps the signed-in catalog avail
 		"the acknowledgement was attempted",
 	);
 	assert.ok((await h.runtime.getAvailable()).some(isCatalogModel), "the saved credential still unlocks the catalog");
+});
+
+test("OAuth login fetches and projects the authenticated catalog without a restart", async (t) => {
+	const h = await harness(t);
+	assert.equal(readShisaLoginToken(h.paths), undefined, "starts signed out");
+	assert.equal(h.runtime.getModels().some(isCatalogModel), false, "no catalog model before sign-in");
+	assert.equal(
+		h.requests.some((request) => request.url === "/v1/jouzu/model-catalog"),
+		false,
+		"no catalog request before sign-in",
+	);
+
+	const events = [];
+	await h.runtime.login(SHISA_PROVIDER_ID, "oauth", {
+		prompt: async () => assert.fail("OAuth login must not prompt"),
+		notify: (event) => events.push(event),
+	});
+
+	assert.equal(readShisaLoginToken(h.paths), "shsk:loopback-secret", "the device-flow credential is saved");
+	assert.ok(
+		events.some((event) => event.type === "device_code"),
+		"the login interaction receives the device code",
+	);
+	const catalogRequest = h.requests.find((request) => request.url === "/v1/jouzu/model-catalog");
+	assert.ok(catalogRequest, "the authenticated catalog is fetched during login");
+	assert.equal(
+		catalogRequest.authorization,
+		"Bearer shsk:loopback-secret",
+		"the login token authenticates the refresh",
+	);
+	assert.equal(
+		loadActiveModelCatalogs(h.paths, h.env)[0]?.document.revision,
+		"fixture-1",
+		"the refreshed catalog is cached for later sessions",
+	);
+
+	const model = h.runtime.getModels().find(isCatalogModel);
+	assert.ok(model, "the projected catalog model is registered in the live runtime");
+	assert.ok((await h.runtime.getAvailable()).some(isCatalogModel), "the model is available for selection");
+	assert.ok(await h.runtime.getAuth(model), "request auth resolves for the projected model");
+	assert.equal(
+		h.runtime.getRegisteredProviderConfig(SHISA_PROVIDER_ID)?.baseUrl,
+		`${h.origin}/v1`,
+		"the provider base URL follows the gateway that issued the sign-in",
+	);
+});
+
+test("OAuth reconnect fetches a new catalog even when an activated revision exists", async (t) => {
+	const behavior = {};
+	const h = await harness(t, behavior);
+	const interaction = { prompt: async () => assert.fail("OAuth login must not prompt"), notify: () => {} };
+	await h.runtime.login(SHISA_PROVIDER_ID, "oauth", interaction);
+	assert.equal(loadActiveModelCatalogs(h.paths, h.env)[0]?.document.revision, "fixture-1");
+	behavior.catalogDocument = structuredClone(fixtureRaw);
+	behavior.catalogDocument.revision = "fixture-2";
+	behavior.catalogDocument.sequence = String(BigInt(fixtureRaw.sequence) + 1n);
+	behavior.catalogDocument.modelOfferings[0].name = "Updated catalog model";
+	await h.runtime.login(SHISA_PROVIDER_ID, "oauth", interaction);
+	assert.equal(h.requests.filter((request) => request.url === "/v1/jouzu/model-catalog").length, 2);
+	assert.equal(loadActiveModelCatalogs(h.paths, h.env)[0]?.document.revision, "fixture-2");
+	assert.equal(h.runtime.getModels().find(isCatalogModel)?.name, "Updated catalog model");
+});
+
+test("OAuth login keeps the saved credential when the catalog refresh fails", async (t) => {
+	const h = await harness(t, { catalogStatus: 503 });
+	await h.runtime.login(SHISA_PROVIDER_ID, "oauth", {
+		prompt: async () => assert.fail("OAuth login must not prompt"),
+		notify: () => {},
+	});
+
+	assert.equal(
+		readShisaLoginToken(h.paths),
+		"shsk:loopback-secret",
+		"a failed catalog refresh never loses the credential",
+	);
+	assert.ok(
+		h.requests.some((request) => request.url === "/v1/jouzu/model-catalog"),
+		"the catalog refresh was attempted",
+	);
+	assert.equal(loadActiveModelCatalogs(h.paths, h.env).length, 0, "the failed catalog is not activated");
+	assert.equal(h.runtime.getModels().some(isCatalogModel), false, "no catalog model is projected");
+	const warning = h.notifications.find(
+		(notification) => notification.level === "warning" && /Catalogs not refreshed/u.test(notification.message),
+	);
+	assert.ok(warning, "the failed refresh warns without failing sign-in");
 });

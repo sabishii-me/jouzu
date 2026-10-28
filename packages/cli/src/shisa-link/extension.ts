@@ -24,6 +24,12 @@ export interface ShisaExtensionOptions {
 	sleep?: (ms: number) => Promise<void>;
 	openBrowser?: (url: string) => void;
 	logoutTimeoutMs?: number;
+	/**
+	 * Awaited after a successful OAuth login has saved the credential and registered
+	 * the provider. The model picker uses it to fetch and project authenticated
+	 * catalogs into the live runtime; a failure here never fails the sign-in.
+	 */
+	onSignedIn?: () => Promise<void>;
 }
 
 export function createShisaExtension(options: ShisaExtensionOptions): InlineExtension {
@@ -44,6 +50,13 @@ export function createShisaExtension(options: ShisaExtensionOptions): InlineExte
 					const credential = await loginShisa(callbacks, { ...options, gatewayUrl });
 					pi.registerProvider(SHISA_PROVIDER_ID, providerConfig());
 					setShisaSignedOut(options.paths, false);
+					try {
+						await options.onSignedIn?.();
+					} catch {
+						// The credential is already saved. Keep the sign-in successful and let
+						// the user retry the catalog refresh without signing in again.
+						activeCtx?.ui.notify(catalogText(catalog, CatalogMessageId.shisaRefreshFailed), "warning");
+					}
 					return credential;
 				},
 				async refreshToken(credentials: OAuthCredentials): Promise<OAuthCredentials> {
