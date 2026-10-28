@@ -84,6 +84,10 @@ The Language reset operation clears this session's overrides and resets the save
 
 Settings and session overrides are separate files. If updating the session file fails after a save, Jouzu attempts to restore the previous settings without overwriting a newer save. This is recovery, not a crash-safe two-file transaction. If recovery cannot complete, the panel reports it; reopen Language settings and inspect the saved values before retrying.
 
+## Windows launcher
+
+The Windows launcher asks for the interface language and the response language on first launch and writes both to `localization.json`. Its Language settings offer the same two choices. The interface-language control sets `uiLocale` for the launcher and Jouzu; the launcher renders every accepted language from its own catalog, while Jouzu renders English and Japanese and falls back to English for Chinese until those catalogs are reviewed. The response-language control sets `responseLanguage` and does not change the interface. The launcher switches immediately; Jouzu applies a saved change in its next session.
+
 ## Profiles: Core and JA
 
 `core` provides the shared instructions, five bundled Jouzu skills and the review prompt template. It does not choose a response language.

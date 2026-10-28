@@ -6,6 +6,10 @@
 
 - Add `jouzu acp` for Agent Client Protocol hosts, using Jouzu RPC child sessions for streamed text and tools, persisted session loading, cancellation, model selection, and extension dialogs. See [ACP hosts](docs/acp.md) for setup, host capabilities, and permission limits.
 
+### Changed
+
+- Set Jouzu's interface and response languages from the Windows launcher. The Japanese-first switch is replaced; an existing Japanese choice maps to the Japanese response language, and other existing choices keep following the conversation. See [Windows launcher](docs/language.md#windows-launcher).
+
 ## 0.2.3 - 2026-10-25
 
 ### Added
