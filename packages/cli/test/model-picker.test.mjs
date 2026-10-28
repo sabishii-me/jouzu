@@ -10,6 +10,7 @@ import { writeContextPolicy } from "../dist/context-clamp.js";
 import { createJouzuKeybindingsManagerFromConfig } from "../dist/jouzu-keybindings.js";
 import { resolveCatalog } from "../dist/locale-catalog.js";
 import { MODEL_CATALOG_MEDIA_TYPE, parseAndValidateModelCatalog } from "../dist/model-catalog.js";
+import { catalogRuntimeProvider } from "../dist/model-catalog-projection.js";
 import { refreshCatalogSource } from "../dist/model-catalog-sync.js";
 import {
 	catalogModelReference,
@@ -118,6 +119,112 @@ test("active catalog metadata qualifies matching Pi models without changing loca
 			["org.example.second", "org.example.second/example-model", "Second catalog"],
 		],
 	);
+});
+
+test("catalog offering ratings populate picker comparisons without importing prices", () => {
+	const document = JSON.parse(
+		readFileSync(join(import.meta.dirname, "..", "catalog", "fixtures", "account-snapshot-v1.json"), "utf8"),
+	);
+	const model = {
+		provider: "ai.example.gateway",
+		id: "example-model",
+		name: "Pi label",
+		contextWindow: 1,
+		maxTokens: 1,
+	};
+	for (const tier of [1, 2, 3, 4]) {
+		document.modelOfferings[0].metadata = {
+			strength: tier,
+			speed: tier,
+			cost: tier,
+			price: { currency: "USD", input: 99, output: 199, unit: "per_1m_tokens" },
+			other: "ignored",
+		};
+		const catalog = parseAndValidateModelCatalog(JSON.stringify(document), { remote: true });
+		const snapshot = structuredClone(catalog);
+		const pickerModel = catalogPickerModel(model, catalog);
+		assert.deepEqual(pickerModel.comparison, { strength: tier, speed: tier, cost: tier });
+		assert.equal(pickerModel.price, undefined);
+		assert.equal(pickerModel.cost, undefined);
+		assert.deepEqual(catalog, snapshot, "reading ratings does not mutate the catalog");
+	}
+	assert.equal(catalogPickerModel(model).comparison, undefined);
+	assert.equal(catalogPickerModel({ ...model, id: "unlisted" }, document).comparison, undefined);
+});
+
+test("catalog picker ratings ignore malformed metadata and invalid tiers independently", () => {
+	const catalog = parseAndValidateModelCatalog(
+		readFileSync(join(import.meta.dirname, "..", "catalog", "fixtures", "account-snapshot-v1.json"), "utf8"),
+		{ remote: true },
+	);
+	const model = {
+		provider: "ai.example.gateway",
+		id: "example-model",
+		name: "Pi label",
+		contextWindow: 1,
+		maxTokens: 1,
+	};
+	for (const metadata of [undefined, null, false, 3, "ratings", [], {}, { price: { input: 1, output: 2 } }]) {
+		catalog.modelOfferings[0].metadata = metadata;
+		assert.equal(catalogPickerModel(model, catalog).comparison, undefined);
+	}
+	for (const key of ["strength", "speed", "cost"]) {
+		for (const value of [undefined, null, false, true, "3", 0, -1, 5, 1.5, NaN, Infinity, {}, []]) {
+			catalog.modelOfferings[0].metadata = { strength: 4, speed: 3, cost: 2, [key]: value };
+			const expected = { strength: 4, speed: 3, cost: 2 };
+			delete expected[key];
+			assert.deepEqual(catalogPickerModel(model, catalog).comparison, expected, `${key}: ${String(value)}`);
+		}
+	}
+	catalog.modelOfferings[0].metadata = { speed: 2 };
+	assert.deepEqual(catalogPickerModel(model, catalog).comparison, { speed: 2 });
+});
+
+test("picker ratings stay scoped to their catalog for local and gateway identities", () => {
+	const first = parseAndValidateModelCatalog(
+		readFileSync(join(import.meta.dirname, "..", "catalog", "fixtures", "account-snapshot-v1.json"), "utf8"),
+		{ remote: true },
+	);
+	first.modelOfferings[0].metadata = { strength: 4, speed: 3, cost: 2 };
+	const second = structuredClone(first);
+	second.catalogId = "org.example.second";
+	second.modelOfferings[0].id = "org.example.second/example-model";
+	second.modelOfferings[0].metadata = { strength: 2, speed: 4, cost: 1 };
+	const active = [first, second].map((document, index) => ({
+		source: {
+			id: `source-${index}`,
+			label: `Catalog ${index}`,
+			url: `https://source-${index}.test/catalog`,
+			enabled: true,
+			auth: { type: "none" },
+		},
+		document,
+	}));
+	const model = {
+		provider: "ai.example.gateway",
+		id: "example-model",
+		name: "Pi label",
+		contextWindow: 1,
+		maxTokens: 1,
+	};
+	assert.deepEqual(
+		catalogPickerModels(model, active).map((row) => row.comparison),
+		[
+			{ strength: 4, speed: 3, cost: 2 },
+			{ strength: 2, speed: 4, cost: 1 },
+		],
+	);
+	for (const { document } of active) {
+		const gatewayModel = { ...model, provider: catalogRuntimeProvider(document.catalogId, model.provider) };
+		assert.deepEqual(catalogPickerModels(gatewayModel, active)[0].comparison, document.modelOfferings[0].metadata);
+	}
+	const refreshed = structuredClone(first);
+	refreshed.modelOfferings[0].metadata = { strength: 3, speed: 2, cost: 4 };
+	assert.deepEqual(catalogPickerModels(model, [{ ...active[0], document: refreshed }])[0].comparison, {
+		strength: 3,
+		speed: 2,
+		cost: 4,
+	});
 });
 
 test("catalog offering lookups index an immutable snapshot once", () => {
@@ -876,6 +983,35 @@ test("Models shows comparison columns as unknown without assessment evidence", (
 		}
 		const narrow = stripSgr(component.render(48).join("\n"));
 		assert.doesNotMatch(narrow, headers);
+		component.dispose();
+	}
+});
+
+test("Models renders catalog ratings with localized headers within terminal widths", () => {
+	const document = JSON.parse(
+		readFileSync(join(import.meta.dirname, "..", "catalog", "fixtures", "account-snapshot-v1.json"), "utf8"),
+	);
+	document.modelOfferings[0].name = "評価 Model";
+	document.modelOfferings[0].metadata = { strength: 4, speed: 3, cost: 2 };
+	const catalog = parseAndValidateModelCatalog(JSON.stringify(document), { remote: true });
+	const model = catalogPickerModel(
+		{ provider: "ai.example.gateway", id: "example-model", name: "Pi label", contextWindow: 1, maxTokens: 1 },
+		catalog,
+	);
+	for (const locale of ["en", "ja"]) {
+		const { component } = createComponent({
+			catalog: resolveCatalog(locale).bundle,
+			getRows: () => [{ ...rows()[1], model }],
+		});
+		const wide = stripSgr(component.render(120).join("\n"));
+		assert.match(wide, /評価 Model.*★★★★\s+⚡⚡⚡\s+\$\$/u);
+		for (const width of [24, 48, 72, 80, 96, 120]) {
+			assert.ok(
+				component.render(width).every((line) => visibleWidth(line) <= width),
+				`${locale}: ${width}`,
+			);
+		}
+		assert.doesNotMatch(stripSgr(component.render(48).join("\n")), /★★★★|⚡⚡⚡|\$\$/u);
 		component.dispose();
 	}
 });

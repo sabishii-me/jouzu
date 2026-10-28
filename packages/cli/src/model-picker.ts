@@ -1087,12 +1087,23 @@ function hasConversationEntries(entries: readonly { type: string }[]): boolean {
 	return entries.some((entry) => ["message", "compaction", "branch_summary", "custom_message"].includes(entry.type));
 }
 
+function catalogComparison(metadata: unknown): PickerModel["comparison"] {
+	if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return undefined;
+	const comparison: NonNullable<PickerModel["comparison"]> = {};
+	for (const key of ["strength", "speed", "cost"] as const) {
+		const value = (metadata as Record<string, unknown>)[key];
+		if (typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 4) comparison[key] = value;
+	}
+	return Object.keys(comparison).length > 0 ? comparison : undefined;
+}
+
 export function catalogPickerModel(
 	model: Pick<PiModel, "provider" | "id" | "name" | "contextWindow" | "maxTokens">,
 	catalog?: ModelCatalogDocument,
 	catalogLabel?: string,
 ): PickerModel {
 	const offering = catalogOffering(catalog, model.provider, model.id);
+	const comparison = catalogComparison(offering?.metadata);
 	const providerName = offering
 		? catalog?.providers.find((provider) => provider.id === offering.providerId)?.name
 		: undefined;
@@ -1100,6 +1111,7 @@ export function catalogPickerModel(
 		...(offering && catalog ? { catalogId: catalog.catalogId, offeringId: offering.id } : {}),
 		...(providerName ? { providerName: sanitizeTerminalText(providerName) } : {}),
 		...(offering && catalogLabel ? { catalogLabel: sanitizeTerminalText(catalogLabel) } : {}),
+		...(comparison ? { comparison } : {}),
 		provider: model.provider,
 		modelId: model.id,
 		name: offering?.name ?? model.name,

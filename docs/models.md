@@ -32,7 +32,9 @@ With an empty search, the list shows models in this order:
 
 Typing ranks the whole list by how well each model matches and moves the cursor to the best match. Models that match equally keep the order above. Clearing the search, with `Esc` or by deleting the text, returns the cursor to where it was before you started typing.
 
-Each row shows the model name, its provider, and its context window. `◆` marks this project's default. The line above the list shows the selected model's exact provider/model ID and catalog. When two catalogs offer the same provider/model ID, the Provider column also names the catalog. Narrow terminals hide the Context column first, then Provider.
+Each row shows the model name, its provider, and its context window. `◆` marks this project's default. The line above the list shows the selected model's exact provider/model ID and catalog. When two catalogs offer the same provider/model ID, the Provider column also names the catalog.
+
+Wide terminals also show catalog-supplied Strength (`★`), Speed (`⚡`), and Cost (`$`) ratings, each with one to four symbols. More stars means stronger, more lightning bolts means faster, and more dollar signs means more expensive. Missing or invalid ratings show `—`. Ratings belong to the selected catalog offering; Jouzu does not infer them from model names or token prices. Narrow terminals hide the three rating columns together, then Context, then Provider.
 
 ## Which model a new session uses
 

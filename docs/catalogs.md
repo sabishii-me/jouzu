@@ -132,3 +132,13 @@ jouzu catalog conformance ./remote-catalog.json --json
 - Offerings whose `capabilities` omit `reasoning` are left out of that list, because Jouzu treats them as non-reasoning.
 - Unknown thinking levels, including an unknown `defaultThinkingLevel`, are ignored so the catalog still loads.
 - `jz doctor` reads cached data only. Run `jz catalog refresh` before checking a server change.
+
+### Picker ratings
+
+Set optional `metadata.strength`, `metadata.speed`, and `metadata.cost` on each model offering to supply the [Models view ratings](models.md#model-list):
+
+```json
+"metadata": { "strength": 4, "speed": 3, "cost": 2 }
+```
+
+Each rating must be an integer from 1 through 4. Higher values mean stronger, faster, or more expensive, respectively. Jouzu ignores missing or invalid ratings independently and displays `—` for them. Other metadata fields do not affect these ratings.
