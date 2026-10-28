@@ -34,7 +34,7 @@ Typing filters the whole list while keeping the order above and moves the cursor
 
 Each row shows the model name, its provider, and its context window. `◆` marks this project's default. The line above the list shows the selected model's exact provider/model ID and catalog. When two catalogs offer the same provider/model ID, the Provider column also names the catalog.
 
-Wide terminals also show catalog-supplied Strength (`★`), Speed (`⚡︎`), and Cost (`$`) ratings, each with one to four symbols. More stars means stronger, more lightning bolts means faster, and more dollar signs means more expensive. The lightning bolt requests text presentation; its appearance depends on your terminal font. Missing or invalid ratings show `—`. Ratings belong to the selected catalog offering; Jouzu does not infer them from model names or token prices. Narrow terminals hide the three rating columns together, then Context, then Provider.
+Wide terminals also show catalog-supplied Strength (`★`), Speed (`↯`), and Cost (`$`) ratings, each with one to four text symbols. More stars means stronger, more zigzag arrows means faster, and more dollar signs means more expensive. Missing or invalid ratings show `—`. Ratings belong to the selected catalog offering; Jouzu does not infer them from model names or token prices. Narrow terminals hide the three rating columns together, then Context, then Provider.
 
 ## Which model a new session uses
 

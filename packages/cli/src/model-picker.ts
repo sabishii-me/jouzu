@@ -146,7 +146,8 @@ const CONTEXT_COLUMN = 7;
 const COLUMN_GAP = 2;
 const MIN_NAME_COLUMN = 16;
 const MAX_PROVIDER_COLUMN = 24;
-const COMPARISON_SYMBOLS = { strength: "★", speed: "⚡\uFE0E", cost: "$" } as const;
+// Keep rating glyphs text-only: emoji presentation selectors can change terminal cell widths.
+const COMPARISON_SYMBOLS = { strength: "★", speed: "↯", cost: "$" } as const;
 
 interface ModelColumns {
 	name: number;

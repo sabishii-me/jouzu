@@ -1004,14 +1004,14 @@ test("Models renders catalog ratings with localized headers within terminal widt
 			getRows: () => [{ ...rows()[1], model }],
 		});
 		const wide = stripSgr(component.render(120).join("\n"));
-		assert.match(wide, /評価 Model.*★★★★\s+(?:⚡\uFE0E){3}\s+\$\$/u);
+		assert.match(wide, /評価 Model.*★★★★\s+↯↯↯\s+\$\$/u);
 		for (const width of [24, 48, 72, 80, 96, 120]) {
 			assert.ok(
 				component.render(width).every((line) => visibleWidth(line) <= width),
 				`${locale}: ${width}`,
 			);
 		}
-		assert.doesNotMatch(stripSgr(component.render(48).join("\n")), /★★★★|⚡\uFE0E|\$\$/u);
+		assert.doesNotMatch(stripSgr(component.render(48).join("\n")), /★★★★|↯|\$\$/u);
 		component.dispose();
 	}
 });
@@ -1030,7 +1030,7 @@ test("Models renders one to four comparison symbols and rejects invalid tiers", 
 		assert.ok(line, `tier ${tier}`);
 		for (const [label, symbol] of [
 			["Strength", "★"],
-			["Speed", "⚡\uFE0E"],
+			["Speed", "↯"],
 			["Cost", "$"],
 		]) {
 			assert.ok(line.includes(symbol.repeat(tier)), `${label}: tier ${tier}`);
@@ -1050,6 +1050,43 @@ test("Models renders one to four comparison symbols and rejects invalid tiers", 
 			component.render(width).every((line) => visibleWidth(line) <= width),
 			`width ${width}`,
 		);
+	}
+	component.dispose();
+});
+
+test("Models rating rows align under an independent single-cell text cursor model", () => {
+	const inventory = [undefined, 1, 2, 3, 4].map((tier) => ({
+		...rows()[1],
+		model: {
+			...rows()[1].model,
+			name: `Cells ${tier ?? "unknown"}`,
+			comparison: tier === undefined ? undefined : { strength: 4, speed: tier, cost: 2 },
+		},
+	}));
+	// This fixture contains only ASCII and single-cell text glyphs. Model a terminal
+	// honoring VS15 as zero-width without consulting Pi's width implementation.
+	const cursorColumns = (value) => {
+		const text = value.replace(/\uFE0E/gu, "");
+		assert.match(text, /^[\x20-\x7e│→★↯—⚡]*$/u);
+		return Array.from(text).length;
+	};
+	const { component } = createComponent({ getRows: () => inventory });
+	for (const width of [48, 72, 80, 96, 120, 160]) {
+		const lines = component.render(width).map(stripSgr);
+		const header = lines.find((line) => /Strength\s+Speed\s+Cost/u.test(line));
+		for (const tier of [undefined, 1, 2, 3, 4]) {
+			const line = lines.find((line) => line.includes(`Cells ${tier ?? "unknown"} `));
+			assert.ok(line, `width ${width}, tier ${tier}`);
+			assert.equal(cursorColumns(line), width, `width ${width}, tier ${tier}: right border`);
+			assert.doesNotMatch(line, /[\uFE0E\uFE0F]|\p{Emoji_Presentation}/u, "ratings use plain text glyphs");
+			if (header && tier !== undefined) {
+				assert.equal(
+					cursorColumns(line.slice(0, line.indexOf("$"))),
+					cursorColumns(header.slice(0, header.indexOf("Cost"))),
+					`width ${width}, tier ${tier}: Cost column`,
+				);
+			}
+		}
 	}
 	component.dispose();
 });
