@@ -1004,14 +1004,14 @@ test("Models renders catalog ratings with localized headers within terminal widt
 			getRows: () => [{ ...rows()[1], model }],
 		});
 		const wide = stripSgr(component.render(120).join("\n"));
-		assert.match(wide, /評価 Model.*★★★★\s+⚡⚡⚡\s+\$\$/u);
+		assert.match(wide, /評価 Model.*★★★★\s+(?:⚡\uFE0E){3}\s+\$\$/u);
 		for (const width of [24, 48, 72, 80, 96, 120]) {
 			assert.ok(
 				component.render(width).every((line) => visibleWidth(line) <= width),
 				`${locale}: ${width}`,
 			);
 		}
-		assert.doesNotMatch(stripSgr(component.render(48).join("\n")), /★★★★|⚡⚡⚡|\$\$/u);
+		assert.doesNotMatch(stripSgr(component.render(48).join("\n")), /★★★★|⚡\uFE0E|\$\$/u);
 		component.dispose();
 	}
 });
@@ -1023,18 +1023,34 @@ test("Models renders one to four comparison symbols and rejects invalid tiers", 
 	}));
 	const { component } = createComponent({ getRows: () => inventory });
 	const lines = component.render(120).map(stripSgr);
+	const header = lines.find((line) => /Strength\s+Speed\s+Cost/u.test(line));
+	assert.ok(header);
 	for (const tier of [1, 2, 3, 4]) {
 		const line = lines.find((value) => value.includes(`Tier ${tier} `));
 		assert.ok(line, `tier ${tier}`);
-		assert.ok(line.includes("★".repeat(tier)));
-		assert.ok(line.includes("⚡".repeat(tier)));
-		assert.ok(line.includes("$".repeat(tier)));
+		for (const [label, symbol] of [
+			["Strength", "★"],
+			["Speed", "⚡\uFE0E"],
+			["Cost", "$"],
+		]) {
+			assert.ok(line.includes(symbol.repeat(tier)), `${label}: tier ${tier}`);
+			assert.equal(
+				visibleWidth(line.slice(0, line.indexOf(symbol))),
+				visibleWidth(header.slice(0, header.indexOf(label))),
+				`${label}: tier ${tier} aligns with its header`,
+			);
+		}
 	}
 	for (const tier of [0, 5, 1.5]) {
 		const line = lines.find((value) => value.includes(`Tier ${tier} `));
 		assert.match(line, /—\s+—\s+—/u);
 	}
-	assert.ok(component.render(120).every((line) => visibleWidth(line) <= 120));
+	for (const width of [24, 48, 72, 80, 96, 120]) {
+		assert.ok(
+			component.render(width).every((line) => visibleWidth(line) <= width),
+			`width ${width}`,
+		);
+	}
 	component.dispose();
 });
 

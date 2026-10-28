@@ -146,6 +146,7 @@ const CONTEXT_COLUMN = 7;
 const COLUMN_GAP = 2;
 const MIN_NAME_COLUMN = 16;
 const MAX_PROVIDER_COLUMN = 24;
+const COMPARISON_SYMBOLS = { strength: "★", speed: "⚡\uFE0E", cost: "$" } as const;
 
 interface ModelColumns {
 	name: number;
@@ -754,13 +755,9 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 				),
 			);
 		}
-		for (const [key, symbol] of [
-			["strength", "★"],
-			["speed", "⚡"],
-			["cost", "$"],
-		] as const) {
+		for (const key of ["strength", "speed", "cost"] as const) {
 			if (columns[key]) {
-				const value = comparisonLabel(row.model.comparison?.[key], symbol);
+				const value = comparisonLabel(row.model.comparison?.[key], COMPARISON_SYMBOLS[key]);
 				cells.push(this.styles.apply("palette.detail", padTerminalText(value, columns[key])));
 			}
 		}
@@ -831,14 +828,17 @@ export class ModelPickerComponent implements PaletteComponent, Focusable {
 			Math.max(CONTEXT_COLUMN, terminalTextWidth(catalogText(this.catalog, "jouzu.cli.modelPicker.columnContext"))),
 			{
 				strength: Math.max(
-					terminalTextWidth("★★★★"),
+					terminalTextWidth(COMPARISON_SYMBOLS.strength.repeat(4)),
 					terminalTextWidth(catalogText(this.catalog, "jouzu.cli.modelPicker.columnStrength")),
 				),
 				speed: Math.max(
-					terminalTextWidth("⚡⚡⚡⚡"),
+					terminalTextWidth(COMPARISON_SYMBOLS.speed.repeat(4)),
 					terminalTextWidth(catalogText(this.catalog, "jouzu.cli.modelPicker.columnSpeed")),
 				),
-				cost: Math.max(4, terminalTextWidth(catalogText(this.catalog, "jouzu.cli.modelPicker.columnCost"))),
+				cost: Math.max(
+					terminalTextWidth(COMPARISON_SYMBOLS.cost.repeat(4)),
+					terminalTextWidth(catalogText(this.catalog, "jouzu.cli.modelPicker.columnCost")),
+				),
 			},
 		);
 		const listHeaderLine =
