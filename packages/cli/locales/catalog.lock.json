@@ -1,10 +1,10 @@
 {
   "version": "2",
   "locales": {
-    "en": "c629e2980d7c5e768c3e2920bbbcfeb6d7d9b4e96b596e589e4c4a33d2011b00",
-    "ja": "3d311678bff65ebc50bfed9be1073ec781584d25ca664b0030796cf1d98a1f3b",
-    "zh-Hans": "518997e8c7200f9e7efeeacdb1fca9a4d355838bfb89d34a55c1d9588017b8ca",
-    "zh-Hant": "3594890709e42dc8539c70417b89306d476d62b01bfce704f57d6ee0923220c0"
+    "en": "34edc3d1420624d613bf041b7ffd2825d1c740e5ca55b8e1b325ca8e63eadd8c",
+    "ja": "c263771d23026e1877d4544f9c9ce207dc5a22cfa232431d930f5b7d6e290957",
+    "zh-Hans": "5b5b0172a5abbb3fd66ee8e5de0c18a8eeabee2e551bb6e1a5e0eb0c8bb64567",
+    "zh-Hant": "47ea3f2572a92560a9abc86eb7a46674f08dfe5e412fa5336a0d178ad6a3d65d"
   },
   "extra": {
     "en/compaction.ftl": "04cd2f1efd45825c059a598dcab4a805432323d6a2a875e92e3f8e0e2cf9e54d",

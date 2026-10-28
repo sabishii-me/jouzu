@@ -1339,7 +1339,7 @@ jouzu-cli-shisa-logout-serverUnconfirmed = Server revocation is unconfirmed. Dis
 jouzu-cli-shisa-logout-envKeyRemains = { $message } SHISA_API_KEY remains set, but Jouzu will not use Shisa in this process until you sign in again. Unset the variable before restarting to stay signed out.
 
 jouzu-cli-shisa-refreshFailed = Shisa model availability could not refresh. Run /reload.
-jouzu-cli-shisa-signedInRefreshCancelled = Signed in to Shisa; catalog refresh cancelled.
+jouzu-cli-shisa-signedInRefreshCancelled = Signed in to Shisa; catalog refresh cancelled. Run /reload to load Shisa models.
 jouzu-cli-shisa-signOutFailed = Shisa sign-out could not complete. Wait for any sign-in or sign-out to finish, then retry /logout shisa.
 jouzu-cli-shisa-signedOutReconnect = Signed out of Shisa. Run /login shisa to reconnect.
 # The subagent result renderer. The status table maps an internal run state to

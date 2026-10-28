@@ -1318,7 +1318,7 @@ jouzu-cli-shisa-logout-serverUnconfirmed = サーバー側の取り消しは確�
 jouzu-cli-shisa-logout-envKeyRemains = { $message } SHISA_API_KEY は設定されたままですが、再度サインインするまで Jouzu はこのプロセスで Shisa を使用しません。サインアウトしたままにするには、再起動前にこの変数を解除してください。
 
 jouzu-cli-shisa-refreshFailed = Shisa のモデル可用性を更新できませんでした。`/reload` を実行してください。
-jouzu-cli-shisa-signedInRefreshCancelled = Shisa にサインインしました。カタログの更新はキャンセルされました。
+jouzu-cli-shisa-signedInRefreshCancelled = Shisa にサインインしました。カタログの更新はキャンセルされました。Shisa のモデルを読み込むには `/reload` を実行してください。
 jouzu-cli-shisa-signOutFailed = Shisa のサインアウトを完了できませんでした。サインインまたはサインアウトの完了を待ってから、`/logout shisa` を再試行してください。
 jouzu-cli-shisa-signedOutReconnect = Shisa からサインアウトしました。再接続するには `/login shisa` を実行してください。
 # サブエージェントの結果レンダラー。状態表は内部の実行状態を表示語へ対応付け、

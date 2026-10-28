@@ -575,7 +575,7 @@ test("interactive cancellation after authorization reports signed in with refres
 	assert.ok(readShisaLoginToken(h.paths));
 	assert.equal(h.session.model?.id, "unknown");
 	assert.deepEqual(ui.errors, []);
-	assert.deepEqual(ui.statuses, ["Signed in to Shisa; catalog refresh cancelled."]);
+	assert.deepEqual(ui.statuses, ["Signed in to Shisa; catalog refresh cancelled. Run /reload to load Shisa models."]);
 	assert.equal(ui.refreshes.length, 0, "completion must not restart the cancelled refresh");
 });
 
