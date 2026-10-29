@@ -216,6 +216,10 @@ jobs:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Enable Windows long paths
+        run: |
+          Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name LongPathsEnabled -Value 1
+          if ((Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name LongPathsEnabled).LongPathsEnabled -ne 1) { throw 'Cannot enable long paths' }
       - name: Sign and package CI binaries
         run: ./packaging/launcher/finalize-windows-bundle.ps1 -InputDirectory "$env:RUNNER_TEMP/signing-inputs" -JouzuVersion "${{ needs.runtime.outputs.jouzu_version }}"
       - name: Publish verified update
