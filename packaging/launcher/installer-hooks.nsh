@@ -74,7 +74,25 @@ Var JouzuPreparationFailures
   ${EndIf}
 !macroend
 
+!macro JOUZU_EXTRACT_APP
+  IfFileExists "$INSTDIR\app.tgz" 0 jouzu_app_done
+    ; The archive carries the npm-installed tree without MAX_PATH limits in NSIS.
+    RmDir /r "\\?\$INSTDIR\app"
+    nsExec::ExecToStack '"$SYSDIR\tar.exe" -xzf "$INSTDIR\app.tgz" -C "$INSTDIR"'
+    Pop $0
+    Pop $1
+    Delete "$INSTDIR\app.tgz"
+    ${If} $0 != 0
+      SetErrorLevel 1
+      IfSilent +2
+      MessageBox MB_OK|MB_ICONSTOP "Jouzu application files could not be installed."
+      Abort
+    ${EndIf}
+  jouzu_app_done:
+!macroend
+
 !macro NSIS_HOOK_POSTINSTALL
+  !insertmacro JOUZU_EXTRACT_APP
 !if ${JOUZU_LAUNCHER_ONLY} == 0
   ; Only the full installer prepares components. A launcher-only update must not replace them.
   StrCpy $JouzuPreparationFailures ""
@@ -116,6 +134,7 @@ Var JouzuPreparationFailures
     ; A launcher-only package does not carry the payload file list, so remove it explicitly. An
     ; update keeps the payload: it replaces the launcher, it does not remove the installation.
     RmDir /r "\\?\$INSTDIR\app"
+    Delete "$INSTDIR\app.tgz"
     RmDir /r "\\?\$INSTDIR\runtime"
     ; The terminal entries are copies the installer created, so the file manifest does not know them.
     Delete "$INSTDIR\jz.exe"

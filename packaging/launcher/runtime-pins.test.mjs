@@ -47,9 +47,11 @@ test('Terminal remains on the qualified stable archive in build and install path
 
 test('only the full installer carries and prepares runtime components', () => {
  const bundle = read('./finalize-windows-bundle.ps1');
- assert.match(bundle, /if \(\$Full\) \{ \$resources\["\$inputRoot\/app\/"\]='app\/'; \$resources\["\$inputRoot\/runtime\/"\]='runtime\/' \}/);
+ assert.match(bundle, /if \(\$Full\) \{ \$resources\["\$inputRoot\/app\.tgz"\]='app\.tgz'; \$resources\["\$inputRoot\/runtime\/"\]='runtime\/' \}/);
  const hooks = read('./installer-hooks.nsh');
- const fullOnly = hooks.match(/!macro NSIS_HOOK_POSTINSTALL\s+!if \$\{JOUZU_LAUNCHER_ONLY\} == 0([\s\S]*?)!endif/);
+ assert.match(hooks, /!insertmacro JOUZU_EXTRACT_APP/);
+ assert.match(hooks, /\\tar\.exe.*-xzf/);
+ const fullOnly = hooks.match(/!macro NSIS_HOOK_POSTINSTALL\s+!insertmacro JOUZU_EXTRACT_APP\s+!if \$\{JOUZU_LAUNCHER_ONLY\} == 0([\s\S]*?)!endif/);
  assert.ok(fullOnly, 'component preparation must be compile-time guarded');
  assert.match(fullOnly[1], /!insertmacro JOUZU_PREPARE_COMPONENT git/);
  assert.match(fullOnly[1], /!insertmacro JOUZU_PREPARE_COMPONENT terminal/);

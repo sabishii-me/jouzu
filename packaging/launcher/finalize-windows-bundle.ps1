@@ -98,7 +98,7 @@ function Invoke-Bundle([string]$Config,[string]$What) {
 }
 function New-Config([string]$Template,[bool]$Full) {
  $resources = [ordered]@{}
- if ($Full) { $resources["$inputRoot/app/"]='app/'; $resources["$inputRoot/runtime/"]='runtime/' }
+ if ($Full) { $resources["$inputRoot/app.tgz"]='app.tgz'; $resources["$inputRoot/runtime/"]='runtime/' }
  $resources["$repo/packaging/launcher/"]='runtime/launcher-update/'
  $resources["$target/console.exe"]='console.exe'
  $resources["$inputRoot/update-config/jouzu-update.json"]='jouzu-update.json'

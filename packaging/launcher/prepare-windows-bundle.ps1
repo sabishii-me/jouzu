@@ -13,6 +13,11 @@ New-Item -ItemType Directory -Path $Output | Out-Null
 $Output = (Resolve-Path $Output).Path
 $runtime = (Join-Path $Output 'runtime').Replace('\','/')
 New-Item -ItemType Directory -Path "$runtime/git" -Force | Out-Null
+# NSIS cannot open paths over MAX_PATH. The npm-installed app has deeply nested
+# dependencies, so ship it as one archive and extract it in the installer.
+$appArchive = (Join-Path $Output 'app.tgz')
+& "$env:SystemRoot\System32\tar.exe" -czf $appArchive -C "$Prepared" app
+if ($LASTEXITCODE) { throw 'Cannot archive the application payload' }
 $nodeVersion = '24.22.1'
 $nodeDigest = 'd2046d28c2c3dcd211ac5145c0bf30e2047ef9dfb306693c8c6e2eccd8b95fa5'
 $archive = "node-v$nodeVersion-win-x64.zip"
@@ -36,7 +41,7 @@ $gitArchive = "$runtime/git/PortableGit.exe"
 Invoke-WebRequest $gitUrl -OutFile $gitArchive
 if ((Get-FileHash $gitArchive -Algorithm SHA256).Hash.ToLowerInvariant() -ne '075e158ef8e1f0ab80b347e245405d3eca735c2dc88fd8e032e137d0ca61f61b') { throw 'PortableGit integrity mismatch' }
 $resources = @{}
-$resources["$Prepared/app/"] = 'app/'
+$resources[$appArchive] = 'app.tgz'
 $resources["$runtime/"] = 'runtime/'
 $resources["$repo/packaging/launcher/"] = 'runtime/launcher-update/'
 $resources["$repo/apps/launcher/src-tauri/target/release/console.exe"] = 'console.exe'
