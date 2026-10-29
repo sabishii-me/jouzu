@@ -118,32 +118,20 @@ try {
  $fullSetup = Join-Path $output "$assetPrefix-setup.exe"
  Copy-Item -LiteralPath $setupPath -Destination $fullSetup -Force
 
- Invoke-Bundle (New-Config (New-Template '!define JOUZU_LAUNCHER_ONLY 1') $false) 'Launcher-only package'
- $updateSetup = Join-Path $output "$assetPrefix-update.exe"
- Copy-Item -LiteralPath $setupPath -Destination $updateSetup -Force
-
- # The bundler restores the application binary it patched for bundle-type marking after the
- # run, so the on-disk copy is unsigned; what the installers carry is the signed copy the
- # bundler verified before it ran makensis. Only the packaged results are checked here.
- # The launcher-only package must not carry the application payload: the update artifact exists
- # precisely so an update never rewrites it. A payload-sized update means the two builds got mixed up.
- if ((Get-Item -LiteralPath $updateSetup).Length * 10 -ge (Get-Item -LiteralPath $fullSetup).Length) {
-  throw "Launcher-only package is unexpectedly large, refusing to publish: $updateSetup"
- }
- foreach ($file in @("$target/console.exe",$fullSetup,$updateSetup)) {
+ # The bundle restores the application binary it patched for bundle-type marking after the
+ # run, so the on-disk copy is unsigned; the packaged result is what the bundler verified.
+ foreach ($file in @("$target/console.exe",$fullSetup)) {
   $signature = Get-AuthenticodeSignature -LiteralPath $file
   if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -ne $env:EXPECTED_SIGNER -or -not $signature.TimeStamperCertificate) { throw "Invalid final signature: $file ($($signature.Status), $($signature.SignerCertificate.Subject))" }
  }
 
- # The updater signature covers the final installer bytes. The key arrives in
- # TAURI_SIGNING_PRIVATE_KEY, which `signer sign` reads itself, so it never reaches a file.
- npm run tauri -- signer sign --app-version $Version $updateSetup
+ # The same setup is the update artifact and the repair artifact. Sign it with the updater
+ # key so a launcher that still carries the Tauri updater can verify and run it.
+ npm run tauri -- signer sign --app-version $Version $fullSetup
  if ($LASTEXITCODE) { throw 'Updater signing failed' }
- # The signing key is a secret, so its pairing with the key installed launchers carry is proven
- # by verifying the signature it just produced; an unusable update is never published.
- & node "$PSScriptRoot/verify-updater-signature.mjs" $updateSetup "$updateSetup.sig" $env:LAUNCHER_PUBLIC_KEY
+ & node "$PSScriptRoot/verify-updater-signature.mjs" $fullSetup "$fullSetup.sig" $env:LAUNCHER_PUBLIC_KEY
  if ($LASTEXITCODE) { throw 'Updater signature does not match the launcher public key' }
 
  Copy-Item "$inputRoot/source.json" $output
- @{jouzuVersion=$JouzuVersion;launcherVersion=$Version;commit=$env:GITHUB_SHA;run=$env:GITHUB_RUN_ID;setup=(Get-FileHash $fullSetup -Algorithm SHA256).Hash;update=(Get-FileHash $updateSetup -Algorithm SHA256).Hash} | ConvertTo-Json | Set-Content "$output/build.json"
+ @{jouzuVersion=$JouzuVersion;launcherVersion=$Version;commit=$env:GITHUB_SHA;run=$env:GITHUB_RUN_ID;setup=(Get-FileHash $fullSetup -Algorithm SHA256).Hash} | ConvertTo-Json | Set-Content "$output/build.json"
 } finally { Pop-Location }

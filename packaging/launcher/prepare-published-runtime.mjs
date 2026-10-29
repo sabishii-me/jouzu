@@ -4,7 +4,6 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { verifyPublishedTarball } from './published-input.mjs';
 import { exportRecipe } from './export-recipe.mjs';
-import { installArguments } from './prepare-starter.mjs';
 import { assertInstalledTarget } from './installed-target.mjs';
 import { checkStagedHealth } from './check-update-health.mjs';
 import { fetchReleaseNotes } from './jouzu-notes.mjs';
@@ -47,10 +46,12 @@ export async function preparePublishedRuntime({version,output,pnpm}) {
  exportRecipe(join(source,'package'),recipe);
  const store=join(root,'store');
  run(process.execPath,[resolve(pnpm),'install','--dir',recipe,'--store-dir',store,'--prod','--ignore-scripts','--config.node-linker=hoisted','--config.package-import-method=copy','--config.manage-package-manager-versions=false','--config.package-manager-strict-version=true'],root);
- // Reinstall from the generated frozen lock in a distinct directory.
+ // The runtime payload is the tree npm users install, not a second pnpm layout.
+ // The recipe below remains for the signed update feed during migration.
  const app=join(root,'app');mkdirSync(app);
- for(const file of ['package.json','pnpm-lock.yaml','artifacts'])cpSync(join(recipe,file),join(app,file),{recursive:true});
- run(process.execPath,[resolve(pnpm),...installArguments(app,store)],root);
+ const npmCli=process.env.npm_execpath;
+ if(!npmCli) throw new Error('Run via npm so npm_execpath identifies the npm CLI');
+ run(process.execPath,[npmCli,'install','--prefix',app,join(root,'source.tgz'),'--ignore-scripts','--no-audit','--no-fund'],root);
  assertInstalledTarget(app);
  cpSync(fileURLToPath(new URL('./bootstrap.mjs',import.meta.url)),join(app,'bootstrap.mjs'));
  await checkStagedHealth({node:process.execPath,app,version});
