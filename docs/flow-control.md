@@ -83,7 +83,9 @@ settlement and closes the runtime.
 In RPC mode flow control publishes its state as a `setStatus` request with key
 `jouzu-flow` whose text is JSON: `version`, `enabled`, `paused` and `recovery`
 (each a stable `code` and localized `text`, present only while they apply),
-`held` (submission `id`, `code`, `text`), and `uncertain` (attempt ids). It is
+`held` (input held with a reason: submission `id`, `code`, `text`), `withheld`
+(model requests waiting for `/flow retry` or `/flow clear`: request `id`, `code`,
+`text`), and `uncertain` (attempt ids). It is
 sent at session start, after every `/flow` command, and when a turn ends, only
 when it changed. The latest state replaces earlier ones. It is read-only: holds
 are released only by the `/flow` commands.

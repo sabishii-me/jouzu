@@ -86,6 +86,7 @@ test("clients without a terminal get read-only structured state; the terminal do
 		status.held.map(({ id, code }) => ({ id, code })),
 		[{ id: "s1", code: "interruptedOutcome" }],
 	);
+	assert.deepEqual(status.withheld, []);
 	assert.deepEqual(status.uncertain, []);
 	// The state follows the release, latest reading wins, and repeats are not resent.
 	f.state.hold = undefined;

@@ -54,6 +54,8 @@ export interface FlowClientStatus {
 	/** A recovery decision holds model admission. */
 	recovery?: { code: string; text: string };
 	held: { id: string; code: string; text: string }[];
+	/** Model requests withheld until the user retries or clears them with `/flow`. */
+	withheld: { id: string; code: string; text: string }[];
 	/** Requests whose outcome is unknown after an interruption; never resent automatically. */
 	uncertain: string[];
 }
@@ -124,7 +126,7 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 	let lastStatus = "";
 	const readStatus = async (): Promise<FlowClientStatus> => {
 		const enabled = flowOn(options);
-		if (!enabled) return { version: 1, enabled, held: [], uncertain: [] };
+		if (!enabled) return { version: 1, enabled, held: [], withheld: [], uncertain: [] };
 		const ingress = options.ingress();
 		const paused = ingress.automatedPause();
 		const recovery = await ingress.recoveryHold();
@@ -134,13 +136,19 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 			enabled,
 			...(paused ? { paused: { code: flowPauseCode(paused), text: flowPauseText(paused, catalog, 200) } } : {}),
 			...(recovery ? { recovery: { code: holdCode(recovery), text: holdReason(recovery) } } : {}),
-			held: inspected.submissions
-				.filter((submission) => submission.admission === "held")
-				.map((submission) => ({
-					id: submission.id,
-					code: submission.reason ? holdCode(submission.reason) : "other",
-					text: submission.reason ? holdReason(submission.reason) : "",
-				})),
+			// The same reading /flow reports: input held with a reason, and withheld requests.
+			held: inspected.submissions.flatMap((submission) =>
+				submission.admission === "held" && submission.reason
+					? [{ id: submission.id, code: holdCode(submission.reason), text: holdReason(submission.reason) }]
+					: [],
+			),
+			withheld: inspected.submissions.flatMap((submission) =>
+				(submission.nativeRequests ?? []).flatMap((request) =>
+					request.hold && !request.retryRequestId
+						? [{ id: request.requestId, code: request.hold.reason, text: text("requestDecision") }]
+						: [],
+				),
+			),
 			uncertain: inspected.uncertain.map((attempt) => attempt.id),
 		};
 	};
