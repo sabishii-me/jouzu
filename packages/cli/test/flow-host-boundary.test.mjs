@@ -214,7 +214,8 @@ test("shutdown joins delayed user preflight and fences its eventual native run",
 		await release.promise;
 		return "fixture-key";
 	};
-	const running = assert.rejects(session.prompt("user input"), { code: "stale" });
+	let disposition;
+	const running = session.prompt("user input", { preflightResult: (value) => (disposition = value) });
 	await entered.promise;
 	let closed = false;
 	const closing = boundary.abortAndJoin().then(() => {
@@ -229,6 +230,8 @@ test("shutdown joins delayed user preflight and fences its eventual native run",
 	release.resolve();
 	await Promise.all([running, closing]);
 	assert.equal(closed, true);
+	// Shutdown aborts the session, so the delayed prompt is cancelled before it can start a run.
+	assert.equal(disposition, "aborted");
 	assert.deepEqual(requests, []);
 });
 

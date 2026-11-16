@@ -10,6 +10,7 @@
 
 - Send TextGuard messages to RPC and ACP clients as notifications instead of stderr.
 - Announce a flow-control recovery hold once per hold, and never after it was released.
+- Make Stop final. A prompt stopped before its turn starts is cancelled (RPC disposition `aborted`) instead of running later, and a request stopped before or during its handoff to the provider no longer holds later messages for a recovery decision. See [Flow control](docs/flow-control.md#stopping-a-turn).
 
 ### Security
 

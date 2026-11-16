@@ -991,6 +991,38 @@ export function sessionEntryToContextMessages(entry) {`,
             event = { ...event, result: { content: event.result.content, details: event.result.details, structuredContent: event.result.structuredContent, usage: event.result.usage, terminate: event.result.terminate } };
         }`,
 		);
+		// A user abort cancels every prompt the host submitted before it that has not started a run,
+		// including one still in input handling and auth checks or held by flow admission. Each prompt
+		// carries the abort count from when the host submitted it; the checks still finish as a whole,
+		// but a prompt that an abort overtook never starts. Prompts from automated work are unaffected.
+		change(
+			"\n    _agentRunAbortRequested = false;\n",
+			"\n    _agentRunAbortRequested = false;\n    _promptAbortEpoch = 0;\n",
+		);
+		change(
+			`    async abort() {
+        if (this._isAgentRunActive) {
+            this._agentRunAbortRequested = true;
+        }`,
+			`    async abort() {
+        if (this._isAgentRunActive) {
+            this._agentRunAbortRequested = true;
+        }
+        this._promptAbortEpoch++;`,
+		);
+		change(
+			"        const expandPromptTemplates = options?.expandPromptTemplates ?? true;\n        const preflightResult = options?.preflightResult;\n        // Handle extension commands first",
+			"        const abortEpoch = options?.abortEpoch ?? this._promptAbortEpoch;\n        const expandPromptTemplates = options?.expandPromptTemplates ?? true;\n        const preflightResult = options?.preflightResult;\n        // Handle extension commands first",
+		);
+		change(
+			'        if (trigger)\n            await this._startRun(trigger, () => preflightResult?.("started"));',
+			`        if (trigger && this._promptAbortEpoch !== abortEpoch) {
+            preflightResult?.("aborted");
+            return;
+        }
+        if (trigger)
+            await this._startRun(trigger, () => preflightResult?.("started"));`,
+		);
 	} else if (path === "dist/core/agent-session.d.ts") {
 		change("    dispose(): void;", "    dispose(): Promise<void>;");
 		change(
@@ -1003,6 +1035,14 @@ export function sessionEntryToContextMessages(entry) {`,
 			"    /** Drain queued input through native retries, compaction, and settlement without appending a prompt. */\n    continueQueued(): Promise<boolean>;\n    private _startRun;",
 		);
 		change("    private _handlePostAgentRun;", "    private _handlePostAgentRun;\n    private _continueAgentRun;");
+		change(
+			"    preflightResult?: (disposition: PromptDisposition) => void;",
+			"    preflightResult?: (disposition: PromptDisposition) => void;\n    /** The session's abort count when the host submitted this prompt; a later abort cancels it before it starts. */\n    abortEpoch?: number;",
+		);
+		change(
+			'export type PromptDisposition = QueuedInputDisposition | "started";',
+			'/** `aborted`: a user abort arrived while the prompt was being prepared, so no run started. */\nexport type PromptDisposition = QueuedInputDisposition | "started" | "aborted";',
+		);
 		change(
 			"export interface AgentSessionConfig {",
 			"export interface AgentSessionConfig {\n    flowIngress?: FlowIngress;",
@@ -1273,6 +1313,12 @@ export function sessionEntryToContextMessages(entry) {`,
                 activeCommands++;
                 void (async () => session
 `,
+		);
+		// The prompt's position on the input stream decides which Stop cancels it: a later abort line
+		// cancels it even while host admission still holds the call.
+		change(
+			'                    source: "rpc",\n                    preflightResult: (disposition) => {\n',
+			'                    source: "rpc",\n                    abortEpoch: session._promptAbortEpoch,\n                    preflightResult: (disposition) => {\n',
 		);
 		change(
 			"                        preflightSucceeded = true;\n" +
