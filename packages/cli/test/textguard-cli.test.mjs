@@ -113,9 +113,8 @@ export default function(pi) {
 				assert.match(stderr, /TextGuard withheld "skill:.*\d+ error-level findings? \(bidi_control/);
 				assert.match(stderr, /interactive session/);
 			}
-			const cache = JSON.parse(await readFile(join(home, "cache", "textguard", "scans.json"), "utf8"));
-			assert.ok(cache.records.length > 0);
-			assert.doesNotMatch(JSON.stringify(cache), /UNIQUE_SKILL_BODY|UNIQUE_WEB_BODY|example.com|approvals/);
+			// Verdicts stay in the process: nothing on disk can later vouch for content.
+			await assert.rejects(readFile(join(home, "cache", "textguard", "scans.json"), "utf8"), { code: "ENOENT" });
 		} finally {
 			await rm(dir, { recursive: true, force: true });
 		}

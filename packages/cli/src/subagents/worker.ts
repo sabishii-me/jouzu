@@ -41,7 +41,6 @@ export async function runWorker(
 		onError: (error) => failure.abort(error),
 	});
 	const textguard = new TextGuardRuntime({
-		cachePath: join(launch.directory, "textguard-scans.json"),
 		files: launch.textguardFiles,
 		...(launch.textguardMode ? { mode: launch.textguardMode } : {}),
 	});

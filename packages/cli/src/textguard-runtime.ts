@@ -22,14 +22,13 @@ export class TextGuardRuntime {
 	private alertListener?: (alert: TextGuardAlert) => void;
 	constructor(
 		private options: {
-			cachePath?: string;
 			approvalPath?: string;
 			files?: boolean;
 			mode?: TextGuardMode;
 			scanner?: Scanner;
 		} = {},
 	) {
-		this.scanner = new CachedTextGuard(options.scanner ?? new NativeTextGuard(), options.cachePath);
+		this.scanner = new CachedTextGuard(options.scanner ?? new NativeTextGuard());
 		if (options.approvalPath) this.approvals = new TextGuardApprovalStore(options.approvalPath);
 		this.mode = options.mode ?? "guarded";
 	}

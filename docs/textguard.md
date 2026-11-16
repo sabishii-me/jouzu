@@ -137,9 +137,10 @@ resumed from that CLI session. Role-based tool restrictions still apply.
 
 ## Limits
 
-The scanner caches up to 128 complete results in a file limited to 256 KiB. It
-stores content hashes and scan evidence, not the source content. Incomplete
-results are not cached as clean verdicts.
+The scanner keeps up to 128 complete results in memory for the life of the
+Jouzu process, keyed by content hash. Results are not written to disk, so a file
+that another program or the agent's own tools can write never vouches for
+content, and each new process scans again. Incomplete results are not reused.
 
 Persistent approvals are stored separately, with up to 128 records identified
 by content hash.

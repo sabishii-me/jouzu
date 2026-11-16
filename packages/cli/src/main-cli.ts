@@ -739,7 +739,6 @@ export async function runMainCli(args: string[]): Promise<void> {
 		import("./textguard-review.js"),
 	]);
 	const nativeTextguard = new TextGuardRuntime({
-		cachePath: join(paths.cacheDir, "textguard", "scans.json"),
 		approvalPath: join(paths.cacheDir, "textguard", "approvals.json"),
 		files: parsed.options.textguardFiles,
 		mode: parsed.options.textguardOff ? "off" : parsed.options.textguardStrict ? "strict" : "guarded",

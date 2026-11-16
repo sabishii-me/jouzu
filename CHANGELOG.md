@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Security
+
+- Keep TextGuard scan results in memory only. A results file written by the agent's own tools could previously mark flagged content as clean. See [TextGuard](docs/textguard.md#limits).
+
 ## 0.2.6 - 2026-11-16
 
 ### Added
