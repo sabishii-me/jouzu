@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Added
+
+- Publish read-only TextGuard and flow-control state to RPC clients as JSON status (`jouzu-textguard`, `jouzu-flow`): mode, items waiting for review, holds with stable reason codes, and uncertain attempts. See [TextGuard](docs/textguard.md#notifications) and [Flow control](docs/flow-control.md#rpc-clients).
+
+### Fixed
+
+- Send TextGuard messages to RPC and ACP clients as notifications instead of stderr.
+- Announce a flow-control recovery hold once per hold, and never after it was released.
+
 ### Security
 
 - Refuse `write` and `edit` tool calls that target Jouzu's state or cache folders, in the main session and in child agents, so the agent's file tools cannot add TextGuard approvals or change flow-control state. See [TextGuard](docs/textguard.md#approvals-and-their-scope).
