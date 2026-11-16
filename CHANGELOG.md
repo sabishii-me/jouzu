@@ -10,6 +10,7 @@
 
 - Send TextGuard messages to RPC and ACP clients as notifications instead of stderr.
 - Announce a flow-control recovery hold once per hold, and never after it was released.
+- Keep flow state usable when the Jouzu home folder moves or is reached through another absolute path. See [Flow control](docs/flow-control.md#branches-and-resuming).
 - Wait for another live process that is applying the profile at startup instead of exiting with a misleading "profile state is unreadable" error. Concurrent starts now converge.
 - Make Stop final. A prompt stopped before its turn starts is cancelled (RPC disposition `aborted`) instead of running later, and a request stopped before or during its handoff to the provider no longer holds later messages for a recovery decision. See [Flow control](docs/flow-control.md#stopping-a-turn).
 
