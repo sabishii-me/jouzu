@@ -422,6 +422,31 @@ export class PiFlowSessionRegistry {
 		return { isolated, dropped };
 	}
 
+	/**
+	 * Adopt the marker of a session whose registry was never written: the first save wrote the marker
+	 * and stopped before the registry. A registry this new holds nothing to drop, so nothing is
+	 * isolated or reported. Returns false when the registry already holds state.
+	 */
+	adoptInitialMarker(branchId: string, enteredAtLeafId: string | null, position: FlowBranchPosition): Promise<boolean> {
+		if (!identity(branchId) || !leaf(enteredAtLeafId) || !validPosition(position))
+			return Promise.reject(new FlowLedgerError("identity", "Invalid registry rebuild evidence."));
+		return this.transact((state) => {
+			const only = state.branches[0];
+			if (
+				state.branches.length !== 1 ||
+				only.position ||
+				only.fromBranchId !== undefined ||
+				state.transition ||
+				state.retired ||
+				!neverNavigated(state)
+			)
+				return { result: false, changed: false };
+			state.branches = [{ id: branchId, enteredAtLeafId, position: structuredClone(position) }];
+			state.activeBranchId = branchId;
+			return { result: true, changed: true };
+		});
+	}
+
 	/** Write the state being discarded beside the live one, so a drop stays auditable. */
 	private async isolateRegistryState(state: FlowSessionRegistryState): Promise<string | undefined> {
 		if (!state.branches.length) return undefined;
@@ -511,12 +536,16 @@ export class PiFlowSessionRegistry {
 	get stored(): boolean {
 		return !this.deferred || this.deferred.materialized;
 	}
+	/** Take the registry's lock for a deferred registry, refusing one that another process recorded. */
+	claimStorage(): void {
+		if (this.deferred && !this.ownership.claimedStorage) this.ownership.claimNew();
+	}
 	/** Claim the registry directory and write the in-memory registry to it. */
 	materialize(): Promise<void> {
 		const journal = this.deferred;
 		if (!journal || journal.materialized) return Promise.resolve();
 		return this.ownership.run(async () => {
-			this.ownership.claim();
+			this.claimStorage();
 			await materializeLocalFlowSession(journal, this.ownership.directory);
 		});
 	}

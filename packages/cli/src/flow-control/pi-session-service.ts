@@ -6,6 +6,7 @@ import { retainAutomaticWork } from "./automatic-work.js";
 import { SessionFlowController } from "./controller.js";
 import { isNativeUserInput, isUserInstruction } from "./native-admission.js";
 import { reconcileNativeSources } from "./native-source-reconciliation.js";
+import { FlowOwnership } from "./ownership.js";
 import { PiFlowAttachment } from "./pi-attachment.js";
 import {
 	bindPiFlowBranch,
@@ -152,6 +153,7 @@ export class PiFlowSessionService {
 					session.sessionManager,
 					(path) => captured.onRebuiltRegistry?.(path),
 					deferred,
+					(branchId) => FlowOwnership.exists(options.root, { sessionId: session.sessionId, branchId }),
 				);
 				await attached.openBranch(scope, deferred);
 			});
@@ -186,14 +188,17 @@ export class PiFlowSessionService {
 	}
 
 	/**
-	 * Write a new session's flow state, before its first input is recorded: the branch marker in the
-	 * Pi transcript first, then the registry and branch records that point to it. Idempotent.
+	 * Write a new session's flow state the first time it records something: take its locks, then the
+	 * branch marker in the Pi transcript, then the registry and branch records that point to it. A
+	 * process that loses the session to another one fails before it writes anything. Idempotent.
 	 */
 	store(): Promise<void> {
 		if (this.stored) return Promise.resolve();
 		this.storing ??= this.registry
 			.run(async () => {
 				const attachment = this.branch().attachment;
+				this.registry.claimStorage();
+				attachment.claimStorage();
 				await bindPiFlowInitialMarker(this.registry, this.session.sessionManager);
 				await this.registry.materialize();
 				await attachment.materialize();

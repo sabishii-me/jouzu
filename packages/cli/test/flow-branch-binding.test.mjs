@@ -9,6 +9,7 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { deferred } from "../../../scripts/fixtures/pi-flow-session.mjs";
 import {
 	bindPiFlowBranch,
+	bindPiFlowInitialMarker,
 	completePiFlowNavigation,
 	piTranscriptBranchOwners,
 } from "../dist/flow-control/pi-branch-binding.js";
@@ -706,4 +707,41 @@ test("a registry that cannot be reconciled with the transcript rebuilds instead 
 	const again = [];
 	assert.deepEqual(await bindPiFlowBranch(rebuilt, manager, (path) => again.push(path)), scope);
 	assert.deepEqual(again, []);
+});
+
+test("a first save interrupted after its marker adopts the marker without reporting a drop", async (t) => {
+	const { root, manager, registry, open } = await fixture(t);
+	const original = await bindPiFlowBranch(registry, manager);
+	await registry.close();
+	// The marker is durable, but the process stopped before the registry and branch were written.
+	await rm(join(root, "session-registry-v1"), { recursive: true, force: true });
+	const reopened = await open();
+	const notices = [];
+	const scope = await bindPiFlowBranch(
+		reopened,
+		manager,
+		(path) => notices.push(path),
+		false,
+		() => false,
+	);
+	assert.deepEqual(scope, original);
+	assert.deepEqual(notices, [], "nothing was lost, so nothing is reported");
+	assert.equal((await reopened.snapshot()).retired, undefined);
+});
+
+test("a marker whose first flush failed is reused by the next save", async (t) => {
+	const { manager, registry } = await fixture(t);
+	const scope = await bindPiFlowBranch(registry, manager, undefined, true);
+	assert.equal(manager.getEntries().length, 0, "a deferred first branch writes no marker");
+	const flush = manager.flush.bind(manager);
+	manager.flush = () => {
+		manager.flush = flush;
+		throw new Error("disk full");
+	};
+	await assert.rejects(bindPiFlowInitialMarker(registry, manager), /disk full/);
+	await bindPiFlowInitialMarker(registry, manager);
+	const markers = manager.getEntries().filter((entry) => entry.customType === "jouzu-flow-branch");
+	assert.equal(markers.length, 1, "the retry flushes the same marker instead of adding another");
+	assert.equal(markers[0].data.branchId, scope.branchId);
+	assert.ok((await registry.snapshot()).branches[0].position, "the branch is bound to its marker");
 });

@@ -34,6 +34,7 @@ test("a deferred journal writes nothing until it is materialized, then keeps eve
 	await commit(journal.session, [setValue(value("probe", "after"), true)]);
 	await journal.session.close(BACKGROUND_CONTEXT);
 	assert.deepEqual(await readdir(join(directory, "sessions", "flow")).then((names) => names.length), 1);
+	assert.deepEqual(await readdir(directory), ["sessions"], "no temporary file is left behind");
 
 	const reopened = await openLocalFlowSession(directory);
 	try {

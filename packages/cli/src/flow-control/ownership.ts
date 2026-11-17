@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
-import { existsSync, realpathSync, renameSync } from "node:fs";
+import { existsSync, readdirSync, realpathSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { CatalogMessageId, catalogText, defaultCatalog } from "../cli-messages.js";
 import type { CatalogBundle } from "../locale-catalog.js";
@@ -110,6 +110,31 @@ export class FlowOwnership {
 			existsSync(join(root, pathDigest([scope.sessionId, scope.branchId]))) ||
 			existsSync(join(root, legacyPathDigest([scope.sessionId, scope.branchId])))
 		);
+	}
+
+	/**
+	 * Claim storage that this process kept in memory, for records nobody else may have written. A
+	 * session ID can be reused, for example with `--session-id`, by a process that recorded first;
+	 * its records are not this process's to overwrite or duplicate, so finding any is refused as busy
+	 * and the lock is released again.
+	 */
+	claimNew(): void {
+		this.claim();
+		const directory = this.directory;
+		let existing = false;
+		try {
+			existing = readdirSync(join(directory, "sessions")).length > 0;
+		} catch (error) {
+			if ((error as { code?: string }).code !== "ENOENT") existing = true;
+		}
+		if (!existing) return;
+		const lock = this.lock;
+		this.lock = undefined;
+		this.claimed = undefined;
+		try {
+			lock?.release();
+		} catch {}
+		throw new FlowOwnershipError("busy", catalogText(this.catalog, CatalogMessageId.flowOwnershipBusy));
 	}
 
 	/** Create the owned directory and take its process lock. Idempotent once it succeeds. */

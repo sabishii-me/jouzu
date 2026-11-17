@@ -8,8 +8,9 @@
  */
 
 import { isUtf8 } from "node:buffer";
-import { appendFile, mkdir, readFile, rename, rm, truncate, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { randomUUID } from "node:crypto";
+import { appendFile, mkdir, open, readFile, rename, rm, truncate, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { checkpointFlowJournal, FLOW_JOURNAL_CHECKPOINT_BYTES } from "./journal-checkpoint.js";
 import {
 	applyValueWrites,
@@ -356,12 +357,20 @@ class DeferredJournalStorage implements ScalarStorage {
 				}));
 			const text = `${JSON.stringify(header)}\n${records.length ? `${JSON.stringify(records)}\n` : ""}`;
 			await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-			const temporary = `${path}.${process.pid}.tmp`;
+			// The temporary file lives beside the owner directory's sessions folder, as checkpoints do, so a
+			// crash before the rename can never leave a stray file where journals are discovered.
+			const temporary = join(dirname(dirname(dirname(path))), `.materialize-${randomUUID()}`);
 			try {
-				await writeFile(temporary, text, { flag: "wx", mode: 0o600 });
+				const output = await open(temporary, "wx", 0o600);
+				try {
+					await output.writeFile(text);
+					await output.sync();
+				} finally {
+					await output.close();
+				}
 				await rename(temporary, path);
 			} catch (error) {
-				await rm(temporary, { force: true });
+				await rm(temporary, { force: true }).catch(() => {});
 				throw error;
 			}
 			this.journal = new JournalScalarStorage(

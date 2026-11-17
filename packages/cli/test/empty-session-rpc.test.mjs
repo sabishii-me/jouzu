@@ -83,3 +83,36 @@ test("a session opened and closed without a message leaves nothing behind", asyn
 	assert.equal((await resumed.close()).code, 0);
 	assert.equal((await files(home.sessions)).filter((path) => path.endsWith(".jsonl")).length, 1);
 });
+
+test("a second process with the same new session id cannot record a second copy of it", async (t) => {
+	const home = await rpcHome(t, await provider(t));
+	const root = join(home.jouzu, "..");
+	const args = ["--session-id", "shared-session-id"];
+	const first = launchRpc(t, home, args);
+	const second = launchRpc(t, home, args);
+	for (const [f, id] of [
+		[first, "first"],
+		[second, "second"],
+	]) {
+		f.send({ id, type: "get_state" });
+		await f.waitFor(() => response(f.frames, id), `${id} get_state`);
+	}
+	first.send({ id: "a", type: "prompt", message: "from the first process" });
+	await first.waitFor(() => count(first.frames, "agent_settled") > 0, "first settled");
+	assert.equal((await first.close()).code, 0);
+
+	second.send({ id: "b", type: "prompt", message: "from the second process" });
+	const refused = await second.waitFor(() => response(second.frames, "b"), "second response");
+	assert.equal(refused.success, false, JSON.stringify(refused));
+	assert.equal((await second.close()).code, 0);
+	const registries = (await files(root)).filter(
+		(path) => path.includes("session-registry-v1") && path.endsWith(".jsonl"),
+	);
+	assert.equal(registries.length, 1, "the session keeps one registry journal");
+
+	// The session still opens.
+	const again = launchRpc(t, home, args);
+	again.send({ id: "state", type: "get_state" });
+	assert.equal((await again.waitFor(() => response(again.frames, "state"), "reopen")).success, true);
+	assert.equal((await again.close()).code, 0);
+});

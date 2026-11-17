@@ -102,12 +102,17 @@ export class PiFlowAttachment {
 		this.deferred?.beforeFirstWrite(store);
 	}
 
+	/** Take the branch's lock for deferred records, refusing a branch that another process recorded. */
+	claimStorage(): void {
+		if (this.deferred && !this.ownership.claimedStorage) this.ownership.claimNew();
+	}
+
 	/** Claim the branch directory and write the in-memory records to it. */
 	materialize(): Promise<void> {
 		const journal = this.deferred;
 		if (!journal || journal.materialized) return Promise.resolve();
 		return this.ownership.run(async () => {
-			this.ownership.claim();
+			this.claimStorage();
 			await reconcileFlowStateVersion(this.ownership.directory);
 			await materializeLocalFlowSession(journal, this.ownership.directory);
 		});
