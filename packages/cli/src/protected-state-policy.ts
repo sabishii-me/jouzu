@@ -48,6 +48,10 @@ function targetPath(input: unknown, cwd: string, platform: NodeJS.Platform): str
 		path = join(homedir(), path.slice(2));
 	if (/^file:\/\//u.test(path)) {
 		try {
+			// A URL naming another host is a network share on Windows and an error elsewhere; either way
+			// this cannot tell where it leads.
+			const host = new URL(path).hostname;
+			if (host && host !== "localhost") return null;
 			path = fileURLToPath(path);
 		} catch {
 			return null;
