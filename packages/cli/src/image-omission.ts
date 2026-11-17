@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { InlineExtension } from "@earendil-works/pi-coding-agent";
+import type { ExtensionContext, InlineExtension } from "@earendil-works/pi-coding-agent";
 import { catalogText, defaultCatalog } from "./cli-messages.js";
 import { protectedCommand } from "./human-messages.js";
 import type { CatalogBundle } from "./locale-catalog.js";
@@ -68,11 +68,13 @@ export function createImageOmissionExtension(catalog: CatalogBundle = defaultCat
 				ctx.ui.setStatus(IMAGE_STATUS_KEY, json);
 			};
 
-			pi.on("session_start", async (_event, ctx) => {
+			// The choice belongs to the branch it was made on: load it from the current branch at start and
+			// again after navigating the session tree.
+			const load = async (_event: unknown, ctx: ExtensionContext): Promise<void> => {
 				omitted = new Set();
 				sent = [];
 				rejected = undefined;
-				const entries = ctx.sessionManager.getEntries();
+				const entries = ctx.sessionManager.getBranch();
 				for (let index = entries.length - 1; index >= 0; index--) {
 					const entry = entries[index] as { type?: string; customType?: string; data?: { digests?: unknown } };
 					if (entry.type !== "custom" || entry.customType !== IMAGE_OMISSIONS_ENTRY) continue;
@@ -81,7 +83,9 @@ export function createImageOmissionExtension(catalog: CatalogBundle = defaultCat
 					break;
 				}
 				publish(ctx);
-			});
+			};
+			pi.on("session_start", load);
+			pi.on("session_tree", load);
 
 			pi.on("context", async (event) => {
 				const images: string[] = [];

@@ -102,6 +102,6 @@ A global ceiling caps every model's usable context window. Set it in Settings / 
 
 A provider can reject a request because of an image in the conversation, for example one below its minimum size. Every later request would carry the same image and fail the same way, so Jouzu reports the rejection and suggests `/images omit`. Jouzu never removes content on its own.
 
-- `/images omit` leaves the images of the rejected request out of later requests. The model sees `[image omitted]` in their place; the session file keeps the images. The choice is saved in the session and survives a restart.
+- `/images omit` leaves the images of the rejected request out of later requests. The model sees `[image omitted]` in their place; the session file keeps the images. The choice is saved in the session, applies to the branch it was made on, and survives a restart.
 - `/images restore` sends omitted images again.
 - RPC clients receive the state as a `setStatus` request with key `jouzu-images` whose text is JSON: `version`, `rejected` (present while the latest request failed because of an image: `code` `image_rejected` and the number of `images`), and `omitted` (how many images are left out). A client can offer the same choice by sending `/images omit` as a prompt.
