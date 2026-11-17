@@ -92,8 +92,12 @@ export function launchRpc(t, paths, extraArgs = []) {
 		],
 		{ cwd: paths.workspace, env, stdio: ["pipe", "pipe", "pipe"] },
 	);
-	t.after(() => {
-		if (child.exitCode === null) child.kill("SIGKILL");
+	// Wait for the exit before the home is removed: Windows refuses to delete a running process's cwd.
+	t.after(async () => {
+		if (child.exitCode !== null || child.signalCode !== null) return;
+		const exited = new Promise((resolve) => child.once("exit", resolve));
+		child.kill("SIGKILL");
+		await exited;
 	});
 	const events = new EventEmitter();
 	const frames = [];
@@ -150,7 +154,12 @@ export function launchRpc(t, paths, extraArgs = []) {
 		child.kill("SIGKILL");
 		return waitFor(() => exit, "rpc exit");
 	};
-	return { frames, send, waitFor, stop };
+	/** End input, as a client does when it closes, and wait for the runtime's own shutdown. */
+	const close = async () => {
+		if (!exit) child.stdin.end();
+		return waitFor(() => exit, "rpc exit");
+	};
+	return { frames, send, waitFor, stop, close };
 }
 
 export const response = (frames, id) => frames.find((frame) => frame.type === "response" && frame.id === id);
