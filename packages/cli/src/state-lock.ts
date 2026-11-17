@@ -150,7 +150,12 @@ export function acquireStateLock(options: AcquireStateLockOptions): () => void {
 	try {
 		writeNew();
 	} catch (error) {
-		if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
+		const code = error instanceof Error && "code" in error ? error.code : undefined;
+		// Windows refuses to create a file another process is still deleting, which is the moment
+		// a lock is being released: the lock is still busy, not unusable.
+		if (code === "EPERM" && process.platform === "win32")
+			throw options.onBusy({ exists: true, status: "held-live", ageMs: null });
+		if (code !== "EEXIST") throw error;
 		const inspection = inspectStateLock(options.path, now);
 		if (inspection.status === "free") {
 			writeNew();
