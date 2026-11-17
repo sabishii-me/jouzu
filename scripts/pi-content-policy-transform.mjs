@@ -1004,11 +1004,21 @@ export function sessionEntryToContextMessages(entry) {`,
         if (this._isAgentRunActive) {
             this._agentRunAbortRequested = true;
         }`,
-			`    async abort() {
+			`    async abort(options) {
         if (this._isAgentRunActive) {
             this._agentRunAbortRequested = true;
         }
-        this._promptAbortEpoch++;`,
+        if (!options?.keepPrompts)
+            this._promptAbortEpoch++;`,
+		);
+		// Compaction and an extension's own abort stop the current run, not prompts the user already sent.
+		change(
+			"    async compact(customInstructions) {\n        await this.abort();",
+			"    async compact(customInstructions) {\n        await this.abort({ keepPrompts: true });",
+		);
+		change(
+			"                    this._extensionAbortHandler();\n                    return;\n                }\n                void this.abort();",
+			"                    this._extensionAbortHandler();\n                    return;\n                }\n                void this.abort({ keepPrompts: true });",
 		);
 		change(
 			"        const expandPromptTemplates = options?.expandPromptTemplates ?? true;\n        const preflightResult = options?.preflightResult;\n        // Handle extension commands first",
@@ -1025,6 +1035,10 @@ export function sessionEntryToContextMessages(entry) {`,
 		);
 	} else if (path === "dist/core/agent-session.d.ts") {
 		change("    dispose(): void;", "    dispose(): Promise<void>;");
+		change(
+			"    abort(): Promise<void>;",
+			"    /** `keepPrompts` stops the current run without cancelling prompts the user already sent. */\n    abort(options?: { keepPrompts?: boolean }): Promise<void>;",
+		);
 		change(
 			"export declare class AgentSession {",
 			"export declare class AgentSession {\n    /** Observe exact native next-turn input before Pi retains it. Failure prevents enqueue. */\n    flowNextTurn?: (message: AgentMessage, cancel: () => boolean) => Promise<void>;",

@@ -536,3 +536,27 @@ for (const variant of ["stop", "error", "aborted", "missing-summary", "changed-s
 			);
 		}
 	});
+
+test("only a Stop cancels a prompt still in preflight; compaction-style aborts keep it", async (t) => {
+	for (const [options, expected] of [
+		[{ keepPrompts: true }, "started"],
+		[undefined, "aborted"],
+	]) {
+		const { session } = await fixture(t);
+		const entered = deferred(),
+			release = deferred();
+		session.modelRuntime.hasConfiguredAuth = () => false;
+		session.modelRuntime.checkAuth = async () => {
+			entered.resolve();
+			await release.promise;
+			return "fixture-key";
+		};
+		let disposition;
+		const running = session.prompt("user input", { preflightResult: (value) => (disposition = value) });
+		await entered.promise;
+		await session.abort(options);
+		release.resolve();
+		await running;
+		assert.equal(disposition, expected, JSON.stringify(options));
+	}
+});
