@@ -158,16 +158,52 @@ export function piTranscriptBranchOwners(manager: SessionManager): Set<string> {
 	return owners;
 }
 
+/**
+ * Write the marker of a first branch that `bindPiFlowBranch` left unbound, and bind its position.
+ * The marker is durable in the Pi transcript before the registry records it.
+ */
+export async function bindPiFlowInitialMarker(registry: PiFlowSessionRegistry, manager: SessionManager): Promise<void> {
+	await registry.run(async () => {
+		const state = await registry.snapshot();
+		assertSession(state, manager);
+		const branch = state.branches.find((record) => record.id === state.activeBranchId);
+		if (!branch) throw new FlowLedgerError("schema", "Active branch record is missing.");
+		if (branch.position) return;
+		if (state.transition || !neverNavigated(state) || latestMarker(manager))
+			throw new FlowLedgerError("identity", "Unbound branch marker cannot establish initial ownership.");
+		// Entries recorded since the session opened are settings such as a session name; navigation
+		// stores the session before it moves, so the branch still starts where the session did.
+		const marker = appendMarker(manager, { version: 1, sessionId: state.sessionId, branchId: branch.id });
+		const position = await evidence(manager, marker);
+		await registry.bindInitialPosition(state.revision, position, marker.parentId ?? null);
+		await assertRegistry(registry, { sessionId: state.sessionId, branchId: branch.id }, state.revision + 1);
+	});
+}
+
 /** Reconcile an owned registry with the active Pi transcript before attaching a controller. */
 export async function bindPiFlowBranch(
 	registry: PiFlowSessionRegistry,
 	manager: SessionManager,
 	onRebuiltRegistry?: (droppedStatePath?: string) => void,
+	deferMarker = false,
 ): Promise<FlowScope> {
 	return registry.run(async () => {
 		const state = await registry.snapshot();
 		assertSession(state, manager);
 		let marker = latestMarker(manager);
+		const initial = state.branches.find((record) => record.id === state.activeBranchId);
+		// A new session's first branch needs no marker until it has something to record: writing it
+		// would create a transcript file for a session nobody used. `bindPiFlowInitialMarker` writes it.
+		if (
+			deferMarker &&
+			!state.transition &&
+			!marker &&
+			initial &&
+			!initial.position &&
+			neverNavigated(state) &&
+			manager.getLeafId() === initial.enteredAtLeafId
+		)
+			return { sessionId: state.sessionId, branchId: initial.id };
 		const pending = state.transition;
 		if (pending) {
 			if (marker && marker.data.branchId === pending.branchId && marker.data.transitionId === pending.id) {

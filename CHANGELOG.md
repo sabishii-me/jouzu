@@ -14,6 +14,7 @@
 - Keep flow state usable when the Jouzu home folder moves or is reached through another absolute path. See [Flow control](docs/flow-control.md#branches-and-resuming).
 - Wait for another live process that is applying the profile at startup instead of exiting with a misleading "profile state is unreadable" error. Concurrent starts now converge.
 - Make Stop final. A prompt stopped before its turn starts is cancelled (RPC disposition `aborted`) instead of running later, and a request stopped before or during its handoff to the provider no longer holds later messages for a recovery decision. See [Flow control](docs/flow-control.md#stopping-a-turn).
+- Leave nothing behind for a session that is started and closed without a message. Flow state and the session file are written the first time flow control records something; background-task state and the child-agent owner lock are created on first use. See [Flow control](docs/flow-control.md#branches-and-resuming).
 
 ### Security
 

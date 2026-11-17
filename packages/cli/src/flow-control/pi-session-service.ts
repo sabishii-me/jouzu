@@ -7,7 +7,12 @@ import { SessionFlowController } from "./controller.js";
 import { isNativeUserInput, isUserInstruction } from "./native-admission.js";
 import { reconcileNativeSources } from "./native-source-reconciliation.js";
 import { PiFlowAttachment } from "./pi-attachment.js";
-import { bindPiFlowBranch, completePiFlowNavigation, piTranscriptBranchOwners } from "./pi-branch-binding.js";
+import {
+	bindPiFlowBranch,
+	bindPiFlowInitialMarker,
+	completePiFlowNavigation,
+	piTranscriptBranchOwners,
+} from "./pi-branch-binding.js";
 import { PiControllerHost, type PiControllerHostOptions } from "./pi-controller-host.js";
 import { recoverPiHistory } from "./pi-history-recovery.js";
 import { PiNativeDispatch } from "./pi-native-dispatch.js";
@@ -75,6 +80,17 @@ export interface PiFlowClearExpectation {
 	requests: string;
 }
 
+/** Whether the transcript holds a message, or a branch marker an earlier attachment wrote. */
+function hasConversation(session: AgentSession): boolean {
+	return session.sessionManager
+		.getEntries()
+		.some(
+			(entry) =>
+				entry.type === "message" ||
+				(entry.type === "custom" && (entry as { customType?: string }).customType === "jouzu-flow-branch"),
+		);
+}
+
 /** Own session storage and each branch controller across awaited Pi lifecycle callbacks. */
 export class PiFlowSessionService {
 	private current?: PiFlowBranchResources;
@@ -89,6 +105,7 @@ export class PiFlowSessionService {
 	// Ledger uncertainty is part of the controller's recovery gate, and the ledger can change it after
 	// the branch was opened. The gate is synchronous, so the last read is kept here.
 	private outcomeUnresolved = false;
+	private storing?: Promise<void>;
 	private readonly trustedStream?: AgentSession["agent"]["streamFunction"];
 	private readonly navigation: PiNavigationGuard;
 	private constructor(
@@ -115,21 +132,33 @@ export class PiFlowSessionService {
 			userWorkParticipants: captureUserWorkParticipants(options.userWorkParticipants),
 			host: { ...options.host },
 		};
+		// A session with no conversation and no flow storage has nothing to recover. Its flow state stays
+		// in memory until `store`, so a session that is opened and closed unused leaves no files.
+		const deferred = !hasConversation(session) && !PiFlowSessionRegistry.exists(options.root, session.sessionId);
 		const registry = await PiFlowSessionRegistry.open(
 			options.root,
 			session.sessionId,
 			session.sessionManager.getLeafId(),
+			undefined,
+			deferred,
 		);
 		let service: PiFlowSessionService | undefined;
 		try {
 			const attached = new PiFlowSessionService(session, registry, captured);
 			service = attached;
 			await registry.run(async () => {
-				const scope = await bindPiFlowBranch(registry, session.sessionManager, (path) =>
-					captured.onRebuiltRegistry?.(path),
+				const scope = await bindPiFlowBranch(
+					registry,
+					session.sessionManager,
+					(path) => captured.onRebuiltRegistry?.(path),
+					deferred,
 				);
-				await attached.openBranch(scope);
+				await attached.openBranch(scope, deferred);
 			});
+			// From here on, the first thing the session records writes its flow state first. A session
+			// that is closed without recording anything leaves nothing behind.
+			if (deferred)
+				attached.branch().attachment.storeBeforeFirstWrite(() => (attached.closing ? Promise.resolve() : attached.store()));
 			return attached;
 		} catch (error) {
 			try {
@@ -150,13 +179,39 @@ export class PiFlowSessionService {
 		return this.current;
 	}
 
-	private async openBranch(scope: FlowScope): Promise<void> {
+	/** Whether this session's flow state is on disk. A new session's state is in memory until `store`. */
+	get stored(): boolean {
+		const attachment = this.current?.attachment ?? this.opening?.attachment;
+		return this.registry.stored && (!attachment || attachment.stored);
+	}
+
+	/**
+	 * Write a new session's flow state, before its first input is recorded: the branch marker in the
+	 * Pi transcript first, then the registry and branch records that point to it. Idempotent.
+	 */
+	store(): Promise<void> {
+		if (this.stored) return Promise.resolve();
+		this.storing ??= this.registry
+			.run(async () => {
+				const attachment = this.branch().attachment;
+				await bindPiFlowInitialMarker(this.registry, this.session.sessionManager);
+				await this.registry.materialize();
+				await attachment.materialize();
+			})
+			.finally(() => {
+				this.storing = undefined;
+			});
+		return this.storing;
+	}
+
+	private async openBranch(scope: FlowScope, deferred = false): Promise<void> {
 		const attachment = await PiFlowAttachment.open(
 			this.options.root,
 			scope,
 			undefined,
 			(path) => this.options.onIsolatedState?.(path),
 			this.options.catalog,
+			deferred,
 		);
 		this.opening = { attachment };
 		try {
@@ -294,6 +349,8 @@ export class PiFlowSessionService {
 	 * one ownership check, and one busy semantics instead of five.
 	 */
 	async retireFlowHistory(): Promise<number> {
+		// A session whose state is still in memory has recorded nothing, so it has no history to retire.
+		if (!this.stored) return 0;
 		const phases: (() => Promise<number>)[] = [
 			async () => {
 				const { work, executions, waits } = await this.retireWaitHistory(true);
@@ -743,7 +800,9 @@ export class PiFlowSessionService {
 	}
 
 	/** Called from Pi's prepared beforeBranchChange callback, with ingress fenced. */
-	beforeBranchChange(): Promise<void> {
+	async beforeBranchChange(): Promise<void> {
+		// Navigation records a transition against a stored branch.
+		await this.store();
 		return this.registry.run(async () => {
 			const branch = this.branch();
 			const state = await this.registry.snapshot();

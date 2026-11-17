@@ -95,6 +95,7 @@
 		"packages/cli/test/flow-schedule-wake.test.mjs :: assembled scheduled-prompt wait wakes on timer without polling": "integration",
 		"packages/cli/test/flow-session-eof-rpc.test.mjs :: a native command that never settles does not hold end-of-input shutdown": "child-process",
 		"packages/cli/test/flow-session-eof-rpc.test.mjs :: a session_shutdown handler that never settles does not hold end-of-input shutdown": "child-process",
+		"packages/cli/test/empty-session-rpc.test.mjs :: a session opened and closed without a message leaves nothing behind": "child-process",
 		"packages/cli/test/flow-stop-rpc.test.mjs :: Stop is final at every point of a prompt and never leaves Flow work behind": "child-process",
 		"packages/cli/test/flow-session-ingress-work.test.mjs :: installed background terminal log observation follows final provider content (redacted=false, notify=false, wait=false)": "integration",
 		"packages/cli/test/flow-session-ingress-work.test.mjs :: installed background terminal log observation follows final provider content (redacted=false, notify=false, wait=true)": "integration",
