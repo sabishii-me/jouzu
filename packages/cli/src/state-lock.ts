@@ -100,9 +100,13 @@ export function inspectStateLock(path: string, now: Date): StateLockInspection {
 			return { exists: true, status: "owner-unknown", ageMs: now.getTime() - metadata.mtimeMs };
 		}
 		const ageMs = now.getTime() - Date.parse(record.startedAt);
+		// A lock naming this process's PID but taken before this process started was left by an earlier
+		// process that had the same PID, as happens in containers that restart with fixed PIDs.
+		const reusedPid =
+			record.pid === process.pid && Date.parse(record.startedAt) < Date.now() - process.uptime() * 1000 - 1000;
 		return {
 			exists: true,
-			status: pidIsAlive(record.pid) ? "held-live" : "held-dead",
+			status: !reusedPid && pidIsAlive(record.pid) ? "held-live" : "held-dead",
 			ageMs,
 		};
 	} catch (error) {

@@ -448,7 +448,11 @@ export function applyProfile(
 			break;
 		} catch (error) {
 			if (!(error instanceof ProfileLockHeldLive)) throw error;
-			if (Date.now() >= deadline) throw new ProfileBusyError(catalogText(catalog, PROFILE_LOCK_BUSY_ID));
+			// Name the lock, so a lock whose owner is not really Jouzu can be found and removed.
+			if (Date.now() >= deadline)
+				throw new ProfileBusyError(
+					`${catalogText(catalog, PROFILE_LOCK_BUSY_ID)} (${join(paths.stateDir, "profile.lock")})`,
+				);
 			pause(PROFILE_LOCK_POLL_MS);
 			// The owner may be between writes, so only a converged plan ends the wait early; conflicts
 			// are judged under the lock.
