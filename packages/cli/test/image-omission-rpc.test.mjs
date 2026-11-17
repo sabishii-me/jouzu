@@ -93,6 +93,7 @@ test("a rejected image stays out of later requests only after the user omits it"
 	await command(resumed, "restore", "/images restore");
 	assert.equal((await turn(resumed, "restored", "and now?")).stopReason, "error");
 	assert.equal(provider.requests.at(-1).images, 1);
+	assert.equal((await resumed.close()).code, 0);
 });
 
 test("a provider error that does not name an image is not an image rejection", async () => {

@@ -12,11 +12,11 @@ const inheritedSecretEnv = /^(?:JOUZU_|PI_|SHISA_|AI_AGENT|TEXTGUARD_|OPENAI_|AN
 /** RPC children started by this process, to name any descendant that outlives them. */
 const launched = new Set();
 
-/** Processes on Windows whose parent was one of our RPC children, as "pid name commandLine" lines. */
+/** RPC children still running or their descendants, on Windows, as "pid name commandLine" lines. */
 function survivingDescendants() {
 	if (process.platform !== "win32" || !launched.size) return [];
-	const parents = [...launched].join(",");
-	const script = `Get-CimInstance Win32_Process | Where-Object { @(${parents}) -contains $_.ParentProcessId } | ForEach-Object { "$($_.ProcessId) $($_.Name) $($_.CommandLine)" }`;
+	const ids = [...launched].join(",");
+	const script = `Get-CimInstance Win32_Process | Where-Object { @(${ids}) -contains $_.ParentProcessId -or @(${ids}) -contains $_.ProcessId } | ForEach-Object { "$($_.ProcessId) $($_.Name) $($_.CommandLine)" }`;
 	const result = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {
 		encoding: "utf8",
 		windowsHide: true,
@@ -34,8 +34,8 @@ async function removeHome(root) {
 		await rm(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 	} catch (error) {
 		const survivors = survivingDescendants();
-		if (survivors.length)
-			error.message += `; processes started by the runtime are still running: ${survivors.join(" | ")}`;
+		error.message = `Test home ${root} is still busy: ${error.message}`;
+		if (survivors.length) error.message += `; runtime processes still running: ${survivors.join(" | ")}`;
 		throw error;
 	}
 }
@@ -46,7 +46,12 @@ async function removeHome(root) {
  */
 export async function rpcHome(t, port, { input = ["text"] } = {}) {
 	const root = await mkdtemp(join(tmpdir(), "jouzu-rpc-"));
-	t.after(() => removeHome(root));
+	const runtimes = [];
+	// Hooks run in registration order, so this one shuts down every runtime started in the home first.
+	t.after(async () => {
+		await Promise.all(runtimes.map((shutdown) => shutdown()));
+		await removeHome(root);
+	});
 	const paths = {
 		home: join(root, "home"),
 		config: join(root, "config"),
@@ -59,6 +64,7 @@ export async function rpcHome(t, port, { input = ["text"] } = {}) {
 		jouzu: join(root, "jouzu"),
 	};
 	for (const path of Object.values(paths)) await mkdir(path, { recursive: true, mode: 0o700 });
+	Object.defineProperty(paths, "runtimes", { value: runtimes });
 	const model = { id: "slow", name: "slow", input, reasoning: false, contextWindow: 128000, maxTokens: 4096 };
 	await mkdir(join(paths.jouzu, "agent"), { recursive: true, mode: 0o700 });
 	await writeFile(
@@ -127,14 +133,34 @@ export function launchRpc(t, paths, extraArgs = []) {
 	// Shut down the way a client does, by ending input, so the runtime stops what it started; kill only
 	// a runtime that does not exit. Wait for the exit before the home is removed: Windows refuses to
 	// delete a running process's working directory.
-	t.after(async () => {
+	const shutdown = async () => {
 		if (child.exitCode !== null || child.signalCode !== null) return;
 		const exited = new Promise((resolve) => child.once("exit", resolve));
 		child.stdin.end();
-		const timer = setTimeout(() => child.kill("SIGKILL"), 10_000);
-		await exited;
-		clearTimeout(timer);
-	});
+		const kill = setTimeout(() => child.kill("SIGKILL"), 10_000);
+		let giveUp;
+		try {
+			await Promise.race([
+				exited,
+				new Promise((_, reject) => {
+					giveUp = setTimeout(
+						() =>
+							reject(
+								new Error(
+									`RPC runtime ${child.pid} did not exit within 20 s of end of input and a kill; ${stderr.slice(-2000)}`,
+								),
+							),
+						20_000,
+					);
+				}),
+			]);
+		} finally {
+			clearTimeout(kill);
+			clearTimeout(giveUp);
+		}
+	};
+	paths.runtimes?.push(shutdown);
+	t.after(shutdown);
 	const events = new EventEmitter();
 	const frames = [];
 	let stderr = "";
