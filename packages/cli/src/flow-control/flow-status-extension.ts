@@ -142,13 +142,23 @@ export function createFlowStatusExtension(options: FlowStatusOptions): InlineExt
 					? [{ id: submission.id, code: holdCode(submission.reason), text: holdReason(submission.reason) }]
 					: [],
 			),
-			withheld: inspected.submissions.flatMap((submission) =>
-				(submission.nativeRequests ?? []).flatMap((request) =>
-					request.hold && !request.retryRequestId
-						? [{ id: request.requestId, code: request.hold.reason, text: text("requestDecision") }]
-						: [],
-				),
-			),
+			// One request can serve several submissions; /flow lists it once, and so does this.
+			withheld: [
+				...new Map(
+					inspected.submissions.flatMap((submission) =>
+						(submission.nativeRequests ?? []).flatMap((request) =>
+							request.hold && !request.retryRequestId
+								? [
+										[
+											request.requestId,
+											{ id: request.requestId, code: request.hold.reason, text: text("requestDecision") },
+										] as const,
+									]
+								: [],
+						),
+					),
+				).values(),
+			],
 			uncertain: inspected.uncertain.map((attempt) => attempt.id),
 		};
 	};
