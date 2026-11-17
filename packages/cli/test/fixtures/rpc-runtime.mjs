@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -9,13 +9,44 @@ const cli = fileURLToPath(new URL("../../dist/cli.js", import.meta.url));
 const deadlineMs = 30_000;
 const inheritedSecretEnv = /^(?:JOUZU_|PI_|SHISA_|AI_AGENT|TEXTGUARD_|OPENAI_|ANTHROPIC_|GOOGLE_|GEMINI_|AWS_|AZURE_)/u;
 
+/** RPC children started by this process, to name any descendant that outlives them. */
+const launched = new Set();
+
+/** Processes on Windows whose parent was one of our RPC children, as "pid name commandLine" lines. */
+function survivingDescendants() {
+	if (process.platform !== "win32" || !launched.size) return [];
+	const parents = [...launched].join(",");
+	const script = `Get-CimInstance Win32_Process | Where-Object { @(${parents}) -contains $_.ParentProcessId } | ForEach-Object { "$($_.ProcessId) $($_.Name) $($_.CommandLine)" }`;
+	const result = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {
+		encoding: "utf8",
+		windowsHide: true,
+		timeout: 15_000,
+	});
+	return (result.stdout ?? "").split(/\r?\n/u).filter(Boolean);
+}
+
+/**
+ * Remove a test home. Windows releases a closed process's handles asynchronously, so a just-exited
+ * child can briefly keep its working directory busy; retry, and if it stays busy, name what holds it.
+ */
+async function removeHome(root) {
+	try {
+		await rm(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+	} catch (error) {
+		const survivors = survivingDescendants();
+		if (survivors.length)
+			error.message += `; processes started by the runtime are still running: ${survivors.join(" | ")}`;
+		throw error;
+	}
+}
+
 /**
  * An isolated Jouzu home whose only model, `fixture/slow`, is served by a local OpenAI-compatible
  * provider on `port`. The home survives restarts within the test.
  */
 export async function rpcHome(t, port, { input = ["text"] } = {}) {
 	const root = await mkdtemp(join(tmpdir(), "jouzu-rpc-"));
-	t.after(() => rm(root, { recursive: true, force: true }));
+	t.after(() => removeHome(root));
 	const paths = {
 		home: join(root, "home"),
 		config: join(root, "config"),
@@ -92,12 +123,17 @@ export function launchRpc(t, paths, extraArgs = []) {
 		],
 		{ cwd: paths.workspace, env, stdio: ["pipe", "pipe", "pipe"] },
 	);
-	// Wait for the exit before the home is removed: Windows refuses to delete a running process's cwd.
+	launched.add(child.pid);
+	// Shut down the way a client does, by ending input, so the runtime stops what it started; kill only
+	// a runtime that does not exit. Wait for the exit before the home is removed: Windows refuses to
+	// delete a running process's working directory.
 	t.after(async () => {
 		if (child.exitCode !== null || child.signalCode !== null) return;
 		const exited = new Promise((resolve) => child.once("exit", resolve));
-		child.kill("SIGKILL");
+		child.stdin.end();
+		const timer = setTimeout(() => child.kill("SIGKILL"), 10_000);
 		await exited;
+		clearTimeout(timer);
 	});
 	const events = new EventEmitter();
 	const frames = [];

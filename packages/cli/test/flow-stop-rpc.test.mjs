@@ -88,4 +88,5 @@ test("Stop is final at every point of a prompt and never leaves Flow work behind
 	assert.deepEqual(status.held, []);
 	assert.deepEqual(status.withheld, []);
 	assert.deepEqual(status.uncertain, []);
+	assert.equal((await f.close()).code, 0, "the runtime shuts down cleanly after the Stops");
 });
