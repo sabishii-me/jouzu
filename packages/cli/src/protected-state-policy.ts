@@ -1,6 +1,7 @@
 import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, posix, resolve, win32 } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { InlineExtension } from "@earendil-works/pi-coding-agent";
 
 /** Built-in tools that create or change a file named by their `path` argument. */
@@ -25,12 +26,33 @@ function canonical(path: string): string {
 	}
 }
 
-/** The file a write or edit call names, resolved the way the tool resolves it. */
-function targetPath(input: unknown, cwd: string): string | undefined {
+/** Git Bash, MSYS, Cygwin and WSL drive paths, as Pi's tools convert them on Windows. */
+function windowsShellPath(path: string): string {
+	if (!path.startsWith("/") || path.startsWith("//") || path.includes("\\")) return path;
+	const match = path.match(/^\/(?:mnt\/|cygdrive\/)?([a-z])(?:\/(.*))?$/iu);
+	if (!match) return path;
+	return `${match[1].toUpperCase()}:\\${match[2]?.replaceAll("/", "\\") ?? ""}`;
+}
+
+/**
+ * The file a write or edit call names, resolved exactly as Pi's file tools resolve it: an `@` prefix,
+ * Windows shell drive paths, `~`, and `file://` URLs. Returns `null` for a path the tools would read
+ * in a way this cannot follow, which the caller refuses.
+ */
+function targetPath(input: unknown, cwd: string, platform: NodeJS.Platform): string | undefined | null {
 	const raw = input && typeof input === "object" ? (input as { path?: unknown }).path : undefined;
 	if (typeof raw !== "string" || !raw.trim()) return undefined;
 	let path = raw.startsWith("@") ? raw.slice(1) : raw;
-	if (path === "~" || path.startsWith("~/") || path.startsWith("~\\")) path = join(homedir(), path.slice(1));
+	if (platform === "win32") path = windowsShellPath(path);
+	if (path === "~" || path.startsWith("~/") || (platform === "win32" && path.startsWith("~\\")))
+		path = join(homedir(), path.slice(2));
+	if (/^file:\/\//u.test(path)) {
+		try {
+			path = fileURLToPath(path);
+		} catch {
+			return null;
+		}
+	}
 	return isAbsolute(path) ? resolve(path) : resolve(cwd, path);
 }
 
@@ -57,8 +79,8 @@ export function createProtectedStateExtension(
 		factory(pi) {
 			pi.on("tool_call", (event, ctx) => {
 				if (!FILE_WRITING_TOOLS.has(event.toolName)) return;
-				const path = targetPath(event.input, ctx.cwd);
-				if (path && isProtected(path))
+				const path = targetPath(event.input, ctx.cwd, platform);
+				if (path === null || (path && isProtected(path)))
 					return {
 						block: true,
 						reason: "Access denied: Jouzu's state and cache folders are read-only for tools.",

@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { pathToFileURL } from "node:url";
 import { createProtectedStateExtension } from "../dist/protected-state-policy.js";
 
 function handlerFor(roots) {
@@ -34,6 +35,8 @@ test("file tools cannot write Jouzu state or cache, by any spelling of the path"
 		["write", "linked-cache/textguard/approvals.json"],
 		["write", "linked-cache/new-folder/file.json"],
 		["edit", cache],
+		["write", pathToFileURL(join(cache, "textguard", "approvals.json")).href],
+		["write", "file://remote-host/not-a-local-path"],
 	]) {
 		const result = call(tool, { path, content: "{}" }, workspace);
 		assert.equal(result?.block, true, `${tool} ${path}`);
@@ -53,4 +56,17 @@ test("other paths and tools that do not write files are unaffected", async (t) =
 	assert.equal(call("write", { path: join(root, "home", "cache-sibling", "x") }, workspace), undefined);
 	assert.equal(call("read", { path: join(cache, "textguard", "approvals.json") }, workspace), undefined);
 	assert.equal(call("write", { content: "no path" }, workspace), undefined);
+});
+
+test("on Windows, a shell-style drive path into Jouzu state is refused", {
+	skip: process.platform !== "win32",
+}, async (t) => {
+	const root = await mkdtemp(join(tmpdir(), "jouzu-protected-"));
+	t.after(() => rm(root, { recursive: true, force: true }));
+	const state = join(root, "home", "state");
+	await mkdir(state, { recursive: true });
+	const call = handlerFor([state]);
+	const [drive, rest] = [state[0].toLowerCase(), state.slice(3).replaceAll("\\", "/")];
+	for (const path of [`/${drive}/${rest}/x.json`, `/mnt/${drive}/${rest}/x.json`, `/cygdrive/${drive}/${rest}/x.json`])
+		assert.equal(call("write", { path, content: "{}" }, root)?.block, true, path);
 });
